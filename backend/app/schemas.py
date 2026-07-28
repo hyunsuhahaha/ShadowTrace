@@ -1,0 +1,234 @@
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, IPvAnyAddress, field_validator
+
+class ORM(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+class ProjectIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120, pattern=r"^[\w ._-]+$")
+    description: str = Field(default="", max_length=4000)
+class ProjectOut(ProjectIn, ORM):
+    id: int
+    created_at: datetime
+
+class TargetIn(BaseModel):
+    project_id: int
+    name: str = Field(min_length=1, max_length=120, pattern=r"^[\w ._-]+$")
+    ip: str
+    hostname: str = Field(default="", max_length=253)
+    os_guess: str = Field(default="", max_length=200)
+    vpn: str = Field(default="tun0", max_length=80)
+    notes: str = Field(default="", max_length=20000)
+    @field_validator("ip")
+    @classmethod
+    def valid_ip(cls, v: str) -> str:
+        return str(IPvAnyAddress(v))
+class TargetOut(TargetIn, ORM):
+    id: int
+    updated_at: datetime
+
+class ServiceOut(ORM):
+    id: int; target_id: int; port: int; protocol: str; state: str
+    name: str; product: str; version: str; extra_info: str; scripts: str
+    notes: str; tags: str
+
+class ServiceUpdate(BaseModel):
+    notes: str = Field(default="", max_length=50000)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+
+class ExecutionIn(BaseModel):
+    target_id: int
+    service_id: int | None = None
+    template_id: str = Field(pattern=r"^[a-z0-9-]+$")
+    variables: dict[str, str] = {}
+class ExecutionOut(ORM):
+    id: int; target_id: int; service_id: int | None; template_id: str
+    command: str; stdout: str; stderr: str; cwd: str
+    started_at: datetime; ended_at: datetime | None; exit_code: int | None; stopped: bool
+    status: str; error: str; output_path: str
+
+class ScanProfileOut(ORM):
+    id: int; name: str; kind: str; description: str; arguments: str; builtin: bool
+
+class ScanPreviewIn(BaseModel):
+    target_id: int
+    profile_id: int
+    ports: str = ""
+    extra_arguments: list[str] = []
+
+class ScanJobOut(ORM):
+    id: int; project_id: int; target_id: int; profile_id: int | None
+    source: str; status: str; command: str
+    started_at: datetime | None; ended_at: datetime | None
+    exit_code: int | None; stopped: bool; error: str
+    alias: str; tags: str; created_at: datetime
+
+class ScanJobUpdate(BaseModel):
+    alias: str = Field(default="", max_length=120)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("tags")
+    @classmethod
+    def valid_tags(cls, values: list[str]) -> list[str]:
+        cleaned = []
+        for value in values:
+            value = value.strip()
+            if not value or len(value) > 40:
+                raise ValueError("Tags must contain 1 to 40 characters")
+            if value not in cleaned:
+                cleaned.append(value)
+        return cleaned
+
+class ScanSettings(BaseModel):
+    concurrency: int = Field(ge=1, le=8)
+
+class ScanArtifactOut(ORM):
+    id: int; scan_job_id: int; kind: str; path: str; sha256: str
+    size: int; original_name: str; created_at: datetime
+
+class ObservationOut(ORM):
+    id: int; scan_job_id: int; target_id: int; port: int; protocol: str
+    state: str; name: str; product: str; version: str; extra_info: str
+    scripts: str; observed_at: datetime
+
+class InteractiveSessionIn(BaseModel):
+    target_id: int
+    service_id: int | None = None
+    template_id: str = Field(pattern=r"^[a-z0-9-]+$")
+    variables: dict[str, str] = Field(default_factory=dict)
+
+class InteractiveSessionOut(ORM):
+    id: int; target_id: int; service_id: int | None; template_id: str
+    command: str; cwd: str; status: str; pid: int | None
+    started_at: datetime | None; ended_at: datetime | None
+    exit_code: int | None; log_path: str; error: str
+
+class HttpRequestIn(BaseModel):
+    project_id: int
+    target_id: int
+    service_id: int | None = None
+    name: str = Field(min_length=1, max_length=160)
+    folder: str = Field(default="", max_length=160)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    method: str = Field(default="GET", pattern=r"^[A-Z]+$", max_length=12)
+    url: HttpUrl
+    query: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    cookies: dict[str, str] = Field(default_factory=dict)
+    body: str = Field(default="", max_length=2_000_000)
+    body_mode: str = Field(default="raw", pattern=r"^(raw|json|form)$")
+    tls_verify: bool = True
+    proxy: str = Field(default="", max_length=2000)
+    timeout: int = Field(default=30, ge=1, le=300)
+    follow_redirects: bool = False
+
+class HttpRequestOut(ORM):
+    id: int; project_id: int; target_id: int; service_id: int | None
+    name: str; folder: str; tags: str; method: str; url: str
+    query: str; headers: str; cookies: str; body: str; body_mode: str
+    tls_verify: bool; proxy: str; timeout: int; follow_redirects: bool
+    created_at: datetime; updated_at: datetime
+
+class HttpSendIn(BaseModel):
+    variables: dict[str, str] = Field(default_factory=dict)
+    repeat: int = Field(default=1, ge=1, le=20)
+    confirmed: bool
+
+class HttpExchangeOut(ORM):
+    id: int; request_id: int; status_code: int | None
+    duration_ms: int; size: int; request_snapshot: str
+    response_headers: str; response_cookies: str; body_path: str
+    sha256: str; error: str; created_at: datetime
+
+class EvidenceOut(ORM):
+    id: int; project_id: int; target_id: int; service_id: int | None
+    title: str; description: str; kind: str; source_type: str
+    source_id: int | None; file_path: str; original_name: str
+    sha256: str; size: int; acquired_at: datetime; username: str
+    hostname: str; privilege: str; sensitivity: str
+    include_report: bool; tags: str; markdown: str
+    duplicate_of: int | None
+
+class EvidenceUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+    service_id: int | None = None
+    username: str = Field(default="", max_length=160)
+    hostname: str = Field(default="", max_length=253)
+    privilege: str = Field(default="", max_length=80)
+    sensitivity: str = Field(default="normal",
+                             pattern=r"^(normal|sensitive|secret)$")
+    include_report: bool = False
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    markdown: str = Field(default="", max_length=200000)
+
+class DirectoryObjectIn(BaseModel):
+    project_id: int
+    target_id: int | None = None
+    kind: str = Field(pattern=r"^(domain|user|group|computer|share|spn|session|trust|credential_source)$")
+    name: str = Field(min_length=1, max_length=300)
+    domain: str = Field(default="", max_length=253)
+    attributes: dict[str, str | int | bool | None] = Field(default_factory=dict)
+    notes: str = Field(default="", max_length=50000)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    source: str = Field(default="manual", max_length=120)
+
+class DirectoryObjectOut(ORM):
+    id: int; project_id: int; target_id: int | None; kind: str
+    name: str; domain: str; attributes: str; notes: str; tags: str
+    source: str; created_at: datetime
+
+class DirectoryRelationIn(BaseModel):
+    project_id: int
+    source_id: int
+    target_id: int
+    relation: str = Field(min_length=1, max_length=100)
+    evidence_id: int | None = None
+    notes: str = Field(default="", max_length=20000)
+
+class DirectoryRelationOut(DirectoryRelationIn, ORM):
+    id: int
+    observed_at: datetime
+
+class TunnelIn(BaseModel):
+    project_id: int
+    target_id: int
+    name: str = Field(min_length=1, max_length=160)
+    kind: str = Field(pattern=r"^(local|remote|dynamic)$")
+    ssh_host: str = Field(min_length=1, max_length=253,
+                          pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=160,
+                          pattern=r"^[A-Za-z0-9_.@-]+$")
+    bind_host: str = Field(default="127.0.0.1",
+                           pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    local_port: int = Field(ge=1, le=65535)
+    remote_host: str = Field(default="", max_length=253,
+                             pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    remote_port: int | None = Field(default=None, ge=1, le=65535)
+    confirmed: bool
+
+class TunnelOut(ORM):
+    id: int; project_id: int; target_id: int; name: str; kind: str
+    ssh_host: str; ssh_port: int; username: str; bind_host: str
+    local_port: int; remote_host: str; remote_port: int | None
+    command: str; status: str; pid: int | None; log_path: str; error: str
+    created_at: datetime; started_at: datetime | None; ended_at: datetime | None
+
+class ReportEvidenceLink(BaseModel):
+    id: int = Field(gt=0)
+    caption: str = Field(default="", max_length=1000)
+
+class ReportIn(BaseModel):
+    project_id: int
+    title: str = Field(min_length=1, max_length=200)
+    template: str = Field(default="oscp", pattern=r"^(oscp|blank)$")
+    markdown: str = Field(default="", max_length=2_000_000)
+    evidence_links: list[ReportEvidenceLink] = Field(
+        default_factory=list, max_length=1000)
+    sensitivity_reviewed: bool = False
+
+class ReportOut(ORM):
+    id: int; project_id: int; title: str; template: str; markdown: str
+    evidence_links: str; sensitivity_reviewed: bool
+    created_at: datetime; updated_at: datetime

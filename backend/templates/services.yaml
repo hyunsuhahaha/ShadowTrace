@@ -1,0 +1,71 @@
+ftp:
+  display_name: FTP
+  match: {services: [ftp], ports: [21]}
+  commands:
+    - {id: ftp-anon, name: Anonymous login check, description: Check anonymous FTP with Nmap NSE., command: "nmap -Pn -p{port} --script ftp-anon {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: ftp-syst, name: System information, description: Query FTP system information., command: "nmap -Pn -p{port} --script ftp-syst {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: ftp-client, name: Interactive FTP client, description: Open an FTP client without automatic login., command: "ftp {host} {port}", execution_mode: interactive, risk: low, tool: ftp, sudo: false, output: pty-log, policy: allowed}
+ssh:
+  display_name: SSH
+  match: {services: [ssh], ports: [22]}
+  commands:
+    - {id: ssh-enum, name: SSH algorithms, description: Enumerate supported SSH algorithms., command: "nmap -Pn -p{port} --script ssh2-enum-algos {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: ssh-client, name: Interactive SSH client, description: Open SSH and let the user authenticate manually., command: "ssh -p {port} {username}@{host}", execution_mode: interactive, risk: low, tool: ssh, sudo: false, output: pty-log, policy: allowed}
+telnet:
+  display_name: Telnet
+  match: {services: [telnet], ports: [23]}
+  commands:
+    - {id: telnet-info, name: Telnet information, description: Collect Telnet negotiation information., command: "nmap -Pn -sV -p{port} --script telnet-encryption,telnet-ntlm-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: telnet-client, name: Interactive Telnet client, description: Open a Telnet client for manual interaction., command: "telnet {host} {port}", execution_mode: interactive, risk: medium, tool: telnet, sudo: false, output: pty-log, policy: allowed}
+smtp:
+  display_name: SMTP
+  match: {services: [smtp, smtps, submission], ports: [25, 465, 587]}
+  commands:
+    - {id: smtp-info, name: SMTP commands, description: Enumerate advertised SMTP commands., command: "nmap -Pn -p{port} --script smtp-commands {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+dns:
+  display_name: DNS
+  match: {services: [domain, dns], ports: [53]}
+  commands:
+    - {id: dns-info, name: DNS service information, description: Query version and recursion observations., command: "nmap -Pn -p{port} --script dns-nsid,dns-recursion {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+http:
+  display_name: HTTP
+  match: {services: [http, https, http-proxy, ssl/http], ports: [80, 443, 8080, 8443]}
+  commands:
+    - {id: http-headers, name: Response headers, description: Fetch response headers., command: "curl -k -I {scheme}://{host}:{port}", execution_mode: captured, risk: low, tool: curl, sudo: false, output: text, policy: allowed}
+    - {id: http-whatweb, name: WhatWeb fingerprint, description: Fingerprint web technologies., command: "whatweb {scheme}://{host}:{port}", execution_mode: captured, risk: low, tool: whatweb, sudo: false, output: text, policy: allowed}
+smb:
+  display_name: SMB and RPC
+  match: {services: [microsoft-ds, netbios-ssn, smb, msrpc], ports: [111, 135, 139, 445]}
+  commands:
+    - {id: smb-enum, name: SMB enumeration, description: Run safe SMB enumeration scripts., command: "nmap -Pn -p{port} --script smb-enum-shares,smb-enum-users {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: smb-client, name: Interactive SMB client, description: Open smbclient and authenticate manually., command: "smbclient -L //{host} -p {port}", execution_mode: interactive, risk: low, tool: smbclient, sudo: false, output: pty-log, policy: allowed}
+nfs:
+  display_name: NFS
+  match: {services: [nfs, rpcbind], ports: [111, 2049]}
+  commands:
+    - {id: nfs-showmount, name: Export list, description: List exported NFS paths., command: "showmount -e {host}", execution_mode: captured, risk: low, tool: showmount, sudo: false, output: text, policy: allowed}
+ldap:
+  display_name: LDAP and Kerberos
+  match: {services: [ldap, ldaps, kerberos-sec], ports: [88, 389, 636]}
+  commands:
+    - {id: ldap-rootdse, name: LDAP RootDSE, description: Query public LDAP RootDSE metadata., command: "nmap -Pn -p{port} --script ldap-rootdse {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+database:
+  display_name: Databases
+  match: {services: [ms-sql-s, mysql, postgresql, redis], ports: [1433, 3306, 5432, 6379]}
+  commands:
+    - {id: database-info, name: Database service information, description: Collect service metadata without authentication attempts., command: "nmap -Pn -sV -p{port} {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+rdp:
+  display_name: RDP and WinRM
+  match: {services: [ms-wbt-server, wsman, wsmans], ports: [3389, 5985, 5986]}
+  commands:
+    - {id: rdp-info, name: RDP information, description: Collect RDP protocol and NTLM information., command: "nmap -Pn -p{port} --script rdp-enum-encryption,rdp-ntlm-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+snmp:
+  display_name: SNMP
+  match: {services: [snmp], ports: [161]}
+  commands:
+    - {id: snmp-info, name: SNMP information, description: Run Nmap SNMP information scripts with user-reviewed options., command: "nmap -Pn -sU -p{port} --script snmp-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: true, output: text, policy: allowed}
+unknown:
+  display_name: Unknown
+  match: {services: [unknown], ports: []}
+  commands:
+    - {id: service-version, name: Version detection, description: Probe this service with Nmap., command: "nmap -Pn -sV -p{port} {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}

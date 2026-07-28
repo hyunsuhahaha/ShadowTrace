@@ -1,0 +1,9 @@
+.notes>input{width:100%;box-sizing:border-box;background:#080d0f;border:1px solid #29373b;color:#c9d5d8;padding:8px}
+.notes>button{width:100%;margin-top:8px;background:#9fe870;border:0;padding:8px;font-weight:800}
+.executionHistory{display:grid;gap:5px;max-height:180px;overflow:auto}
+.executionHistory button{display:flex;justify-content:space-between;background:#0b1113;border:1px solid #253136;color:#b9c8cb;padding:7px;text-align:left}
+.executionHistory small{color:#72868b}
+.ptyModal{position:fixed;inset:5vh 4vw;z-index:20;background:#050809;border:1px solid #405158;box-shadow:0 20px 80px #000;display:grid;grid-template-rows:auto 1fr}
+.ptyBar{display:flex;align-items:center;gap:16px;padding:10px 14px;background:#10181b;border-bottom:1px solid #29373b}
+.ptyBar span{font-size:10px;color:#7d9196}.ptyBar button{margin-left:auto;background:#d67e59;border:0;padding:7px 10px;font-weight:800}
+.ptyTerminal{padding:8px;min-height:0}
