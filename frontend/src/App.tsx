@@ -11,6 +11,7 @@ import { statusCopy as statusLabel } from "./ui";
 import { getServiceGuidance } from "./serviceGuidance";
 import { getCredentialAuditProfile } from "./credentialAudit";
 import { summarizeCredentialAudit } from "./credentialAuditResult";
+import { useCredentialStore } from "./useCredentialStore";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -111,14 +112,6 @@ export default function App() {
   const [executionDetail, setExecutionDetail] = useState<any>();
   const [smbConnecting, setSmbConnecting] = useState<string>();
   const [lastSpiderShare, setLastSpiderShare] = useState<string>();
-  const [netexecDomain, setNetexecDomain] = useState("");
-  const [netexecUsername, setNetexecUsername] = useState("");
-  const [netexecPassword, setNetexecPassword] = useState("");
-  const [netexecHint, setNetexecHint] = useState("");
-  const [netexecStoreSecret, setNetexecStoreSecret] = useState(false);
-  const [netexecSourceKind, setNetexecSourceKind] = useState("manual");
-  const [netexecSourceDetail, setNetexecSourceDetail] = useState("");
-  const [netexecSaving, setNetexecSaving] = useState(false);
   const [evidenceMsg, setEvidenceMsg] = useState("");
   const [fuzzWordlist, setFuzzWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
   const [fuzzFilter, setFuzzFilter] = useState("");
@@ -211,11 +204,6 @@ export default function App() {
   useEffect(() => {
     if (privescServerStatus.data) setPrivescServer(privescServerStatus.data);
   }, [privescServerStatus.data]);
-  const savedCredentials = useQuery({
-    queryKey: ["credentials", projectId],
-    queryFn: () => api<any[]>(`/runbooks/credentials?project_id=${projectId}`),
-    enabled: !!projectId,
-  });
   const status = useQuery({
     queryKey: ["status"],
     queryFn: () => api<any>("/system/status"),
@@ -261,6 +249,9 @@ export default function App() {
   const project = projects.data?.find((x) => x.id === projectId),
     target = targets.data?.find((x) => x.id === targetId),
     service = services.data?.find((x) => x.id === serviceId);
+  const credStore = useCredentialStore({
+    projectId, targetId, serviceId, serviceName: service?.name,
+  });
   const serviceCpes = (() => {
     try {
       const parsed = JSON.parse(service?.cpe || "[]");
@@ -635,14 +626,14 @@ export default function App() {
     });
   };
   const checkNetexecCredential = () => {
-    if (!target || !service || !netexecUsername.trim() || !netexecProtocol) return;
+    if (!target || !service || !credStore.username.trim() || !netexecProtocol) return;
     setRunWithSudo(false);
     void run({
       id: netexecCredCommandId,
       preview: `nxc ${netexecProtocol} ${target.ip} --port ${service.port}` +
-        ` -u ${netexecUsername} -p ***`,
+        ` -u ${credStore.username} -p ***`,
       target_level: false,
-      variables: {username: netexecUsername, password: netexecPassword},
+      variables: {username: credStore.username, password: credStore.password},
     });
   };
   const openManualShell = async (command: string) => {
@@ -656,42 +647,42 @@ export default function App() {
   };
   const openPsexecShell = async () => {
     if (!target) return;
-    const identity = [netexecDomain, netexecUsername].filter(Boolean).join("/")
-      + (netexecPassword ? `:${netexecPassword}` : "") + "@" + target.ip;
+    const identity = [credStore.domain, credStore.username].filter(Boolean).join("/")
+      + (credStore.password ? `:${credStore.password}` : "") + "@" + target.ip;
     await openManualShell(`impacket-psexec ${shellQuote(identity)}`);
   };
   const openLateralShell = async (tool: "wmiexec" | "smbexec" | "atexec") => {
     if (!target) return;
-    const identity = [netexecDomain, netexecUsername].filter(Boolean).join("/")
-      + (netexecPassword ? `:${netexecPassword}` : "") + "@" + target.ip;
+    const identity = [credStore.domain, credStore.username].filter(Boolean).join("/")
+      + (credStore.password ? `:${credStore.password}` : "") + "@" + target.ip;
     await openManualShell(`impacket-${tool} ${shellQuote(identity)}`);
   };
   const openSshShell = async () => {
-    if (!target || !service || !netexecUsername.trim()) return;
+    if (!target || !service || !credStore.username.trim()) return;
     await openManualShell(
-      `ssh ${shellQuote(`${netexecUsername}@${target.ip}`)} -p ${service.port}`,
+      `ssh ${shellQuote(`${credStore.username}@${target.ip}`)} -p ${service.port}`,
     );
   };
   const openEvilWinrmShell = async () => {
-    if (!target || !netexecUsername.trim()) return;
+    if (!target || !credStore.username.trim()) return;
     await openManualShell(
-      `evil-winrm -i ${target.ip} -u ${shellQuote(netexecUsername)}` +
-      ` -p ${shellQuote(netexecPassword)}`,
+      `evil-winrm -i ${target.ip} -u ${shellQuote(credStore.username)}` +
+      ` -p ${shellQuote(credStore.password)}`,
     );
   };
   const copyXfreerdpCommand = async () => {
-    if (!target || !netexecUsername.trim()) return;
+    if (!target || !credStore.username.trim()) return;
     await navigator.clipboard.writeText(
-      `xfreerdp /v:${target.ip} /u:${shellQuote(netexecUsername)}` +
-      ` /p:${shellQuote(netexecPassword)} /cert:ignore`,
+      `xfreerdp /v:${target.ip} /u:${shellQuote(credStore.username)}` +
+      ` /p:${shellQuote(credStore.password)} /cert:ignore`,
     );
     setOutput((value) => `${value}\n[xfreerdp 명령을 클립보드로 복사했습니다 — RDP는 GUI라 별도 터미널에서 붙여넣어 실행하세요]\n`);
   };
   const openMssqlShell = async () => {
-    if (!target || !service || !netexecUsername.trim()) return;
-    const auth = netexecDomain
-      ? `${netexecDomain}/${netexecUsername}:${netexecPassword}@${target.ip}`
-      : `${netexecUsername}:${netexecPassword}@${target.ip}`;
+    if (!target || !service || !credStore.username.trim()) return;
+    const auth = credStore.domain
+      ? `${credStore.domain}/${credStore.username}:${credStore.password}@${target.ip}`
+      : `${credStore.username}:${credStore.password}@${target.ip}`;
     await openManualShell(
       `impacket-mssqlclient ${shellQuote(auth)} -port ${service.port}`,
     );
@@ -808,41 +799,6 @@ export default function App() {
     setOutput((value) =>
       `${value}\n[psexec 셸이 열려있지 않아 클립보드로 복사했습니다]\n$ ${command}\n`
     );
-  };
-  const applySavedCredential = (credential: any) => {
-    setNetexecDomain(credential.domain || "");
-    setNetexecUsername(credential.username || "");
-    // A stored secret auto-fills the live password so command generation and
-    // re-validation work without re-typing; otherwise clear and re-enter.
-    setNetexecPassword(credential.secret || "");
-    setNetexecHint(credential.secret_hint || "");
-    setNetexecSourceKind(credential.source_kind || "manual");
-    setNetexecSourceDetail(credential.source_detail || "");
-  };
-  const saveNetexecCredential = async () => {
-    if (!projectId || !netexecUsername.trim()) return;
-    setNetexecSaving(true);
-    try {
-      await api("/runbooks/credentials", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          project_id: projectId, target_id: targetId, service_id: serviceId,
-          username: netexecUsername, domain: netexecDomain,
-          secret_hint: netexecHint,
-          secret: netexecStoreSecret ? netexecPassword : "",
-          source_kind: netexecSourceKind, source_detail: netexecSourceDetail,
-          service_names: service ? [service.name] : [],
-        }),
-      });
-      await qc.invalidateQueries({queryKey: ["credentials", projectId]});
-    } finally {
-      setNetexecSaving(false);
-    }
-  };
-  const deleteSavedCredential = async (id: number) => {
-    await api(`/runbooks/credentials/${id}`, {method: "DELETE"});
-    await qc.invalidateQueries({queryKey: ["credentials", projectId]});
   };
   const beginNotesResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     notesResize.current = {x: event.clientX, width: notesWidth};
@@ -1701,12 +1657,12 @@ export default function App() {
                 </h2>
                 <small>대입 공격이 아니라 사용자가 입력한 계정 하나만 검증합니다.</small>
               </header>
-              {!!savedCredentials.data?.length && (
+              {!!credStore.saved.data?.length && (
                 <div className="credStore">
-                  {savedCredentials.data.map((item) => (
+                  {credStore.saved.data.map((item) => (
                     <div key={item.id} className="credStoreRow">
                       <button className="credStoreFill"
-                        onClick={() => applySavedCredential(item)}
+                        onClick={() => credStore.apply(item)}
                         title="이 계정으로 아래 폼을 채웁니다">
                         <b>{item.domain ? `${item.domain}\\` : ""}{item.username}</b>
                         <span>{item.has_secret ? "🔑 비밀번호 저장됨"
@@ -1717,20 +1673,20 @@ export default function App() {
                               ? ` · ${sourceLabel[item.source_kind]}` : ""}</span>
                       </button>
                       <button className="credStoreDelete"
-                        onClick={() => void deleteSavedCredential(item.id)}
+                        onClick={() => void credStore.remove(item.id)}
                         aria-label="자격증명 삭제">삭제</button>
                     </div>
                   ))}
                 </div>
               )}
               <div className="netexecCredForm">
-                <input placeholder="도메인 (선택)" value={netexecDomain}
-                  onChange={(e) => setNetexecDomain(e.target.value)} />
-                <input placeholder="사용자명" value={netexecUsername}
-                  onChange={(e) => setNetexecUsername(e.target.value)} />
-                <input type="password" placeholder="비밀번호" value={netexecPassword}
-                  onChange={(e) => setNetexecPassword(e.target.value)} />
-                <button disabled={!netexecUsername.trim()
+                <input placeholder="도메인 (선택)" value={credStore.domain}
+                  onChange={(e) => credStore.setDomain(e.target.value)} />
+                <input placeholder="사용자명" value={credStore.username}
+                  onChange={(e) => credStore.setUsername(e.target.value)} />
+                <input type="password" placeholder="비밀번호" value={credStore.password}
+                  onChange={(e) => credStore.setPassword(e.target.value)} />
+                <button disabled={!credStore.username.trim()
                   || (!!netexecCredentialResult
                     && ["starting", "running"].includes(netexecCredentialResult.status))}
                   onClick={checkNetexecCredential}>
@@ -1742,16 +1698,16 @@ export default function App() {
               <div className="credSaveBox">
                 <div className="netexecCredForm netexecCredForm--save">
                   <input placeholder="비밀번호 힌트 (선택)"
-                    value={netexecHint} onChange={(e) => setNetexecHint(e.target.value)} />
-                  <button disabled={!netexecUsername.trim() || netexecSaving}
-                    onClick={() => void saveNetexecCredential()}>
-                    {netexecSaving ? "저장 중…" : "Credential Store에 저장"}
+                    value={credStore.hint} onChange={(e) => credStore.setHint(e.target.value)} />
+                  <button disabled={!credStore.username.trim() || credStore.saving}
+                    onClick={() => void credStore.save()}>
+                    {credStore.saving ? "저장 중…" : "Credential Store에 저장"}
                   </button>
                 </div>
                 <div className="credProvenance">
                   <label>출처
-                    <select value={netexecSourceKind}
-                      onChange={(e) => setNetexecSourceKind(e.target.value)}>
+                    <select value={credStore.sourceKind}
+                      onChange={(e) => credStore.setSourceKind(e.target.value)}>
                       <option value="manual">직접 입력</option>
                       <option value="share-file">공유 파일</option>
                       <option value="web">웹</option>
@@ -1762,11 +1718,11 @@ export default function App() {
                     </select>
                   </label>
                   <input placeholder="출처 상세 (예: WorkShares/config.ini 12번째 줄)"
-                    value={netexecSourceDetail}
-                    onChange={(e) => setNetexecSourceDetail(e.target.value)} />
+                    value={credStore.sourceDetail}
+                    onChange={(e) => credStore.setSourceDetail(e.target.value)} />
                   <label className="credStoreSecretToggle">
-                    <input type="checkbox" checked={netexecStoreSecret}
-                      onChange={(e) => setNetexecStoreSecret(e.target.checked)} />
+                    <input type="checkbox" checked={credStore.storeSecret}
+                      onChange={(e) => credStore.setStoreSecret(e.target.checked)} />
                     실제 비밀번호도 로컬에 저장 (재사용·명령 자동채움용)
                   </label>
                 </div>
@@ -1841,7 +1797,7 @@ export default function App() {
                     {id: netexecCredentialResult.id!,
                      stdout: netexecCredentialResult.stdout,
                      stderr: netexecCredentialResult.stderr},
-                    `${netexecProtocol?.toUpperCase()} 자격증명 검증 · ${netexecUsername}`,
+                    `${netexecProtocol?.toUpperCase()} 자격증명 검증 · ${credStore.username}`,
                     "sensitive")}>
                     Evidence로 저장
                   </button>
@@ -1849,9 +1805,9 @@ export default function App() {
                     {id: netexecCredentialResult.id!,
                      stdout: netexecCredentialResult.stdout,
                      stderr: netexecCredentialResult.stderr},
-                    `${netexecProtocol?.toUpperCase()} 유효 자격증명 · ${netexecUsername}`,
+                    `${netexecProtocol?.toUpperCase()} 유효 자격증명 · ${credStore.username}`,
                     `${target?.ip} ${service?.port}/${service?.name}에 대해 ` +
-                    `${netexecDomain ? netexecDomain + "\\" : ""}${netexecUsername} 계정으로 ` +
+                    `${credStore.domain ? credStore.domain + "\\" : ""}${credStore.username} 계정으로 ` +
                     `NetExec ${netexecProtocol} 인증에 성공함.`, "sensitive")}>
                     Finding(Draft)으로 승격
                   </button>
