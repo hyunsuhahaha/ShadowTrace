@@ -119,6 +119,7 @@ export default function App() {
   const [netexecSourceKind, setNetexecSourceKind] = useState("manual");
   const [netexecSourceDetail, setNetexecSourceDetail] = useState("");
   const [netexecSaving, setNetexecSaving] = useState(false);
+  const [evidenceMsg, setEvidenceMsg] = useState("");
   const [fuzzWordlist, setFuzzWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
   const [fuzzFilter, setFuzzFilter] = useState("");
   const [psexecSession, setPsexecSession] = useState<
@@ -713,6 +714,72 @@ export default function App() {
       target_level: false,
       variables: {share: lastSpiderShare, path},
     });
+  };
+  // Capture a completed execution's output as command_output evidence so the
+  // report chain (what was run, against what, with what result) is preserved
+  // and hash-tracked. NetExec/credential output is treated as sensitive.
+  const captureEvidence = async (
+    execution: {id: number; command?: string; stdout?: string; stderr?: string},
+    title: string, sensitivity: "normal" | "sensitive" = "normal",
+  ): Promise<number | undefined> => {
+    if (!projectId || !targetId) return undefined;
+    setEvidenceMsg("");
+    try {
+      const body = `$ ${execution.command || ""}\n\n${execution.stdout || ""}` +
+        `${execution.stderr ? `\n[stderr]\n${execution.stderr}` : ""}`;
+      const data = new FormData();
+      data.append("project_id", String(projectId));
+      data.append("target_id", String(targetId));
+      if (serviceId) data.append("service_id", String(serviceId));
+      data.append("title", title);
+      data.append("description", `자동 캡처 · ${new Date().toLocaleString()}`);
+      data.append("kind", "command_output");
+      data.append("source_type", "command_output");
+      data.append("source_id", String(execution.id));
+      data.append("sensitivity", sensitivity);
+      data.append("file", new File([body], `execution-${execution.id}.txt`,
+        {type: "text/plain"}));
+      const response = await fetch("/api/evidence/upload", {method: "POST", body: data});
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.detail || response.statusText);
+      await qc.invalidateQueries({queryKey: ["evidence", projectId]});
+      setEvidenceMsg(`Evidence로 저장됨: ${title}`);
+      return created.id as number;
+    } catch (reason) {
+      setEvidenceMsg(`Evidence 저장 실패: ${reason instanceof Error ? reason.message : reason}`);
+      return undefined;
+    }
+  };
+  // Promote an attack result to a Draft finding pre-linked to its evidence. The
+  // app never sets severity/impact/conclusions — those stay Informational/Draft
+  // for the user to author, matching the observation->finding boundary.
+  const promoteToFinding = async (
+    execution: {id: number; stdout?: string; stderr?: string},
+    title: string, reproduction: string, sensitivity: "normal" | "sensitive",
+  ) => {
+    const evidenceId = await captureEvidence(execution, title, sensitivity);
+    if (!evidenceId || !projectId) return;
+    try {
+      await api("/findings", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          project_id: projectId, target_id: targetId, service_id: serviceId,
+          title, status: "Draft", reproduction_steps: reproduction,
+          evidence: [{evidence_id: evidenceId, is_primary: true}],
+        }),
+      });
+      await qc.invalidateQueries({queryKey: ["findings", projectId]});
+      setEvidenceMsg(`Finding(Draft)으로 승격됨 · Reports에서 내용을 작성하세요: ${title}`);
+    } catch (reason) {
+      setEvidenceMsg(`Finding 승격 실패: ${reason instanceof Error ? reason.message : reason}`);
+    }
+  };
+  const captureRunResult = (title: string, sensitivity: "normal" | "sensitive") => {
+    const exec = runState?.id
+      ? {id: runState.id, command: undefined, stdout: runState.stdout, stderr: runState.stderr}
+      : undefined;
+    if (exec) void captureEvidence(exec, title, sensitivity);
   };
   const runDirectoryFuzz = () => {
     if (!target || !service || !fuzzWordlist.trim()) return;
@@ -1601,7 +1668,18 @@ export default function App() {
                   <header><div><b>발견된 경로</b><span>{fuzzVisible.length}개 표시</span></div>
                     <input aria-label="결과 필터" value={fuzzFilter} placeholder="경로, Status 필터"
                       onChange={(e) => setFuzzFilter(e.target.value)} />
+                    {(fuzzRunState?.id || latestFuzz?.id) && (
+                      <button onClick={() => {
+                        const ex = fuzzRunState?.id
+                          ? {id: fuzzRunState.id, stdout: fuzzRunState.stdout,
+                             stderr: fuzzRunState.stderr}
+                          : {id: latestFuzz.id, stdout: latestFuzz.stdout,
+                             stderr: latestFuzz.stderr};
+                        void captureEvidence(ex, `디렉터리 퍼징 · ${target?.ip}:${service?.port}`);
+                      }}>Evidence로 저장</button>
+                    )}
                   </header>
+                  {evidenceMsg && <p className="netexecEvidenceMsg">{evidenceMsg}</p>}
                   <table>
                     <thead><tr><th>경로</th><th>Status</th><th>길이</th><th>단어/줄</th><th></th></tr></thead>
                     <tbody>{fuzzVisible.map((item) => (
@@ -1761,6 +1839,29 @@ export default function App() {
                   <button onClick={() => void openHashcatShell()}>
                     Kerberoast 해시 → hashcat 명령 준비
                   </button>
+                </div>
+              )}
+              {netexecSuccess && netexecCredentialResult?.id && (
+                <div className="netexecEvidence">
+                  <button onClick={() => void captureEvidence(
+                    {id: netexecCredentialResult.id!,
+                     stdout: netexecCredentialResult.stdout,
+                     stderr: netexecCredentialResult.stderr},
+                    `${netexecProtocol?.toUpperCase()} 자격증명 검증 · ${netexecUsername}`,
+                    "sensitive")}>
+                    Evidence로 저장
+                  </button>
+                  <button onClick={() => void promoteToFinding(
+                    {id: netexecCredentialResult.id!,
+                     stdout: netexecCredentialResult.stdout,
+                     stderr: netexecCredentialResult.stderr},
+                    `${netexecProtocol?.toUpperCase()} 유효 자격증명 · ${netexecUsername}`,
+                    `${target?.ip} ${service?.port}/${service?.name}에 대해 ` +
+                    `${netexecDomain ? netexecDomain + "\\" : ""}${netexecUsername} 계정으로 ` +
+                    `NetExec ${netexecProtocol} 인증에 성공함.`, "sensitive")}>
+                    Finding(Draft)으로 승격
+                  </button>
+                  {evidenceMsg && <span>{evidenceMsg}</span>}
                 </div>
               )}
             </section>
