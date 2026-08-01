@@ -121,3 +121,61 @@ Final verification:
 
 Verification is recorded after each implementation batch. The repository remains
 uncommitted because all imported project files were already untracked.
+
+### Phase 8 — Korean UI and direct Kali workflow
+
+- Changed the default UI language to Korean while preserving standard technical
+  terms such as TCP, HTTP, Nmap, SSH, API, JSON, XML, PTY, and SHA-256.
+- Removed marketing-style introductions and policy slogans from workspace
+  headers.
+- Reworked Scan Center around the direct workflow: select or add a target IP,
+  choose a profile, review the generated Nmap command, execute it, then parse
+  and preserve the generated XML automatically. Existing XML import is now a
+  secondary action labelled as importing an existing Nmap result.
+- Removed manual project selection from Scan Center. The first entry of an IP
+  atomically creates a project named after that IP and its target; entering an
+  existing IP selects the existing target without creating duplicates.
+- Restored explicit project switching after clarifying that only project
+  creation should be automatic. The Scan Center header now selects IP-named
+  projects, switches the associated target and scan history together, and
+  persists the selected project across reloads.
+- Expanded built-in Nmap choices into quick common TCP, fast and balanced full
+  TCP, selected-port version/detail/deep checks, privileged SYN variants, and a
+  privileged top-100 UDP check. Each choice states its speed, accuracy, and
+  privilege tradeoff. Privileged scans use the Kali Polkit authentication
+  dialog; sudo credentials never pass through the browser or application API.
+- Grouped Nmap choices as full TCP, top TCP, UDP, and specific ports. Top TCP
+  and UDP counts are user-selected (`--top-ports`), while specific TCP/UDP
+  accepts validated port lists and ranges. Full UDP is available with a clear
+  long-running warning.
+- Added `.ovpn` selection in Scan Center and Enumeration. The backend validates
+  the OpenVPN client file, rejects command-execution directives, stores it
+  outside the repository with restricted permissions, imports it through
+  NetworkManager, connects it, reports `tun0`, and can disconnect only the
+  connection managed by the app.
+
+Verification: 30 backend tests passed, the frontend production build passed,
+Python bytecode compilation passed, and `git diff --check` passed.
+
+### Phase 9 — Exploit Research Workspace
+
+- Added service-scoped public exploit candidate records with discovery evidence,
+  affected-version and prerequisite notes, explicit validation/result states,
+  structured modifications, sources, manual execution records, and Evidence
+  links.
+- Added an explicit single-service SearchSploit action. It checks installation,
+  uses a fixed argv without a shell, limits input/output, applies a timeout, and
+  preserves raw output when JSON parsing fails. Results are never registered or
+  treated as vulnerabilities until the user selects one.
+- Added guarded local Exploit-DB PoC import, immutable originals, independent
+  working copies, hashes, text/binary and size checks, editing, and unified diff.
+- Added a manual Bash PTY handoff that fills the command without sending Enter.
+  The application does not expose a PoC execution endpoint.
+- Added optional Research selection to Evidence and report workflows, masked
+  sensitive values, and global search coverage.
+- Added Alembic revision `0012_exploit_research` and backend/frontend regression,
+  security, fallback, file-management, execution-record, and report tests.
+
+Verification: 34 backend tests passed; 2 frontend tests passed; TypeScript and
+the Vite production build passed. Fresh/upgrade/downgrade migration and runtime
+API smoke results are recorded in the final task report.
