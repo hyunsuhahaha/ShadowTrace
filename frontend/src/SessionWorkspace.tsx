@@ -99,7 +99,7 @@ export default function SessionWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>Tunnels & Sessions</small>
+            <small>Tunnel 및 세션</small>
           </div>
         </div>
         <a href="#">← Scan Center</a>
@@ -115,14 +115,10 @@ export default function SessionWorkspace() {
             </option>
           ))}
         </select>
-        <span>
-          USER-STARTED CONNECTIONS ONLY · NO AUTOMATIC PIVOT OR NETWORK
-          DISCOVERY
-        </span>
       </nav>
       <main className="sessionLayout">
         <aside>
-          <h3>NEW SSH TUNNEL</h3>
+          <h3>새 SSH Tunnel</h3>
           {["name", "ssh_host", "username", "bind_host", "remote_host"].map(
             (k) => (
               <input
@@ -142,7 +138,7 @@ export default function SessionWorkspace() {
             <option>dynamic</option>
           </select>
           <label>
-            SSH PORT
+            SSH 포트
             <input
               type="number"
               value={form.ssh_port}
@@ -150,7 +146,7 @@ export default function SessionWorkspace() {
             />
           </label>
           <label>
-            LOCAL/BIND PORT
+            로컬/Bind 포트
             <input
               type="number"
               value={form.local_port}
@@ -159,7 +155,7 @@ export default function SessionWorkspace() {
           </label>
           {form.kind !== "dynamic" && (
             <label>
-              REMOTE PORT
+              원격 포트
               <input
                 type="number"
                 value={form.remote_port}
@@ -173,36 +169,36 @@ export default function SessionWorkspace() {
               checked={form.confirmed}
               onChange={(e) => set("confirmed", e.target.checked)}
             />{" "}
-            I reviewed this authorized tunnel configuration.
+            허가된 Tunnel 설정을 검토했습니다.
           </label>
           <button disabled={!form.confirmed} onClick={start}>
-            Start tunnel
+            Tunnel 시작
           </button>
           {error && <p className="webError">{error}</p>}
         </aside>
         <section>
-          <h2>SSH TUNNELS</h2>
+          <h2>SSH Tunnel</h2>
           <div className="connectionList">
             {tunnels.data?.map((t) => (
               <article key={t.id}>
                 <div>
                   <b>{t.name}</b>
                   <span>
-                    {t.kind} · {t.status}
+                    {t.kind} · {t.status === "running" ? "실행 중" : t.status === "ready" ? "준비됨" : t.status}
                     {t.pid ? ` · PID ${t.pid}` : ""}
                   </span>
                 </div>
                 <code>{t.error || t.command}</code>
                 <footer>
-                  {t.log_path && <a href={`/api/tunnels/${t.id}/log`}>Log</a>}
+                  {t.log_path && <a href={`/api/tunnels/${t.id}/log`}>로그</a>}
                   {["running", "ready"].includes(t.status) && (
-                    <button onClick={() => stop("tunnels", t.id)}>Stop</button>
+                    <button onClick={() => stop("tunnels", t.id)}>중지</button>
                   )}
                 </footer>
               </article>
             ))}
           </div>
-          <h2>INTERACTIVE SESSIONS</h2>
+          <h2>대화형 세션</h2>
           <div className="connectionList">
             {sessions.data?.map((s) => (
               <article key={s.id}>
@@ -211,7 +207,7 @@ export default function SessionWorkspace() {
                     #{s.id} {s.template_id}
                   </b>
                   <span>
-                    {s.status}
+                    {s.status === "running" ? "실행 중" : s.status === "stopped" ? "중단" : s.status}
                     {s.pid ? ` · PID ${s.pid}` : ""}
                   </span>
                 </div>
@@ -219,12 +215,12 @@ export default function SessionWorkspace() {
                 <footer>
                   {s.log_path && (
                     <a href={`/api/interactive-sessions/${s.id}/log`}>
-                      Output log
+                      출력 로그
                     </a>
                   )}
                   {s.status === "running" && (
                     <button onClick={() => stop("interactive-sessions", s.id)}>
-                      Stop
+                      중지
                     </button>
                   )}
                 </footer>

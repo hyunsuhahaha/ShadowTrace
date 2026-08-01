@@ -1,0 +1,43 @@
+// @vitest-environment jsdom
+import React from "react";
+import {cleanup, render, screen} from "@testing-library/react";
+import {afterEach, expect, it, vi} from "vitest";
+import ServiceIntelligencePanel, {type ServiceIntelligence} from "./ServiceIntelligencePanel";
+
+afterEach(cleanup);
+
+it("shows completed execution state without explanatory filler",()=>{
+  const data:ServiceIntelligence={
+    identity:{name:"msrpc",product:"Microsoft Windows RPC",version:"",cpe:[],tls:false},
+    matches:[{key:"windows_rpc",name:"Microsoft RPC Endpoint Mapper",level:"protocol",score:90,reasons:[]}],
+    stages:[
+      {id:"identity",title:"정확한 서비스 식별",manual_checks:[],auth:"none",state:"observed",
+        completed:true,commands:[{id:"service-version",name:"제품·버전 식별",description:"",risk:"low",completed:true}]},
+      {id:"rpc-endpoints",title:"RPC 인터페이스와 Endpoint 열거",manual_checks:["UUID 확인"],
+        auth:"none",state:"pending",completed:false,commands:[{id:"msrpc-enum",name:"RPC 인터페이스 열거",description:"",risk:"low",completed:false}]},
+    ],
+    attack_surface:[],related_services:[],runbooks:[],integration_counts:{},
+  };
+  render(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
+  expect(screen.getByLabelText("2단계 중 1단계 정보 확인")).toBeTruthy();
+  expect(screen.getByText("서비스 식별")).toBeTruthy();
+  expect(screen.getByText("미실행")).toBeTruthy();
+  expect(document.querySelectorAll(".intelPanel p")).toHaveLength(0);
+  expect(document.body.textContent).not.toContain("포트 추측이 아니라");
+});
+
+it("shows a semantically empty completed process as review instead of done",()=>{
+  const data:ServiceIntelligence={
+    identity:{name:"msrpc",product:"Microsoft Windows RPC",version:"",cpe:[],tls:false},
+    matches:[{key:"windows_rpc",name:"Microsoft RPC Endpoint Mapper",level:"protocol",score:90,reasons:[]}],
+    stages:[{id:"rpc-endpoints",title:"RPC 인터페이스와 Endpoint 열거",manual_checks:[],auth:"none",
+      state:"review",completed:false,commands:[{id:"msrpc-enum",name:"RPC 인터페이스 열거",
+        description:"",risk:"low",completed:false,attempted:true,outcome:"needs_review",
+        summary:"명령은 종료됐지만 RPC endpoint는 반환되지 않았습니다."}]}],
+    attack_surface:[],related_services:[],runbooks:[],integration_counts:{},
+  };
+  render(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
+  expect(screen.getByText("판정 필요")).toBeTruthy();
+  expect(screen.getByText("다시 실행")).toBeTruthy();
+  expect(screen.getByText("명령은 종료됐지만 RPC endpoint는 반환되지 않았습니다.")).toBeTruthy();
+});

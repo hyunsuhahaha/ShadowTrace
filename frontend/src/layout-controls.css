@@ -1,0 +1,227 @@
+.appShell {
+  grid-template-columns: var(--sidebar-width, var(--sidebar)) minmax(0, 1fr);
+  transition: grid-template-columns 160ms ease;
+}
+
+.appSidebar {
+  position: sticky;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.appSidebar__head {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+.appSidebar__head .appBrand {
+  min-width: 0;
+  flex: 1;
+}
+
+.panelCollapseButton {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--green-strong);
+  font: 700 1rem/1 ui-monospace, monospace;
+}
+
+.panelCollapseButton:hover {
+  border-color: var(--green);
+  background: #17201d;
+}
+
+.layoutResizeHandle {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.layoutResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #34433e;
+  transition: width 120ms ease, background 120ms ease;
+}
+
+.layoutResizeHandle:hover::after,
+.layoutResizeHandle:focus-visible::after {
+  width: 3px;
+  background: var(--green);
+}
+
+.appSidebar__resizeHandle {
+  right: -5px;
+}
+
+.appSidebar__resizeHandle::after {
+  right: 4px;
+}
+
+.appShell--sidebarCollapsed .appSidebar {
+  padding-inline: .55rem;
+}
+
+.appShell--sidebarCollapsed .appSidebar__head {
+  display: grid;
+  justify-items: center;
+}
+
+.appShell--sidebarCollapsed .appBrand {
+  padding: .45rem 0 .7rem;
+}
+
+.appShell--sidebarCollapsed .appBrand strong,
+.appShell--sidebarCollapsed .appSidebar nav h2,
+.appShell--sidebarCollapsed .appSidebar nav a strong,
+.appShell--sidebarCollapsed .policyNote {
+  display: none;
+}
+
+.appShell--sidebarCollapsed .appSidebar nav a {
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  min-height: 2.6rem;
+  padding: .45rem;
+}
+
+.appShell--sidebarCollapsed .appSidebar nav a > span {
+  padding: 0;
+  color: #9baba5;
+}
+
+.appShell--sidebarCollapsed .appSidebar nav section + section {
+  margin-top: .5rem;
+}
+
+@media (max-width: 900px) {
+  .appShell {
+    grid-template-columns: 1fr !important;
+  }
+
+  .appSidebar__head .panelCollapseButton,
+  .appSidebar__resizeHandle {
+    display: none;
+  }
+
+  .appShell--sidebarCollapsed .appSidebar nav {
+    display: flex;
+  }
+
+  .appShell--sidebarCollapsed .appBrand strong,
+  .appShell--sidebarCollapsed .appSidebar nav a strong {
+    display: grid;
+  }
+}
+
+.pageStage > div.app > main.enumerationLayout {
+  grid-template-columns: var(--services-width, 235px) minmax(450px, 1fr) var(--notes-width, 360px);
+  transition: grid-template-columns 160ms ease;
+}
+
+.enumerationLayout > .services,
+.enumerationLayout > .notes {
+  position: relative;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.panelDockToggle {
+  position: absolute;
+  z-index: 7;
+  top: 9px;
+  display: grid;
+  place-items: center;
+  width: 28px !important;
+  height: 28px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 5px;
+  background: #151c1d !important;
+  color: var(--green-strong) !important;
+  font: 700 14px/1 ui-monospace, monospace !important;
+}
+
+.panelDockToggle:hover {
+  border-color: var(--green) !important;
+  background: #17201d !important;
+}
+
+.panelDockToggle--services {
+  right: 9px;
+}
+
+.panelDockToggle--notes {
+  right: 9px;
+}
+
+.enumerationLayout .panelTitle {
+  padding-right: 46px;
+}
+
+.servicesResizeHandle {
+  right: -5px;
+}
+
+.servicesResizeHandle::after {
+  right: 4px;
+}
+
+.enumerationLayout > .services.isCollapsed,
+.enumerationLayout > .notes.isCollapsed {
+  overflow: hidden;
+}
+
+.enumerationLayout > .services.isCollapsed > :not(.panelDockToggle),
+.enumerationLayout > .notes.isCollapsed > :not(.panelDockToggle) {
+  display: none !important;
+}
+
+.enumerationLayout > .services.isCollapsed .panelDockToggle,
+.enumerationLayout > .notes.isCollapsed .panelDockToggle {
+  top: 9px;
+  right: 9px;
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+  .appShell {
+    grid-template-columns: min(var(--sidebar-width, 224px), 224px) minmax(0, 1fr);
+  }
+
+  .pageStage > div.app > main.enumerationLayout {
+    grid-template-columns: min(var(--services-width, 200px), 200px) minmax(0, 1fr);
+  }
+
+  .pageStage > div.app > main.enumerationLayout > .notes {
+    grid-column: 1 / -1;
+    min-height: var(--notes-width, 360px);
+  }
+}
+
+@media (max-width: 900px) {
+  .pageStage > div.app > main.enumerationLayout {
+    display: block;
+  }
+
+  .enumerationLayout .layoutResizeHandle,
+  .enumerationLayout .notesResizeHandle,
+  .enumerationLayout .panelDockToggle {
+    display: none;
+  }
+}

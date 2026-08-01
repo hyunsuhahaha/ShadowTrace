@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import FindingWorkspace from "./FindingWorkspace";
+import FindingTemplateManager from "./FindingTemplateManager";
 type Project = { id: number; name: string };
 type Report = {
   id: number;
@@ -8,6 +10,7 @@ type Report = {
   template: string;
   markdown: string;
   evidence_links: string;
+  exploit_research_links: string;
   sensitivity_reviewed: boolean;
 };
 type Evidence = {
@@ -16,6 +19,13 @@ type Evidence = {
   kind: string;
   sensitivity: string;
   include_report: boolean;
+};
+type Research = {
+  id: number;
+  title: string;
+  target_address: string;
+  port: number;
+  validation_status: string;
 };
 const api = async <T,>(p: string, i?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + p, i);
@@ -28,14 +38,18 @@ const blank = (projectId?: number): Partial<Report> => ({
   template: "oscp",
   markdown: "",
   evidence_links: "[]",
+  exploit_research_links: "[]",
   sensitivity_reviewed: false,
 });
 export default function ReportWorkspace() {
   const qc = useQueryClient();
-  const [projectId, setProjectId] = useState<number>(),
+  const [projectId, setProjectId] = useState<number | undefined>(
+      () => Number(localStorage.getItem("oscp-workspace-project")) || undefined),
     [reportId, setReportId] = useState<number>(),
     [draft, setDraft] = useState<Partial<Report>>(blank()),
     [preview, setPreview] = useState(""),
+    [view, setView] = useState<"findings" | "library" | "reports">("findings"),
+    [profile, setProfile] = useState<"client" | "internal">("client"),
     [error, setError] = useState("");
   const projects = useQuery({
       queryKey: ["projects"],
@@ -49,6 +63,12 @@ export default function ReportWorkspace() {
     evidence = useQuery({
       queryKey: ["projectEvidence", projectId],
       queryFn: () => api<Evidence[]>(`/evidence?project_id=${projectId}`),
+      enabled: !!projectId,
+    }),
+    research = useQuery({
+      queryKey: ["reportResearch", projectId],
+      queryFn: () =>
+        api<Research[]>(`/projects/${projectId}/exploit-research?limit=500`),
       enabled: !!projectId,
     });
   useEffect(() => {
@@ -71,10 +91,29 @@ export default function ReportWorkspace() {
       ),
     });
   };
+  const researchLinks = (): number[] => {
+    try {
+      return JSON.parse(draft.exploit_research_links || "[]");
+    } catch {
+      return [];
+    }
+  };
+  const toggleResearch = (item: Research) => {
+    const current = researchLinks();
+    setDraft({
+      ...draft,
+      exploit_research_links: JSON.stringify(
+        current.includes(item.id)
+          ? current.filter((id) => id !== item.id)
+          : [...current, item.id],
+      ),
+    });
+  };
   const payload = () => ({
     ...draft,
     project_id: projectId,
     evidence_links: links(),
+    exploit_research_links: researchLinks(),
   });
   const save = async () => {
     try {
@@ -96,10 +135,10 @@ export default function ReportWorkspace() {
   };
   const showPreview = async () => {
     if (!reportId) {
-      setError("Save the report before previewing.");
+      setError("미리 보기 전에 보고서를 저장하세요.");
       return;
     }
-    const r = await fetch(`/api/reports/${reportId}/export?format=html`);
+    const r = await fetch(`/api/reports/${reportId}/export?format=html&profile=${profile}`);
     if (!r.ok) {
       setError((await r.json()).detail);
       return;
@@ -118,38 +157,31 @@ export default function ReportWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>Reports</small>
+            <small>보고서</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
       </header>
       <nav>
-        <select
-          value={projectId || ""}
-          onChange={(e) => setProjectId(+e.target.value)}
-        >
-          {projects.data?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <span className="reportProject">{projects.data?.find((p) => p.id === projectId)?.name || "프로젝트 선택 대기 중"}</span>
         <button
+          className={view === "reports" ? "active" : ""}
           onClick={() => {
+            setView("reports");
             setReportId(undefined);
             setDraft(blank(projectId));
           }}
         >
-          New report
+          새 보고서
         </button>
-        <span>
-          STRUCTURE AND EXPORT ONLY · ALL FINDINGS, IMPACT, AND JUDGMENT ARE
-          USER-AUTHORED
-        </span>
+        <button className={view === "findings" ? "active" : ""} onClick={() => setView("findings")}>Findings</button>
+        <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>Finding 라이브러리</button>
+        <button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>보고서 생성</button>
       </nav>
+      {view === "findings" ? <FindingWorkspace projectId={projectId} /> :
+      view === "library" ? <FindingTemplateManager /> :
       <main className="reportLayout">
         <aside>
-          <h3>REPORTS</h3>
+          <h3>보고서</h3>
           {reports.data?.map((r) => (
             <button
               className={r.id === reportId ? "active" : ""}
@@ -160,7 +192,7 @@ export default function ReportWorkspace() {
               <small>{r.template}</small>
             </button>
           ))}
-          <h3>EVIDENCE INDEX</h3>
+          <h3>증적 목록</h3>
           {evidence.data?.map((x) => (
             <label key={x.id}>
               <input
@@ -176,6 +208,25 @@ export default function ReportWorkspace() {
               </span>
             </label>
           ))}
+          <h3>Exploit Research</h3>
+          {!research.isLoading && !research.data?.length && (
+            <small>연결할 조사 후보가 없습니다.</small>
+          )}
+          {research.data?.map((item) => (
+            <label key={item.id}>
+              <input
+                type="checkbox"
+                checked={researchLinks().includes(item.id)}
+                onChange={() => toggleResearch(item)}
+              />
+              <span>
+                {item.title}
+                <small>
+                  {item.target_address}:{item.port} · {item.validation_status}
+                </small>
+              </span>
+            </label>
+          ))}
         </aside>
         <section>
           <div className="reportTools">
@@ -183,12 +234,19 @@ export default function ReportWorkspace() {
               value={draft.title || ""}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             />
-            <button onClick={save}>Save</button>
-            <button onClick={showPreview}>Preview</button>
+            <button onClick={save}>저장</button>
+            <select aria-label="미리보기 프로파일" value={profile} onChange={(e) => { setProfile(e.target.value as "client" | "internal"); setPreview(""); }}>
+              <option value="client">Client profile</option><option value="internal">Internal profile</option>
+            </select>
+            <button onClick={showPreview}>미리 보기</button>
             {reportId && (
               <>
-                <a href={`/api/reports/${reportId}/export?format=html`}>HTML</a>
-                <a href={`/api/reports/${reportId}/export?format=pdf`}>PDF</a>
+                <a href={`/api/reports/${reportId}/export?format=markdown&profile=client`}>Markdown</a>
+                <a href={`/api/reports/${reportId}/export?format=html&profile=client`}>Client HTML</a>
+                <a href={`/api/reports/${reportId}/export?format=pdf&profile=client`}>Client PDF</a>
+                <a href={`/api/reports/${reportId}/export?format=docx&profile=client`}>Client Word</a>
+                <a href={`/api/reports/${reportId}/export?format=pdf&profile=internal`}>Internal PDF</a>
+                <a href={`/api/reports/${reportId}/export?format=docx&profile=internal`}>Internal Word</a>
               </>
             )}
           </div>
@@ -200,19 +258,20 @@ export default function ReportWorkspace() {
                 setDraft({ ...draft, sensitivity_reviewed: e.target.checked })
               }
             />{" "}
-            I reviewed sensitive information included in this report.
+            이 보고서에 포함된 민감정보를 검토했습니다.
           </label>
           {error && <p className="webError">{error}</p>}
           <div className="reportEditor">
             <textarea
               value={draft.markdown || ""}
               onChange={(e) => setDraft({ ...draft, markdown: e.target.value })}
-              placeholder="Write the report in Markdown. The OSCP structure is inserted when a new report is saved."
+              placeholder="Markdown으로 보고서를 작성하세요. 새 보고서를 저장하면 OSCP 구조가 삽입됩니다."
             />
-            <iframe title="Report preview" srcDoc={preview} />
+            <iframe title="보고서 미리 보기" srcDoc={preview} />
           </div>
         </section>
       </main>
+      }
     </div>
   );
 }

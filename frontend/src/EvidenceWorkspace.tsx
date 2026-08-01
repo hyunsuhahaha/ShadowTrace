@@ -16,6 +16,7 @@ type Evidence = {
   duplicate_of?: number;
   acquired_at: string;
 };
+type Research = { id: number; title: string; target_id: number };
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + path, init);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -24,27 +25,35 @@ const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
 export default function EvidenceWorkspace() {
   const qc = useQueryClient();
   const [targetId, setTargetId] = useState<number>(),
+    [researchId, setResearchId] = useState<number>(),
     [selected, setSelected] = useState<number[]>([]),
     [active, setActive] = useState<Evidence>(),
     [error, setError] = useState("");
   const targets = useQuery({
-      queryKey: ["allTargets"],
-      queryFn: () => api<Target[]>("/targets"),
-    }),
-    evidence = useQuery({
-      queryKey: ["evidence", targetId],
-      queryFn: () => api<Evidence[]>(`/evidence?target_id=${targetId}`),
-      enabled: !!targetId,
-    });
+    queryKey: ["allTargets"],
+    queryFn: () => api<Target[]>("/targets"),
+  });
+  const target = targets.data?.find((x) => x.id === targetId);
+  const evidence = useQuery({
+    queryKey: ["evidence", targetId],
+    queryFn: () => api<Evidence[]>(`/evidence?target_id=${targetId}`),
+    enabled: !!targetId,
+  });
+  const research = useQuery({
+    queryKey: ["evidenceResearch", target?.project_id, targetId],
+    queryFn: () => api<Research[]>(
+      `/projects/${target?.project_id}/exploit-research?target_id=${targetId}`),
+    enabled: !!target,
+  });
   useEffect(() => {
     if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
   }, [targets.data, targetId]);
-  const target = targets.data?.find((x) => x.id === targetId);
   const upload = async (file: File) => {
     if (!target) return;
     const data = new FormData();
     data.append("project_id", String(target.project_id));
     data.append("target_id", String(target.id));
+    if (researchId) data.append("exploit_research_id", String(researchId));
     data.append("title", file.name);
     data.append(
       "kind",
@@ -108,7 +117,7 @@ export default function EvidenceWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>Evidence</small>
+            <small>증적</small>
           </div>
         </div>
         <a href="#">← Scan Center</a>
@@ -125,9 +134,15 @@ export default function EvidenceWorkspace() {
           ))}
         </select>
         <button disabled={!selected.length} onClick={exportZip}>
-          Export selected ZIP
+          선택 항목 ZIP 내보내기
         </button>
-        <span>SHA-256 VERIFIED · REVIEW SENSITIVITY BEFORE EXPORT</span>
+        <select aria-label="Exploit Research 연결" value={researchId || ""}
+          onChange={(e) => setResearchId(
+            e.target.value ? +e.target.value : undefined)}>
+          <option value="">Exploit Research 연결 안 함</option>
+          {research.data?.map((item) =>
+            <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
       </nav>
       <main className="evidenceLayout">
         <section className="evidenceList">
@@ -139,7 +154,7 @@ export default function EvidenceWorkspace() {
               Array.from(e.dataTransfer.files).forEach(upload);
             }}
           >
-            Drop evidence files here
+            증적 파일을 여기에 놓으세요
             <input
               type="file"
               multiple
@@ -170,7 +185,7 @@ export default function EvidenceWorkspace() {
                 </span>
                 <code>{item.sha256}</code>
                 {item.duplicate_of && (
-                  <em>duplicate of #{item.duplicate_of}</em>
+                  <em>#{item.duplicate_of}의 중복 파일</em>
                 )}
               </button>
             </article>
@@ -184,14 +199,14 @@ export default function EvidenceWorkspace() {
                   <img src={`/api/evidence/${active.id}/file`} />
                 ) : active.original_name ? (
                   <a href={`/api/evidence/${active.id}/file`}>
-                    Download {active.original_name}
+                    {active.original_name} 다운로드
                   </a>
                 ) : (
                   <pre>{active.markdown}</pre>
                 )}
               </div>
               <label>
-                TITLE
+                제목
                 <input
                   value={active.title}
                   onChange={(e) =>
@@ -200,7 +215,7 @@ export default function EvidenceWorkspace() {
                 />
               </label>
               <label>
-                DESCRIPTION
+                설명
                 <textarea
                   value={active.description}
                   onChange={(e) =>
@@ -209,7 +224,7 @@ export default function EvidenceWorkspace() {
                 />
               </label>
               <label>
-                SENSITIVITY
+                민감도
                 <select
                   value={active.sensitivity}
                   onChange={(e) =>
@@ -229,10 +244,10 @@ export default function EvidenceWorkspace() {
                     setActive({ ...active, include_report: e.target.checked })
                   }
                 />{" "}
-                Include in report
+                보고서에 포함
               </label>
               <label>
-                TAGS JSON
+                태그 JSON
                 <input
                   value={active.tags}
                   onChange={(e) =>
@@ -240,11 +255,11 @@ export default function EvidenceWorkspace() {
                   }
                 />
               </label>
-              <button onClick={save}>Save evidence metadata</button>
+              <button onClick={save}>증적 메타데이터 저장</button>
             </>
           ) : (
             <div className="empty">
-              Select evidence to preview and classify it.
+              미리 보고 분류할 증적을 선택하세요.
             </div>
           )}
         </section>

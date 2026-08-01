@@ -126,7 +126,7 @@ export default function DirectoryWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>AD Information</small>
+            <small>AD 정보</small>
           </div>
         </div>
         <a href="#">← Scan Center</a>
@@ -143,12 +143,12 @@ export default function DirectoryWorkspace() {
           ))}
         </select>
         <input
-          placeholder="Search observed objects"
+          placeholder="관찰된 객체 검색"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">All kinds</option>
+          <option value="">모든 종류</option>
           {[
             "domain",
             "user",
@@ -164,7 +164,7 @@ export default function DirectoryWorkspace() {
           ))}
         </select>
         <label>
-          Import CSV/JSON
+          CSV/JSON 가져오기
           <input
             type="file"
             accept=".csv,.json"
@@ -173,11 +173,10 @@ export default function DirectoryWorkspace() {
             }
           />
         </label>
-        <span>OBSERVED DATA ONLY · NO ATTACK-PATH OR RISK CALCULATION</span>
       </nav>
       <main className="directoryLayout">
         <aside>
-          <h3>ADD OBSERVATION</h3>
+          <h3>관찰 항목 추가</h3>
           <select
             value={draft.kind}
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
@@ -197,7 +196,7 @@ export default function DirectoryWorkspace() {
             ))}
           </select>
           <input
-            placeholder="Name"
+            placeholder="이름"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
@@ -207,16 +206,16 @@ export default function DirectoryWorkspace() {
             onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
           />
           <textarea
-            placeholder="Attributes JSON"
+            placeholder="속성 JSON"
             value={draft.attributes}
             onChange={(e) => setDraft({ ...draft, attributes: e.target.value })}
           />
           <textarea
-            placeholder="Notes"
+            placeholder="메모"
             value={draft.notes}
             onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
           />
-          <button onClick={create}>Add observed object</button>
+          <button onClick={create}>관찰 객체 추가</button>
           {error && <p className="webError">{error}</p>}
         </aside>
         <section>
@@ -239,7 +238,7 @@ export default function DirectoryWorkspace() {
                 setRelation({ ...relation, source_id: +e.target.value })
               }
             >
-              <option value="0">Source object</option>
+              <option value="0">출발 객체</option>
               {objects.data?.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
@@ -258,14 +257,14 @@ export default function DirectoryWorkspace() {
                 setRelation({ ...relation, target_id: +e.target.value })
               }
             >
-              <option value="0">Target object</option>
+              <option value="0">도착 객체</option>
               {objects.data?.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
                 </option>
               ))}
             </select>
-            <button onClick={link}>Record relation</button>
+            <button onClick={link}>관계 기록</button>
           </div>
           <div className="observedGraph">
             {relations.data?.map((r) => (

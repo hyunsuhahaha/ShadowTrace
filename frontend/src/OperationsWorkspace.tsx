@@ -46,7 +46,7 @@ export default function OperationsWorkspace() {
       setError("");
       const current = await api<{ concurrency: number }>("/scans/settings");
       const value = Number(
-        prompt("Maximum concurrent scans (1–8)", String(current.concurrency)),
+        prompt("최대 동시 스캔 수(1–8)", String(current.concurrency)),
       );
       if (!Number.isInteger(value)) return;
       await api("/scans/settings", {
@@ -65,17 +65,17 @@ export default function OperationsWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>Search · Audit · Backup</small>
+            <small>검색 · 감사 · 백업</small>
           </div>
         </div>
         <a href="#">← Scan Center</a>
       </header>
       <main>
         <section>
-          <h1>Global search</h1>
+          <h1>전체 검색</h1>
           <input
             autoFocus
-            placeholder="Search targets, services, evidence, directory data, and reports"
+            placeholder="대상, 서비스, 증적, AD 데이터 및 보고서 검색"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -88,13 +88,13 @@ export default function OperationsWorkspace() {
               </a>
             ))}
           </div>
-          <h2>Backup</h2>
+          <h2>백업</h2>
           <p>
             Create a consistent SQLite snapshot with the preserved artifact
             tree. Backup files remain local.
           </p>
-          <button onClick={createBackup}>Create full backup</button>
-          <button onClick={setConcurrency}>Set scan concurrency</button>
+          <button onClick={createBackup}>전체 백업 생성</button>
+          <button onClick={setConcurrency}>동시 스캔 수 설정</button>
           {backup && (
             <a
               className="backupDownload"
@@ -106,7 +106,7 @@ export default function OperationsWorkspace() {
           {error && <p className="webError">{error}</p>}
         </section>
         <section>
-          <h2>Local mutation audit</h2>
+          <h2>로컬 변경 감사 기록</h2>
           <div className="auditList">
             {audit.data?.map((x) => (
               <div key={x.id}>

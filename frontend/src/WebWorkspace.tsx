@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import IntruderPanel from "./IntruderPanel";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
 type SavedRequest = {
@@ -71,6 +72,7 @@ export default function WebWorkspace() {
     [variables, setVariables] = useState("{}"),
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
+    [workspaceTab, setWorkspaceTab] = useState<"request" | "intruder" | "results">("request"),
     [error, setError] = useState("");
   const targets = useQuery({
       queryKey: ["allTargets"],
@@ -104,7 +106,7 @@ export default function WebWorkspace() {
     setRequestId(request.id);
     setDraft(request);
     setExchangeId(undefined);
-    setResponse("Choose a response or send this request.");
+    setResponse("응답을 선택하거나 이 요청을 전송하세요.");
   };
   const payload = () => ({
     project_id: draft.project_id,
@@ -145,7 +147,7 @@ export default function WebWorkspace() {
   };
   const send = async () => {
     if (!requestId) {
-      setError("Save the request before sending.");
+      setError("전송하기 전에 요청을 저장하세요.");
       return;
     }
     try {
@@ -168,7 +170,7 @@ export default function WebWorkspace() {
   const openExchange = async (exchange: Exchange) => {
     setExchangeId(exchange.id);
     if (exchange.error) {
-      setResponse(`[error] ${exchange.error}`);
+      setResponse(`[오류] ${exchange.error}`);
       return;
     }
     const body = await fetch(`/api/web/exchanges/${exchange.id}/body`).then(
@@ -195,7 +197,7 @@ export default function WebWorkspace() {
           <span className="mark">OW</span>
           <div>
             <b>OSCP Workspace</b>
-            <small>Web Testing</small>
+            <small>Web 테스트</small>
           </div>
         </div>
         <a href="#">← Scan Center</a>
@@ -205,7 +207,7 @@ export default function WebWorkspace() {
           value={targetId || ""}
           onChange={(e) => setTargetId(+e.target.value)}
         >
-          <option value="">Choose target</option>
+          <option value="">대상 선택</option>
           {targets.data?.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name} · {t.ip}
@@ -218,16 +220,20 @@ export default function WebWorkspace() {
             setDraft(empty(targets.data?.find((x) => x.id === targetId)));
           }}
         >
-          New request
+          새 요청
         </button>
-        <span>
-          USER-AUTHORED REQUESTS ONLY · NO AUTOMATIC FUZZING OR VULNERABILITY
-          JUDGMENT
-        </span>
+        <div className="webModeTabs" role="tablist" aria-label="Web Testing 작업">
+          <button role="tab" aria-selected={workspaceTab === "request"}
+            onClick={() => setWorkspaceTab("request")}>Request</button>
+          <button role="tab" aria-selected={workspaceTab === "intruder"}
+            onClick={() => setWorkspaceTab("intruder")}>Intruder</button>
+          <button role="tab" aria-selected={workspaceTab === "results"}
+            onClick={() => setWorkspaceTab("results")}>Response</button>
+        </div>
       </nav>
       <main className="webLayout">
         <aside>
-          <h3>COLLECTION</h3>
+          <h3>컬렉션</h3>
           {requests.data?.map((r) => (
             <button
               className={r.id === requestId ? "active" : ""}
@@ -236,12 +242,22 @@ export default function WebWorkspace() {
             >
               <b>{r.name}</b>
               <small>
-                {r.method} · {r.folder || "Unfiled"}
+                {r.method} · {r.folder || "분류 없음"}
               </small>
             </button>
           ))}
         </aside>
-        <section className="requestEditor">
+        <section className={`requestEditor requestEditor--${workspaceTab}`}>
+          {workspaceTab === "intruder" ? (
+            <IntruderPanel requestId={requestId} timeout={draft.timeout || 30}
+              projectId={draft.project_id} targetId={draft.target_id}
+              serviceId={draft.service_id} />
+          ) : <>
+          {workspaceTab === "results" && <div className="webSectionTitle">
+            <span>Recorded exchanges</span><h2>응답 이력과 비교</h2>
+            <p>오른쪽 응답을 선택하고 기준 응답과 차이를 검토하세요.</p>
+          </div>}
+          {workspaceTab === "request" && <>
           <div className="requestLine">
             <select
               value={draft.method}
@@ -257,54 +273,54 @@ export default function WebWorkspace() {
               value={draft.url || ""}
               onChange={(e) => field("url", e.target.value)}
             />
-            <button disabled={!confirmed} onClick={send}>Send</button>
+            <button disabled={!confirmed} onClick={send}>전송</button>
           </div>
           <div className="requestMeta">
             <input
               value={draft.name || ""}
               onChange={(e) => field("name", e.target.value)}
-              placeholder="Request name"
+              placeholder="요청 이름"
             />
             <input
               value={draft.folder || ""}
               onChange={(e) => field("folder", e.target.value)}
-              placeholder="Folder"
+              placeholder="폴더"
             />
             <input
               value={draft.tags || "[]"}
               onChange={(e) => field("tags", e.target.value)}
               placeholder='["tag"]'
             />
-            <button onClick={save}>Save</button>
+            <button onClick={save}>저장</button>
             <button disabled={!requestId} onClick={duplicate}>
-              Duplicate
+              복제
             </button>
           </div>
           {error && <div className="webError">{error}</div>}
           <div className="requestGrid">
             <label>
-              QUERY JSON
+              Query JSON
               <textarea
                 value={draft.query || "{}"}
                 onChange={(e) => field("query", e.target.value)}
               />
             </label>
             <label>
-              HEADERS JSON
+              Header JSON
               <textarea
                 value={draft.headers || "{}"}
                 onChange={(e) => field("headers", e.target.value)}
               />
             </label>
             <label>
-              COOKIES JSON
+              Cookie JSON
               <textarea
                 value={draft.cookies || "{}"}
                 onChange={(e) => field("cookies", e.target.value)}
               />
             </label>
             <label>
-              BODY
+              Body
               <textarea
                 value={draft.body || ""}
                 onChange={(e) => field("body", e.target.value)}
@@ -326,7 +342,7 @@ export default function WebWorkspace() {
                 checked={draft.tls_verify}
                 onChange={(e) => field("tls_verify", e.target.checked)}
               />{" "}
-              Verify TLS
+              TLS 검증
             </label>
             <label>
               <input
@@ -334,12 +350,12 @@ export default function WebWorkspace() {
                 checked={draft.follow_redirects}
                 onChange={(e) => field("follow_redirects", e.target.checked)}
               />{" "}
-              Follow redirects
+              Redirect 따라가기
             </label>
             <input
               value={draft.proxy || ""}
               onChange={(e) => field("proxy", e.target.value)}
-              placeholder="Optional proxy URL"
+              placeholder="선택 사항: Proxy URL"
             />
             <input
               type="number"
@@ -356,7 +372,7 @@ export default function WebWorkspace() {
             <input
               value={variables}
               onChange={(e) => setVariables(e.target.value)}
-              placeholder='Variables JSON, e.g. {"id":"1"}'
+              placeholder='변수 JSON, 예: {"id":"1"}'
             />
             <label>
               <input
@@ -364,41 +380,43 @@ export default function WebWorkspace() {
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
               />{" "}
-              Authorized request
+              허가된 요청
             </label>
           </div>
+          </>}
           <div className="responsePanel">
             <div>
-              <b>RESPONSE BODY</b>
+              <b>응답 Body</b>
               {exchangeId && (
                 <a href={`/api/web/exchanges/${exchangeId}/body?download=true`}>
-                  Download raw bytes
+                  원본 Byte 다운로드
                 </a>
               )}
             </div>
             <pre>{response}</pre>
           </div>
+          </>}
         </section>
         <aside className="responseHistory">
-          <h3>RESPONSE HISTORY</h3>
+          <h3>응답 이력</h3>
           <select
             value={compareId || ""}
             onChange={(e) => setCompareId(+e.target.value)}
           >
-            <option value="">Comparison baseline</option>
+            <option value="">비교 기준</option>
             {exchanges.data
               ?.filter((item) => item.id !== exchangeId)
               .map((item) => (
                 <option key={item.id} value={item.id}>
-                  Response #{item.id}
+                  응답 #{item.id}
                 </option>
               ))}
           </select>
           {comparison.data && (
             <div className="responseDiff">
               {comparison.data.changed
-                ? `Changed: ${Object.keys(comparison.data.changes).join(", ")}`
-                : "No observed response changes"}
+                ? `변경됨: ${Object.keys(comparison.data.changes).join(", ")}`
+                : "관찰된 응답 변경 없음"}
             </div>
           )}
           {exchanges.data?.map((x) => (

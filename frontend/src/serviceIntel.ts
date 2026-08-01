@@ -1,0 +1,223 @@
+export type ServiceIntelInput = {
+  name: string;
+  product: string;
+  version: string;
+  extra_info: string;
+  scripts: string;
+};
+
+export type ScriptObservation = { id: string; output: string };
+export type InvestigationCommand = {
+  id: string;
+  name: string;
+  risk: string;
+  execution_mode: string;
+};
+
+export type ExecutionSummary = {
+  tone: "success" | "warning" | "danger" | "neutral";
+  title: string;
+  detail: string;
+};
+export type SmbShare = {name: string; type: string; comment: string};
+
+export function parseSmbShares(output = ""): SmbShare[] {
+  const shares: SmbShare[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^\s*(\S+)\s+(Disk|IPC|Printer)\s*(.*)$/i);
+    if (!match || match[1].toLowerCase() === "sharename") continue;
+    shares.push({name: match[1], type: match[2], comment: match[3].trim()});
+  }
+  return shares;
+}
+
+export type SmbFile = {path: string; size: string};
+
+// Parses `smbclient -c 'recurse ON;ls'` output: a root-level block, then one
+// `\Dir\Sub` header line per directory followed by its fixed-width entries.
+export function parseSmbFiles(output = ""): SmbFile[] {
+  const files: SmbFile[] = [];
+  let currentDir = "";
+  for (const line of output.split(/\r?\n/)) {
+    const header = line.match(/^\\(.+)$/);
+    if (header) {
+      currentDir = header[1].replace(/\\/g, "/");
+      continue;
+    }
+    const entry = line.match(
+      /^\s{2,}(\S.*?)\s{2,}([A-Za-z]+)\s+(\d+)\s+\S+\s+\S+\s+\d+\s+[\d:]+\s+\d{4}\s*$/,
+    );
+    if (!entry) continue;
+    const [, name, attrs, size] = entry;
+    if (name === "." || name === ".." || /d/i.test(attrs)) continue;
+    files.push({path: currentDir ? `${currentDir}/${name}` : name, size});
+  }
+  return files;
+}
+
+export type FuzzResult = {
+  path: string; status: number; length: number; words: number; lines: number;
+};
+
+// feroxbuster --json --silent emits one JSON object per line; only "response"
+// entries are discovered paths, everything else is progress/state noise.
+export function parseFeroxbusterResults(output = ""): FuzzResult[] {
+  const results: FuzzResult[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const row = JSON.parse(trimmed);
+      if (row.type !== "response") continue;
+      results.push({
+        path: row.path ?? row.url ?? "", status: row.status ?? 0,
+        length: row.content_length ?? 0, words: row.word_count ?? 0,
+        lines: row.line_count ?? 0,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return results;
+}
+
+export function keepSelectedService<T extends {id: number}>(
+  current: number | undefined,
+  services: T[] | undefined,
+) {
+  return current && services?.some((service) => service.id === current)
+    ? current
+    : services?.[0]?.id;
+}
+
+export function summarizeExecutionResult(
+  templateId: string,
+  status: string,
+  stdout = "",
+  stderr = "",
+  command = "",
+): ExecutionSummary {
+  if (["failed", "error", "stopped", "no_response"].includes(status))
+    return {
+      tone: "danger",
+      title: status === "no_response" ? "대상 응답을 확인하지 못했습니다" : "조사가 완료되지 않았습니다",
+      detail: stderr.trim() || "오류 출력과 실행 명령을 확인한 뒤 다시 실행하세요.",
+    };
+  if (status !== "completed")
+    return {tone: "neutral", title: "조사 실행 중", detail: "결과를 기다리고 있습니다."};
+  if (templateId === "smb-enum") {
+    const port = command.match(/(?:^|\s)-p\s*(\d+)/)?.[1];
+    if (port && !["139", "445"].includes(port))
+      return {
+        tone: "danger",
+        title: `SMB가 아닌 ${port}/tcp에서 실행된 무효한 결과입니다`,
+        detail: "139/tcp 또는 445/tcp SMB 서비스를 선택하고 다시 실행하세요.",
+      };
+    if (parseSmbShares(stdout).length)
+      return {
+        tone: "success",
+        title: "SMB 공유 목록을 가져왔습니다",
+        detail: "아래 출력에서 Sharename, Type과 Comment를 확인하세요. 뒤쪽 SMB1 workgroup 오류는 공유 목록 수집 성공과 별개일 수 있습니다.",
+      };
+    if (/NT_STATUS_(?:ACCESS_DENIED|LOGON_FAILURE)/i.test(`${stdout}\n${stderr}`))
+      return {
+        tone: "warning",
+        title: "서버가 익명 공유 열거를 거부했습니다",
+        detail: "공유가 없다는 의미가 아니라 익명 세션에 목록 조회 권한이 없다는 의미입니다.",
+      };
+    return {
+      tone: "warning",
+      title: "공유 목록이 반환되지 않았습니다",
+      detail: "연결 오류와 대상 포트를 확인하세요. 필요하면 445/tcp에서 다시 실행하거나 검토한 계정으로 수동 접속하세요.",
+    };
+  }
+  if (templateId === "smb-null-session") {
+    if (/user:\[[^\]]+\]\s+rid:\[/i.test(stdout))
+      return {
+        tone: "success",
+        title: "익명 사용자 열거가 허용됩니다",
+        detail: "아래 출력에서 계정명과 RID를 검토하세요.",
+      };
+    if (/NT_STATUS_(?:ACCESS_DENIED|LOGON_FAILURE)/i.test(`${stdout}\n${stderr}`))
+      return {
+        tone: "warning",
+        title: "서버가 익명 사용자 열거를 거부했습니다",
+        detail: "사용자가 없다는 의미가 아니라 Null 세션에 열거 권한이 없다는 의미입니다.",
+      };
+    return {
+      tone: "warning",
+      title: "사용자 정보가 반환되지 않았습니다",
+      detail: "Null 세션 제한 여부와 RPC 오류 출력을 확인하세요.",
+    };
+  }
+  return {
+    tone: "success",
+    title: "명령 실행이 완료됐습니다",
+    detail: stdout.trim() ? "저장된 출력을 검토하세요." : "명령은 성공했지만 표준 출력이 없습니다.",
+  };
+}
+
+export function parseScriptObservations(value: string): ScriptObservation[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item) =>
+          item && typeof item.id === "string" && typeof item.output === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function missingServiceFacts(service: ServiceIntelInput) {
+  return [
+    !service.product && "제품",
+    !service.version && "정확한 버전",
+    !service.extra_info && "추가 배너 정보",
+  ].filter(Boolean) as string[];
+}
+
+export function rankInvestigationCommands(
+  fact: string,
+  commands: InvestigationCommand[],
+) {
+  const unsafe = /brute|audit|password|login|null-session|anonymous|empty/i;
+  const priority = fact === "추가 배너 정보"
+    ? [/banner/i, /info|syst|headers|whatweb|enum|nsid|ntlm/i, /version/i]
+    : [/version-trace/i, /version/i, /info|syst|banner|headers|whatweb|enum|nsid|ntlm/i];
+  return commands
+    .filter((command) =>
+      command.execution_mode === "captured" &&
+      command.risk !== "high" &&
+      !unsafe.test(command.id))
+    .map((command, index) => ({
+      command,
+      index,
+      score: priority.findIndex((pattern) =>
+        pattern.test(`${command.id} ${command.name}`)),
+    }))
+    .sort((left, right) =>
+      (left.score < 0 ? 99 : left.score) -
+        (right.score < 0 ? 99 : right.score) ||
+      left.index - right.index)
+    .map(({ command }) => command);
+}
+
+export function remainingInvestigationCommands<T extends InvestigationCommand>(
+  commands: T[],
+  facts: {
+    hostname: string;
+    osGuess: string;
+    product: string;
+    version: string;
+    completedTemplateIds: Set<string>;
+  },
+) {
+  return commands.filter((command) => {
+    if (command.id === "target-hostname-identity") return !facts.hostname;
+    if (command.id === "target-os-identity") return !facts.osGuess;
+    if (["service-version", "service-version-udp"].includes(command.id))
+      return !(facts.product && facts.version);
+    return !facts.completedTemplateIds.has(command.id);
+  });
+}
