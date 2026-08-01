@@ -775,12 +775,6 @@ export default function App() {
       setEvidenceMsg(`Finding 승격 실패: ${reason instanceof Error ? reason.message : reason}`);
     }
   };
-  const captureRunResult = (title: string, sensitivity: "normal" | "sensitive") => {
-    const exec = runState?.id
-      ? {id: runState.id, command: undefined, stdout: runState.stdout, stderr: runState.stderr}
-      : undefined;
-    if (exec) void captureEvidence(exec, title, sensitivity);
-  };
   const runDirectoryFuzz = () => {
     if (!target || !service || !fuzzWordlist.trim()) return;
     setRunWithSudo(false);
