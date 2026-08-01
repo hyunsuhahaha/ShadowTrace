@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, IPvAnyAddress, field_validator
 
 class ORM(BaseModel):
@@ -27,12 +28,23 @@ class TargetOut(TargetIn, ORM):
     id: int
     updated_at: datetime
 
+class TargetEnsureIn(BaseModel):
+    ip: str
+    name: str = Field(default="", max_length=120, pattern=r"^[\w ._-]*$")
+
+    @field_validator("ip")
+    @classmethod
+    def valid_ip(cls, v: str) -> str:
+        return str(IPvAnyAddress(v))
+
 class ServiceOut(ORM):
     id: int; target_id: int; port: int; protocol: str; state: str
     name: str; product: str; version: str; extra_info: str; scripts: str
-    notes: str; tags: str
+    cpe: str; tls: bool; detection_evidence: str; notes: str; tags: str
 
 class ServiceUpdate(BaseModel):
+    product: str | None = Field(default=None, max_length=200)
+    version: str | None = Field(default=None, max_length=100)
     notes: str = Field(default="", max_length=50000)
     tags: list[str] = Field(default_factory=list, max_length=30)
 
@@ -41,6 +53,7 @@ class ExecutionIn(BaseModel):
     service_id: int | None = None
     template_id: str = Field(pattern=r"^[a-z0-9-]+$")
     variables: dict[str, str] = {}
+    run_as_root: bool = True
 class ExecutionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; stdout: str; stderr: str; cwd: str
@@ -54,6 +67,7 @@ class ScanPreviewIn(BaseModel):
     target_id: int
     profile_id: int
     ports: str = ""
+    top_ports: int = Field(default=100, ge=1, le=65535)
     extra_arguments: list[str] = []
 
 class ScanJobOut(ORM):
@@ -89,19 +103,24 @@ class ScanArtifactOut(ORM):
 class ObservationOut(ORM):
     id: int; scan_job_id: int; target_id: int; port: int; protocol: str
     state: str; name: str; product: str; version: str; extra_info: str
-    scripts: str; observed_at: datetime
+    scripts: str; cpe: str; tls: bool; detection_evidence: str; observed_at: datetime
 
 class InteractiveSessionIn(BaseModel):
     target_id: int
     service_id: int | None = None
     template_id: str = Field(pattern=r"^[a-z0-9-]+$")
     variables: dict[str, str] = Field(default_factory=dict)
+    run_as_root: bool = True
 
 class InteractiveSessionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; cwd: str; status: str; pid: int | None
     started_at: datetime | None; ended_at: datetime | None
     exit_code: int | None; log_path: str; error: str
+
+class ManualTerminalIn(BaseModel):
+    target_id: int
+    service_id: int
 
 class HttpRequestIn(BaseModel):
     project_id: int
@@ -134,6 +153,29 @@ class HttpSendIn(BaseModel):
     repeat: int = Field(default=1, ge=1, le=20)
     confirmed: bool
 
+class PayloadRuleIn(BaseModel):
+    type: str = Field(pattern=r"^(prefix|suffix|lower|upper|url_encode|base64|replace|regex_replace)$")
+    value: str = Field(default="", max_length=10000)
+    replacement: str = Field(default="", max_length=10000)
+
+class PayloadPositionIn(BaseModel):
+    name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+    candidates: list[str] = Field(min_length=1, max_length=100)
+    rules: list[PayloadRuleIn] = Field(default_factory=list, max_length=20)
+
+class IntruderRunIn(BaseModel):
+    run_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+    attack_type: str = Field(pattern=r"^(sniper|battering_ram|pitchfork|cluster_bomb)$")
+    positions: list[PayloadPositionIn] = Field(min_length=1, max_length=20)
+    max_requests: int = Field(default=20, ge=1, le=100)
+    delay_ms: int = Field(default=500, ge=100, le=60_000)
+    grep_strings: list[str] = Field(default_factory=list, max_length=20)
+    grep_regexes: list[str] = Field(default_factory=list, max_length=20)
+    retry_count: int = Field(default=0, ge=0, le=2)
+    stop_status_codes: list[int] = Field(default_factory=list, max_length=20)
+    stop_string: str = Field(default="", max_length=1000)
+    confirmed: bool
+
 class HttpExchangeOut(ORM):
     id: int; request_id: int; status_code: int | None
     duration_ms: int; size: int; request_snapshot: str
@@ -148,6 +190,7 @@ class EvidenceOut(ORM):
     hostname: str; privilege: str; sensitivity: str
     include_report: bool; tags: str; markdown: str
     duplicate_of: int | None
+    exploit_research_id: int | None
 
 class EvidenceUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
@@ -226,9 +269,77 @@ class ReportIn(BaseModel):
     markdown: str = Field(default="", max_length=2_000_000)
     evidence_links: list[ReportEvidenceLink] = Field(
         default_factory=list, max_length=1000)
+    exploit_research_links: list[int] = Field(
+        default_factory=list, max_length=500)
     sensitivity_reviewed: bool = False
 
 class ReportOut(ORM):
     id: int; project_id: int; title: str; template: str; markdown: str
-    evidence_links: str; sensitivity_reviewed: bool
+    evidence_links: str; exploit_research_links: str; sensitivity_reviewed: bool
     created_at: datetime; updated_at: datetime
+
+Severity = Literal["Critical", "High", "Medium", "Low", "Informational"]
+Disclosure = Literal["CLIENT", "INTERNAL", "BOTH"]
+
+class FindingTemplateIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="", max_length=120)
+    severity: Severity = "Informational"
+    cvss_vector: str = Field(default="", max_length=160)
+    description: str = Field(default="", max_length=100000)
+    impact: str = Field(default="", max_length=100000)
+    recommendation: str = Field(default="", max_length=100000)
+    references: list[str] = Field(default_factory=list, max_length=100)
+    cwe: str = Field(default="", max_length=80)
+    cve: str = Field(default="", max_length=80)
+    mitre_attack: list[str] = Field(default_factory=list, max_length=100)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+
+class FindingEvidenceIn(BaseModel):
+    evidence_id: int = Field(gt=0)
+    caption: str = Field(default="", max_length=2000)
+    display_order: int = Field(default=0, ge=0)
+    include_client: bool = False
+    include_internal: bool = True
+    is_primary: bool = False
+    phase: Literal["BEFORE", "AFTER"] = "BEFORE"
+
+class FindingIn(BaseModel):
+    project_id: int
+    target_id: int | None = None
+    service_id: int | None = None
+    target_ids: list[int] = Field(default_factory=list, max_length=500)
+    service_ids: list[int] = Field(default_factory=list, max_length=1000)
+    title: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="", max_length=120)
+    severity: Severity = "Informational"
+    cvss_version: Literal["3.1"] = "3.1"
+    cvss_vector: str = Field(default="", max_length=160)
+    final_risk: Severity = "Informational"
+    risk_override_reason: str = Field(default="", max_length=20000)
+    summary: str = Field(default="", max_length=100000)
+    description: str = Field(default="", max_length=100000)
+    business_impact: str = Field(default="", max_length=100000)
+    technical_impact: str = Field(default="", max_length=100000)
+    reproduction_steps: str = Field(default="", max_length=200000)
+    recommendation: str = Field(default="", max_length=100000)
+    references: list[str] = Field(default_factory=list, max_length=100)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    status: Literal["Draft", "Confirmed", "Needs Review", "Remediated", "Accepted Risk", "False Positive"] = "Draft"
+    disclosure: Disclosure = "BOTH"
+    internal_notes: str = Field(default="", max_length=200000)
+    sort_priority: int = Field(default=0, ge=-100000, le=100000)
+    evidence: list[FindingEvidenceIn] = Field(default_factory=list, max_length=500)
+
+class FindingRetestIn(BaseModel):
+    tester: str = Field(min_length=1, max_length=160)
+    result: str = Field(min_length=1, max_length=40)
+    remediated: bool = False
+    notes: str = Field(default="", max_length=100000)
+    before_evidence_ids: list[int] = Field(default_factory=list, max_length=500)
+    after_evidence_ids: list[int] = Field(default_factory=list, max_length=500)
+
+class ImageEditIn(BaseModel):
+    operations: list[dict] = Field(default_factory=list, max_length=500)
+    caption: str = Field(default="", max_length=2000)
+    rendered_png_base64: str = Field(default="", max_length=20_000_000)

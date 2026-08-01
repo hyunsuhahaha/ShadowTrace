@@ -3,7 +3,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import HttpRequest, Project, Target
-from app.modules.web_testing.router import send_once, substitute
+import pytest
+from fastapi import HTTPException
+from app.modules.web_testing.router import (
+    payload_combinations, require_private_destination, send_once, substitute,
+)
+from app.schemas import IntruderRunIn
 
 
 def database():
@@ -15,6 +20,34 @@ def database():
 def test_variable_substitution_is_explicit():
     assert substitute("/users/{{id}}?literal={{missing}}",
                       {"id": "42"}) == "/users/42?literal={{missing}}"
+
+
+def test_intruder_combinations_and_limit():
+    body = IntruderRunIn(
+        run_id="test-run-1",
+        attack_type="cluster_bomb",
+        positions=[
+            {"name": "user", "candidates": ["a", "b"]},
+            {"name": "pin", "candidates": ["1", "2"]},
+        ],
+        max_requests=4, confirmed=True,
+    )
+    assert payload_combinations(body) == [
+        {"user": "a", "pin": "1"}, {"user": "a", "pin": "2"},
+        {"user": "b", "pin": "1"}, {"user": "b", "pin": "2"},
+    ]
+    body.max_requests = 3
+    with pytest.raises(HTTPException):
+        payload_combinations(body)
+
+
+def test_destination_policy_rejects_public_and_dns_names():
+    require_private_destination("http://127.0.0.1/")
+    require_private_destination("http://10.10.10.10/")
+    with pytest.raises(HTTPException):
+        require_private_destination("https://example.com/")
+    with pytest.raises(HTTPException):
+        require_private_destination("https://8.8.8.8/")
 
 
 def test_user_authored_request_preserves_raw_response(tmp_path, monkeypatch):
@@ -49,9 +82,12 @@ def test_user_authored_request_preserves_raw_response(tmp_path, monkeypatch):
     request = HttpRequest(
         project_id=project.id, target_id=target.id, name="Observed request",
         method="GET", url="http://10.10.10.10/items/{{id}}",
-        headers='{"X-Test":"{{id}}"}')
+        headers='{"X-Test":"{{id}}","Authorization":"Bearer secret"}',
+        cookies='{"session":"secret"}')
     db.add(request); db.commit()
     exchange = asyncio.run(send_once(db, request, {"id": "7"}))
     assert exchange.status_code == 200
     assert exchange.response_body == b'{"ok":true}'
     assert exchange.sha256
+    assert "Bearer secret" not in exchange.request_snapshot
+    assert '"session": "••••••"' in exchange.request_snapshot

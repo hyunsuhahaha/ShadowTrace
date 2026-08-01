@@ -2,12 +2,14 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Project, ScanArtifact, ScanProfile, Target
-from app.models import ScanJob, ServiceObservation
+from app.models import Evidence, Finding, FindingEvidence, Project, ScanArtifact, ScanProfile, Target
+from app.models import ScanJob, Service, ServiceObservation
 from app.modules.scan_center.router import (
     download_artifact, export_observations, update_job,
 )
-from app.modules.scan_center.service import compare_jobs, import_xml, render_scan
+from app.modules.scan_center.service import (
+    BUILTIN_PROFILES, compare_jobs, import_xml, render_scan, seed_profiles,
+)
 from app.schemas import ScanJobUpdate
 
 def database():
@@ -33,6 +35,40 @@ def test_selected_port_profile_rejects_shell_syntax():
         return
     raise AssertionError("unsafe port input was accepted")
 
+def test_privileged_syn_profile_uses_polkit_without_receiving_a_password():
+    profile = ScanProfile(name="SYN", kind="selected_syn_detail",
+                          arguments="-Pn -sV -p{ports} -T3")
+    target = Target(project_id=1, name="box", ip="10.10.10.10")
+    command, argv = render_scan(profile, target, "23,80")
+    assert argv[:2] == ["pkexec", "nmap"]
+    assert argv[-2:] == ["-T3", "10.10.10.10"]
+    assert command.startswith("sudo nmap -Pn -sV")
+    assert "password" not in command.lower()
+
+def test_seed_profiles_adds_and_updates_all_builtin_profiles():
+    db = database()
+    db.add(ScanProfile(name="Old quick", kind="quick", description="old",
+                       arguments="-Pn", builtin=True))
+    db.commit()
+    seed_profiles(db)
+    rows = db.query(ScanProfile).all()
+    assert {row.kind for row in rows} == {item[1] for item in BUILTIN_PROFILES}
+    assert db.query(ScanProfile).filter_by(kind="quick").one().name == "Top TCP services"
+
+def test_top_ports_are_user_selected_and_bounded():
+    profile = ScanProfile(name="Top UDP", kind="udp_top",
+                          arguments="-Pn -sU --top-ports {top_ports} -T3")
+    target = Target(project_id=1, name="box", ip="10.10.10.10")
+    command, argv = render_scan(profile, target, top_ports=200)
+    assert "--top-ports" in argv
+    assert "200" in argv
+    assert command.startswith("sudo nmap")
+    try:
+        render_scan(profile, target, top_ports=65536)
+    except ValueError:
+        return
+    raise AssertionError("out-of-range top port count was accepted")
+
 def test_import_preserves_history_and_compare_reports_facts(tmp_path, monkeypatch):
     import app.modules.scan_center.service as service
     monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
@@ -50,6 +86,26 @@ def test_import_preserves_history_and_compare_reports_facts(tmp_path, monkeypatc
     assert result["changed"][0]["changes"]["version"] == {"before": "8", "after": "9"}
     assert (Path(tmp_path) / "projects" / "Lab" / "targets" /
             "10.10.10.10" / "scans" / str(before.id) / "nmap.xml").exists()
+
+
+def test_blank_scan_identity_does_not_erase_reviewed_service(tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project)
+    db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.23")
+    db.add(target)
+    db.commit()
+    identified = b'<nmaprun><host><address addr="10.10.10.23"/><ports><port protocol="tcp" portid="23"><state state="open"/><service name="telnet" product="Linux telnetd" version="0.17"/></port></ports></host></nmaprun>'
+    blank = b'<nmaprun><host><address addr="10.10.10.23"/><ports><port protocol="tcp" portid="23"><state state="open"/><service name="telnet"/></port></ports></host></nmaprun>'
+
+    import_xml(db, target, project, identified, "identified.xml")
+    import_xml(db, target, project, blank, "blank.xml")
+
+    saved = db.query(Service).filter_by(target_id=target.id, port=23).one()
+    assert (saved.product, saved.version) == ("Linux telnetd", "0.17")
 
 def test_scan_manager_runs_streams_and_parses_xml(tmp_path, monkeypatch):
     import asyncio
@@ -123,3 +179,50 @@ def test_scan_manager_broadcasts_to_each_subscriber():
         assert await first.get() == {"status": "running"}
         assert await second.get() == {"status": "running"}
     asyncio.run(exercise())
+
+
+def test_import_auto_captures_evidence_and_positive_nse_candidate(tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Auto Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    xml = b"""<nmaprun><host><address addr="10.10.10.12"/><ports>
+      <port protocol="tcp" portid="21"><state state="open"/><service name="ftp"/>
+        <script id="ftp-anon" output="Anonymous FTP login allowed"/></port>
+      <port protocol="tcp" portid="22"><state state="open"/><service name="ssh"/>
+        <script id="ssh-hostkey" output="2048 SHA256:abc"/></port>
+    </ports></host></nmaprun>"""
+    job = import_xml(db, target, project, xml, "auto.xml")
+
+    evidence = db.query(Evidence).filter_by(source_type="scan", source_id=job.id).all()
+    findings = db.query(Finding).all()
+    assert len(evidence) == 2  # original XML plus the finding-specific excerpt
+    assert len(findings) == 1
+    assert findings[0].status == "Needs Review"
+    assert findings[0].disclosure == "INTERNAL"
+    assert db.query(FindingEvidence).filter_by(
+        finding_id=findings[0].id, evidence_id=evidence[-1].id).one()
+    service.capture_scan_evidence(db, job)
+    db.commit()
+    assert db.query(Evidence).filter_by(
+        source_type="scan", source_id=job.id).count() == 2
+    assert db.query(Finding).count() == 1
+
+
+def test_negative_nse_result_does_not_create_candidate(tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Negative Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.13")
+    db.add(target); db.commit()
+    xml = b"""<nmaprun><host><address addr="10.10.10.13"/><ports>
+      <port protocol="tcp" portid="443"><state state="open"/><service name="https"/>
+        <script id="ssl-heartbleed" output="NOT VULNERABLE"/></port>
+    </ports></host></nmaprun>"""
+    import_xml(db, target, project, xml, "negative.xml")
+    assert db.query(Finding).count() == 0

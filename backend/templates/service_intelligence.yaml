@@ -1,0 +1,439 @@
+schema_version: 1
+
+common_stages:
+  - id: identity
+    phase: identity
+    title: 정확한 서비스 식별
+    question: 실제 프로토콜·제품·버전과 탐지 근거는 무엇인가?
+    purpose: 포트 추측이 아니라 Nmap 서비스명, 제품, CPE, TLS와 응답 근거로 조사 대상을 확정합니다.
+    command_refs: [service-version]
+    manual_checks:
+      - Nmap 탐지 근거와 원시 배너가 서로 일치하는지 확인합니다.
+      - 비표준 포트라면 서비스명과 제품 응답을 포트 번호보다 우선합니다.
+    prerequisites: []
+    auth: none
+    safety: low
+  - id: evidence
+    phase: evidence
+    title: 근거와 판단 연결
+    question: 확인한 사실을 어떤 Evidence·Finding·Exploit Research·Report 항목에 연결할 것인가?
+    purpose: 실행 종료 여부가 아니라 확인된 사실, 접근 범위와 불확실성을 보존합니다.
+    command_refs: []
+    manual_checks:
+      - 원문 실행 결과를 Execution으로 연결합니다.
+      - 재현 가능한 출력은 Evidence로 저장하고 관찰 사실을 기록합니다.
+      - 영향이 있는 관찰만 Finding 후보로 승격합니다.
+      - 제품·버전·설정 단서는 Exploit Research에서 별도로 검토합니다.
+    prerequisites: []
+    auth: none
+    safety: low
+
+profiles:
+  generic_tcp:
+    level: generic
+    display_name: Generic TCP
+    match: {protocols: [tcp]}
+    runbook_keys: [unknown-service-baseline]
+    attack_surface: [원시 배너, TLS 협상, HTTP 유사 응답, Nmap Probe 응답, 관리 인터페이스]
+    stages:
+      - id: generic-fingerprint
+        phase: surface
+        title: 범용 프로토콜 재탐지
+        question: 이 TCP 포트가 실제로 어떤 프로토콜과 기능을 제공하는가?
+        purpose: 배너, 전체 Probe, TLS와 HTTP 응답 여부를 순서대로 확인해 서비스를 재분류합니다.
+        command_refs: [service-version, generic-banner, generic-tls-probe, generic-http-probe]
+        manual_checks: [응답 바이트와 연결 종료 패턴 기록, 관련 NSE 이름을 검토한 뒤 필요한 것만 선택]
+        prerequisites: []
+        auth: none
+        safety: low
+      - id: generic-reclassify
+        phase: configuration
+        title: 수동 분류와 다음 조사 선택
+        question: 수집한 근거로 어떤 서비스 계열 Runbook을 적용해야 하는가?
+        purpose: 제품·프로토콜을 수동 보정하고 해당 서비스 지식으로 전환합니다.
+        command_refs: []
+        manual_checks: [검토한 제품·버전을 저장, 서비스 태그와 메모에 재분류 근거 기록]
+        prerequisites: [generic-fingerprint]
+        auth: none
+        safety: low
+
+  ftp:
+    level: protocol
+    display_name: FTP
+    match:
+      names: [ftp, ftps]
+      products: ['(?i)vsftpd|proftpd|filezilla server|pure-ftpd|microsoft ftp']
+      cpe_prefixes: ['cpe:/a:vsftpd:', 'cpe:2.3:a:proftpd:']
+      ports: [21, 990]
+    runbook_keys: [ftp-baseline]
+    attack_surface: [익명 로그인, 공개 파일과 디렉터리, 읽기·쓰기·업로드 권한, 평문 인증, 서버 기능과 버전]
+    stages:
+      - id: ftp-capabilities
+        phase: surface
+        title: 공개 기능과 서버 정보
+        question: 서버가 공개하는 기능, 시스템 정보와 파일 전송 방식은 무엇인가?
+        purpose: SYST·FEAT와 배너를 통해 제품, 기능과 암호화 지원을 확인합니다.
+        command_refs: [ftp-syst]
+        manual_checks: [FEAT 응답, EPSV/PASV 지원, AUTH TLS 지원 여부]
+        prerequisites: [identity]
+        auth: none
+        safety: low
+      - id: ftp-anonymous
+        phase: anonymous
+        title: 익명 접근 범위
+        question: 익명 사용자가 로그인하고 어떤 경로를 읽거나 쓸 수 있는가?
+        purpose: 로그인 허용과 공개 자원을 분리해 기록하고 쓰기 검사는 자동 수행하지 않습니다.
+        command_refs: [ftp-anon, ftp-client]
+        manual_checks: [공개 경로와 파일 목록, 다운로드 가능 여부, 업로드는 명시적 승인 후 무해한 파일로 별도 검토]
+        prerequisites: [ftp-capabilities]
+        auth: anonymous
+        safety: medium
+      - id: ftp-authz
+        phase: authorization
+        title: 계정별 파일 권한 비교
+        question: 확보한 일반 계정과 관리자 계정의 경로·읽기·쓰기 범위가 어떻게 다른가?
+        purpose: 승인된 Credential별 접근 차이를 표로 남깁니다.
+        command_refs: [ftp-client]
+        manual_checks: [홈 디렉터리 차이, 읽기·쓰기·삭제 권한, chroot 여부]
+        prerequisites: [ftp-anonymous]
+        auth: credential
+        safety: medium
+      - id: ftp-research
+        phase: vulnerability
+        title: 설정·버전 기반 취약점 조사
+        question: 평문 인증, 노출 기능과 정확한 제품 버전에서 검토할 취약점 후보는 무엇인가?
+        purpose: 확인된 제품·버전·기능만 Exploit Research 입력으로 사용합니다.
+        command_refs: []
+        manual_checks: [TLS 미지원과 평문 Credential 위험, 쓰기 가능한 웹 경로 연계, 제품 CPE 기반 후보 검토]
+        prerequisites: [identity, ftp-capabilities]
+        auth: none
+        safety: low
+
+  windows_rpc:
+    level: protocol
+    display_name: Microsoft RPC Endpoint Mapper
+    match:
+      names: [msrpc, epmap]
+      products: ['(?i)microsoft.*rpc|rpc endpoint mapper']
+      ports: [135]
+    runbook_keys: [msrpc-baseline]
+    related:
+      - names: [microsoft-ds, netbios-ssn, smb]
+        label: SMB
+        reason: RPC 조사에 사용자·도메인 문맥을 추가할 수 있지만 별도 SMB 조사로 취급합니다.
+    attack_surface: [RPC interface UUID, endpoint와 동적 포트, 바인딩 가능 여부, 인증·권한 요구, 연결된 Windows 서비스]
+    stages:
+      - id: rpc-endpoints
+        phase: surface
+        title: RPC 인터페이스와 Endpoint 열거
+        question: 외부에 공개된 RPC UUID, 이름, 프로토콜 시퀀스와 동적 포트는 무엇인가?
+        purpose: Endpoint Mapper가 반환하는 인터페이스와 포트를 구조화합니다.
+        command_refs: [msrpc-enum]
+        manual_checks: [UUID를 알려진 Windows 서비스와 매핑, 동적 포트가 실제로 열려 있는지 교차 확인]
+        prerequisites: [identity]
+        auth: none
+        safety: low
+      - id: rpc-bindability
+        phase: anonymous
+        title: 외부 바인딩과 호출 가능성
+        question: 어떤 인터페이스가 익명 바인딩을 허용하고 호출 시 인증 또는 권한을 요구하는가?
+        purpose: 인터페이스 존재와 실제 호출 권한을 구분합니다.
+        command_refs: [msrpc-bind-check]
+        manual_checks: [bind 성공·접근 거부·인증 필요·연결 실패 구분, 실제 RPC 메서드 호출은 별도 수동 승인]
+        prerequisites: [rpc-endpoints]
+        auth: mixed
+        safety: medium
+      - id: rpc-research
+        phase: vulnerability
+        title: RPC 구성 요소 기반 조사
+        question: 확인된 UUID·서비스·OS·버전 조합에서 검토할 취약점 후보는 무엇인가?
+        purpose: 단순히 135번 포트가 열렸다는 사실이 아니라 실제 구성 요소를 기준으로 조사합니다.
+        command_refs: []
+        manual_checks: [UUID와 서비스명으로 Exploit Research 검색, SMB 결과는 관련 조사로만 연결]
+        prerequisites: [rpc-endpoints]
+        auth: none
+        safety: low
+
+  smb:
+    level: protocol
+    display_name: SMB
+    match:
+      names: [microsoft-ds, netbios-ssn, smb]
+      products: ['(?i)samba|microsoft.*smb']
+      ports: [139, 445]
+    runbook_keys: [smb-baseline]
+    related:
+      - names: [msrpc, epmap]
+        label: MSRPC
+        reason: RPC Endpoint 정보는 Windows 서비스 문맥을 보완하지만 SMB 권한과 동일하지 않습니다.
+    attack_surface: [지원 SMB dialect, 서명 설정, 익명 세션, 공유·파일 권한, 사용자·그룹·도메인 노출]
+    stages:
+      - id: smb-security
+        phase: configuration
+        title: 프로토콜과 서명 설정
+        question: 지원 SMB 버전과 서명 필수 여부는 무엇인가?
+        purpose: SMBv1, dialect와 메시지 서명 정책을 확인합니다.
+        command_refs: [smb-security]
+        manual_checks: [SMBv1 지원, SMB2/3 dialect, signing enabled·required 구분]
+        prerequisites: [identity]
+        auth: none
+        safety: low
+      - id: smb-anonymous
+        phase: anonymous
+        title: 익명 세션과 공개 공유
+        question: Null·Guest 세션에서 어떤 공유와 사용자 정보가 공개되는가?
+        purpose: 목록 반환과 공유별 실제 접근 권한을 구분합니다.
+        command_refs: [smb-enum, smb-null-session]
+        manual_checks: [공유 목록, 사용자·도메인 단서, ACCESS_DENIED와 빈 결과 구분]
+        prerequisites: [smb-security]
+        auth: anonymous
+        safety: low
+      - id: smb-permissions
+        phase: authorization
+        title: 공유별·계정별 권한 비교
+        question: 익명·일반 사용자·관리자별로 각 공유의 읽기와 쓰기 범위가 어떻게 다른가?
+        purpose: 공유 단위 권한 매트릭스를 작성하고 파일 내용은 필요한 범위만 확인합니다.
+        command_refs: [smb-client]
+        manual_checks: [공유별 list/read/write, 사용자별 차이, 민감 파일은 Evidence로 연결]
+        prerequisites: [smb-anonymous]
+        auth: credential
+        safety: medium
+      - id: smb-research
+        phase: vulnerability
+        title: SMB 노출·설정 기반 조사
+        question: dialect, signing, OS·Samba 버전과 공개 자원에서 어떤 취약점 후보를 검토해야 하는가?
+        purpose: 확인된 설정과 버전을 Exploit Research에 전달합니다.
+        command_refs: []
+        manual_checks: [SMBv1과 signing 설정, Samba·Windows 버전, 쓰기 가능한 실행 경로]
+        prerequisites: [smb-security, smb-anonymous]
+        auth: none
+        safety: low
+
+  web:
+    level: family
+    display_name: HTTP/Web
+    match:
+      names: [http, https, http-proxy, ssl/http, http-alt]
+      products: ['(?i)apache|nginx|iis|tomcat|jetty|gunicorn|werkzeug']
+      ports: [80, 443, 8000, 8080, 8443]
+    runbook_keys: [http-baseline]
+    attack_surface: [가상 호스트, 경로와 API, 인증·세션, 허용 메서드, Cookie·헤더·TLS, 관리 기능과 기술 스택]
+    stages:
+      - id: web-stack
+        phase: surface
+        title: 서버·기술 스택과 기본 응답
+        question: 어떤 웹 서버, 프레임워크, CMS, TLS와 가상 호스트 단서가 노출되는가?
+        purpose: 헤더, HTML과 TLS 인증서에서 식별 근거를 수집합니다.
+        command_refs: [http-headers, http-whatweb, http-tls-info]
+        manual_checks: [Host redirect와 인증서 SAN, Server·X-Powered-By, 프레임워크 흔적]
+        prerequisites: [identity]
+        auth: none
+        safety: low
+      - id: web-content
+        phase: surface
+        title: 공개 경로·API·메서드 매핑
+        question: 인증 없이 접근 가능한 페이지, API, 파일, 입력 지점과 허용 메서드는 무엇인가?
+        purpose: 과도한 탐색 전에 루트와 알려진 공개 기능을 구조화합니다.
+        command_refs: [http-methods, http-auth-finder]
+        manual_checks: [robots.txt와 공개 문서, API base path, OPTIONS 결과, 업로드·관리 경로]
+        prerequisites: [web-stack]
+        auth: none
+        safety: low
+      - id: web-authz
+        phase: authorization
+        title: 인증·역할별 기능 비교
+        question: 익명·일반 사용자·관리자에서 페이지와 API 권한이 어떻게 달라지는가?
+        purpose: 같은 요청을 역할별로 비교하고 Web Testing에 재현 가능한 요청을 저장합니다.
+        command_refs: []
+        manual_checks: [인증 방식과 세션 Cookie, 역할별 메뉴·API·객체 접근, 로그아웃 후 재검증]
+        prerequisites: [web-content]
+        auth: credential
+        safety: medium
+      - id: web-research
+        phase: vulnerability
+        title: 스택·기능 기반 취약점 조사
+        question: 확인된 제품·버전·경로·인증 구조에서 검토할 취약점 후보는 무엇인가?
+        purpose: 제품 CVE와 애플리케이션 동작 검증을 분리합니다.
+        command_refs: []
+        manual_checks: [CPE 기반 제품 후보, 관리 기능과 업로드, 접근통제·입력처리 후보를 Finding과 연결]
+        prerequisites: [web-stack, web-content]
+        auth: mixed
+        safety: low
+
+  apache_httpd:
+    level: product
+    display_name: Apache HTTP Server
+    match:
+      products: ['(?i)apache httpd|apache']
+      cpe_prefixes: ['cpe:/a:apache:http_server:', 'cpe:2.3:a:apache:http_server:']
+    runbook_keys: [http-baseline]
+    attack_surface: [활성 모듈, 별도 VirtualHost, 상태·관리 경로, 버전별 제품 취약점]
+    stages:
+      - id: apache-components
+        phase: configuration
+        title: Apache 구성 요소 단서
+        question: 응답에서 활성 모듈, 프록시·CGI·WebDAV와 관리 경로 단서를 확인할 수 있는가?
+        purpose: Apache 버전뿐 아니라 실제 활성 기능을 조사 입력으로 사용합니다.
+        command_refs: []
+        manual_checks: [Allow 헤더와 WebDAV, proxy·cgi 흔적, server-status 노출 여부]
+        prerequisites: [web-stack]
+        auth: none
+        safety: low
+
+  database:
+    level: family
+    display_name: Database
+    match:
+      names: [mysql, postgresql, ms-sql-s, redis, mongodb, oracle-tns]
+      products: ['(?i)mysql|mariadb|postgresql|microsoft sql|redis|mongodb|oracle database']
+      ports: [1433, 1521, 3306, 5432, 6379, 27017]
+    runbook_keys: [database-baseline]
+    attack_surface: [무인증·기본 인증, 데이터베이스·스키마·사용자·역할 노출, 파일 접근, 확장·명령 실행 기능]
+    stages:
+      - id: db-identity
+        phase: surface
+        title: 제품·인증 방식 식별
+        question: 정확한 데이터베이스 제품·버전·TLS와 인증 방식은 무엇인가?
+        purpose: 제품별 조사 절차를 선택하기 전에 프로토콜 응답을 확정합니다.
+        command_refs: [database-info]
+        manual_checks: [TLS 지원, 인증 플러그인 또는 도메인 인증, 클러스터·역할 단서]
+        prerequisites: [identity]
+        auth: none
+        safety: low
+      - id: db-unauthenticated
+        phase: anonymous
+        title: 무인증·빈 Credential 노출
+        question: 인증 없이 또는 빈 Credential로 어떤 메타데이터가 공개되는가?
+        purpose: 연결 가능과 데이터 접근 가능을 구분합니다.
+        command_refs: [mysql-empty-password, redis-unauthenticated-info, mongodb-info]
+        manual_checks: [서버 정보 응답, 데이터베이스 목록 노출, 인증 필요 오류를 빈 결과와 구분]
+        prerequisites: [db-identity]
+        auth: anonymous
+        safety: medium
+      - id: db-authorization
+        phase: authorization
+        title: 계정별 데이터와 권한 범위
+        question: 확보한 계정별로 DB·스키마·테이블·사용자·역할이 어디까지 보이는가?
+        purpose: 읽기, 쓰기, 관리, 파일·확장 기능 권한을 분리해 기록합니다.
+        command_refs: []
+        manual_checks: [현재 사용자와 역할, 데이터베이스·스키마 목록, 파일 읽기·쓰기와 확장 권한은 실행 없이 존재만 확인]
+        prerequisites: [db-identity]
+        auth: credential
+        safety: medium
+      - id: db-research
+        phase: vulnerability
+        title: 제품·권한 기반 취약점 조사
+        question: 버전, 인증 설정과 확보한 DB 권한에서 어떤 취약점 후보를 검토해야 하는가?
+        purpose: 명령 실행 가능성은 권한과 제품 기능을 확인한 뒤 별도 승인 단계로 분리합니다.
+        command_refs: []
+        manual_checks: [제품 CPE와 버전, 무인증 노출, 고권한 역할·파일 기능·확장 기능]
+        prerequisites: [db-identity, db-authorization]
+        auth: mixed
+        safety: low
+
+  ssh:
+    level: protocol
+    display_name: SSH
+    match: {names: [ssh], products: ['(?i)openssh|dropbear'], ports: [22]}
+    runbook_keys: [ssh-baseline]
+    attack_surface: [지원 알고리즘, 호스트 키, 인증 방식, 계정별 셸·포워딩 권한]
+    stages:
+      - {id: ssh-surface, phase: configuration, title: 알고리즘과 인증 표면, question: "어떤 알고리즘과 인증 방식이 허용되는가?", purpose: 약한 암호와 인증 정책을 확인합니다., command_refs: [ssh-enum, ssh-auth-methods], manual_checks: [호스트 키와 알고리즘, password·publickey 허용, 포워딩 정책], prerequisites: [identity], auth: none, safety: low}
+      - {id: ssh-authz, phase: authorization, title: 승인된 계정 권한, question: "승인된 계정이 셸·sudo·포워딩을 어디까지 사용할 수 있는가?", purpose: 사용자 권한을 수동 세션에서 기록합니다., command_refs: [ssh-client], manual_checks: [셸 종류, 그룹과 sudo, 포트 포워딩은 별도 승인], prerequisites: [ssh-surface], auth: credential, safety: medium}
+
+  dns:
+    level: protocol
+    display_name: DNS
+    match: {names: [domain, dns], ports: [53]}
+    runbook_keys: [dns-baseline]
+    attack_surface: [권한 레코드, 재귀, NSID·버전, Zone transfer, 내부 이름 노출]
+    stages:
+      - {id: dns-surface, phase: surface, title: DNS 공개 정보, question: "권한 레코드·재귀·NSID와 Zone transfer 범위는 무엇인가?", purpose: 외부 질의자가 얻을 수 있는 이름과 서버 정보를 확인합니다., command_refs: [dns-info], manual_checks: [SOA·NS·MX·TXT, 재귀 허용, 확인된 권한 서버에만 AXFR], prerequisites: [identity], auth: none, safety: low}
+
+  smtp:
+    level: protocol
+    display_name: SMTP
+    match: {names: [smtp, smtps, submission], ports: [25, 465, 587]}
+    runbook_keys: [smtp-baseline]
+    attack_surface: [EHLO 기능, STARTTLS, AUTH 방식, 사용자 열거, 릴레이 정책]
+    stages:
+      - {id: smtp-surface, phase: surface, title: SMTP 기능과 인증 표면, question: "어떤 SMTP 명령·TLS·AUTH 방식과 릴레이 정책이 공개되는가?", purpose: 메일 전송 기능과 인증 경계를 확인합니다., command_refs: [smtp-info], manual_checks: [EHLO, STARTTLS, VRFY·EXPN 반응, 릴레이 거부], prerequisites: [identity], auth: mixed, safety: low}
+
+  ldap:
+    level: protocol
+    display_name: LDAP
+    match: {names: [ldap, ldaps], ports: [389, 636]}
+    runbook_keys: [ldap-baseline]
+    attack_surface: [RootDSE, naming context, 익명 bind, 객체·속성 ACL, TLS·서명]
+    stages:
+      - {id: ldap-surface, phase: anonymous, title: RootDSE와 익명 조회, question: "익명 사용자가 naming context와 객체·속성을 어디까지 조회할 수 있는가?", purpose: 연결 성공과 실제 검색 권한을 구분합니다., command_refs: [ldap-rootdse], manual_checks: [Base DN, namingContexts, 익명 bind와 검색 범위], prerequisites: [identity], auth: anonymous, safety: low}
+
+  nfs:
+    level: protocol
+    display_name: NFS
+    match: {names: [nfs, rpcbind], ports: [111, 2049]}
+    runbook_keys: [nfs-baseline]
+    attack_surface: [Export, 허용 호스트, UID·GID 매핑, 읽기·쓰기, root squash]
+    stages:
+      - {id: nfs-surface, phase: authorization, title: Export와 파일 권한, question: "어떤 Export가 누구에게 공개되고 UID·GID별 권한은 어떻게 다른가?", purpose: 호스트·사용자 매핑 기반 접근 범위를 확인합니다., command_refs: [nfs-showmount], manual_checks: [Export ACL, read·write, UID·GID와 root squash], prerequisites: [identity], auth: host, safety: medium}
+
+  winrm:
+    level: protocol
+    display_name: WinRM
+    match: {names: [wsman, wsmans, winrm], products: ['(?i)windows remote management|microsoft httpapi'], ports: [5985, 5986, 47001]}
+    runbook_keys: [winrm-baseline]
+    attack_surface: [HTTP·HTTPS 전송, WS-Management endpoint, Negotiate·Kerberos·NTLM, 계정별 원격 셸 권한, PowerShell 제약]
+    stages:
+      - {id: winrm-transport, phase: configuration, title: 전송과 endpoint 식별, question: "WinRM endpoint가 어떤 HTTP·TLS 구성으로 공개되는가?", purpose: 비표준 포트를 포함해 WS-Management 전송 계층을 확인합니다., command_refs: [winrm-info], manual_checks: [HTTP 상태와 헤더, TLS 사용 시 인증서, WS-Management endpoint], prerequisites: [identity], auth: none, safety: low}
+      - {id: winrm-auth, phase: access, title: 인증 방식 확인, question: "어떤 인증 방식과 도메인 문맥이 필요한가?", purpose: challenge와 실제 Credential 검증을 구분합니다., command_refs: [], manual_checks: [Negotiate·Kerberos·NTLM·Basic challenge, 승인된 계정만 수동 검증], prerequisites: [winrm-transport], auth: required, safety: low}
+      - {id: winrm-authorization, phase: authorization, title: 계정별 관리 권한 비교, question: "일반 사용자와 관리자별 원격 셸·명령·파일 권한은 어디까지인가?", purpose: 로그인과 실제 관리 권한을 분리해 기록합니다., command_refs: [], manual_checks: [그룹과 셸 언어 모드, 명령·파일 권한, 계정별 접근 거부], prerequisites: [winrm-auth], auth: credential, safety: medium}
+
+assessments:
+  service-version:
+    rules:
+      - {pattern: '(?i)open\s+\S+\s+\S+', outcome: confirmed, summary: 서비스 응답과 식별 단서를 확인했습니다., next: [surface]}
+    extractors: [nmap_service]
+  ftp-anon:
+    rules:
+      - {pattern: '(?i)anonymous ftp login allowed|anonymous.*login.*successful', outcome: confirmed, summary: FTP 익명 로그인이 허용됩니다., next: [ftp-anonymous, ftp-authz]}
+      - {pattern: '(?i)anonymous.*(?:denied|failed)|530\s', outcome: access_denied, summary: FTP 익명 로그인이 거부됐습니다., next: [ftp-authz]}
+  smb-enum:
+    rules:
+      - {pattern: '(?im)^\s*\S+\s+(?:Disk|IPC|Printer)\s*', outcome: confirmed, summary: SMB 공유 목록이 반환됐습니다., next: [smb-permissions]}
+      - {pattern: '(?i)NT_STATUS_(?:ACCESS_DENIED|LOGON_FAILURE)', outcome: access_denied, summary: 익명 SMB 공유 열거가 거부됐습니다., next: [smb-permissions]}
+    extractors: [smb_shares]
+  smb-null-session:
+    rules:
+      - {pattern: '(?i)user:\[[^\]]+\]\s+rid:', outcome: confirmed, summary: Null 세션에서 사용자 정보가 반환됐습니다., next: [smb-permissions]}
+      - {pattern: '(?i)NT_STATUS_(?:ACCESS_DENIED|LOGON_FAILURE)', outcome: access_denied, summary: Null 세션 사용자 열거가 거부됐습니다., next: [smb-permissions]}
+  smb-security:
+    rules:
+      - {pattern: '(?i)SMBv1|dialect|message signing', outcome: confirmed, summary: SMB 프로토콜·서명 설정 단서를 확인했습니다., next: [smb-anonymous, smb-research]}
+    extractors: [smb_security]
+  http-headers:
+    rules:
+      - {pattern: '(?im)^HTTP/\S+\s+\d{3}', outcome: confirmed, summary: HTTP 상태와 응답 헤더를 확인했습니다., next: [web-stack, web-content]}
+    extractors: [http_headers]
+  msrpc-enum:
+    rules:
+      - {pattern: '(?m)^RPC_ENDPOINT \{', outcome: confirmed, summary: Endpoint Mapper가 RPC UUID와 endpoint를 반환했습니다., next: [rpc-bindability, rpc-research]}
+      - {pattern: '(?m)^RPC_ENDPOINT_SUMMARY count=0$', outcome: not_found, summary: Endpoint Mapper 조회는 성공했지만 등록된 endpoint가 반환되지 않았습니다., next: [rpc-research]}
+      - {pattern: '(?m)^RPC_PROBE_ERROR .*"outcome": "access_denied"', outcome: access_denied, summary: Endpoint Mapper 조회가 접근 거부됐습니다., next: [rpc-bindability]}
+      - {pattern: '(?m)^RPC_PROBE_ERROR ', outcome: error, summary: Endpoint Mapper 기술 오류로 인터페이스를 확인하지 못했습니다., next: [rpc-endpoints]}
+    extractors: [rpc_endpoints]
+  msrpc-bind-check:
+    rules:
+      - {pattern: '(?m)^RPC_BIND_RESULT .*"outcome": "bind_ok"', outcome: confirmed, summary: 하나 이상의 RPC 인터페이스가 익명 DCE/RPC bind를 허용했습니다., next: [rpc-research]}
+      - {pattern: '(?m)^RPC_BIND_RESULT .*"outcome": "(?:access_denied|authentication_required)"', outcome: access_denied, summary: RPC 인터페이스가 익명 bind를 거부하거나 인증을 요구했습니다., next: [rpc-research]}
+      - {pattern: '(?m)^RPC_BIND_SUMMARY endpoints=\d+ checked=0$', outcome: not_found, summary: 외부에서 확인할 TCP RPC binding이 반환되지 않았습니다., next: [rpc-research]}
+      - {pattern: '(?m)^RPC_PROBE_ERROR ', outcome: error, summary: RPC bind 확인 중 기술 오류가 발생했습니다., next: [rpc-bindability]}
+    extractors: [rpc_bind_results]
+  redis-unauthenticated-info:
+    rules:
+      - {pattern: '(?im)^redis_version:', outcome: confirmed, summary: Redis가 인증 없이 INFO 정보를 반환했습니다., next: [db-authorization, db-research]}
+      - {pattern: '(?i)NOAUTH|authentication required', outcome: access_denied, summary: Redis가 인증 없는 INFO 조회를 거부했습니다., next: [db-authorization]}
+    extractors: [redis_info]
+  database-info:
+    rules:
+      - {pattern: '(?i)mysql|mariadb|postgresql|ms-sql|redis|mongodb|oracle', outcome: confirmed, summary: 데이터베이스 제품 식별 단서를 확인했습니다., next: [db-unauthenticated, db-authorization]}
+    extractors: [nmap_service]

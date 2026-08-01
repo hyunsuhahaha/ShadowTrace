@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
 from ...database import get_db
-from ...models import Evidence, Project, Service, Target
+from ...models import Evidence, ExploitResearch, Project, Service, Target
 from ...schemas import EvidenceOut, EvidenceUpdate
 from ..scan_center.service import _safe
 
@@ -56,10 +56,20 @@ async def upload_evidence(
     title: str = Form(...), kind: str = Form("attachment"),
     description: str = Form(""), service_id: int | None = Form(None),
     source_type: str = Form("upload"), source_id: int | None = Form(None),
+    exploit_research_id: int | None = Form(None),
     sensitivity: str = Form("normal"), include_report: bool = Form(False),
     file: UploadFile = File(...), db: Session = Depends(get_db),
 ):
+    # Keep direct Python callers (including maintenance scripts and tests)
+    # compatible with FastAPI's Form default object.
+    if not isinstance(exploit_research_id, int):
+        exploit_research_id = None
     project, target = validate_links(db, project_id, target_id, service_id)
+    if exploit_research_id:
+        research = need(db, ExploitResearch, exploit_research_id)
+        if (research.project_id != project_id or research.target_id != target_id
+                or (service_id and research.service_id != service_id)):
+            raise HTTPException(400, "Exploit Research belongs to another scope")
     if not title.strip():
         raise HTTPException(400, "Evidence title is required")
     if kind not in KINDS or sensitivity not in ("normal", "sensitive", "secret"):
@@ -73,6 +83,7 @@ async def upload_evidence(
     row = Evidence(project_id=project_id, target_id=target_id,
         service_id=service_id, title=title[:200], description=description[:20000],
         kind=kind, source_type=source_type[:40], source_id=source_id,
+        exploit_research_id=exploit_research_id,
         original_name=Path(file.filename or "evidence.bin").name[:255],
         sha256=digest, size=len(content), sensitivity=sensitivity,
         include_report=include_report, duplicate_of=duplicate.id if duplicate else None)

@@ -8,7 +8,7 @@ import shlex
 from pathlib import Path
 from ...database import SessionLocal
 from ...models import Project, ScanArtifact, ScanJob, Target
-from .service import ingest_xml, scan_directory
+from .service import capture_scan_evidence, ingest_xml, scan_directory
 from ...time import utcnow
 
 class ScanManager:
@@ -98,6 +98,7 @@ class ScanManager:
                     for suffix, kind in ((".nmap", "normal"), (".gnmap", "grepable")):
                         path = output_base.with_suffix(suffix)
                         if path.exists(): self._artifact(db, job.id, path, kind)
+                    capture_scan_evidence(db, job)
                     db.commit()
                     status = job.status
                 await self._publish(scan_id, {

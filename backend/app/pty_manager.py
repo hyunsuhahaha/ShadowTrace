@@ -22,9 +22,16 @@ class PtyManager:
         master, slave = os.openpty()
         process = None
         try:
+            env = os.environ.copy()
+            env.update({
+                "TERM": "xterm-256color",
+                "COLORTERM": "truecolor",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            })
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=cwd, stdin=slave, stdout=slave, stderr=slave,
-                start_new_session=True)
+                start_new_session=True, env=env)
             os.close(slave)
             self.processes[session_id] = process
             self.masters[session_id] = master
@@ -65,9 +72,27 @@ class PtyManager:
 
             output_task = asyncio.create_task(output())
             input_task = asyncio.create_task(input_data())
-            code = await process.wait()
+            process_task = asyncio.create_task(process.wait())
+            done, _ = await asyncio.wait(
+                {process_task, input_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if input_task in done and process.returncode is None:
+                with SessionLocal() as db:
+                    row = db.get(InteractiveSession, session_id)
+                    if row:
+                        row.status = "stopping"
+                        db.commit()
+                os.killpg(process.pid, signal.SIGTERM)
+            code = await process_task
             await output_task
-            input_task.cancel()
+            if not input_task.done():
+                input_task.cancel()
+            else:
+                try:
+                    input_task.exception()
+                except (asyncio.CancelledError, Exception):
+                    pass
             with SessionLocal() as db:
                 row = db.get(InteractiveSession, session_id)
                 row.exit_code = code; row.ended_at = utcnow()

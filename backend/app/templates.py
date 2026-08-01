@@ -2,7 +2,7 @@ from pathlib import Path
 import re, shlex, yaml
 
 ALLOWED = {"host","port","protocol","scheme","username","password","domain","wordlist",
-           "output_dir","project_dir","target_dir","lhost","lport"}
+           "output_dir","project_dir","target_dir","repo_dir","lhost","lport","share","path"}
 TOKEN = re.compile(r"\{([a-z_]+)\}")
 
 class Catalog:
@@ -12,22 +12,36 @@ class Catalog:
         self.reload()
     def reload(self):
         self.items = {}
-        for path in self.path.glob("*.yaml"):
+        self.groups = {}
+        for path in (self.path / "services.yaml",):
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             for key, value in data.items():
+                self.groups[key] = value
                 value["key"] = key
                 for command in value.get("commands", []):
                     command["service_key"] = key
                     self.items[command["id"]] = command
-    def commands_for(self, service: str, port: int):
+    def commands_for(self, service: str, port: int, protocol: str = "tcp",
+                     product: str = "", cpe: list[str] | None = None,
+                     tls: bool = False):
         result = []
+        normalized = service.lower().strip()
+        unknown = normalized in {"", "unknown", "tcpwrapped"}
         for command in self.items.values():
             group = command["service_key"]
-            data = next((yaml.safe_load(p.read_text(encoding="utf-8")).get(group)
-                         for p in self.path.glob("*.yaml")
-                         if group in (yaml.safe_load(p.read_text(encoding="utf-8")) or {})), None)
-            if data and (service.lower() in data["match"].get("services", []) or port in data["match"].get("ports", [])):
+            data = self.groups.get(group)
+            match = command.get("match") or (data or {}).get("match", {})
+            service_match = normalized in match.get("services", [])
+            # A port is only fallback evidence when Nmap did not identify the
+            # protocol. This prevents, for example, SSH on 21 from receiving
+            # FTP commands while still helping genuinely unknown services.
+            port_fallback = unknown and port in match.get("ports", [])
+            if service_match or port_fallback:
                 result.append(command)
+        identity_id = "service-version-udp" if protocol.lower() == "udp" else "service-version"
+        identity = self.items.get(identity_id)
+        if identity and all(item["id"] != identity_id for item in result):
+            result.insert(0, identity)
         return result
     def render(self, template_id: str, variables: dict[str, str],
                execution_mode: str = "captured"):

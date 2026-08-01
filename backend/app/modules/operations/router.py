@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from ...config import DB_PATH, STATE_DIR, WORKSPACE_DIR
 from ...database import get_db
 from ...models import (
-    AuditEvent, DirectoryObject, Evidence, Project, Report, ScanJob,
-    Service, Target,
+    AuditEvent, Credential, DirectoryObject, Evidence, ExploitModification,
+    ExploitResearch, ExploitSource, Project, Report,
+    ScanJob, Service, Target,
 )
 from ...time import utcnow
 
@@ -67,6 +68,61 @@ def search(query: str, project_id: int | None = None,
     for row in db.scalars(reports.limit(50)):
         results.append({"type": "report", "id": row.id, "title": row.title,
                         "subtitle": row.template, "path": "#reports"})
+    research = select(ExploitResearch).where(or_(
+        ExploitResearch.cve.ilike(needle),
+        ExploitResearch.exploit_db_id.ilike(needle),
+        ExploitResearch.title.ilike(needle),
+        ExploitResearch.service_name.ilike(needle),
+        ExploitResearch.discovered_version.ilike(needle),
+        ExploitResearch.notes.ilike(needle),
+        ExploitResearch.execution_command.ilike(needle)))
+    if project_id:
+        research = research.where(ExploitResearch.project_id == project_id)
+    for row in db.scalars(research.limit(50)):
+        results.append({
+            "type": "exploit_research", "id": row.id, "title": row.title,
+            "subtitle": f"{row.cve} {row.service_name} {row.discovered_version}",
+            "path": "#exploit-research",
+        })
+    modifications = select(ExploitModification).join(ExploitResearch).where(
+        or_(ExploitModification.variable_name.ilike(needle),
+            ExploitModification.reason.ilike(needle)))
+    if project_id:
+        modifications = modifications.where(
+            ExploitResearch.project_id == project_id)
+    for row in db.scalars(modifications.limit(30)):
+        results.append({
+            "type": "exploit_modification", "id": row.id,
+            "title": row.variable_name, "subtitle": row.reason,
+            "path": "#exploit-research",
+        })
+    sources = select(ExploitSource).join(ExploitResearch).where(or_(
+        ExploitSource.title.ilike(needle), ExploitSource.source_url.ilike(needle),
+        ExploitSource.exploit_db_id.ilike(needle)))
+    if project_id:
+        sources = sources.where(ExploitResearch.project_id == project_id)
+    for row in db.scalars(sources.limit(30)):
+        results.append({
+            "type": "exploit_source", "id": row.id, "title": row.title,
+            "subtitle": row.source_url, "path": "#exploit-research",
+        })
+    # Credentials are searchable by identity and provenance so the acquisition
+    # chain is reconstructable for the report; the stored secret is never
+    # surfaced in results.
+    creds = select(Credential).where(or_(
+        Credential.username.ilike(needle), Credential.domain.ilike(needle),
+        Credential.source_detail.ilike(needle), Credential.notes.ilike(needle),
+        Credential.service_names.ilike(needle)))
+    if project_id:
+        creds = creds.where(Credential.project_id == project_id)
+    for row in db.scalars(creds.limit(30)):
+        identity = f"{row.domain}\\{row.username}" if row.domain else row.username
+        provenance = f"{row.source_kind}: {row.source_detail}" if row.source_detail \
+            else row.source_kind
+        results.append({
+            "type": "credential", "id": row.id, "title": identity,
+            "subtitle": provenance, "path": "#enumeration",
+        })
     return results[:200]
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import csv
 import io
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import (
-    AppSetting, Project, ScanArtifact, ScanJob, ScanProfile,
+    AppSetting, Evidence, Finding, Project, ScanArtifact, ScanJob, ScanProfile,
     ServiceObservation, Target,
 )
 from ...schemas import (
@@ -51,12 +52,29 @@ def profiles(db: Session = Depends(get_db)):
     seed_profiles(db)
     return db.scalars(select(ScanProfile).order_by(ScanProfile.id)).all()
 
+
+@router.get("/{ident}/automation")
+def automation_summary(ident: int, db: Session = Depends(get_db)):
+    need(db, ScanJob, ident)
+    evidence = db.scalars(select(Evidence).where(
+        Evidence.source_type == "scan", Evidence.source_id == ident)).all()
+    marker = f"scan:{ident}:"
+    findings = db.scalars(select(Finding).where(
+        Finding.internal_notes.like(f"{marker}%"))).all()
+    return {
+        "evidence_count": len(evidence),
+        "finding_count": len(findings),
+        "finding_ids": [row.id for row in findings],
+        "review_required": bool(findings),
+    }
+
 @router.post("/preview")
 def preview(body: ScanPreviewIn, db: Session = Depends(get_db)):
     try:
         command, argv = render_scan(need(db, ScanProfile, body.profile_id),
                                     need(db, Target, body.target_id),
-                                    body.ports, body.extra_arguments)
+                                    body.ports, body.extra_arguments,
+                                    body.top_ports)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"command": command, "argv": argv}
@@ -70,11 +88,15 @@ async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
     if active:
         raise HTTPException(409, "This target already has an active scan")
     try:
-        command, argv = render_scan(profile, target, body.ports, body.extra_arguments)
+        command, argv = render_scan(
+            profile, target, body.ports, body.extra_arguments, body.top_ports
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if not shutil.which("nmap"):
         raise HTTPException(409, "Nmap is not installed or is not on PATH")
+    if argv[0] == "pkexec" and not shutil.which("pkexec"):
+        raise HTTPException(409, "pkexec is required for this privileged scan")
     job = ScanJob(project_id=target.project_id, target_id=target.id,
                   profile_id=profile.id, source="executed", status="queued",
                   command=command)
@@ -110,7 +132,17 @@ async def scan_events(scan_id: int, db: Session = Depends(get_db)):
             if job.status in ("completed", "failed", "stopped", "interrupted"):
                 return
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=10)
+                except asyncio.TimeoutError:
+                    process = manager.processes.get(scan_id)
+                    item = {
+                        "stream": "heartbeat",
+                        "status": "running",
+                        "process_alive": bool(
+                            process and process.returncode is None
+                        ),
+                    }
                 yield f"data: {json.dumps(item)}\n\n"
                 if item.get("status") in ("completed", "failed", "stopped", "interrupted"):
                     break
@@ -150,7 +182,14 @@ async def rerun(scan_id: int, db: Session = Depends(get_db)):
     if previous.source != "executed":
         raise HTTPException(409, "Imported scans cannot be rerun")
     argv = shlex.split(previous.command)
-    if not argv or argv[0] != "nmap" or argv[-1] != target.ip:
+    if (
+        not argv
+        or argv[-1] != target.ip
+        or not (
+            argv[0] == "nmap"
+            or (argv[:2] == ["pkexec", "nmap"])
+        )
+    ):
         raise HTTPException(409, "The stored command cannot be safely rerun")
     if "-oA" in argv:
         index = argv.index("-oA")
@@ -201,7 +240,7 @@ def export_observations(scan_id: int, format: str = "json",
         ServiceObservation.scan_job_id == scan_id).order_by(
         ServiceObservation.protocol, ServiceObservation.port)).all()
     fields = ("port", "protocol", "state", "name", "product", "version",
-              "extra_info", "scripts")
+              "extra_info", "scripts", "cpe", "tls", "detection_evidence")
     data = [{field: getattr(row, field) for field in fields} for row in rows]
     if format == "json":
         return Response(json.dumps(data, ensure_ascii=False, indent=2),

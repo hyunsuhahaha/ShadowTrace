@@ -1,0 +1,538 @@
+schema_version: 1
+runbooks:
+  - key: target-baseline
+    revision: 1
+    name: Target 기본 식별
+    description: 서비스 조사 전에 호스트명과 운영체제 단서를 확인합니다.
+    tags: [target, baseline]
+    service_names: []
+    ports: []
+    steps:
+      - title: 호스트명 확인
+        command_refs: [target-hostname-identity]
+        expected_observations: [PTR 또는 NetBIOS 호스트명, 도메인 단서]
+      - title: 운영체제 확인
+        command_refs: [target-os-identity]
+        expected_observations: [운영체제 계열, 호스트명, 네트워크 거리]
+      - title: Target 메모 정리
+        description: 확인한 값과 불확실한 추정을 구분해 기록합니다.
+        expected_observations: [확인된 호스트명, 운영체제 추정 근거]
+
+  - key: ftp-baseline
+    revision: 3
+    name: FTP 기본 열거
+    description: 익명 접근, 서버 정보와 수동 파일 접근 범위를 확인합니다.
+    tags: [ftp, enumeration]
+    service_names: [ftp]
+    ports: [21]
+    steps:
+      - title: Anonymous 접근 확인
+        node_key: anonymous
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: permissions, label: 익명 접근 확인}
+          - {when: {outcome: [access_denied, authentication_required]}, target: authenticated, label: 인증 경로 필요}
+          - {default: true, target: evidence, label: 수동 판정}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [ftp-anon]
+        expected_observations: [로그인 허용 여부, 공개 파일과 디렉터리, 쓰기 가능 여부]
+        guidance: {stage_id: anonymous, phase: access, question: "인증 없이 어떤 파일과 디렉터리에 접근할 수 있는가?", purpose: "익명 세션의 실제 공개 범위를 확인합니다.", manual_checks: ["목록·다운로드·업로드를 각각 구분해 기록"], prerequisites: ["FTP 제품 식별"], auth: anonymous, safety: low, next_steps: {confirmed: [permissions], access_denied: [authenticated]}}
+      - title: 서버 정보 확인
+        node_key: identity
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: anonymous, label: FTP 확인}
+          - {default: true, target: evidence, label: 식별 검토}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [ftp-syst]
+        expected_observations: [FTP 서버 제품, 운영체제 단서, 지원 기능]
+        guidance: {stage_id: identity, phase: identification, question: "실제 FTP 제품·버전과 지원 기능은 무엇인가?", purpose: "배너 추측과 프로토콜 응답을 구분해 식별합니다.", manual_checks: ["SYST와 FEAT 응답 비교"], prerequisites: [], auth: none, safety: low, next_steps: {confirmed: [anonymous]}}
+      - title: 수동 세션 검증
+        node_key: permissions
+        node_type: manual_check
+        transitions:
+          - {default: true, target: evidence, label: 결과 정리}
+        command_refs: [ftp-client]
+        expected_observations: [접근 가능한 경로, 파일 권한, 배너와 오류 메시지]
+        guidance: {stage_id: permissions, phase: authorization, question: "계정과 경로별 읽기·쓰기 범위가 어떻게 다른가?", purpose: "실제 권한 경계를 비교합니다.", manual_checks: ["PWD·LIST·GET·PUT 결과를 계정별로 기록"], prerequisites: ["승인된 자격 증명 또는 익명 접근"], auth: optional, safety: low, next_steps: {confirmed: [attack_surface]}}
+      - title: Evidence와 Credential 정리
+        node_key: evidence
+        node_type: evidence
+        expected_observations: [중요 출력 Evidence, 재사용 가능한 계정 메타데이터]
+      - title: 승인된 계정으로 접근 확인
+        node_key: authenticated
+        node_type: approval
+        approval: {required: true, reason: "저장된 Credential을 FTP 인증에 사용"}
+        transitions:
+          - {when: {approval_status: approved}, target: permissions, label: 승인됨}
+          - {default: true, target: evidence, label: 인증 생략}
+        expected_observations: [인증 성공 여부, 계정별 루트 경로와 권한 차이]
+
+  - key: ssh-baseline
+    revision: 1
+    name: SSH 기본 열거
+    description: 암호화 설정, 인증 방식과 승인된 수동 접근을 확인합니다.
+    tags: [ssh, enumeration]
+    service_names: [ssh]
+    ports: [22]
+    steps:
+      - title: 알고리즘 확인
+        command_refs: [ssh-enum]
+        expected_observations: [키 교환, 호스트 키, 암호화, MAC 알고리즘]
+      - title: 인증 방식 확인
+        command_refs: [ssh-auth-methods]
+        expected_observations: [password 또는 publickey 허용 여부, 사용자명 반응 차이]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [ssh-default-audit]
+        expected_observations: [성공한 계정, 잠금 또는 속도 제한 신호]
+      - title: 승인된 Credential로 수동 접속
+        command_refs: [ssh-client]
+        expected_observations: [로그인 성공 여부, 셸과 권한, 호스트 키]
+
+  - key: telnet-baseline
+    revision: 1
+    name: Telnet 기본 열거
+    description: 배너, 협상 정보, 인증과 수동 접근을 확인합니다.
+    tags: [telnet, enumeration]
+    service_names: [telnet]
+    ports: [23]
+    steps:
+      - title: 서비스 상세 확인
+        command_refs: [telnet-info]
+        expected_observations: [제품과 버전, 암호화 지원, NTLM 정보]
+      - title: 원시 배너 확인
+        command_refs: [telnet-banner]
+        expected_observations: [로그인 전 배너, 장비 또는 운영체제 단서]
+      - title: 식별이 불명확하면 Probe 추적
+        command_refs: [telnet-version-trace]
+        expected_observations: [응답한 Probe, 제품 식별 근거]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [telnet-default-audit]
+        expected_observations: [성공 계정, 잠금 또는 지연 신호]
+      - title: 수동 접속
+        command_refs: [telnet-client]
+        expected_observations: [인증 흐름, 셸 또는 관리 인터페이스]
+
+  - key: smtp-baseline
+    revision: 1
+    name: SMTP 기본 열거
+    description: 공개 명령, 인증 방식과 제한된 Credential 반응을 확인합니다.
+    tags: [smtp, mail, enumeration]
+    service_names: [smtp, smtps, submission]
+    ports: [25, 465, 587]
+    steps:
+      - title: 지원 명령 확인
+        command_refs: [smtp-info]
+        expected_observations: [EHLO 기능, AUTH 방식, STARTTLS, 서버 제품]
+      - title: 사용자·릴레이 동작 수동 확인
+        expected_observations: [VRFY 또는 EXPN 반응, 릴레이 거부, 도메인 정보]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [smtp-default-audit]
+        expected_observations: [인증 성공 여부, 잠금 또는 속도 제한]
+
+  - key: dns-baseline
+    revision: 1
+    name: DNS 기본 열거
+    description: DNS 메타데이터, 재귀와 권한 정보를 확인합니다.
+    tags: [dns, enumeration]
+    service_names: [domain, dns]
+    ports: [53]
+    steps:
+      - title: 서비스 정보와 재귀 확인
+        command_refs: [dns-info]
+        expected_observations: [NSID 또는 버전 단서, 외부 재귀 허용 여부]
+      - title: 권한 레코드와 이름 수집
+        expected_observations: [NS, SOA, MX, TXT, A와 PTR 레코드]
+      - title: Zone transfer 수동 확인
+        description: 확인된 권한 DNS와 도메인에 대해서만 AXFR 가능 여부를 확인합니다.
+        expected_observations: [AXFR 허용 또는 거부, 노출된 호스트명]
+
+  - key: http-baseline
+    revision: 3
+    name: HTTP 기본 점검
+    description: 웹 기술, 응답 헤더, 인증 경로와 수동 애플리케이션 점검 범위를 정리합니다.
+    tags: [http, web, enumeration]
+    service_names: [http, https, http-proxy, ssl/http]
+    ports: [80, 443, 8080, 8443]
+    steps:
+      - title: 응답 헤더 확인
+        node_key: identity
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, targets: [stack, resources], label: 웹 서비스 확인}
+          - {default: true, target: resources, label: 수동 웹 확인}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [http-headers, http-methods, http-tls-info]
+        expected_observations: [상태와 redirect, Server 헤더, 보안 헤더, Cookie 속성]
+        guidance: {stage_id: identity, phase: identification, question: "웹 서버·TLS·허용 메서드가 무엇을 노출하는가?", purpose: "비표준 포트를 포함해 웹 계층과 기본 구성을 식별합니다.", manual_checks: ["리다이렉트 최종 호스트와 인증서 이름 비교"], prerequisites: [], auth: none, safety: low, next_steps: {confirmed: [resources]}}
+      - title: 기술 스택 식별
+        node_key: stack
+        node_type: command
+        transitions:
+          - {default: true, target: resources, label: 기능 매핑}
+        command_refs: [http-whatweb]
+        expected_observations: [웹 서버, 프레임워크, CMS, JavaScript 라이브러리]
+      - title: 인증 경로 확인
+        node_key: authentication
+        node_type: manual_check
+        transitions:
+          - {when: {outcome: confirmed}, target: credential-check, label: 인증 경로 발견}
+          - {default: true, target: request-evidence, label: 인증 경로 없음 또는 보류}
+        command_refs: [http-auth-finder]
+        expected_observations: [Basic·Digest·NTLM 경로, 로그인 진입점]
+      - title: 콘텐츠와 기능 수동 매핑
+        node_key: resources
+        node_type: manual_check
+        transitions:
+          - {when: {outcome: confirmed}, targets: [authentication, request-evidence], label: 기능 확인}
+          - {default: true, target: request-evidence, label: 관찰 정리}
+        expected_observations: [페이지와 API 경로, 입력 지점, 업로드, 관리자 기능]
+        guidance: {stage_id: resources, phase: exposure, question: "외부에 공개된 페이지·API·관리 기능은 무엇인가?", purpose: "URL 목록이 아니라 기능과 신뢰 경계를 매핑합니다.", manual_checks: ["가상 호스트·API·업로드·관리 경로를 기능별로 기록"], prerequisites: ["기본 웹 식별"], auth: optional, safety: low, next_steps: {confirmed: [authorization]}}
+      - title: 제한된 루트 인증 점검
+        node_key: credential-check
+        node_type: approval
+        approval: {required: true, reason: "승인된 Credential을 웹 인증에 사용"}
+        transitions:
+          - {default: true, target: request-evidence, label: 인증 결과 정리}
+        command_refs: [http-default-audit]
+        expected_observations: [인증 성공 여부, 잠금 또는 속도 제한]
+      - title: Web Testing에서 요청 검증
+        node_key: request-evidence
+        node_type: evidence
+        expected_observations: [재현 가능한 요청·응답, 세션과 권한 차이, Evidence]
+
+  - key: smb-baseline
+    revision: 3
+    name: SMB 기본 열거
+    description: 공유, 사용자, Null·Guest 접근과 승인된 Credential 접근을 확인합니다.
+    tags: [smb, windows, enumeration]
+    service_names: [microsoft-ds, netbios-ssn, smb]
+    ports: [139, 445]
+    steps:
+      - title: 공유와 사용자 확인
+        node_key: exposure
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: anonymous, label: SMB 노출 확인}
+          - {when: {outcome: [access_denied, authentication_required]}, target: authenticated, label: 인증 필요}
+          - {default: true, target: evidence, label: 수동 검토}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [smb-enum, smb-security]
+        expected_observations: [공유 목록, 사용자와 도메인 단서, 접근 권한]
+        guidance: {stage_id: exposure, phase: exposure, question: "어떤 프로토콜·서명 설정과 공유가 외부에 공개되는가?", purpose: "SMB 설정과 공개 자원을 함께 확인합니다.", manual_checks: ["공유명과 연결 가능 여부를 별도로 기록"], prerequisites: [], auth: anonymous, safety: low, next_steps: {confirmed: [anonymous]}}
+      - title: Null·Guest 세션 확인
+        node_key: anonymous
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: permissions, label: 익명 세션 확인}
+          - {when: {outcome: [access_denied, authentication_required]}, target: authenticated, label: 인증 경로 필요}
+          - {default: true, target: evidence, label: 판정 보류}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [smb-null-session]
+        expected_observations: [인증 없는 공유 열람, Guest 매핑, 오류 차이]
+        guidance: {stage_id: anonymous, phase: access, question: "Null·Guest 세션으로 어떤 정보가 노출되는가?", purpose: "세션 성립과 실제 열거 권한을 구분합니다.", manual_checks: ["접속 성공·목록 성공·읽기 성공을 별도 판정"], prerequisites: ["SMB 서비스 확인"], auth: anonymous, safety: low, next_steps: {confirmed: [permissions], access_denied: [authenticated]}}
+      - title: 제한된 기본 Credential 점검
+        node_key: authenticated
+        node_type: approval
+        approval: {required: true, reason: "저장된 Credential을 SMB 인증에 사용"}
+        transitions:
+          - {when: {approval_status: approved}, target: permissions, label: 승인됨}
+          - {default: true, target: evidence, label: 인증 생략}
+        command_refs: [smb-default-audit]
+        expected_observations: [성공 계정, 잠금 감지, 도메인 문맥]
+      - title: 수동 공유 접근
+        node_key: permissions
+        node_type: manual_check
+        transitions:
+          - {default: true, target: evidence, label: 권한 결과 정리}
+        command_refs: [smb-client]
+        expected_observations: [읽기·쓰기 가능한 공유, 민감 파일, 사용자별 권한 차이]
+      - title: Credential 재사용 후보 표시
+        node_key: evidence
+        node_type: evidence
+        expected_observations: [다른 SMB·WinRM·RDP 서비스 재확인 대상]
+
+  - key: nfs-baseline
+    revision: 1
+    name: NFS 기본 열거
+    description: Export와 호스트·UID/GID 기반 접근 범위를 확인합니다.
+    tags: [nfs, rpc, enumeration]
+    service_names: [nfs, rpcbind]
+    ports: [111, 2049]
+    steps:
+      - title: Export 목록 확인
+        command_refs: [nfs-showmount]
+        expected_observations: [Export 경로, 허용 호스트 또는 네트워크]
+      - title: 마운트와 파일 권한 수동 확인
+        expected_observations: [읽기·쓰기, UID/GID 매핑, root squash]
+      - title: 민감 파일 Evidence 정리
+        expected_observations: [키·설정·백업 파일의 위치와 권한]
+
+  - key: ldap-baseline
+    revision: 1
+    name: LDAP·Kerberos 기본 열거
+    description: RootDSE, Base DN, 도메인 문맥과 승인된 인증 범위를 확인합니다.
+    tags: [ldap, kerberos, active-directory]
+    service_names: [ldap, ldaps, kerberos-sec]
+    ports: [88, 389, 636]
+    steps:
+      - title: RootDSE 확인
+        command_refs: [ldap-rootdse]
+        expected_observations: [Base DN, naming contexts, 도메인과 서버 기능]
+      - title: 익명 조회 범위 확인
+        expected_observations: [익명 bind 허용 여부, 공개 객체와 속성]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [ldap-default-audit]
+        expected_observations: [bind 성공 여부, Base DN 요구, 잠금 신호]
+      - title: AD Information에 객체 정리
+        expected_observations: [사용자, 그룹, 컴퓨터, SPN과 출처]
+
+  - key: database-baseline
+    revision: 3
+    name: Database 기본 열거
+    description: 데이터베이스 제품을 식별하고 제품별 무인증·제한 Credential 검사를 안내합니다.
+    tags: [database, enumeration]
+    service_names: [ms-sql-s, mysql, postgresql, redis]
+    ports: [1433, 3306, 5432, 6379]
+    steps:
+      - title: 제품과 버전 식별
+        node_key: identity
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, targets: [mysql-anonymous, redis-anonymous, authenticated], label: 제품별 접근 확인}
+          - {default: true, target: authenticated, label: 인증 경로 확인}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [database-info]
+        expected_observations: [제품, 버전, 프로토콜과 TLS]
+        guidance: {stage_id: identity, phase: identification, question: "실제 데이터베이스 제품·버전·TLS 구성은 무엇인가?", purpose: "제품별 후속 절차를 선택할 근거를 확보합니다.", manual_checks: ["배너와 Nmap 탐지 근거 비교"], prerequisites: [], auth: none, safety: low, next_steps: {confirmed: [anonymous]}}
+      - title: MySQL 빈 비밀번호 확인
+        node_key: mysql-anonymous
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: permissions, label: 무인증 접근 확인}
+          - {default: true, target: authenticated, label: 인증 필요}
+        command_refs: [mysql-empty-password]
+        expected_observations: [빈 비밀번호 허용 여부]
+        condition: {kind: current_service_is, service_name: mysql}
+      - title: Redis 무인증 정보 확인
+        node_key: redis-anonymous
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: permissions, label: 무인증 접근 확인}
+          - {default: true, target: authenticated, label: 인증 필요}
+        command_refs: [redis-unauthenticated-info]
+        expected_observations: [인증 없는 INFO 응답, 버전과 역할]
+        condition: {kind: current_service_is, service_name: redis}
+      - title: 제품별 제한 Credential 점검
+        node_key: authenticated
+        node_type: approval
+        approval: {required: true, reason: "승인된 데이터베이스 Credential 사용"}
+        transitions:
+          - {when: {approval_status: approved}, target: permissions, label: 승인됨}
+          - {default: true, target: permissions, label: 인증 없이 수동 정리}
+        command_refs: [mysql-default-audit, postgres-default-audit, mssql-default-audit, redis-default-audit]
+        expected_observations: [성공 계정, 잠금 또는 속도 제한, 인증 방식]
+      - title: 권한과 데이터 접근 수동 확인
+        node_key: permissions
+        node_type: manual_check
+        expected_observations: [현재 사용자, 역할, 데이터베이스 목록, 파일 또는 명령 권한]
+        guidance: {stage_id: permissions, phase: authorization, question: "계정별 스키마·역할·파일·명령 기능 범위는 어디까지인가?", purpose: "데이터 열람과 호스트 영향 기능을 구분합니다.", manual_checks: ["현재 사용자·역할·DB 목록·파일/명령 기능을 계정별 비교"], prerequisites: ["승인된 자격 증명"], auth: required, safety: medium, next_steps: {confirmed: [attack_surface]}}
+
+  - key: rdp-winrm-baseline
+    revision: 2
+    name: RDP 기본 열거
+    description: RDP 보안 계층, NLA와 승인된 원격 데스크톱 접근 범위를 확인합니다.
+    tags: [rdp, windows]
+    service_names: [ms-wbt-server]
+    ports: [3389]
+    steps:
+      - title: RDP 보안 정보 확인
+        command_refs: [rdp-info]
+        expected_observations: [NLA, 암호화 수준, NTLM 도메인과 호스트명]
+      - title: 제한된 RDP 기본 Credential 점검
+        command_refs: [rdp-default-audit]
+        expected_observations: [성공 계정, 잠금 또는 연결 제한]
+      - title: Credential 재사용 범위 검토
+        expected_observations: [로컬·도메인 계정 구분, RDP 로그인 권한과 세션 제한]
+
+  - key: winrm-baseline
+    revision: 1
+    name: WinRM 기본 조사
+    description: WinRM 전송 계층, 인증 challenge와 승인된 계정별 원격 관리 권한을 조사합니다.
+    tags: [winrm, windows, remote-management]
+    service_names: [wsman, wsmans, winrm]
+    ports: [5985, 5986, 47001]
+    steps:
+      - title: WinRM endpoint와 전송 계층 확인
+        command_refs: [service-version, winrm-info]
+        expected_observations: [HTTP 또는 HTTPS, Server 헤더, WS-Management endpoint, 허용 메서드]
+        guidance: {stage_id: identity, phase: identification, question: "이 endpoint가 실제 WinRM이며 어떤 전송·TLS 구성을 사용하는가?", purpose: "비표준 포트를 포함해 WinRM endpoint와 보호 계층을 식별합니다.", manual_checks: ["HTTP 상태·인증 challenge·TLS 인증서를 분리 기록"], prerequisites: [], auth: none, safety: low, next_steps: {confirmed: [authentication]}}
+      - title: HTTPS WinRM TLS 구성 확인
+        command_refs: [winrm-tls-info]
+        expected_observations: [인증서 이름과 유효기간, TLS 버전과 암호군]
+        condition: {kind: current_service_is, service_name: wsmans}
+        guidance: {stage_id: tls, phase: configuration, question: "HTTPS WinRM의 인증서와 TLS 암호군은 안전한가?", purpose: "TLS를 사용하는 WinRM에서만 보호 계층을 확인합니다.", manual_checks: ["인증서 이름·유효기간·TLS 버전 기록"], prerequisites: ["HTTPS WinRM 탐지"], auth: none, safety: low, next_steps: {confirmed: [authentication]}}
+      - title: 인증 방식과 도메인 문맥 확인
+        expected_observations: [Negotiate, Kerberos, NTLM 또는 Basic challenge, 도메인과 호스트 단서]
+        guidance: {stage_id: authentication, phase: access, question: "어떤 인증 방식과 도메인 문맥이 요구되는가?", purpose: "인증 challenge 확인과 계정 검증을 분리합니다.", manual_checks: ["WWW-Authenticate 값과 도메인·호스트 문맥 기록", "무차별 대입은 자동 실행하지 않음"], prerequisites: ["WinRM endpoint 확인"], auth: required, safety: low, next_steps: {confirmed: [authorization]}}
+      - title: 승인된 계정별 원격 관리 권한 비교
+        expected_observations: [접속 허용 여부, 셸 언어 모드, 그룹, 명령·파일 접근 범위]
+        guidance: {stage_id: authorization, phase: authorization, question: "일반 사용자와 관리자 계정의 원격 관리 범위가 어떻게 다른가?", purpose: "로그인 성공과 실제 관리 권한을 구분합니다.", manual_checks: ["승인된 계정으로만 수동 세션 검증", "명령·파일·PowerShell 제약을 계정별 기록"], prerequisites: ["승인된 Credential"], auth: required, safety: medium, next_steps: {confirmed: [evidence]}}
+
+  - key: snmp-baseline
+    revision: 1
+    name: SNMP 기본 열거
+    description: SNMP 메타데이터와 제한된 Community 문자열을 확인합니다.
+    tags: [snmp, udp, enumeration]
+    service_names: [snmp]
+    ports: [161]
+    steps:
+      - title: SNMP 정보 확인
+        command_refs: [snmp-info]
+        expected_observations: [sysDescr, sysName, 위치와 연락처, 장비 정보]
+      - title: 제한된 Community 점검
+        command_refs: [snmp-community-audit]
+        expected_observations: [유효 Community, 버전, 읽기 범위]
+      - title: OID 수동 탐색
+        expected_observations: [인터페이스, 프로세스, 사용자, 네트워크와 소프트웨어 정보]
+
+  - key: mail-baseline
+    revision: 1
+    name: IMAP·POP3 기본 열거
+    description: 메일 수신 서비스의 인증과 승인된 계정 접근 범위를 확인합니다.
+    tags: [imap, pop3, mail]
+    service_names: [imap, imaps, pop3, pop3s]
+    ports: [110, 143, 993, 995]
+    steps:
+      - title: 배너와 TLS 확인
+        expected_observations: [제품과 버전, STARTTLS 또는 TLS, 인증 방식]
+      - title: 제한된 IMAP Credential 점검
+        command_refs: [imap-default-audit]
+        expected_observations: [성공 계정, 잠금 또는 속도 제한]
+        condition: {kind: current_service_is, service_name: imap}
+      - title: 제한된 POP3 Credential 점검
+        command_refs: [pop3-default-audit]
+        expected_observations: [성공 계정, 잠금 또는 속도 제한]
+        condition: {kind: current_service_is, service_name: pop3}
+      - title: 승인된 계정의 메일 접근 검토
+        expected_observations: [메일함 목록, 민감 메일, 다른 서비스 Credential 단서]
+
+  - key: vnc-baseline
+    revision: 1
+    name: VNC 기본 열거
+    description: VNC 프로토콜, 인증 방식과 제한된 비밀번호 검사를 수행합니다.
+    tags: [vnc, remote-access]
+    service_names: [vnc]
+    ports: [5900, 5901, 5902]
+    steps:
+      - title: 보안 방식 확인
+        command_refs: [vnc-info]
+        expected_observations: [프로토콜 버전, 인증 없음 또는 VNC 인증]
+      - title: 제한된 기본 비밀번호 점검
+        command_refs: [vnc-default-audit]
+        expected_observations: [성공 비밀번호, 잠금 또는 연결 제한]
+      - title: 승인된 수동 화면 접근
+        expected_observations: [로그인 화면, 데스크톱 권한, 화면 Evidence]
+
+  - key: mongodb-baseline
+    revision: 1
+    name: MongoDB 기본 열거
+    description: 무인증 정보 노출과 제한된 Credential 접근을 확인합니다.
+    tags: [mongodb, database]
+    service_names: [mongodb]
+    ports: [27017]
+    steps:
+      - title: 무인증 서버 정보 확인
+        command_refs: [mongodb-info]
+        expected_observations: [빌드와 버전, 인증 요구 여부, 서버 역할]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [mongodb-default-audit]
+        expected_observations: [성공 계정, 인증 데이터베이스, 잠금 신호]
+      - title: 데이터베이스와 권한 수동 확인
+        expected_observations: [DB와 Collection 목록, 현재 역할, 읽기·쓰기 범위]
+
+  - key: rsync-baseline
+    revision: 1
+    name: Rsync 기본 열거
+    description: 공개 모듈과 제한된 인증 접근 범위를 확인합니다.
+    tags: [rsync, file-transfer]
+    service_names: [rsync]
+    ports: [873]
+    steps:
+      - title: 공개 모듈 확인
+        command_refs: [rsync-modules]
+        expected_observations: [모듈명, 설명, 인증 요구 여부]
+      - title: 제한된 기본 Credential 점검
+        command_refs: [rsync-default-audit]
+        expected_observations: [성공 계정, 모듈별 인증 차이]
+      - title: 파일 접근 수동 확인
+        expected_observations: [읽기·쓰기, 백업과 설정 파일, 경로 노출]
+
+  - key: unknown-service-baseline
+    revision: 4
+    name: Unknown Service 식별
+    description: 식별되지 않은 TCP 서비스를 안전한 Probe와 수동 관찰로 분류합니다.
+    tags: [unknown, identification]
+    service_names: [unknown, tcpwrapped]
+    ports: []
+    steps:
+      - title: TCP 제품·버전 식별
+        node_key: identity
+        node_type: command
+        transitions:
+          - {when: {outcome: confirmed}, target: reclassify, label: 서비스 확인}
+          - {when: {outcome: [needs_review, ambiguous, error, parser_failed]}, target: protocol-probes, label: 추가 Probe 필요}
+          - {default: true, target: protocol-probes, label: 식별 근거 부족}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [service-version, generic-banner]
+        expected_observations: [응답 Probe, 제품과 버전, 배너]
+        guidance: {stage_id: identity, phase: identification, question: "이 TCP endpoint가 실제로 말하는 프로토콜은 무엇인가?", purpose: "포트 번호 추정 대신 관찰된 응답으로 재분류합니다.", manual_checks: ["원시 배너와 응답한 Probe 기록"], prerequisites: [], auth: none, safety: low, next_steps: {confirmed: [reclassify], needs_review: [protocol_probes]}}
+      - title: 원시 응답과 프로토콜 수동 확인
+        node_key: protocol-probes
+        node_type: command
+        transitions:
+          - {default: true, target: reclassify, label: 재분류}
+        command_refs: [generic-tls-probe, generic-http-probe]
+        expected_observations: [텍스트 또는 바이너리 배너, TLS 여부, 프로토콜 후보]
+        guidance: {stage_id: protocol_probes, phase: identification, question: "TLS 또는 HTTP 계열 응답이 존재하는가?", purpose: "암호화로 가려진 서비스와 비표준 웹 서비스를 찾습니다.", manual_checks: ["TLS handshake와 HTTP 상태를 각각 기록"], prerequisites: ["기본 배너 수집"], auth: none, safety: low, next_steps: {confirmed: [reclassify]}}
+      - title: 식별 결과로 Service 갱신
+        node_key: reclassify
+        node_type: manual_check
+        expected_observations: [확인된 서비스명, 제품, 버전과 Evidence]
+
+  - key: msrpc-baseline
+    revision: 3
+    name: MSRPC Endpoint Mapper 조사
+    description: SMB 절차와 구분하여 RPC 인터페이스·UUID·endpoint·권한 경계를 조사합니다.
+    tags: [msrpc, windows, enumeration]
+    service_names: [msrpc, epmap]
+    ports: [135]
+    steps:
+      - title: RPC 제품과 Endpoint Mapper 확인
+        node_key: interfaces
+        node_type: command
+        transitions:
+          - {when: {outcome: [confirmed, partial, access_denied, authentication_required]}, target: authorization, label: 권한 경계 확인}
+          - {default: true, target: evidence, label: 결과 검토}
+        error_policy: {retry: {max_attempts: 2}}
+        command_refs: [service-version, msrpc-enum]
+        expected_observations: [RPC UUID, named endpoint, 동적 TCP 포트, 서비스 단서]
+        guidance: {stage_id: interfaces, phase: exposure, question: "어떤 RPC 인터페이스와 endpoint가 외부에 공개되는가?", purpose: "UUID를 관련 Windows 구성 요소와 연결합니다.", manual_checks: ["UUID·annotation·endpoint·동적 포트를 표로 기록"], prerequisites: ["MSRPC 탐지"], auth: none, safety: low, next_steps: {confirmed: [authorization]}}
+      - title: 외부 호출과 권한 경계 확인
+        node_key: authorization
+        node_type: manual_check
+        transitions:
+          - {default: true, target: attack-surface, label: 공격 표면 분석}
+        expected_observations: [bind 가능 여부, 인증 요구, 접근 거부, 계정별 차이]
+        guidance: {stage_id: authorization, phase: authorization, question: "인터페이스별 bind·호출에 어떤 인증과 권한이 필요한가?", purpose: "endpoint 노출과 실제 호출 가능성을 구분합니다.", manual_checks: ["익명·일반 사용자·관리자 결과를 분리"], prerequisites: ["인터페이스 목록"], auth: optional, safety: low, next_steps: {confirmed: [rpc-research]}}
+      - title: 관련 서비스와 취약점 후보 연결
+        node_key: attack-surface
+        node_type: finding
+        transitions:
+          - {default: true, target: evidence, label: 근거 연결}
+        expected_observations: [관련 Windows 서비스, 제품·버전 근거, 구성 기반 후보]
+        guidance: {stage_id: rpc-research, phase: vulnerability, question: "공개 UUID와 관련 서비스에서 어떤 취약점 후보를 조사해야 하는가?", purpose: "검증되지 않은 후보와 확인된 Finding을 구분합니다.", manual_checks: ["SMB는 관련 서비스로만 연결하고 현재 MSRPC 결과와 혼합하지 않기"], prerequisites: ["UUID와 권한 판정"], auth: none, safety: passive, next_steps: {confirmed: [evidence]}}
+      - title: RPC 조사 근거 정리
+        node_key: evidence
+        node_type: evidence
+        expected_observations: [원문 출력, UUID와 endpoint 표, 권한 판정, 취약점 후보 연결]
