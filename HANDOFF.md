@@ -52,6 +52,8 @@
     `ServiceDashboard.tsx`로 이동하고 요약·실행 중 상태 테스트 추가
   - 완료된 조사를 제외하는 규칙, 명령 카드와 실행 중 상태 UI를
     `InvestigationCommandList.tsx`로 이동하고 남은/완료 명령 테스트 추가
+  - 프로토콜 인증 문맥·수동 접속 안내를 `ManualGuidance.tsx`, 현재 작업 상태·신호
+    지연 경고를 `JobStatus.tsx`로 이동하고 독립 테스트 추가
 
 ## 검증
 
@@ -86,12 +88,13 @@
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - Frontend investigation-list 분리 후: 전체 Vitest `29 files / 78 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
+- Frontend guidance/job-status 분리 후: 전체 Vitest `31 files / 80 tests` 통과,
+  production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`에서 수동 상호작용 안내와 인증 문맥 안내를 다음 작은 seam으로
-   분리한다.
+1. 프런트엔드 `App.tsx`에서 NetExec 단일 자격증명 확인 화면을 다음 seam으로 분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.

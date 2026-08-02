@@ -22,13 +22,14 @@ import EnumerationScope from "./EnumerationScope";
 import CredentialAuditPanel from "./CredentialAuditPanel";
 import ServiceDashboard from "./ServiceDashboard";
 import InvestigationCommandList from "./InvestigationCommandList";
+import ManualGuidance from "./ManualGuidance";
+import JobStatus from "./JobStatus";
 import {
   keepSelectedService,
   parseSmbShares,
   summarizeExecutionResult,
 } from "./serviceIntel";
 import {
-  authContextNotice,
   shellQuote,
   sourceLabel,
   type Project,
@@ -961,119 +962,8 @@ export default function App() {
             clock={clock}
             onReview={reviewCommand}
           />
-          {service && authContextNotice[service.name] && (
-            <div className="identityNotice" role="note">
-              <b>이 프로토콜은 추가 인증 문맥이 필요합니다</b>
-              <p>{authContextNotice[service.name]}</p>
-            </div>
-          )}
-          {guidance && (
-            <section className="manualGuidance" aria-labelledby="manual-guidance-title">
-              <div>
-                <span>수동 상호작용 안내</span>
-                <h2 id="manual-guidance-title">{guidance.title}</h2>
-                <p>
-                  대화형 명령은 Kali의 실제 데스크톱 터미널에서 실행됩니다.
-                  계정 후보는 복사한 뒤 터미널에서 직접 입력하세요.
-                </p>
-              </div>
-              <code>{guidance.command}</code>
-              <button
-                onClick={() => navigator.clipboard.writeText(guidance.command)}
-              >
-                접속 명령 복사
-              </button>
-              <ol>
-                {guidance.steps.map((step) => <li key={step}>{step}</li>)}
-              </ol>
-              <div className="accountCandidates" aria-label="정적 계정 후보">
-                <b>로그인 계정 입력</b>
-                {guidance.accountCandidates.map((account) => (
-                  <button
-                    key={account}
-                    onClick={() => navigator.clipboard.writeText(account)}
-                  >
-                    {account} 복사
-                  </button>
-                ))}
-              </div>
-              {guidance.verificationCommands?.length && (
-                <div className="verificationCommands">
-                  <b>로그인 후 버전 확인 명령</b>
-                  <p>대상 셸에 로그인한 뒤 운영체제에 맞는 명령 하나를 직접 실행하세요.</p>
-                  {guidance.verificationCommands.map((command) => (
-                    <div key={command}>
-                      <code>{command}</code>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(command)}
-                      >
-                        복사
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-          {focusedRun && (
-            <section
-              className={`jobStatus jobStatus--${focusedRun.status}`}
-              aria-live="polite"
-              aria-label="현재 명령 실행 상태"
-            >
-              <span className="jobStatus__dot" aria-hidden="true" />
-              <div>
-                <b>
-                  작업 #{focusedRun.id || "준비"} ·{" "}
-                  {statusLabel[focusedRun.status] || focusedRun.status}
-                </b>
-                <small>
-                  {focusedRun.status === "starting" && "실행 요청을 준비하고 있습니다."}
-                  {focusedRun.status === "running" &&
-                    (focusedRun.processAlive
-                      ? "백엔드가 명령 프로세스 실행을 확인했습니다."
-                      : "명령을 실행했으며 다음 상태 신호를 기다리고 있습니다.")}
-                  {focusedRun.status === "completed" && "명령 실행과 결과 저장이 완료되었습니다."}
-                  {focusedRun.status === "no_response" && "대상 응답 또는 식별 결과가 없습니다."}
-                  {["failed", "error"].includes(focusedRun.status) &&
-                    (focusedRun.message || "명령 실행에 실패했습니다.")}
-                  {focusedRun.status === "stopped" && "명령 실행이 중단되었습니다."}
-                </small>
-              </div>
-              <dl>
-                <div>
-                  <dt>경과 시간</dt>
-                  <dd>{runElapsed < 60
-                    ? `${runElapsed}s`
-                    : `${Math.floor(runElapsed / 60)}m ${runElapsed % 60}s`}</dd>
-                </div>
-                <div>
-                  <dt>프로세스</dt>
-                  <dd>{focusedRun.status === "running"
-                    ? focusedRun.processAlive ? "실행 확인됨" : "확인 중"
-                    : "종료됨"}</dd>
-                </div>
-                <div>
-                  <dt>마지막 서버 응답</dt>
-                  <dd>{focusedRun.lastEventAt
-                    ? `${Math.max(0, Math.floor((clock - focusedRun.lastEventAt) / 1000))}초 전`
-                    : "대기 중"}</dd>
-                </div>
-              </dl>
-              {focusedRun.status === "running" && focusedRun.lastEventAt &&
-                clock - focusedRun.lastEventAt > 30000 && (
-                  <p className="jobStatus__warning" role="alert">
-                    30초 이상 서버 상태 신호가 없습니다. 백엔드 연결을 확인하세요.
-                  </p>
-                )}
-              {activeRuns.length > 1 && (
-                <p className="jobStatus__parallelNote">
-                  다른 작업 {activeRuns.length - 1}개가 백그라운드에서 함께 실행 중입니다.
-                  아래 실행 모니터에서 전환할 수 있습니다.
-                </p>
-              )}
-            </section>
-          )}
+          <ManualGuidance serviceName={service?.name} guidance={guidance} />
+          <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
             shares={smbShares} activeShare={lastSpiderShare}
             runState={runStates["smb-share-spider"]}
