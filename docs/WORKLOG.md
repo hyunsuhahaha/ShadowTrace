@@ -179,3 +179,74 @@ Python bytecode compilation passed, and `git diff --check` passed.
 Verification: 34 backend tests passed; 2 frontend tests passed; TypeScript and
 the Vite production build passed. Fresh/upgrade/downgrade migration and runtime
 API smoke results are recorded in the final task report.
+
+## 2026-08-02
+
+### Phase 10 — Backend/frontend modularization (stabilization)
+
+A multi-session effort (Codex and Claude Code alternating on
+`phase-8/stabilization`) to break `backend/app/main.py`, `App.tsx`, and other
+large files into small, single-purpose modules without changing any URL,
+request/response schema, or DB schema. Each step moved code only; behavior was
+re-verified after every step.
+
+Backend:
+- Moved product/project/target/service metadata routes out of `main.py` into
+  `backend/app/modules/core/router.py`, sharing `need()`/`safe_part()` via
+  `backend/app/modules/core/support.py`.
+- Moved Execution CRUD/output/SSE/stop routes into
+  `backend/app/modules/executions/router.py`.
+- Moved Interactive Session HTTP/WebSocket/desktop/PTY routes into
+  `backend/app/modules/sessions/router.py` (PTY manager shutdown stays in the
+  app lifespan in `main.py`).
+- Split `backend/app/modules/runbooks/router.py` (1,185 lines) into
+  `support.py` (shared Pydantic schemas, constants, and helpers),
+  `workflow_router.py` (templates, instances, recommendations, findings,
+  summary), `execution_router.py` (step status/approval/timer,
+  evidence/execution/credential attachment, observations), and
+  `credentials_router.py` (credential CRUD). All three keep the
+  `/api/runbooks` prefix, so the route surface is unchanged; `main.py` now
+  includes all three. Updated the handful of call sites that imported names
+  from the old `runbooks.router` module (`service_intelligence/router.py`,
+  `test_runbooks.py`, `test_targets.py`, `test_builtin_runbooks.py`).
+- Moved the `TOOLS` dict and `/api/system/status` route into a new
+  `backend/app/modules/system.py`. `main.py` shrank from 562 to 139 lines and
+  now holds only app assembly, lifespan, the audit middleware, and static
+  frontend serving.
+- Replaced fake uploads in `test_directory.py`/`test_evidence.py` with real
+  multipart-equivalent `SpooledTemporaryFile` fixtures, removing a Python
+  3.13/AnyIO timeout.
+
+Frontend (`App.tsx`, 2,062 → 1,110 lines):
+- Extracted `enumerationModel.ts` (domain types, display constants, PTY
+  `shellQuote`), `api.ts` (shared fetch handling), and
+  `useEnumerationQueries.ts` (project→target→service→command/intelligence/
+  execution queries).
+- Extracted `ServiceList`, `ExecutionHistory`, `ExecutionMonitor`,
+  `ServiceWorkspace`, `CommandReviewModal`, `EnumerationScope`,
+  `CredentialAuditPanel`, `ServiceDashboard`, `InvestigationCommandList`,
+  `ManualGuidance`, `JobStatus`, `CredentialStoreForm`, `NetexecOutcome`,
+  `PrivescSessionPanel` (LinPEAS/WinPEAS server + psexec terminal), and
+  `LiveOutputPanel` (live/status terminal output) — each with its own test
+  file.
+
+`ScanCenter.tsx` (1,131 → 603 lines):
+- Extracted `scanCenterModel.ts` (types, constants, `get`/`serverTime`/
+  `elapsed`/`bytes`/`syncSelectedProject`), `ScanToolPicker.tsx`,
+  `ScanProfileComposer.tsx` (target registration, profile picker, Nmap XML
+  import, command preview/review), `ScanJobStatus.tsx` (current scan status,
+  automation/chaining/masscan-discovery notices), and `ScanHistoryPanel.tsx`
+  (search/filter, queue/history list, cancel/rerun, diff comparison).
+  `ScanCenter.test.ts` was renamed to `scanCenterModel.test.ts` to match its
+  new home; `PostExploitationWorkspace.tsx`'s `syncSelectedProject` import was
+  updated accordingly. The observation table/filters/stats, artifact panel,
+  and output terminal were intentionally left in `ScanCenter.tsx`.
+
+Verification after each step: full backend suite (125 passed), full Vitest
+suite (grew from 19 to 39 files / 60 to 97 tests across the series), `tsc -b`,
+and the Vite production build all passed. Each step was also checked live in
+Chrome against an isolated DB/profile under `/tmp/oscp-browser-validation`
+(Scan Center, Service Enumeration, Runbooks), confirming no console errors, no
+failed asset/API requests, and — for the runbooks split — an actual
+`PATCH /api/runbooks/steps/{id}` round trip updating the UI. `git diff
+--check` passed throughout.
