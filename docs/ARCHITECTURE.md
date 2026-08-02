@@ -31,6 +31,9 @@ FastAPI는 비동기 프로세스 실행과 스트리밍 API를 담당하고, Re
 `frontend/src/features/<module>` 아래에 둔다. 공용 타입과 UI 요소만 각각 `core`와
 `shared`에서 제공한다.
 
+두 개발 도구 사이의 최신 작업 상태와 다음 단계는 저장소 루트의 `HANDOFF.md`에
+짧게 유지한다. 상세 구현 이력은 이 문서가 아니라 `docs/WORKLOG.md`에 누적한다.
+
 ## 저장소와 데이터
 
 XDG 규칙을 우선하며 `OSCP_WORKSPACE_*` 환경 변수로 위치를 바꿀 수 있다.

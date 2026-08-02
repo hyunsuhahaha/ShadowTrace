@@ -1,5 +1,5 @@
 import asyncio
-import io
+import tempfile
 from fastapi import UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -23,9 +23,11 @@ def test_directory_import_and_observed_relation():
         '[{"kind":"user","name":"alice","domain":"lab.local"},'
         '{"kind":"group","name":"Operators","domain":"lab.local"}]'
     ).encode()
+    upload = tempfile.SpooledTemporaryFile()
+    upload.write(content)
+    upload.seek(0)
     rows = asyncio.run(import_objects(
-        project.id, UploadFile(filename="objects.json",
-                               file=io.BytesIO(content)), db))
+        project.id, UploadFile(filename="objects.json", file=upload), db))
     relation = create_relation(DirectoryRelationIn(
         project_id=project.id, source_id=rows[0].id, target_id=rows[1].id,
         relation="observed_member_of"), db)

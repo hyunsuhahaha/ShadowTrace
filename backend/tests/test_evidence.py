@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import tempfile
 import zipfile
 from fastapi import UploadFile
 from sqlalchemy import create_engine
@@ -26,12 +27,15 @@ def test_evidence_hash_duplicate_and_zip_manifest(tmp_path, monkeypatch):
     db.add(target); db.commit()
 
     async def upload(title):
+        uploaded = tempfile.SpooledTemporaryFile()
+        uploaded.write(b"proof")
+        uploaded.seek(0)
         return await upload_evidence(
             project_id=project.id, target_id=target.id, title=title,
             kind="flag", description="", service_id=None,
             source_type="upload", source_id=None, sensitivity="sensitive",
             include_report=True,
-            file=UploadFile(filename="proof.txt", file=io.BytesIO(b"proof")),
+            file=UploadFile(filename="proof.txt", file=uploaded),
             db=db)
 
     first = asyncio.run(upload("First"))
