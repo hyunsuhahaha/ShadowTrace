@@ -32,6 +32,9 @@
 - 프런트엔드 `App.tsx` 1차 분리 진행 중:
   - 도메인 타입, 표시 상수와 PTY `shellQuote`를 `enumerationModel.ts`로 이동
   - shell quoting 회귀 테스트 추가
+  - 공통 fetch 처리를 `api.ts`로 이동
+  - 프로젝트→Target→Service→명령/intelligence/실행 조회를
+    `useEnumerationQueries.ts`로 이동하고 활성화 조건·URL 테스트 추가
 
 ## 검증
 
@@ -45,12 +48,14 @@
   모두 HTTP 200. `/tmp/oscp-browser-validation`의 격리 DB와 프로필을 사용했다.
 - Frontend model 분리 후: 전체 Vitest `19 files / 60 tests` 통과, production build
   통과, Chrome Service Enumeration 재검증 및 모든 관찰 요청 HTTP 200.
+- Frontend query 분리 후: 전체 Vitest `20 files / 61 tests` 통과, production build
+  통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`의 서버 query 묶음 또는 독립 화면 영역을 다음 작은 seam으로
-   분리한다.
+1. 프런트엔드 `App.tsx`에서 독립적인 서비스 목록 또는 실행 이력 화면 영역을 다음
+   작은 seam으로 분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.

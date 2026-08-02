@@ -5,7 +5,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import VpnControl from "./VpnControl";
 import InteractiveTerminal from "./InteractiveTerminal";
-import ServiceIntelligencePanel, {type ServiceIntelligence} from "./ServiceIntelligencePanel";
+import ServiceIntelligencePanel from "./ServiceIntelligencePanel";
 import "./service-intelligence.css";
 import { statusCopy as statusLabel } from "./ui";
 import { getServiceGuidance } from "./serviceGuidance";
@@ -30,15 +30,11 @@ import {
   sourceLabel,
   type Project,
   type RunState,
-  type Service,
   type Target,
 } from "./enumerationModel";
+import {api} from "./api";
+import {useEnumerationQueries} from "./useEnumerationQueries";
 
-const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
-  const r = await fetch("/api" + path, init);
-  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-  return r.status === 204 ? (null as T) : r.json();
-};
 export default function App() {
   const qc = useQueryClient();
   // Keyed by template_id: nothing backend-side serializes executions (each
@@ -112,40 +108,15 @@ export default function App() {
   // regardless of focus — focus only picks what's shown front-and-center.
   const [focusedRunId, setFocusedRunId] = useState<string>();
   const [clock, setClock] = useState(Date.now());
-  const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api<Project[]>("/projects"),
-  });
-  const targets = useQuery({
-    queryKey: ["targets", projectId],
-    queryFn: () => api<Target[]>(`/targets?project_id=${projectId}`),
-    enabled: !!projectId,
-  });
-  const services = useQuery({
-    queryKey: ["services", targetId],
-    queryFn: () => api<Service[]>(`/targets/${targetId}/services`),
-    enabled: !!targetId,
-  });
-  const commands = useQuery({
-    queryKey: ["commands", serviceId],
-    queryFn: () => api<any[]>(`/services/${serviceId}/commands`),
-    enabled: !!serviceId,
-  });
-  const intelligence = useQuery({
-    queryKey: ["serviceIntelligence", serviceId],
-    queryFn: () => api<ServiceIntelligence>(`/services/${serviceId}/intelligence`),
-    enabled: !!serviceId,
-  });
-  const targetCommands = useQuery({
-    queryKey: ["targetIdentityCommands", targetId],
-    queryFn: () => api<any[]>(`/targets/${targetId}/identity-commands`),
-    enabled: !!targetId,
-  });
-  const executions = useQuery({
-    queryKey: ["executions", targetId],
-    queryFn: () => api<any[]>(`/executions?target_id=${targetId}`),
-    enabled: !!targetId,
-  });
+  const {
+    projects,
+    targets,
+    services,
+    commands,
+    intelligence,
+    targetCommands,
+    executions,
+  } = useEnumerationQueries({projectId, targetId, serviceId});
   const privescServerStatus = useQuery({
     queryKey: ["privescServerStatus"],
     queryFn: () => api<any>("/privesc-server/status"),
