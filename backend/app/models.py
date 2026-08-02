@@ -520,6 +520,37 @@ class ExploitLocalRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RemoteExecution(Base):
+    __tablename__ = "remote_executions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    credential_id: Mapped[int | None] = mapped_column(
+        ForeignKey("credentials.id"), nullable=True)
+    command_id: Mapped[str] = mapped_column(String(80))
+    category: Mapped[str] = mapped_column(String(40))
+    connection: Mapped[str] = mapped_column(String(20))
+    request_key: Mapped[str] = mapped_column(String(120), unique=True)
+    approval_token_hash: Mapped[str] = mapped_column(String(64))
+    argv_json: Mapped[str] = mapped_column(Text)
+    command_display: Mapped[str] = mapped_column(Text, default="")
+    timeout_seconds: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="prepared", index=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stdout_path: Mapped[str] = mapped_column(Text, default="")
+    stderr_path: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    timed_out: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str] = mapped_column(Text, default="")
+    evidence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("evidence.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RunbookTemplate(Base):
     __tablename__ = "runbook_templates"
     id: Mapped[int] = mapped_column(primary_key=True)

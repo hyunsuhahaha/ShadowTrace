@@ -16,6 +16,9 @@ export const statusCopy: Record<string, string> = {
   interrupted: "비정상 중단",
   connected: "연결됨",
   disconnected: "연결 끊김",
+  prepared: "검토됨 · 승인 대기",
+  timed_out: "시간 초과",
+  cancelled: "취소됨",
 };
 
 export function Button({

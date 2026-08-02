@@ -25,6 +25,7 @@ const pages = [
       { route: "web", step: "03", label: "Web Testing · Intruder", detail: "HTTP 요청 변형과 응답 비교" },
       { route: "exploit-research", step: "04", label: "Exploit Research", detail: "후보와 PoC 기록" },
       { route: "runbooks", step: "", label: "Runbooks", detail: "방법론과 수행 진행률" },
+      { route: "post-exploitation", step: "", label: "Post-Exploitation", detail: "자격 증명 헌팅" },
     ],
   },
   {

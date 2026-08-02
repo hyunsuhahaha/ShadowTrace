@@ -14,6 +14,7 @@ import "./reports.css";
 import "./operations.css";
 import "./exploit-research.css";
 import "./runbooks.css";
+import "./post-exploitation.css";
 import Root from "./Root";
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={new QueryClient()}>

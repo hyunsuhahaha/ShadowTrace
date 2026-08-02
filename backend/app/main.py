@@ -14,8 +14,8 @@ from .executor import (
     shutdown_executions, stop_execution,
 )
 from .models import (
-    AppSetting, AuditEvent, Execution, InteractiveSession, Project, Service,
-    ServiceObservation, Target, Tunnel,
+    AppSetting, AuditEvent, Execution, InteractiveSession, Project, RemoteExecution,
+    Service, ServiceObservation, Target, Tunnel,
 )
 from .nmap_parser import parse_nmap
 from .product_policy import public_policy
@@ -39,6 +39,8 @@ from .modules.runbooks.router import router as runbook_router
 from .modules.service_intelligence.router import router as service_intelligence_router
 from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
+from .modules.post_exploitation.router import router as post_exploitation_router
+from .modules.post_exploitation.manager import manager as post_exploitation_manager
 from .schemas import (
     ExecutionIn, ExecutionOut, InteractiveSessionIn, InteractiveSessionOut,
     ManualTerminalIn, MetasploitLockIn, ProjectIn, ProjectOut, ServiceOut,
@@ -74,6 +76,10 @@ async def lifespan(_: FastAPI):
             for row in db.query(model).filter(model.status.in_(("running","stopping"))):
                 row.status="interrupted";row.error="Application restarted"
                 row.ended_at=utcnow();row.pid=None
+        for row in db.query(RemoteExecution).filter(
+                RemoteExecution.status.in_(("prepared","running"))):
+            row.status="failed";row.error="Application restarted"
+            row.ended_at=utcnow()
         db.commit()
         reconcile_completed_observations(db)
     yield
@@ -81,6 +87,7 @@ async def lifespan(_: FastAPI):
     await shutdown_executions()
     await pty_manager.shutdown()
     await tunnel_manager.shutdown()
+    await post_exploitation_manager.shutdown()
     shutdown_local_runs()
     stop_privesc_server()
 
@@ -98,6 +105,7 @@ app.include_router(privesc_server_router)
 app.include_router(exploit_research_router)
 app.include_router(runbook_router)
 app.include_router(service_intelligence_router)
+app.include_router(post_exploitation_router)
 
 @app.middleware("http")
 async def mutation_audit(request:Request, call_next):
@@ -231,7 +239,7 @@ def delete_project(ident:int, db:Session=Depends(get_db)):
         tables["directory_relations"].c.project_id == ident))
     for table_name in [
         "evidence", "exploit_research", "http_requests", "directory_objects",
-        "tunnels", "reports", "scan_jobs",
+        "tunnels", "reports", "scan_jobs", "remote_executions",
     ]:
         db.execute(sql_delete(tables[table_name]).where(
             tables[table_name].c.project_id == ident))
