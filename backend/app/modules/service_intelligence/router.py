@@ -15,7 +15,7 @@ from ...models import (
 )
 from ...time import utcnow
 from ..runbooks.engine import TERMINAL_STATUSES, recompute
-from ..runbooks.router import (
+from ..runbooks.support import (
     condition_met, event, instance_dict, instance_scope_current,
 )
 from .catalog import catalog

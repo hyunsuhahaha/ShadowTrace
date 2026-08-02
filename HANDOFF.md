@@ -80,6 +80,29 @@
   - 각 컴포넌트에 독립 테스트 추가. `ScanCenter.tsx`는 1,131줄 → 603줄로 축소됐다.
     관찰 결과 테이블/필터/통계, artifact 패널, 저장·실시간 출력 터미널은 이번
     단계에서 그대로 두었다(다음 분리 후보).
+- 백엔드 `runbooks/router.py`(최초 1,185줄) 분리 완료:
+  - Pydantic 모델(TemplateIn/StepIn/PublishIn/ApplyIn/StepUpdate/ApprovalIn/
+    LinkIn/CredentialIn/ObservationIn/FindingIn/FindingUpdate/CloneIn/DismissIn/
+    ImportIn), 상수(STATUSES/OUTCOMES/REASON_REQUIRED/NODE_TYPES/
+    ACTIVATION_LOCKED)와 공용 헬퍼(need/loads/seconds_since/
+    instance_scope_current/template_dict/version_dict/progress/instance_dict/
+    condition_met/credential_ids/observations/event/link_scope/
+    service_fingerprint)를 `backend/app/modules/runbooks/support.py`로 이동.
+  - 템플릿 CRUD/publish/versions/clone/archive/export/import, instance
+    list/create/get/recompute, recommendations(service·target)/dismiss,
+    activity, findings CRUD/export, summary를
+    `backend/app/modules/runbooks/workflow_router.py`로 이동.
+  - step 상태 갱신, 승인 결정, 타이머, evidence/execution/credential 첨부,
+    observation 생성·promote를
+    `backend/app/modules/runbooks/execution_router.py`로 이동.
+  - credential CRUD와 credential 추천을
+    `backend/app/modules/runbooks/credentials_router.py`로 이동.
+  - 기존 `router.py`는 삭제했다. 세 라우터 모두 동일한
+    `prefix="/api/runbooks"`를 쓰므로 URL은 그대로다. `main.py`가 세 라우터를
+    모두 `include_router`한다.
+  - 외부에서 `runbooks.router`를 이름으로 import하던 지점(`service_intelligence
+    /router.py`, `test_runbooks.py`, `test_targets.py`,
+    `test_builtin_runbooks.py`)을 새 파일 경로로 갱신했다.
 
 ## 검증
 
@@ -133,14 +156,20 @@
   관찰 2건 포함)을 Scan Center에서 열어 도구 선택·프로필 구성·명령 미리보기·현재
   스캔 상태(완료)·자동 증적 처리 안내·스캔 대기열/이력 목록·관찰 테이블·artifact
   패널·저장된 출력까지 전부 정상 렌더링 확인, console error 없음.
+- runbooks 라우터 분리 후: `python3 -m py_compile`로 변경 파일 전체 통과,
+  전체 backend suite `125 passed in ~30s`. FastAPI 앱 기동 확인 및
+  OpenAPI 경로 수 대조(원본 33개 route 데코레이터 = 분리 후 31개 unique path,
+  GET/POST가 같은 경로를 공유하는 2곳만큼 차이 — 정상). Chrome에서 Runbooks
+  페이지 진입 시 builtin SSH runbook 인스턴스가 정상 조회되고(workflow 라우터),
+  단계 상태를 "진행 중"으로 저장하면 `PATCH /api/runbooks/steps/1` 200 OK와
+  함께 UI가 즉시 갱신됨을 확인(execution 라우터). `GET /credentials?project_id=1`
+  응답 확인(credentials 라우터). console error 없음.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
-   나눈다. URL과 request/response schema는 유지한다.
-2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
-3. (선택) `ScanCenter.tsx`에 남은 관찰 테이블/필터/통계와 artifact·터미널 출력
+1. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
+2. (선택) `ScanCenter.tsx`에 남은 관찰 테이블/필터/통계와 artifact·터미널 출력
    영역을 추가로 분리할 수 있다 — 필수는 아님.
 
 ## 주의점

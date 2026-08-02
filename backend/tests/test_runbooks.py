@@ -4,16 +4,24 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Evidence, Execution, Project, Service, Target
-from app.modules.runbooks.router import (
+from app.modules.runbooks.support import (
     ApplyIn, ApprovalIn, CloneIn, CredentialIn, DismissIn, FindingIn, FindingUpdate,
     ImportIn, LinkIn, ObservationIn, PublishIn, StepIn, StepUpdate, TemplateIn,
-    apply, archive_template, attach_credential, clone_template,
-    attach_evidence, attach_execution, create_credential, create_observation,
-    create_template, credential_recommendations, dismiss_recommendation,
+)
+from app.modules.runbooks.workflow_router import (
+    apply, archive_template, clone_template,
+    create_template, dismiss_recommendation,
     export_findings, export_template, import_template, instance, instances,
-    promote_observation, publish, recommendations, step_timer, summary,
-    decide_approval, recompute_instance,
-    update_finding, update_step, update_template,
+    publish, recommendations, summary,
+    recompute_instance,
+    update_finding, update_template,
+)
+from app.modules.runbooks.execution_router import (
+    attach_credential, attach_evidence, attach_execution, create_observation,
+    promote_observation, step_timer, decide_approval, update_step,
+)
+from app.modules.runbooks.credentials_router import (
+    create_credential, credential_recommendations,
 )
 from app.time import utcnow
 

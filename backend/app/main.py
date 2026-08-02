@@ -26,7 +26,9 @@ from .modules.privesc_server import (
 from .modules.exploit_research.router import (
     router as exploit_research_router, shutdown_local_runs,
 )
-from .modules.runbooks.router import router as runbook_router
+from .modules.runbooks.credentials_router import router as runbook_credentials_router
+from .modules.runbooks.execution_router import router as runbook_execution_router
+from .modules.runbooks.workflow_router import router as runbook_workflow_router
 from .modules.service_intelligence.router import router as service_intelligence_router
 from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
@@ -97,7 +99,9 @@ app.include_router(operations_router)
 app.include_router(vpn_router)
 app.include_router(privesc_server_router)
 app.include_router(exploit_research_router)
-app.include_router(runbook_router)
+app.include_router(runbook_workflow_router)
+app.include_router(runbook_execution_router)
+app.include_router(runbook_credentials_router)
 app.include_router(service_intelligence_router)
 app.include_router(post_exploitation_router)
 app.include_router(core_router)

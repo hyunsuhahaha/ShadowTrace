@@ -8,8 +8,9 @@ from app.models import (
     Service, Target,
 )
 from app.modules.runbooks.builtins import ensure_builtin_runbooks
-from app.modules.runbooks.router import (
-    CloneIn, TemplateIn, archive_template, clone_template, recommendations,
+from app.modules.runbooks.support import CloneIn, TemplateIn
+from app.modules.runbooks.workflow_router import (
+    archive_template, clone_template, recommendations,
     target_recommendations, update_template,
 )
 

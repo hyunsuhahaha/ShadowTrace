@@ -10,9 +10,9 @@ from app.main import (
     update_service,
 )
 from app.models import Base, Project, RunbookInstance, ScanJob, Service, Target
-from app.modules.runbooks.router import (
-    ApplyIn, PublishIn, StepIn, TemplateIn, apply, create_template,
-    instances, publish,
+from app.modules.runbooks.support import ApplyIn, PublishIn, StepIn, TemplateIn
+from app.modules.runbooks.workflow_router import (
+    apply, create_template, instances, publish,
 )
 from app.schemas import ServiceUpdate, TargetEnsureIn
 
