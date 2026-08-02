@@ -54,6 +54,8 @@
     `InvestigationCommandList.tsx`로 이동하고 남은/완료 명령 테스트 추가
   - 프로토콜 인증 문맥·수동 접속 안내를 `ManualGuidance.tsx`, 현재 작업 상태·신호
     지연 경고를 `JobStatus.tsx`로 이동하고 독립 테스트 추가
+  - 저장 자격증명 선택·삭제, NetExec 단일 계정 입력, 출처·비밀 저장 UI를
+    `CredentialStoreForm.tsx`로 이동하고 인증 실행 잠금 테스트 추가
 
 ## 검증
 
@@ -90,11 +92,14 @@
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - Frontend guidance/job-status 분리 후: 전체 Vitest `31 files / 80 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
+- Frontend credential-store-form 분리 후: 전체 Vitest `32 files / 81 tests` 통과,
+  production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`에서 NetExec 단일 자격증명 확인 화면을 다음 seam으로 분리한다.
+1. 프런트엔드 `App.tsx`에서 NetExec 인증 성공 후 후속 셸·Evidence 액션을 다음
+   seam으로 분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.
