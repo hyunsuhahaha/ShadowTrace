@@ -118,3 +118,46 @@ def test_approval_rejects_changed_or_symlinked_file(
     vpn.CONFIG_PATH.symlink_to(outside)
     with pytest.raises(HTTPException):
         vpn._config_file()
+
+
+def test_tun0_link_type_detects_tun_devices_masscan_cannot_use(monkeypatch):
+    monkeypatch.setattr(vpn, "_run", lambda argv, timeout=2: {
+        "exit_code": 0,
+        "stdout": (
+            "4: tun0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500\n"
+            "    link/none  promiscuity 0\n"
+            "    tun type tun pi off vnet_hdr off persist off\n"
+        ),
+    })
+    assert vpn._tun0_link_type() == "tun"
+
+
+def test_tun0_link_type_detects_ethernet_capable_tap_devices(monkeypatch):
+    monkeypatch.setattr(vpn, "_run", lambda argv, timeout=2: {
+        "exit_code": 0,
+        "stdout": (
+            "4: tun0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+            "    link/ether 00:ff:11:22:33:44 brd ff:ff:ff:ff:ff:ff\n"
+            "    tun type tap\n"
+        ),
+    })
+    assert vpn._tun0_link_type() == "tap"
+
+
+def test_tun0_link_type_is_blank_when_the_interface_does_not_exist(monkeypatch):
+    monkeypatch.setattr(vpn, "_run", lambda argv, timeout=2: {
+        "exit_code": 1, "stdout": "", "stderr": "Device \"tun0\" does not exist.",
+    })
+    assert vpn._tun0_link_type() == ""
+
+
+def test_vpn_status_reports_link_type(monkeypatch):
+    monkeypatch.setattr(vpn, "_status_operation", lambda: {
+        "action": "status", "argv": [], "stdout": "", "stderr": "", "exit_code": 0,
+    })
+    monkeypatch.setattr(vpn, "_tun0_link_type", lambda: "tun")
+    monkeypatch.setattr(vpn, "_run", lambda argv, timeout=2: {
+        "action": "status", "argv": argv, "stdout": "", "stderr": "", "exit_code": 0,
+    })
+    status = vpn.vpn_status()
+    assert status["link_type"] == "tun"

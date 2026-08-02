@@ -8,8 +8,12 @@ import shlex
 from pathlib import Path
 from ...database import SessionLocal
 from ...models import Project, ScanArtifact, ScanJob, Target
-from .service import capture_scan_evidence, ingest_xml, scan_directory
+from .service import capture_scan_evidence, create_chain_job, ingest_xml, scan_directory
 from ...time import utcnow
+
+def _engine_name(argv: list[str]) -> str:
+    binary = argv[1] if len(argv) > 1 and argv[0] == "pkexec" else (argv[0] if argv else "")
+    return "masscan" if Path(binary).name == "masscan" else "nmap"
 
 class ScanManager:
     def __init__(self, concurrency: int = 2, stream_limit: int = 2_000_000):
@@ -52,8 +56,13 @@ class ScanManager:
                     return
                 target, project = db.get(Target, job.target_id), db.get(Project, job.project_id)
                 folder = scan_directory(project, target, scan_id)
-                output_base = folder / "nmap"
-                final_argv = [*argv[:-1], "-oA", str(output_base), argv[-1]]
+                engine = _engine_name(argv)
+                output_base = folder / engine
+                final_argv = (
+                    [*argv[:-1], "-oX", f"{output_base}.xml", argv[-1]]
+                    if engine == "masscan"
+                    else [*argv[:-1], "-oA", str(output_base), argv[-1]]
+                )
                 job.command = shlex.join(final_argv); job.status = "running"
                 job.started_at = utcnow(); db.commit()
             await self._publish(scan_id, {"stream": "status", "status": "running"})
@@ -91,7 +100,10 @@ class ScanManager:
                     if stderr_path.stat().st_size:
                         self._artifact(db, job.id, stderr_path, "stderr")
                     xml_path = output_base.with_suffix(".xml")
-                    if xml_path.exists():
+                    # masscan writes nothing at all (not even a header) when it
+                    # finds zero open ports, rather than an empty <nmaprun/>;
+                    # treat that as "no results" instead of a parse failure.
+                    if xml_path.exists() and xml_path.stat().st_size:
                         ingest_xml(db, job, db.get(Target, job.target_id),
                                    db.get(Project, job.project_id),
                                    xml_path.read_bytes(), xml_path.name)
@@ -99,10 +111,13 @@ class ScanManager:
                         path = output_base.with_suffix(suffix)
                         if path.exists(): self._artifact(db, job.id, path, kind)
                     capture_scan_evidence(db, job)
+                    chain = create_chain_job(db, job) if job.status == "completed" else None
                     db.commit()
                     status = job.status
                 await self._publish(scan_id, {
                     "stream": "status", "status": status, "exit_code": code})
+                if chain:
+                    self.enqueue(*chain)
             except Exception as exc:
                 with SessionLocal() as db:
                     job = db.get(ScanJob, scan_id)
@@ -157,12 +172,13 @@ def recover_interrupted_jobs() -> int:
         for job in jobs:
             target, project = db.get(Target, job.target_id), db.get(Project, job.project_id)
             folder = scan_directory(project, target, job.id)
+            engine = _engine_name(shlex.split(job.command)) if job.command else "nmap"
             for path, kind in (
                 (folder / "stdout.txt", "stdout"),
                 (folder / "stderr.txt", "stderr"),
-                (folder / "nmap.xml", "xml"),
-                (folder / "nmap.nmap", "normal"),
-                (folder / "nmap.gnmap", "grepable"),
+                (folder / f"{engine}.xml", "xml"),
+                (folder / f"{engine}.nmap", "normal"),
+                (folder / f"{engine}.gnmap", "grepable"),
             ):
                 if path.is_file():
                     ScanManager._artifact(db, job.id, path, kind)

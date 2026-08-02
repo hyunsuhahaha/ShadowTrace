@@ -8,7 +8,8 @@ from app.modules.scan_center.router import (
     download_artifact, export_observations, update_job,
 )
 from app.modules.scan_center.service import (
-    BUILTIN_PROFILES, compare_jobs, import_xml, render_scan, seed_profiles,
+    BUILTIN_PROFILES, compare_jobs, create_chain_job, import_xml, render_scan,
+    seed_profiles,
 )
 from app.schemas import ScanJobUpdate
 
@@ -44,6 +45,15 @@ def test_privileged_syn_profile_uses_polkit_without_receiving_a_password():
     assert argv[-2:] == ["-T3", "10.10.10.10"]
     assert command.startswith("sudo nmap -Pn -sV")
     assert "password" not in command.lower()
+
+def test_masscan_discovery_profile_is_always_privileged():
+    profile = ScanProfile(name="Discovery", kind="masscan_discovery",
+                          arguments="-p1-65535 --rate 5000 --open", engine="masscan")
+    target = Target(project_id=1, name="box", ip="10.10.10.10")
+    command, argv = render_scan(profile, target)
+    assert argv[:2] == ["pkexec", "masscan"]
+    assert command.startswith("sudo masscan")
+    assert argv[-1] == "10.10.10.10"
 
 def test_seed_profiles_adds_and_updates_all_builtin_profiles():
     db = database()
@@ -148,6 +158,182 @@ def test_scan_manager_runs_streams_and_parses_xml(tmp_path, monkeypatch):
         assert observations[0].port == 443
         assert {artifact.kind for artifact in artifacts} >= {
             "stdout", "stderr", "xml", "normal", "grepable"}
+
+def test_scan_manager_detects_masscan_engine_and_triggers_chained_job(tmp_path, monkeypatch):
+    import asyncio
+    import sys
+    from sqlalchemy.orm import sessionmaker
+    import app.modules.scan_center.manager as manager_module
+    import app.modules.scan_center.service as service
+    engine = create_engine(f"sqlite:///{tmp_path / 'masscan_runner.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    with factory() as db:
+        project = Project(name="Masscan Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.30")
+        db.add(target); db.flush()
+        job = ScanJob(project_id=project.id, target_id=target.id,
+                      source="executed", status="queued", command="fake")
+        db.add(job); db.commit(); scan_id = job.id
+
+    # masscan writes one <host> block per open port; the fake binary is named
+    # "masscan" so the manager picks -oX instead of Nmap's -oA.
+    masscan_script = tmp_path / "masscan"
+    masscan_script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib,sys\n"
+        "path=pathlib.Path(sys.argv[sys.argv.index('-oX')+1])\n"
+        "path.write_text('<nmaprun scanner=\"masscan\">"
+        "<host><address addr=\"10.10.10.30\"/><ports><port protocol=\"tcp\" portid=\"22\">"
+        "<state state=\"open\"/></port></ports></host>"
+        "<host><address addr=\"10.10.10.30\"/><ports><port protocol=\"tcp\" portid=\"80\">"
+        "<state state=\"open\"/></port></ports></host>"
+        "</nmaprun>')\n"
+        "print('scan complete')\n", encoding="utf-8")
+    masscan_script.chmod(0o755)
+
+    # Stand in for create_chain_job so the test never spawns a real,
+    # privileged nmap/pkexec process; it only exercises the manager's
+    # "queue the follow-up job" wiring.
+    chain_marker = tmp_path / "chain_ran.txt"
+    detail_script = tmp_path / "detail.py"
+    detail_script.write_text(
+        "import pathlib,sys\n"
+        f"pathlib.Path({str(chain_marker)!r}).write_text('ran')\n",
+        encoding="utf-8")
+
+    def fake_create_chain_job(db, job):
+        if job.id != scan_id:
+            return None
+        chain_job = ScanJob(project_id=job.project_id, target_id=job.target_id,
+                            parent_scan_id=job.id, source="executed",
+                            status="queued", command="detail scan")
+        db.add(chain_job); db.flush()
+        return chain_job.id, [sys.executable, str(detail_script), "10.10.10.30"]
+    monkeypatch.setattr(manager_module, "create_chain_job", fake_create_chain_job)
+
+    async def exercise():
+        runner = manager_module.ScanManager(2)
+        runner.enqueue(scan_id, [str(masscan_script), "10.10.10.30"])
+        while runner.tasks:
+            await asyncio.gather(*list(runner.tasks.values()), return_exceptions=True)
+    asyncio.run(exercise())
+
+    with factory() as db:
+        finished = db.get(ScanJob, scan_id)
+        observations = db.query(ServiceObservation).filter_by(scan_job_id=scan_id).all()
+        artifacts = db.query(ScanArtifact).filter_by(scan_job_id=scan_id).all()
+        assert finished.status == "completed"
+        assert {o.port for o in observations} == {22, 80}
+        xml_artifacts = {a.original_name for a in artifacts if a.kind == "xml"}
+        assert xml_artifacts == {"masscan.xml"}
+        chained = db.query(ScanJob).filter_by(parent_scan_id=scan_id).one()
+        assert chained.status == "completed"
+    assert chain_marker.exists()
+
+def test_scan_manager_treats_masscan_finding_zero_open_ports_as_completed(tmp_path, monkeypatch):
+    # masscan writes nothing at all to its -oX file (not even an empty
+    # <nmaprun/>) when it finds zero open ports, rather than crashing the
+    # scan as a parse failure the job should just report zero results.
+    import asyncio
+    import app.modules.scan_center.manager as manager_module
+    import app.modules.scan_center.service as service
+    from sqlalchemy.orm import sessionmaker
+    engine = create_engine(f"sqlite:///{tmp_path / 'masscan_empty.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    with factory() as db:
+        project = Project(name="Empty Masscan Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.31")
+        db.add(target); db.flush()
+        job = ScanJob(project_id=project.id, target_id=target.id,
+                      source="executed", status="queued", command="fake")
+        db.add(job); db.commit(); scan_id = job.id
+
+    masscan_script = tmp_path / "masscan"
+    masscan_script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib,sys\n"
+        "pathlib.Path(sys.argv[sys.argv.index('-oX')+1]).touch()\n"
+        "print('scan complete')\n", encoding="utf-8")
+    masscan_script.chmod(0o755)
+
+    async def exercise():
+        runner = manager_module.ScanManager(1)
+        runner.enqueue(scan_id, [str(masscan_script), "10.10.10.31"])
+        await runner.tasks[scan_id]
+    asyncio.run(exercise())
+
+    with factory() as db:
+        finished = db.get(ScanJob, scan_id)
+        assert finished.status == "completed"
+        assert finished.error == ""
+        assert db.query(ServiceObservation).filter_by(scan_job_id=scan_id).count() == 0
+
+def test_create_chain_job_queues_a_detail_scan_from_discovered_open_tcp_ports(tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    seed_profiles(db)
+    discovery = db.query(ScanProfile).filter_by(kind="masscan_auto_chain").one()
+    project = Project(name="Chain Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.40")
+    db.add(target); db.commit()
+    job = ScanJob(project_id=project.id, target_id=target.id, profile_id=discovery.id,
+                  source="executed", status="completed", command="fake")
+    db.add(job); db.flush()
+    db.add(ServiceObservation(scan_job_id=job.id, target_id=target.id, port=22,
+                              protocol="tcp", state="open"))
+    db.add(ServiceObservation(scan_job_id=job.id, target_id=target.id, port=80,
+                              protocol="tcp", state="open"))
+    db.add(ServiceObservation(scan_job_id=job.id, target_id=target.id, port=53,
+                              protocol="udp", state="open"))
+    db.commit()
+
+    chain_id, argv = create_chain_job(db, job)
+    db.commit()
+
+    chained = db.get(ScanJob, chain_id)
+    assert chained.parent_scan_id == job.id
+    assert chained.status == "queued"
+    detail_profile = db.query(ScanProfile).filter_by(kind="selected_syn_detail").one()
+    assert chained.profile_id == detail_profile.id
+    assert argv[:2] == ["pkexec", "nmap"]
+    assert "-p22,80" in argv
+
+def test_create_chain_job_returns_none_without_chain_kind_or_open_ports(tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    seed_profiles(db)
+    discovery = db.query(ScanProfile).filter_by(kind="masscan_discovery").one()
+    auto_chain = db.query(ScanProfile).filter_by(kind="masscan_auto_chain").one()
+    project = Project(name="Chain Lab 2", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.41")
+    db.add(target); db.commit()
+
+    no_chain_kind_job = ScanJob(project_id=project.id, target_id=target.id,
+                                profile_id=discovery.id, source="executed",
+                                status="completed", command="fake")
+    db.add(no_chain_kind_job); db.flush()
+    db.add(ServiceObservation(scan_job_id=no_chain_kind_job.id, target_id=target.id,
+                              port=22, protocol="tcp", state="open"))
+    db.commit()
+    assert create_chain_job(db, no_chain_kind_job) is None
+
+    no_ports_job = ScanJob(project_id=project.id, target_id=target.id,
+                           profile_id=auto_chain.id, source="executed",
+                           status="completed", command="fake")
+    db.add(no_ports_job); db.commit()
+    assert create_chain_job(db, no_ports_job) is None
 
 def test_scan_metadata_exports_and_artifact_download(tmp_path, monkeypatch):
     import app.modules.scan_center.service as service

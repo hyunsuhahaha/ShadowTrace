@@ -77,6 +77,8 @@ class ScanProfile(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     arguments: Mapped[str] = mapped_column(Text)
     builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    engine: Mapped[str] = mapped_column(String(20), default="nmap")
+    chain_kind: Mapped[str] = mapped_column(String(40), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class ScanJob(Base):
@@ -85,6 +87,7 @@ class ScanJob(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("scan_profiles.id"), nullable=True)
+    parent_scan_id: Mapped[int | None] = mapped_column(ForeignKey("scan_jobs.id"), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="executed")
     status: Mapped[str] = mapped_column(String(20), default="queued")
     command: Mapped[str] = mapped_column(Text, default="")

@@ -67,6 +67,7 @@ class ExecutionOut(ORM):
 
 class ScanProfileOut(ORM):
     id: int; name: str; kind: str; description: str; arguments: str; builtin: bool
+    engine: str; chain_kind: str
 
 class ScanPreviewIn(BaseModel):
     target_id: int
@@ -77,6 +78,7 @@ class ScanPreviewIn(BaseModel):
 
 class ScanJobOut(ORM):
     id: int; project_id: int; target_id: int; profile_id: int | None
+    parent_scan_id: int | None
     source: str; status: str; command: str
     started_at: datetime | None; ended_at: datetime | None
     exit_code: int | None; stopped: bool; error: str

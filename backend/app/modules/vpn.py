@@ -112,6 +112,20 @@ def _status_operation() -> dict:
         "connection", "show", "uuid", connection_uuid], timeout=3)
 
 
+def _tun0_link_type() -> str:
+    """"tun" (no Ethernet/ARP layer, e.g. most OpenVPN configs) or "tap"
+    (has a MAC address, so raw-Ethernet tools like masscan can use it)."""
+    result = _run(["/usr/sbin/ip", "-d", "link", "show", "tun0"], timeout=2)
+    if result["exit_code"] != 0:
+        return ""
+    output = result["stdout"]
+    if "link/ether" in output:
+        return "tap"
+    if "link/none" in output:
+        return "tun"
+    return ""
+
+
 def vpn_status() -> dict:
     operation = _status_operation()
     values = operation["stdout"].splitlines() if operation["exit_code"] == 0 else []
@@ -121,6 +135,7 @@ def vpn_status() -> dict:
     return {
         "connected": "activated" in state or bool(addr["stdout"].strip()),
         "tun0": addr["stdout"].strip(),
+        "link_type": _tun0_link_type(),
         "routes": routes["stdout"].splitlines()[:8],
         "connection_name": values[0] if values else "",
         "operation": operation,

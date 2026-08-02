@@ -16,40 +16,48 @@ from ...time import utcnow
 
 BUILTIN_PROFILES = [
     ("Top TCP services", "quick", "Fast version detection on the selected number of top TCP ports",
-     "-Pn -sT --top-ports {top_ports} -sV --version-light -T4"),
+     "-Pn -sT --top-ports {top_ports} -sV --version-light -T4", "nmap", ""),
     ("Fast full TCP discovery", "full_tcp", "All TCP ports at a practical minimum rate",
-     "-Pn -sT -p- --min-rate 1000 -T4"),
+     "-Pn -sT -p- --min-rate 1000 -T4", "nmap", ""),
     ("Fast full TCP SYN discovery", "full_tcp_syn",
      "Privileged SYN scan across all TCP ports",
-     "-Pn -p- --min-rate 1000 -T4"),
+     "-Pn -p- --min-rate 1000 -T4", "nmap", ""),
     ("Balanced full TCP discovery", "full_tcp_balanced",
-     "All TCP ports with adaptive default timing", "-Pn -sT -p- -T3"),
+     "All TCP ports with adaptive default timing", "-Pn -sT -p- -T3", "nmap", ""),
     ("Selected ports version scan", "selected_version",
-     "Version detection on selected TCP ports", "-Pn -sT -sV -p{ports} -T3"),
+     "Version detection on selected TCP ports", "-Pn -sT -sV -p{ports} -T3", "nmap", ""),
     ("Selected ports detail", "selected_ports",
      "Default scripts and version detection on selected TCP ports",
-     "-Pn -sT -sC -sV -p{ports} -T3"),
+     "-Pn -sT -sC -sV -p{ports} -T3", "nmap", ""),
     ("Selected ports SYN detail", "selected_syn_detail",
      "Privileged SYN scan with default scripts and version detection",
-     "-Pn -sC -sV -p{ports} -T3"),
+     "-Pn -sC -sV -p{ports} -T3", "nmap", ""),
     ("Selected ports deep version scan", "selected_deep",
      "All version probes on selected TCP ports",
-     "-Pn -sT -sC -sV --version-all -p{ports} -T3"),
+     "-Pn -sT -sC -sV --version-all -p{ports} -T3", "nmap", ""),
     ("Top UDP services", "udp_top",
      "Selected number of top UDP ports with light version detection; privilege required",
-     "-Pn -sU --top-ports {top_ports} -sV --version-light -T3"),
+     "-Pn -sU --top-ports {top_ports} -sV --version-light -T3", "nmap", ""),
     ("Full UDP discovery", "udp_full",
      "All UDP ports; privilege required and potentially extremely slow",
-     "-Pn -sU -p- -T3"),
+     "-Pn -sU -p- -T3", "nmap", ""),
     ("Selected UDP ports", "selected_udp",
      "Version detection on selected UDP ports; privilege required",
-     "-Pn -sU -sV -p{ports} -T3"),
+     "-Pn -sU -sV -p{ports} -T3", "nmap", ""),
+    ("Fast port discovery (masscan)", "masscan_discovery",
+     "Full TCP port sweep with masscan; review the open ports and run a detail "
+     "scan on them yourself",
+     "-p1-65535 --rate 5000 --open", "masscan", ""),
+    ("Fast discovery + auto detail scan", "masscan_auto_chain",
+     "Full TCP port sweep with masscan; automatically queues an Nmap -sC -sV "
+     "scan on whatever ports it finds",
+     "-p1-65535 --rate 5000 --open", "masscan", "selected_syn_detail"),
 ]
 SAFE_EXTRA = re.compile(r"^--?[A-Za-z0-9][A-Za-z0-9_.:-]*(?:=[A-Za-z0-9_.,:/-]+)?$")
 SAFE_PORTS = re.compile(r"^\d+(?:[-,]\d+)*$")
 PRIVILEGED_KINDS = {
     "full_tcp_syn", "selected_syn_detail", "udp_top", "udp_full",
-    "selected_udp",
+    "selected_udp", "masscan_discovery", "masscan_auto_chain",
 }
 
 POSITIVE_SCRIPT_MARKERS = (
@@ -67,15 +75,18 @@ SECURITY_SCRIPT_IDS = {
 }
 
 def seed_profiles(db: Session) -> None:
-    for name, kind, description, arguments in BUILTIN_PROFILES:
+    for name, kind, description, arguments, engine, chain_kind in BUILTIN_PROFILES:
         profile = db.scalar(select(ScanProfile).where(ScanProfile.kind == kind))
         if profile and profile.builtin:
             profile.name = name
             profile.description = description
             profile.arguments = arguments
+            profile.engine = engine
+            profile.chain_kind = chain_kind
         elif not profile:
             db.add(ScanProfile(name=name, kind=kind, description=description,
-                               arguments=arguments, builtin=True))
+                               arguments=arguments, engine=engine,
+                               chain_kind=chain_kind, builtin=True))
     db.commit()
 
 def render_scan(profile: ScanProfile, target: Target, ports: str = "",
@@ -93,11 +104,13 @@ def render_scan(profile: ScanProfile, target: Target, ports: str = "",
     extras = extra_arguments or []
     if any(not SAFE_EXTRA.fullmatch(value) for value in extras):
         raise ValueError("An additional Nmap argument is not allowed")
-    prefix = ["pkexec", "nmap"] if profile.kind in PRIVILEGED_KINDS else ["nmap"]
+    binary = profile.engine or "nmap"
+    privileged = profile.kind in PRIVILEGED_KINDS
+    prefix = ["pkexec", binary] if privileged else [binary]
     argv = [*prefix, *shlex.split(args), *extras, target.ip]
     display_argv = (
-        ["sudo", "nmap", *shlex.split(args), *extras, target.ip]
-        if profile.kind in PRIVILEGED_KINDS
+        ["sudo", binary, *shlex.split(args), *extras, target.ip]
+        if privileged
         else argv
     )
     return shlex.join(display_argv), argv
@@ -260,6 +273,40 @@ def capture_scan_evidence(db: Session, job: ScanJob) -> dict[str, int]:
             created_findings += 1
     db.flush()
     return {"evidence_count": created_evidence, "finding_count": created_findings}
+
+
+def create_chain_job(db: Session, job: ScanJob) -> tuple[int, list[str]] | None:
+    """If the completed job's profile requests an automatic follow-up scan
+    (masscan discovery -> Nmap detail), queue it against the ports found and
+    return its (job id, argv) for the caller to enqueue."""
+    if not job.profile_id:
+        return None
+    profile = db.get(ScanProfile, job.profile_id)
+    if not profile or not profile.chain_kind:
+        return None
+    ports = sorted({row for row in db.scalars(select(ServiceObservation.port).where(
+        ServiceObservation.scan_job_id == job.id,
+        ServiceObservation.protocol == "tcp",
+        ServiceObservation.state == "open"))})
+    if not ports:
+        return None
+    chain_profile = db.scalar(select(ScanProfile).where(
+        ScanProfile.kind == profile.chain_kind))
+    if not chain_profile:
+        return None
+    target = db.get(Target, job.target_id)
+    ports_csv = ",".join(str(port) for port in ports)
+    try:
+        command, argv = render_scan(chain_profile, target, ports=ports_csv)
+    except ValueError:
+        return None
+    chain_job = ScanJob(project_id=job.project_id, target_id=job.target_id,
+                        profile_id=chain_profile.id, parent_scan_id=job.id,
+                        source="executed", status="queued", command=command)
+    db.add(chain_job)
+    db.flush()
+    return chain_job.id, argv
+
 
 def import_xml(db: Session, target: Target, project: Project, content: bytes,
                original_name: str) -> ScanJob:

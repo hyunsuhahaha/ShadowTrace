@@ -18,6 +18,24 @@ def test_parse_nmap():
     assert host["ip"]=="10.10.10.10"
     assert host["services"][0]["product"]=="vsftpd"
 
+def test_parse_nmap_merges_masscan_style_one_host_block_per_port():
+    # masscan emits a separate <host> element per discovered port rather than
+    # one <host> aggregating all ports the way Nmap does.
+    data = (
+        b'<nmaprun scanner="masscan">'
+        b'<host><address addr="10.10.10.20" addrtype="ipv4"/><ports>'
+        b'<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/></port>'
+        b'</ports></host>'
+        b'<host><address addr="10.10.10.20" addrtype="ipv4"/><ports>'
+        b'<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/></port>'
+        b'</ports></host>'
+        b'</nmaprun>'
+    )
+    hosts = parse_nmap(data)
+    assert len(hosts) == 1
+    assert hosts[0]["ip"] == "10.10.10.20"
+    assert {s["port"] for s in hosts[0]["services"]} == {22, 80}
+
 def test_template_render_quotes_values():
     _, command, argv=catalog.render("ftp-anon",{"host":"10.10.10.10","port":"21"})
     assert argv[-1]=="10.10.10.10"

@@ -25,6 +25,15 @@
 .scanAutomation span, .scanAutomation small { color: var(--muted, #9a9992); }
 .scanAutomation small { grid-column: 1 / -1; }
 .scanAutomation a { color: inherit; font-weight: 700; }
+.scanAutomation button {
+  color: inherit;
+  font-weight: 700;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 @media (max-width: 720px) {
   .scanAutomation { grid-template-columns: 1fr; }

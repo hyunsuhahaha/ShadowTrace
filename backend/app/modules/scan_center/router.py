@@ -93,8 +93,9 @@ async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    if not shutil.which("nmap"):
-        raise HTTPException(409, "Nmap is not installed or is not on PATH")
+    binary = profile.engine or "nmap"
+    if not shutil.which(binary):
+        raise HTTPException(409, f"{binary.capitalize()} is not installed or is not on PATH")
     if argv[0] == "pkexec" and not shutil.which("pkexec"):
         raise HTTPException(409, "pkexec is required for this privileged scan")
     job = ScanJob(project_id=target.project_id, target_id=target.id,
@@ -182,20 +183,22 @@ async def rerun(scan_id: int, db: Session = Depends(get_db)):
     if previous.source != "executed":
         raise HTTPException(409, "Imported scans cannot be rerun")
     argv = shlex.split(previous.command)
+    known_binaries = ("nmap", "masscan")
     if (
         not argv
         or argv[-1] != target.ip
         or not (
-            argv[0] == "nmap"
-            or (argv[:2] == ["pkexec", "nmap"])
+            argv[0] in known_binaries
+            or (len(argv) > 1 and argv[0] == "pkexec" and argv[1] in known_binaries)
         )
     ):
         raise HTTPException(409, "The stored command cannot be safely rerun")
-    if "-oA" in argv:
-        index = argv.index("-oA")
-        if index + 1 >= len(argv):
-            raise HTTPException(409, "The stored command is incomplete")
-        del argv[index:index + 2]
+    for flag in ("-oA", "-oX"):
+        if flag in argv:
+            index = argv.index(flag)
+            if index + 1 >= len(argv):
+                raise HTTPException(409, "The stored command is incomplete")
+            del argv[index:index + 2]
     row = ScanJob(
         project_id=previous.project_id, target_id=previous.target_id,
         profile_id=previous.profile_id, source="executed", status="queued",

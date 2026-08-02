@@ -5,15 +5,20 @@ import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 
 type Project = { id: number; name: string };
 type Target = { id: number; project_id: number; name: string; ip: string };
+type VpnStatus = { connected: boolean; link_type: string };
 type Profile = {
   id: number;
   name: string;
   kind: string;
   description: string;
   arguments: string;
+  engine: string;
+  chain_kind: string;
 };
 type Scan = {
   id: number;
+  profile_id?: number | null;
+  parent_scan_id?: number | null;
   source: string;
   status: string;
   command: string;
@@ -95,8 +100,27 @@ const profileLabel: Record<string, { name: string; description: string }> = {
     name: "특정 UDP 포트",
     description: "입력한 UDP 포트만 버전 탐지 · Kali 비밀번호 필요",
   },
+  masscan_discovery: {
+    name: "빠른 포트 탐색 (masscan)",
+    description:
+      "전체 TCP 포트를 masscan으로 초고속 스윕 · 발견된 포트는 직접 검토 후 상세 스캔 · Kali 비밀번호 필요",
+  },
+  masscan_auto_chain: {
+    name: "빠른 탐색 + 자동 상세 스캔 (masscan)",
+    description:
+      "masscan으로 스윕 후 발견된 포트에 Nmap -sC -sV 상세 스캔을 자동으로 대기열에 추가 · Kali 비밀번호 필요",
+  },
 };
-const profileGroups = [
+const privilegedKinds = new Set([
+  "full_tcp_syn",
+  "selected_syn_detail",
+  "udp_top",
+  "udp_full",
+  "selected_udp",
+  "masscan_discovery",
+  "masscan_auto_chain",
+]);
+const nmapProfileGroups = [
   {
     label: "전체 TCP",
     kinds: ["full_tcp", "full_tcp_syn", "full_tcp_balanced"],
@@ -114,7 +138,13 @@ const profileGroups = [
     ],
   },
 ];
-const profileOrder = profileGroups.flatMap((group) => group.kinds);
+const masscanProfileGroups = [
+  {
+    label: "masscan",
+    kinds: ["masscan_discovery", "masscan_auto_chain"],
+  },
+];
+const toolProfileGroups = { nmap: nmapProfileGroups, masscan: masscanProfileGroups };
 const get = async <T,>(path: string): Promise<T> => {
   const r = await fetch("/api" + path);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -158,6 +188,7 @@ export default function ScanCenter() {
     [targetError, setTargetError] = useState(""),
     [scanId, setScanId] = useState<number>(),
     [baseId, setBaseId] = useState<number>(),
+    [tool, setTool] = useState<"nmap" | "masscan">("nmap"),
     [profileId, setProfileId] = useState<number>(),
     [ports, setPorts] = useState("80,443"),
     [topPorts, setTopPorts] = useState("100"),
@@ -214,7 +245,14 @@ export default function ScanCenter() {
       queryKey: ["scanDiff", baseId, scanId],
       queryFn: () => get<any>(`/scans/compare/${baseId}/${scanId}`),
       enabled: !!baseId && !!scanId && baseId !== scanId,
+    }),
+    vpnStatus = useQuery({
+      queryKey: ["vpnStatus"],
+      queryFn: () => get<VpnStatus>("/vpn/status"),
+      refetchInterval: 3000,
     });
+  const masscanBlockedByVpn =
+    !!vpnStatus.data?.connected && vpnStatus.data?.link_type === "tun";
   useEffect(() => {
     if (!targetId && targets.data?.length) {
       const savedProjectId = Number(
@@ -238,14 +276,18 @@ export default function ScanCenter() {
       setScanId(scans.data[0].id);
   }, [scans.data, scanId]);
   useEffect(() => {
-    if (!profileId && profiles.data?.length) {
-      const first = [...profiles.data].sort(
-        (a, b) =>
-          profileOrder.indexOf(a.kind) - profileOrder.indexOf(b.kind),
-      )[0];
-      setProfileId(first.id);
-    }
-  }, [profiles.data, profileId]);
+    if (tool === "masscan" && masscanBlockedByVpn) setTool("nmap");
+  }, [tool, masscanBlockedByVpn]);
+  useEffect(() => {
+    if (!profiles.data?.length) return;
+    const kinds = toolProfileGroups[tool].flatMap((group) => group.kinds);
+    const current = profiles.data.find((p) => p.id === profileId);
+    if (current && kinds.includes(current.kind)) return;
+    const first = [...profiles.data]
+      .filter((p) => kinds.includes(p.kind))
+      .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))[0];
+    if (first) setProfileId(first.id);
+  }, [tool, profiles.data]);
   const profile = profiles.data?.find((x) => x.id === profileId),
     target = targets.data?.find((x) => x.id === targetId),
     selected = scans.data?.find((x) => x.id === scanId),
@@ -363,7 +405,34 @@ export default function ScanCenter() {
         changedPorts,
         sort,
       ],
+    ),
+    selectedProfile = useMemo(
+      () => profiles.data?.find((p) => p.id === selected?.profile_id),
+      [profiles.data, selected?.profile_id],
+    ),
+    openTcpPorts = useMemo(
+      () =>
+        Array.from(
+          new Set(
+            (obs.data || [])
+              .filter((o) => o.state === "open" && o.protocol === "tcp")
+              .map((o) => o.port),
+          ),
+        ).sort((a, b) => a - b),
+      [obs.data],
+    ),
+    chainedScan = useMemo(
+      () => scans.data?.find((s) => s.parent_scan_id === selected?.id),
+      [scans.data, selected?.id],
     );
+  const useDiscoveredPorts = () => {
+    const detail =
+      profiles.data?.find((p) => p.kind === "selected_syn_detail") ||
+      profiles.data?.find((p) => p.kind === "selected_ports");
+    if (!detail || !openTcpPorts.length) return;
+    setPorts(openTcpPorts.join(","));
+    setProfileId(detail.id);
+  };
   const refresh = async () =>
     Promise.all([
       qc.invalidateQueries({ queryKey: ["scans", targetId] }),
@@ -522,9 +591,31 @@ export default function ScanCenter() {
           <div className="panelTitle">
             <span>스캔 도구</span>
           </div>
-          <button className="active">
+          <button
+            type="button"
+            className={tool === "nmap" ? "active" : ""}
+            onClick={() => setTool("nmap")}
+          >
             <b>Nmap</b>
-            <small>포트 및 서비스 스캔</small>
+            <small>포트 및 서비스 상세 스캔</small>
+          </button>
+          <button
+            type="button"
+            className={tool === "masscan" ? "active" : ""}
+            disabled={masscanBlockedByVpn}
+            title={
+              masscanBlockedByVpn
+                ? "tun0(VPN) 인터페이스는 이더넷/ARP 계층이 없어 masscan이 패킷을 보낼 수 없습니다. VPN 연결을 끊으면 사용할 수 있습니다."
+                : undefined
+            }
+            onClick={() => setTool("masscan")}
+          >
+            <b>masscan</b>
+            <small>
+              {masscanBlockedByVpn
+                ? "tun0(VPN)에서는 사용할 수 없음"
+                : "초고속 포트 탐색 · 자동 Nmap 상세 스캔 연계"}
+            </small>
           </button>
         </aside>
         <section className="scanCenter">
@@ -550,13 +641,15 @@ export default function ScanCenter() {
             {targetError && <span>{targetError}</span>}
           </div>
           <div className="profilePicker">
-            <label htmlFor="nmap-profile">Nmap 옵션</label>
+            <label htmlFor="nmap-profile">
+              {tool === "masscan" ? "masscan 옵션" : "Nmap 옵션"}
+            </label>
             <select
               id="nmap-profile"
               value={profileId || ""}
               onChange={(e) => setProfileId(+e.target.value)}
             >
-              {profileGroups.map((group) => (
+              {toolProfileGroups[tool].map((group) => (
                 <optgroup key={group.label} label={group.label}>
                   {group.kinds.flatMap((kind) => {
                     const item = profiles.data?.find(
@@ -579,19 +672,11 @@ export default function ScanCenter() {
                     profile.description}
                 </small>
                 <code>
-                  {[
-                    "full_tcp_syn",
-                    "selected_syn_detail",
-                    "udp_top",
-                    "udp_full",
-                    "selected_udp",
-                  ].includes(profile.kind)
-                    ? `sudo nmap ${profile.arguments
-                        .replace("{ports}", ports)
-                        .replace("{top_ports}", topPorts)} ${target?.ip || "<IP>"}`
-                    : `nmap ${profile.arguments
-                        .replace("{ports}", ports)
-                        .replace("{top_ports}", topPorts)} ${target?.ip || "<IP>"}`}
+                  {`${privilegedKinds.has(profile.kind) ? "sudo " : ""}${
+                    profile.engine || "nmap"
+                  } ${profile.arguments
+                    .replace("{ports}", ports)
+                    .replace("{top_ports}", topPorts)} ${target?.ip || "<IP>"}`}
                 </code>
               </div>
             )}
@@ -640,7 +725,7 @@ export default function ScanCenter() {
                 setReview(true);
               }}
             >
-              새 Nmap 스캔 검토
+              새 {profile?.engine === "masscan" ? "masscan" : "Nmap"} 스캔 검토
             </button>
           </div>
           {selected && (
@@ -657,9 +742,13 @@ export default function ScanCenter() {
                 <small>
                   {selected.status === "queued" && "실행 순서를 기다리고 있습니다."}
                   {["running", "processing"].includes(selected.status) &&
-                    (processAlive
-                      ? "백엔드가 Nmap 프로세스 실행을 확인했습니다. 전체 포트 탐색은 출력 없이 오래 걸릴 수 있습니다."
-                      : "Nmap이 실행 중입니다. 다음 상태 신호를 기다리고 있습니다.")}
+                    (() => {
+                      const engineName =
+                        (selectedProfile?.engine === "masscan" ? "masscan" : "Nmap");
+                      return processAlive
+                        ? `백엔드가 ${engineName} 프로세스 실행을 확인했습니다. 전체 포트 탐색은 출력 없이 오래 걸릴 수 있습니다.`
+                        : `${engineName}이(가) 실행 중입니다. 다음 상태 신호를 기다리고 있습니다.`;
+                    })()}
                   {selected.status === "completed" && "스캔과 결과 처리가 완료되었습니다."}
                   {selected.status === "failed" &&
                     `스캔에 실패했습니다.${selected.error ? ` ${selected.error}` : ""}`}
@@ -720,6 +809,36 @@ export default function ScanCenter() {
               </small>
             </section>
           )}
+          {selected?.status === "completed" && chainedScan && (
+            <section className="scanAutomation" aria-label="자동 생성된 상세 스캔">
+              <div>
+                <b>자동 상세 스캔 대기열에 추가됨</b>
+                <span>
+                  발견된 포트로 Nmap 상세 스캔 #{chainedScan.id} ·{" "}
+                  {statusLabel[chainedScan.status] || chainedScan.status}
+                </span>
+              </div>
+              <button type="button" onClick={() => setScanId(chainedScan.id)}>
+                상세 스캔 열기
+              </button>
+            </section>
+          )}
+          {selected?.status === "completed" &&
+            selectedProfile?.kind === "masscan_discovery" &&
+            openTcpPorts.length > 0 && (
+              <section className="scanAutomation" aria-label="발견된 포트로 상세 스캔 준비">
+                <div>
+                  <b>열린 포트 {openTcpPorts.length}개 발견</b>
+                  <span>{openTcpPorts.join(", ")}</span>
+                </div>
+                <button type="button" onClick={useDiscoveredPorts}>
+                  발견된 포트로 상세 스캔 준비
+                </button>
+                <small>
+                  포트 필드와 프로필이 채워집니다. 검토 후 직접 스캔을 실행하세요.
+                </small>
+              </section>
+            )}
           <div className="scanStats">
             <div>
               <span>스캔</span>
@@ -983,8 +1102,8 @@ export default function ScanCenter() {
             <span>스캔 Scope 검토</span>
             <h2 id="scan-review-title">{profile?.name}</h2>
             <p id="scan-review-description">
-              대상과 최종 명령을 확인하세요. Nmap은 Kali 호스트에서 직접
-              실행됩니다.
+              대상과 최종 명령을 확인하세요. 선택한 도구는 Kali 호스트에서
+              직접 실행됩니다.
             </p>
             <code>{preview.data?.command}</code>
             <p>
