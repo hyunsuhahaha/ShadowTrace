@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { serverTime, syncSelectedProject } from "./ScanCenter";
+import { serverTime, syncSelectedProject } from "./scanCenterModel";
 
 describe("scan timestamps", () => {
   it("treats SQLite timestamps without an offset as UTC", () => {

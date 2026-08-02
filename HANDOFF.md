@@ -63,6 +63,23 @@
     `PrivescSessionPanel.tsx`로, 실시간 출력(상태 헤더·에러 메시지·실행 결과 요약·
     출력 텍스트)을 `LiveOutputPanel.tsx`로 이동하고 각각 독립 테스트 추가.
   - 현재 `App.tsx`는 최초 2,062줄에서 1,110줄로 축소됐다.
+- `ScanCenter.tsx`(최초 1,131줄) 분리 완료:
+  - 타입·상수·유틸(Scan/Profile/Obs/Artifact/Automation, `terminal`, `profileLabel`,
+    `privilegedKinds`, `toolProfileGroups`, `get`, `serverTime`, `elapsed`, `bytes`,
+    `syncSelectedProject`)을 `scanCenterModel.ts`로 이동. 기존
+    `ScanCenter.test.ts`는 `scanCenterModel.test.ts`로 이름을 바꾸고 새 경로에서
+    import한다. `PostExploitationWorkspace.tsx`의 `syncSelectedProject` import
+    경로도 갱신했다.
+  - 스캔 도구(Nmap/masscan) 선택 UI를 `ScanToolPicker.tsx`로 이동.
+  - 대상 등록, 프로필 선택·구성, Nmap XML 가져오기, 명령 미리보기와 검토 버튼을
+    `ScanProfileComposer.tsx`로 이동.
+  - 현재 스캔 상태, 자동 증적/체이닝/masscan 발견 포트 안내를 `ScanJobStatus.tsx`로
+    이동.
+  - 스캔 검색·필터, 대기열/이력 목록, 취소·재실행과 비교(diff) UI를
+    `ScanHistoryPanel.tsx`로 이동.
+  - 각 컴포넌트에 독립 테스트 추가. `ScanCenter.tsx`는 1,131줄 → 603줄로 축소됐다.
+    관찰 결과 테이블/필터/통계, artifact 패널, 저장·실시간 출력 터미널은 이번
+    단계에서 그대로 두었다(다음 분리 후보).
 
 ## 검증
 
@@ -111,14 +128,20 @@
   패널까지 정상 표시, console error 없음. (참고: 브라우저의 `window.prompt()` 기반
   "+ 대상" 흐름은 CDP 자동화와 상성이 나빠 API로 직접 시드했다 — 기존 UI 동작 자체의
   회귀는 아니다.)
+- ScanCenter 분리 후: 전체 Vitest `39 files / 97 tests` 통과, `tsc -b` 통과,
+  production build 통과. Chrome 검증: 격리 DB에 nmap XML로 만든 스캔(#1, SSH·SMB
+  관찰 2건 포함)을 Scan Center에서 열어 도구 선택·프로필 구성·명령 미리보기·현재
+  스캔 상태(완료)·자동 증적 처리 안내·스캔 대기열/이력 목록·관찰 테이블·artifact
+  패널·저장된 출력까지 전부 정상 렌더링 확인, console error 없음.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. `ScanCenter.tsx`(현재 1,131줄)를 profile/preview/job history 경계로 분리한다.
-2. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
+1. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
    나눈다. URL과 request/response schema는 유지한다.
-3. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
+2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
+3. (선택) `ScanCenter.tsx`에 남은 관찰 테이블/필터/통계와 artifact·터미널 출력
+   영역을 추가로 분리할 수 있다 — 필수는 아님.
 
 ## 주의점
 
