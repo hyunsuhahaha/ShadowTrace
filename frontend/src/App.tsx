@@ -15,6 +15,7 @@ import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
+import ExecutionHistory from "./ExecutionHistory";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -810,12 +811,6 @@ export default function App() {
         focusedRun.templateId, focusedRun.status, focusedRun.stdout,
         focusedRun.stderr,
         serviceExecutions.find((item) => item.id === focusedRun.id)?.command,
-      )
-    : null;
-  const selectedOutcome = selectedExecution && executionDetail
-    ? summarizeExecutionResult(
-        selectedExecution.template_id, executionDetail.status,
-        executionDetail.stdout, executionDetail.stderr, selectedExecution.command,
       )
     : null;
   const serviceNameLower = (service?.name || "").toLowerCase();
@@ -1702,81 +1697,15 @@ export default function App() {
               applyNotesWidth(notesWidth + (event.deltaY < 0 ? 16 : -16));
             }}
           />}
-          <section className="executionPanel">
-            <div className="panelTitle">
-              <span>실행 이력</span>
-              <em>{serviceExecutions.length}개</em>
-            </div>
-            <div className="executionTabs" role="tablist" aria-label="실행 이력 보기">
-              <button role="tab" aria-selected={executionView === "list"}
-                onClick={() => setExecutionView("list")}>목록</button>
-              <button role="tab" aria-selected={executionView === "detail"}
-                disabled={!selectedExecution}
-                onClick={() => setExecutionView("detail")}>상세보기</button>
-            </div>
-            {executionView === "list" ? (
-              <div className="executionHistory">
-                {serviceExecutions.map((x) => (
-                <button key={x.id} onClick={() => openExecution(x.id)}>
-                  <b>
-                    #{x.id} {x.template_id}
-                  </b>
-                  <small>
-                    {statusLabel[x.status] || x.status}
-                    {x.exit_code == null ? "" : ` · exit ${x.exit_code}`}
-                  </small>
-                </button>
-              ))}
-                {!serviceExecutions.length && <p>아직 실행 기록이 없습니다.</p>}
-              </div>
-            ) : selectedExecution ? (
-              <div className="executionDetail">
-                <header>
-                  <b>#{selectedExecution.id} {selectedExecution.template_id}</b>
-                  <span>{statusLabel[executionDetail?.status ||
-                    selectedExecution.status] || selectedExecution.status}</span>
-                </header>
-                {selectedOutcome && (
-                  <div className={`executionOutcome executionOutcome--${selectedOutcome.tone}`}>
-                    <b>{selectedOutcome.title}</b>
-                    <span>{selectedOutcome.detail}</span>
-                  </div>
-                )}
-                <dl>
-                  <div><dt>시작</dt><dd>{new Date(
-                    selectedExecution.started_at).toLocaleString()}</dd></div>
-                  <div><dt>종료</dt><dd>{selectedExecution.ended_at
-                    ? new Date(selectedExecution.ended_at).toLocaleString()
-                    : "실행 중"}</dd></div>
-                  <div><dt>종료 코드</dt><dd>{executionDetail?.exit_code ??
-                    selectedExecution.exit_code ?? "—"}</dd></div>
-                </dl>
-                <code>{selectedExecution.command}</code>
-                {executionDetail?.stdout && (
-                  <details open>
-                    <summary>표준 출력</summary>
-                    <pre>{executionDetail.stdout}</pre>
-                  </details>
-                )}
-                {executionDetail?.stderr && (
-                  <details>
-                    <summary>오류 출력</summary>
-                    <pre>{executionDetail.stderr}</pre>
-                  </details>
-                )}
-                {!executionDetail?.stdout && !executionDetail?.stderr && (
-                  <p>저장된 출력이 없습니다.</p>
-                )}
-                {["queued", "running"].includes(
-                  executionDetail?.status || selectedExecution.status,
-                ) && (
-                  <button className="executionStop" onClick={stopSavedExecution}>
-                    실행 중단
-                  </button>
-                )}
-              </div>
-            ) : null}
-          </section>
+          <ExecutionHistory
+            executions={serviceExecutions}
+            view={executionView}
+            selected={selectedExecution}
+            detail={executionDetail}
+            onView={setExecutionView}
+            onOpen={openExecution}
+            onStop={stopSavedExecution}
+          />
           {!workspaceCollapsed && <div
             className="workspaceResizeHandle"
             role="separator"
