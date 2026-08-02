@@ -21,16 +21,14 @@ import CommandReviewModal from "./CommandReviewModal";
 import EnumerationScope from "./EnumerationScope";
 import CredentialAuditPanel from "./CredentialAuditPanel";
 import ServiceDashboard from "./ServiceDashboard";
+import InvestigationCommandList from "./InvestigationCommandList";
 import {
   keepSelectedService,
   parseSmbShares,
-  rankInvestigationCommands,
-  remainingInvestigationCommands,
   summarizeExecutionResult,
 } from "./serviceIntel";
 import {
   authContextNotice,
-  riskLabel,
   shellQuote,
   sourceLabel,
   type Project,
@@ -200,21 +198,6 @@ export default function App() {
   const authenticationCommands = (commands.data || []).filter((item) =>
     /(?:anon|null-session|empty-password|unauthenticated|auth-methods|default-audit|community-audit)/i
       .test(item.id),
-  );
-  const completedTemplateIds = new Set(
-    (executions.data || [])
-      .filter((item) => item.status === "completed")
-      .map((item) => item.template_id),
-  );
-  const investigationCommands = remainingInvestigationCommands(
-    commands.data || [],
-    {
-      hostname: target?.hostname || "",
-      osGuess: target?.os_guess || "",
-      product: service?.product || "",
-      version: service?.version || "",
-      completedTemplateIds,
-    },
   );
   const credentialProfile = getCredentialAuditProfile(service?.name);
   const reviewCommand = (command: any) => {
@@ -969,58 +952,15 @@ export default function App() {
             clock={clock}
             onReview={reviewCommand}
           />
-          <div className="cards">
-            {investigationCommands.map((c) => {
-              const cRun = runStates[c.id];
-              const cBusy = !!cRun && ["starting", "running"].includes(cRun.status);
-              const cElapsed = cRun
-                ? Math.max(0, Math.floor((clock - cRun.startedAt) / 1000)) : 0;
-              return (
-              <article
-                key={c.id}
-                className={cBusy ? "isRunning" : ""}
-              >
-                <div>
-                  {cRun ? (
-                    <span className={`commandStatus commandStatus--${cRun.status}`}>
-                      {statusLabel[cRun.status] || (
-                        cRun.status === "starting" ? "실행 준비 중" : cRun.status
-                      )}
-                    </span>
-                  ) : (
-                    <span className="badge">
-                      위험: {riskLabel[c.risk] || c.risk}
-                    </span>
-                  )}
-                  <h3>{c.name}</h3>
-                  <p>{c.description}</p>
-                </div>
-                <code>{c.preview}</code>
-                <div className="actions">
-                  <button
-                    onClick={() => navigator.clipboard.writeText(c.preview)}
-                  >
-                    복사
-                  </button>
-                  <button
-                    className="primary"
-                    disabled={cBusy}
-                    onClick={() => {
-                      reviewCommand(c);
-                    }}
-                  >
-                    {cBusy ? `실행 중 · ${cElapsed}초` : "검토 후 실행 →"}
-                  </button>
-                </div>
-              </article>
-              );
-            })}
-            {!investigationCommands.length && (
-              <p className="investigationEmpty">
-                이미 확인된 항목을 제외하면 실행할 명령이 없습니다.
-              </p>
-            )}
-          </div>
+          <InvestigationCommandList
+            commands={commands.data || []}
+            executions={executions.data || []}
+            target={target}
+            service={service}
+            runStates={runStates}
+            clock={clock}
+            onReview={reviewCommand}
+          />
           {service && authContextNotice[service.name] && (
             <div className="identityNotice" role="note">
               <b>이 프로토콜은 추가 인증 문맥이 필요합니다</b>
