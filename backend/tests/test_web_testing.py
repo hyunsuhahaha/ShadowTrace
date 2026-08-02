@@ -2,13 +2,14 @@ import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import HttpRequest, Project, Target
+from app.models import HttpExchange, HttpRequest, Project, Target
 import pytest
 from fastapi import HTTPException
 from app.modules.web_testing.router import (
-    payload_combinations, require_private_destination, send_once, substitute,
+    payload_combinations, require_private_destination, review_exchange,
+    send_once, substitute,
 )
-from app.schemas import IntruderRunIn
+from app.schemas import ExchangeReviewIn, IntruderRunIn
 
 
 def database():
@@ -39,6 +40,28 @@ def test_intruder_combinations_and_limit():
     body.max_requests = 3
     with pytest.raises(HTTPException):
         payload_combinations(body)
+
+
+def test_review_exchange_persists_and_defaults_to_pending():
+    db = database()
+    project = Project(name="Web Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    request = HttpRequest(
+        project_id=project.id, target_id=target.id, name="Request",
+        method="GET", url="http://10.10.10.10/")
+    db.add(request); db.flush()
+    exchange = HttpExchange(request_id=request.id, request_snapshot="GET /")
+    db.add(exchange); db.commit()
+    assert exchange.review_status == "pending"
+
+    updated = review_exchange(
+        exchange.id, ExchangeReviewIn(review_status="confirmed"), db)
+
+    assert updated["review_status"] == "confirmed"
+    db.expire_all()
+    assert db.get(HttpExchange, exchange.id).review_status == "confirmed"
 
 
 def test_destination_policy_rejects_public_and_dns_names():

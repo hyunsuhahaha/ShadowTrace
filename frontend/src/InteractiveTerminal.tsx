@@ -143,6 +143,9 @@ export default function InteractiveTerminal({
     }
   }, [inputRequest]);
   const stop = async () => {
+    if (["pty", "active"].includes(connection) && !window.confirm(
+      "활성 세션을 종료합니다. 재획득이 어려울 수 있습니다. 종료할까요?",
+    )) return;
     await fetch(`/api/interactive-sessions/${sessionId}/stop`, {
       method: "POST",
     });

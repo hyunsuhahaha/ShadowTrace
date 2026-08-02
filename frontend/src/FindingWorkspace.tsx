@@ -183,6 +183,10 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
     if (draft.cvss_vector && !draft.cvss_score) {
       setMessage({ kind: "error", text: "CVSS 벡터를 검증한 뒤 저장하세요." }); return;
     }
+    if (draft.severity && draft.severity !== draft.final_risk &&
+        !draft.risk_override_reason.trim()) {
+      setMessage({ kind: "error", text: "위험도를 조정한 사유를 입력하세요." }); return;
+    }
     setSaving(true); setMessage(undefined);
     try {
       const row = await api<Finding>(selectedId ? `/findings/${selectedId}` : "/findings", {
@@ -388,7 +392,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
     <aside className={`evidenceRail ${evidenceOpen ? "open" : ""}`} aria-label="연결 Evidence">
       <div className="panelHeading"><div><span>REPORT PROOF</span><h2>Evidence</h2></div><strong>{draft.evidence.length}</strong></div>
       <button className="closeEvidenceRail" aria-label="Evidence 패널 닫기" onClick={() => setEvidenceOpen(false)}>×</button>
-      <p className="railHint">Client 공개 여부를 Evidence마다 검토하세요. 민감 Evidence는 기본적으로 Internal 전용입니다.</p>
+      <p className="railHint">Client 공개 여부를 Evidence마다 검토하세요. 민감 Evidence는 Client 보고서에 포함할 수 없습니다.</p>
       <div className="linkedEvidence">
         {!linkedEvidence.length && <EmptyState title="연결된 Evidence가 없습니다" description="아래 목록에서 재현 결과나 스크린샷을 연결하세요." />}
         {linkedEvidence.map(({ link, item }, index) => <article key={link.evidence_id}>
@@ -412,9 +416,13 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
       </details>
       {selectedId && <Button variant="danger" className="deleteFinding" onClick={async () => {
         if (!confirm(`"${draft.title}" Finding을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
-        await api(`/findings/${selectedId}`, { method: "DELETE" });
-        const next = empty(); setSelectedId(undefined); setDraft(next); setBaseline(JSON.stringify(next));
-        qc.invalidateQueries({ queryKey: ["findings"] }); qc.invalidateQueries({ queryKey: ["findingSummary"] });
+        try {
+          await api(`/findings/${selectedId}`, { method: "DELETE" });
+          const next = empty(); setSelectedId(undefined); setDraft(next); setBaseline(JSON.stringify(next));
+          qc.invalidateQueries({ queryKey: ["findings"] }); qc.invalidateQueries({ queryKey: ["findingSummary"] });
+        } catch (error) {
+          setMessage({ kind: "error", text: String(error) });
+        }
       }}>Finding 삭제</Button>}
     </aside>
     {editingEvidence && <EvidenceImageEditor evidence={editingEvidence} onClose={() => setEditingEvidence(undefined)} />}

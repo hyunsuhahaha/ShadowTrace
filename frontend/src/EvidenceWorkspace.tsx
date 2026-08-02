@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EmptyState, ErrorState, LoadingState } from "./ui";
 type Target = { id: number; project_id: number; name: string; ip: string };
 type Evidence = {
   id: number;
@@ -48,6 +49,9 @@ export default function EvidenceWorkspace() {
   useEffect(() => {
     if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
   }, [targets.data, targetId]);
+  useEffect(() => {
+    if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
+  }, [targetId]);
   const upload = async (file: File) => {
     if (!target) return;
     const data = new FormData();
@@ -124,6 +128,7 @@ export default function EvidenceWorkspace() {
       </header>
       <nav>
         <select
+          aria-label="대상 선택"
           value={targetId || ""}
           onChange={(e) => setTargetId(+e.target.value)}
         >
@@ -133,7 +138,8 @@ export default function EvidenceWorkspace() {
             </option>
           ))}
         </select>
-        <button disabled={!selected.length} onClick={exportZip}>
+        <button disabled={!selected.length} onClick={exportZip}
+          title={selected.length ? undefined : "먼저 목록에서 항목을 선택하세요"}>
           선택 항목 ZIP 내보내기
         </button>
         <select aria-label="Exploit Research 연결" value={researchId || ""}
@@ -162,6 +168,10 @@ export default function EvidenceWorkspace() {
             />
           </label>
           {error && <p className="webError">{error}</p>}
+          {evidence.isLoading && <LoadingState label="Evidence를 불러오는 중" />}
+          {evidence.error && <ErrorState message={String(evidence.error)} />}
+          {!evidence.isLoading && !evidence.data?.length &&
+            <EmptyState title="저장된 Evidence가 없습니다" description="파일을 드래그하거나 위에서 업로드하세요." />}
           {evidence.data?.map((item) => (
             <article
               key={item.id}
@@ -196,7 +206,7 @@ export default function EvidenceWorkspace() {
             <>
               <div className="previewFile">
                 {active.kind === "screenshot" ? (
-                  <img src={`/api/evidence/${active.id}/file`} />
+                  <img src={`/api/evidence/${active.id}/file`} alt={active.title} />
                 ) : active.original_name ? (
                   <a href={`/api/evidence/${active.id}/file`}>
                     {active.original_name} 다운로드

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { EmptyState, ErrorState, LoadingState } from "./ui";
 const api = async <T,>(p: string, i?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + p, i);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -45,10 +46,10 @@ export default function OperationsWorkspace() {
     try {
       setError("");
       const current = await api<{ concurrency: number }>("/scans/settings");
-      const value = Number(
-        prompt("최대 동시 스캔 수(1–8)", String(current.concurrency)),
-      );
-      if (!Number.isInteger(value)) return;
+      const input = prompt("최대 동시 스캔 수(1–8)", String(current.concurrency));
+      if (input === null) return;
+      const value = Number(input);
+      if (!Number.isInteger(value) || value < 1 || value > 8) return;
       await api("/scans/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -80,6 +81,11 @@ export default function OperationsWorkspace() {
             onChange={(e) => setQuery(e.target.value)}
           />
           <div className="searchResults">
+            {query.trim().length > 1 && results.isLoading &&
+              <LoadingState label="검색 중" />}
+            {results.error && <ErrorState message={String(results.error)} />}
+            {query.trim().length > 1 && !results.isLoading && !results.data?.length &&
+              <EmptyState title="검색 결과가 없습니다" description="다른 키워드로 다시 검색하세요." />}
             {results.data?.map((r, i) => (
               <a key={`${r.type}-${r.id}-${i}`} href={r.path}>
                 <span>{r.type}</span>
@@ -90,8 +96,7 @@ export default function OperationsWorkspace() {
           </div>
           <h2>백업</h2>
           <p>
-            Create a consistent SQLite snapshot with the preserved artifact
-            tree. Backup files remain local.
+            SQLite 스냅샷과 산출물 파일을 함께 백업합니다. 백업 파일은 로컬에만 저장됩니다.
           </p>
           <button onClick={createBackup}>전체 백업 생성</button>
           <button onClick={setConcurrency}>동시 스캔 수 설정</button>
@@ -108,6 +113,10 @@ export default function OperationsWorkspace() {
         <section>
           <h2>로컬 변경 감사 기록</h2>
           <div className="auditList">
+            {audit.isLoading && <LoadingState label="감사 기록을 불러오는 중" />}
+            {audit.error && <ErrorState message={String(audit.error)} />}
+            {!audit.isLoading && !audit.data?.length &&
+              <EmptyState title="기록된 변경이 없습니다" description="로컬 변경 사항이 발생하면 여기에 기록됩니다." />}
             {audit.data?.map((x) => (
               <div key={x.id}>
                 <b>{x.method}</b>

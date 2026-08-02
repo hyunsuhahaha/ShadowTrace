@@ -222,6 +222,9 @@ export default function App() {
     setTargetId(targets.data?.[0]?.id);
   }, [projectId, targets.data]);
   useEffect(() => {
+    if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
+  }, [targetId]);
+  useEffect(() => {
     setServiceId((current) => keepSelectedService(current, services.data));
   }, [targetId, services.data]);
   useEffect(() => {

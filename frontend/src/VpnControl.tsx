@@ -76,7 +76,7 @@ export default function VpnControl() {
   return (
     <div className={`vpn ${vpn?.connected ? "ok" : ""}`}>
       <span className="dot" />
-      {vpn?.connected ? "tun0 연결됨" : "VPN 연결 안 됨"}
+      {status.isLoading ? "상태 확인 중" : vpn?.connected ? "tun0 연결됨" : "VPN 연결 안 됨"}
       <small>{vpn?.tun0 || "Tunnel 주소 없음"}</small>
       <div className="vpnActions">
         <label>
@@ -96,7 +96,7 @@ export default function VpnControl() {
           </button>
         )}
       </div>
-      {error && <em>{error}</em>}
+      {error && <em role="alert">{error}</em>}
       {prepared && <div className="modal" role="dialog"
         aria-label="VPN 연결 승인">
         <div>

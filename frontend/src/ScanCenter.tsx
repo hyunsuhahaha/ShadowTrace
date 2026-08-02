@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import VpnControl from "./VpnControl";
-import { statusCopy as statusLabel } from "./ui";
+import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 
 type Project = { id: number; name: string };
 type Target = { id: number; project_id: number; name: string; ip: string };
@@ -231,6 +231,9 @@ export default function ScanCenter() {
     if (selectedTarget) syncSelectedProject(selectedTarget.project_id);
   }, [targetId, targets.data]);
   useEffect(() => {
+    if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
+  }, [targetId]);
+  useEffect(() => {
     if (scans.data?.length && !scans.data.some((s) => s.id === scanId))
       setScanId(scans.data[0].id);
   }, [scans.data, scanId]);
@@ -441,16 +444,14 @@ export default function ScanCenter() {
     },
     saveMetadata = async () => {
       if (!selected) return;
-      const alias = prompt("Scan alias", selected.alias) || "",
-        tags = (
-          prompt(
-            "태그(쉼표로 구분)",
-            JSON.parse(selected.tags || "[]").join(", "),
-          ) || ""
-        )
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
+      const alias = prompt("Scan alias", selected.alias);
+      if (alias === null) return;
+      const tagsInput = prompt(
+        "태그(쉼표로 구분)",
+        JSON.parse(selected.tags || "[]").join(", "),
+      );
+      if (tagsInput === null) return;
+      const tags = tagsInput.split(",").map((x) => x.trim()).filter(Boolean);
       await fetch(`/api/scans/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -497,6 +498,22 @@ export default function ScanCenter() {
               {project.name}
             </option>
           ))}
+        </select>
+        <select
+          aria-label="대상 선택"
+          value={targetId || ""}
+          onChange={(e) => {
+            setTargetId(+e.target.value);
+            setScanId(undefined);
+          }}
+        >
+          {targets.data
+            ?.filter((item) => item.project_id === target?.project_id)
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {item.ip}
+              </option>
+            ))}
         </select>
         <span className="tools">스캔 기록 {scans.data?.length || 0}개</span>
       </nav>
@@ -760,6 +777,8 @@ export default function ScanCenter() {
               <span>제품 / 버전</span>
               <span>상태</span>
             </div>
+            {obs.isLoading && <LoadingState label="관찰 결과를 불러오는 중" />}
+            {obs.error && <ErrorState message={String(obs.error)} />}
             {visibleObs.map((o) => (
               <div className="tableRow" key={o.id}>
                 <b>
@@ -774,7 +793,7 @@ export default function ScanCenter() {
                 <em>{o.state}</em>
               </div>
             ))}
-            {!visibleObs.length && (
+            {!obs.isLoading && !visibleObs.length && (
               <div className="empty">
                 현재 필터와 일치하는 관찰 결과가 없습니다.
               </div>
@@ -843,11 +862,23 @@ export default function ScanCenter() {
               ))}
             </select>
           </div>
+          {scans.isLoading && <LoadingState label="스캔 이력을 불러오는 중" />}
+          {scans.error && <ErrorState message={String(scans.error)} />}
+          {!scans.isLoading && !visibleScans.length &&
+            <p className="empty">조건에 맞는 스캔이 없습니다.</p>}
           {visibleScans.map((s) => (
-            <button
+            <div
               key={s.id}
-              className={s.id === scanId ? "active" : ""}
+              role="button"
+              tabIndex={0}
+              className={`scanRow ${s.id === scanId ? "active" : ""}`}
               onClick={() => setScanId(s.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setScanId(s.id);
+                }
+              }}
             >
               <span>
                 <b>{s.alias || `#${s.id}`}</b>
@@ -860,28 +891,30 @@ export default function ScanCenter() {
               <code>{s.error || s.command}</code>
               <span className="jobActions">
                 {["queued", "running"].includes(s.status) && (
-                  <i
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       stop(s.id);
                     }}
                   >
                     취소
-                  </i>
+                  </button>
                 )}
                 {s.source === "executed" && terminal.includes(s.status) && (
-                  <i
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       rerun(s.id);
                     }}
                   >
                     재실행
-                  </i>
+                  </button>
                 )}
                 {s.exit_code != null && <small>exit {s.exit_code}</small>}
               </span>
-            </button>
+            </div>
           ))}
           <div className="compare">
             <h3>비교</h3>

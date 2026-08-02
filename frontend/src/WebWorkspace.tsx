@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
+import { EmptyState, ErrorState, LoadingState } from "./ui";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
 type SavedRequest = {
@@ -104,6 +105,9 @@ export default function WebWorkspace() {
     setRequestId(undefined);
     setDraft(empty(target));
   }, [targetId, targets.data]);
+  useEffect(() => {
+    if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
+  }, [targetId]);
   const select = (request: SavedRequest) => {
     setRequestId(request.id);
     setDraft(request);
@@ -238,6 +242,10 @@ export default function WebWorkspace() {
       <main className="webLayout">
         <aside>
           <h3>컬렉션</h3>
+          {requests.isLoading && <LoadingState label="요청 목록을 불러오는 중" />}
+          {requests.error && <ErrorState message={String(requests.error)} />}
+          {!requests.isLoading && !requests.data?.length &&
+            <EmptyState title="저장된 요청이 없습니다" description="새 요청을 만들어 저장하세요." />}
           {requests.data?.map((r) => (
             <button
               className={r.id === requestId ? "active" : ""}
@@ -425,6 +433,10 @@ export default function WebWorkspace() {
                 : "관찰된 응답 변경 없음"}
             </div>
           )}
+          {exchanges.isLoading && <LoadingState label="응답 이력을 불러오는 중" />}
+          {exchanges.error && <ErrorState message={String(exchanges.error)} />}
+          {!exchanges.isLoading && !exchanges.data?.length &&
+            <EmptyState title="응답 이력이 없습니다" description="요청을 전송하면 여기에 기록됩니다." />}
           {exchanges.data?.map((x) => (
             <button
               className={x.id === exchangeId ? "active" : ""}

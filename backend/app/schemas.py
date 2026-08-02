@@ -185,7 +185,10 @@ class HttpExchangeOut(ORM):
     id: int; request_id: int; status_code: int | None
     duration_ms: int; size: int; request_snapshot: str
     response_headers: str; response_cookies: str; body_path: str
-    sha256: str; error: str; created_at: datetime
+    sha256: str; error: str; review_status: str; created_at: datetime
+
+class ExchangeReviewIn(BaseModel):
+    review_status: Literal["pending", "confirmed", "dismissed"]
 
 class EvidenceOut(ORM):
     id: int; project_id: int; target_id: int; service_id: int | None

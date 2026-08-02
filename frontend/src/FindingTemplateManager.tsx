@@ -20,6 +20,7 @@ export default function FindingTemplateManager() {
   const [draft, setDraft] = useState<any>(blank());
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
   const templates = useQuery({ queryKey: ["templateManager", query],
     queryFn: () => api<any[]>(`/finding-templates?q=${encodeURIComponent(query)}`) });
   const patch = (values: any) => setDraft((current: any) => ({ ...current, ...values }));
@@ -32,6 +33,7 @@ export default function FindingTemplateManager() {
   };
   const save = async () => {
     if (!draft.title.trim()) { setMessage("템플릿 제목을 입력하세요."); return; }
+    setSaving(true);
     try {
       const row = await api<any>(selected ? `/finding-templates/${selected}` : "/finding-templates", {
         method: selected ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
@@ -41,6 +43,7 @@ export default function FindingTemplateManager() {
       qc.invalidateQueries({ queryKey: ["templateManager"] });
       qc.invalidateQueries({ queryKey: ["findingTemplates"] });
     } catch (error) { setMessage(String(error)); }
+    finally { setSaving(false); }
   };
   const importFile = async (file?: File) => {
     if (!file) return;
@@ -56,7 +59,7 @@ export default function FindingTemplateManager() {
   };
   return <main className="templateManager">
     <aside>
-      <div className="panelHeading"><div><span>REUSABLE CONTENT</span><h2>Finding library</h2></div><Button variant="primary" onClick={() => { setSelected(undefined); setDraft(blank()); }}>새 템플릿</Button></div>
+      <div className="panelHeading"><div><span>REUSABLE CONTENT</span><h2>Finding library</h2></div><Button variant="primary" onClick={() => { setSelected(undefined); setDraft(blank()); setMessage(""); }}>새 템플릿</Button></div>
       <div className="templateTools"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목 검색" />
         <a href="/api/finding-templates/export?format=json">JSON 내보내기</a>
         <a href="/api/finding-templates/export?format=yaml">YAML 내보내기</a>
@@ -70,7 +73,7 @@ export default function FindingTemplateManager() {
       </button>)}
     </aside>
     <section>
-      <header className="editorHeader"><div><span>{selected ? `TEMPLATE #${selected}` : "NEW TEMPLATE"}</span><h1>{draft.title || "새 Finding 템플릿"}</h1><p>적용 시점의 내용이 프로젝트 Finding에 스냅샷으로 저장됩니다.</p></div><div className="saveState"><Button variant="primary" onClick={save}>템플릿 저장</Button></div></header>
+      <header className="editorHeader"><div><span>{selected ? `TEMPLATE #${selected}` : "NEW TEMPLATE"}</span><h1>{draft.title || "새 Finding 템플릿"}</h1><p>적용 시점의 내용이 프로젝트 Finding에 스냅샷으로 저장됩니다.</p></div><div className="saveState"><Button variant="primary" disabled={saving} onClick={save}>{saving ? "저장 중…" : "템플릿 저장"}</Button></div></header>
       <div className="templateForm">
         {message && <div className="inlineNotice" role="status">{message}</div>}
         <div className="fieldGrid">

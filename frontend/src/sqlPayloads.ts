@@ -1,8 +1,7 @@
-// SQLmap and other automated SQLi tools are explicitly banned on the OSCP
-// exam ("SQLi and all exploitation must be done manually" — OffSec Exam
-// Guide). This is a copy-only reference for manually testing a request —
-// nothing here sends a request or picks a payload automatically; the user
-// still has to paste it into the request editor and press Send themselves.
+// SQLmap and other automated SQLi tools are banned on the OSCP exam, so this
+// is a copy-only reference: nothing here sends a request or picks a payload
+// automatically, the user pastes it into the request editor and sends it
+// themselves.
 export type SqlPayload = { label: string; payload: string; note?: string };
 export type SqlPayloadCategory = {
   id: string;

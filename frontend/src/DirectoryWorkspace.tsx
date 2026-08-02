@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EmptyState, ErrorState, LoadingState } from "./ui";
 type Project = { id: number; name: string };
 type Obj = {
   id: number;
@@ -107,17 +108,21 @@ export default function DirectoryWorkspace() {
   };
   const link = async () => {
     if (!projectId || !relation.source_id || !relation.target_id) return;
-    await api("/directory/relations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...relation,
-        project_id: projectId,
-        evidence_id: null,
-        notes: "",
-      }),
-    });
-    qc.invalidateQueries({ queryKey: ["directoryRelations"] });
+    try {
+      await api("/directory/relations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...relation,
+          project_id: projectId,
+          evidence_id: null,
+          notes: "",
+        }),
+      });
+      qc.invalidateQueries({ queryKey: ["directoryRelations"] });
+    } catch (e) {
+      setError(String(e));
+    }
   };
   return (
     <div className="directoryPage">
@@ -220,6 +225,10 @@ export default function DirectoryWorkspace() {
         </aside>
         <section>
           <div className="directoryObjects">
+            {objects.isLoading && <LoadingState label="관찰 객체를 불러오는 중" />}
+            {objects.error && <ErrorState message={String(objects.error)} />}
+            {!objects.isLoading && !objects.data?.length &&
+              <EmptyState title="관찰 객체가 없습니다" description="왼쪽에서 새 관찰 객체를 추가하세요." />}
             {objects.data?.map((o) => (
               <article key={o.id}>
                 <span>{o.kind}</span>
@@ -267,6 +276,10 @@ export default function DirectoryWorkspace() {
             <button onClick={link}>관계 기록</button>
           </div>
           <div className="observedGraph">
+            {relations.isLoading && <LoadingState label="관계를 불러오는 중" />}
+            {relations.error && <ErrorState message={String(relations.error)} />}
+            {!relations.isLoading && !relations.data?.length &&
+              <EmptyState title="기록된 관계가 없습니다" description="위에서 출발·도착 객체를 선택하고 관계를 기록하세요." />}
             {relations.data?.map((r) => (
               <div key={r.id}>
                 <b>{names.get(r.source_id) || `#${r.source_id}`}</b>

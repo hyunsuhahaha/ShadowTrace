@@ -134,6 +134,16 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
     const response = await fetch(`/api/web/intruder/${runId.current}/${action}`, { method: "POST" });
     if (response.ok) setProgress(await response.json());
   };
+  const updateReview = async (exchangeId: number, reviewStatus: string) => {
+    setResults((current) => current.map((item) =>
+      item.exchange_id === exchangeId ? { ...item, review_status: reviewStatus } : item));
+    const response = await fetch(`/api/web/exchanges/${exchangeId}/review`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ review_status: reviewStatus }),
+    });
+    if (!response.ok) setError((await response.json()).detail || response.statusText);
+  };
   const download = (format: "json" | "csv") => {
     const values = selected.size ? results.filter((item) => selected.has(item.exchange_id)) : results;
     const content = format === "json" ? JSON.stringify(values, null, 2) :
@@ -318,8 +328,12 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
               {result.response_length - results[0].response_length}</td>
             <td>{result.word_count}/{result.line_count}</td><td>{result.duration_ms} ms</td>
             <td>{[...result.string_matches, ...result.regex_matches].filter(Boolean).length || "—"}</td>
-            <td><select defaultValue={result.review_status}><option>검토 필요</option>
-              <option>사용자가 확인함</option><option>무시함</option></select></td>
+            <td><select value={result.review_status}
+              onChange={(event) => void updateReview(result.exchange_id, event.target.value)}>
+              <option value="pending">검토 필요</option>
+              <option value="confirmed">사용자가 확인함</option>
+              <option value="dismissed">무시함</option>
+            </select></td>
           </tr>)}</tbody>
         </table>
       </div>}

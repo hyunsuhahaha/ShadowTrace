@@ -76,6 +76,11 @@ export default function AppShell({
   const [activeProjectId, setActiveProjectId] = useState(
     () => Number(localStorage.getItem("oscp-workspace-project")),
   );
+  // Whichever workspace page is open (Service Enumeration, Scan Center, ...)
+  // owns its own target selection and broadcasts it here, so the header
+  // reflects what the user is actually looking at instead of always
+  // guessing "the project's first target."
+  const [activeTargetId, setActiveTargetId] = useState<number>();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => get<Project[]>("/projects") });
   const targets = useQuery({ queryKey: ["allTargets"], queryFn: () => get<Target[]>("/targets") });
   useEffect(() => {
@@ -84,9 +89,16 @@ export default function AppShell({
     addEventListener("oscp-project-change", change);
     return () => removeEventListener("oscp-project-change", change);
   }, []);
+  useEffect(() => {
+    const change = (event: Event) =>
+      setActiveTargetId((event as CustomEvent<number>).detail);
+    addEventListener("oscp-target-change", change);
+    return () => removeEventListener("oscp-target-change", change);
+  }, []);
   const project =
     projects.data?.find((item) => item.id === activeProjectId) || projects.data?.[0];
   const target =
+    targets.data?.find((item) => item.id === activeTargetId && item.project_id === project?.id) ||
     targets.data?.find((item) => item.project_id === project?.id);
   const projectTargetCount = targets.data?.filter(
     (item) => item.project_id === project?.id,

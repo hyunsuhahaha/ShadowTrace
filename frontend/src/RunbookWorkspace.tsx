@@ -130,6 +130,9 @@ export default function RunbookWorkspace(){
     setServiceId(undefined);
     setSelectedId(undefined);
   },[projectId,targets.data]);
+  useEffect(()=>{
+    if(targetId)dispatchEvent(new CustomEvent("oscp-target-change",{detail:targetId}));
+  },[targetId]);
   const services=useQuery({queryKey:["services",targetId],
     queryFn:()=>api<Service[]>(`/targets/${targetId}/services`),enabled:!!targetId});
   useEffect(()=>setServiceId(services.data?.[0]?.id),[targetId,services.data]);
@@ -317,8 +320,8 @@ export default function RunbookWorkspace(){
           ?`${selectedService.port}/${selectedService.protocol} · ${selectedService.name} Runbooks`
           :"Target 공통 Runbooks"}</h2>
           <p>{libraryMode==="scoped"
-            ?"탐지된 서비스명과 지식 계층이 일치하는 절차만 표시합니다. 포트 번호는 미식별 서비스에서만 보조 근거로 사용합니다."
-            :"템플릿 관리용 전체 목록입니다. 현재 서비스에 대한 추천 목록이 아닙니다."}</p></div>
+            ?"탐지된 서비스와 일치하는 절차만 표시합니다. 미식별 서비스는 포트 번호를 보조 근거로 사용합니다."
+            :"템플릿 관리용 전체 목록입니다. 현재 서비스 추천 목록이 아닙니다."}</p></div>
         <div className="libraryActions">
         <Button variant={libraryMode==="scoped"?"primary":"secondary"}
           onClick={()=>setLibraryMode("scoped")}>현재 범위 · {scopedTemplates.length}</Button>

@@ -3,7 +3,7 @@
 .scanFilters label{font-size:10px;color:#91a3a8;white-space:nowrap}
 .historyFilters{padding:0 10px;display:grid}
 .jobActions{justify-content:flex-start!important;gap:8px}
-.jobActions i{border:1px solid #405158;padding:4px 6px;border-radius:3px;color:#b9cacd!important;cursor:pointer}
+.jobActions button{border:1px solid #405158;background:transparent;padding:4px 6px;border-radius:3px;color:#b9cacd!important;font-size:inherit;font-style:normal;cursor:pointer}
 .artifactPanel{margin-top:16px;border:1px solid var(--line);background:#0a0f11}
 .artifactPanel>div{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--line)}
 .artifactPanel button,.artifactPanel>div a{margin-left:auto;background:#172125;border:1px solid #304047;color:#b9cacd;text-decoration:none;padding:5px 8px;border-radius:3px}

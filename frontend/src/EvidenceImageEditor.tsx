@@ -118,7 +118,11 @@ export default function EvidenceImageEditor({ evidence, onClose }: {
         <input aria-label="주석 텍스트" value={text} onChange={(event) => setText(event.target.value)} disabled={tool !== "text"} />
         <button disabled={!operations.length} onClick={() => { const last = operations.at(-1)!; setOperations(operations.slice(0, -1)); setRedo([last, ...redo]); }}>실행 취소</button>
         <button disabled={!redo.length} onClick={() => { setOperations([...operations, redo[0]]); setRedo(redo.slice(1)); }}>다시 실행</button>
-        <button disabled={!operations.length} onClick={() => { setOperations([]); setRedo([]); }}>모두 삭제</button>
+        <button disabled={!operations.length} onClick={() => {
+          if (window.confirm("모든 주석을 지웁니다. 다시 실행으로도 복구할 수 없습니다. 계속할까요?")) {
+            setOperations([]); setRedo([]);
+          }
+        }}>모두 삭제</button>
       </div>
       <div className="imageCanvas"><canvas ref={canvasRef} onPointerDown={(event) => setStart(point(event))} onPointerUp={(event) => complete(point(event))} /></div>
       <footer><label>보고서 캡션<input value={caption} onChange={(event) => setCaption(event.target.value)} /></label><Button onClick={onClose}>취소</Button><Button variant="primary" onClick={save}>새 편집 버전 저장</Button></footer>

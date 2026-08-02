@@ -18,7 +18,8 @@ from ...config import WORKSPACE_DIR
 from ...database import get_db
 from ...models import HttpExchange, HttpRequest, Project, Service, Target
 from ...schemas import (
-    HttpExchangeOut, HttpRequestIn, HttpRequestOut, HttpSendIn, IntruderRunIn,
+    ExchangeReviewIn, HttpExchangeOut, HttpRequestIn, HttpRequestOut,
+    HttpSendIn, IntruderRunIn,
 )
 from ...time import utcnow
 from ..scan_center.service import _safe
@@ -40,7 +41,7 @@ def public_exchange(row: HttpExchange) -> dict:
     return {key: getattr(row, key) for key in (
         "id", "request_id", "status_code", "duration_ms", "size",
         "request_snapshot", "response_headers", "response_cookies",
-        "body_path", "sha256", "error", "created_at")}
+        "body_path", "sha256", "error", "review_status", "created_at")}
 
 
 @router.get("/requests", response_model=list[HttpRequestOut])
@@ -325,7 +326,7 @@ async def run_intruder(ident: int, body: IntruderRunIn,
                 "content_type": headers.get("content-type", ""),
                 "string_matches": [value in text for value in body.grep_strings],
                 "regex_matches": regex_matches,
-                "review_status": "검토 필요",
+                "review_status": exchange.review_status,
                 "error": exchange.error,
             })
             state["completed"] = len(results)
@@ -370,6 +371,15 @@ def exchanges(ident: int, db: Session = Depends(get_db)):
     rows = db.scalars(select(HttpExchange).where(
         HttpExchange.request_id == ident).order_by(HttpExchange.id.desc())).all()
     return [public_exchange(row) for row in rows]
+
+@router.patch("/exchanges/{ident}/review", response_model=HttpExchangeOut)
+def review_exchange(ident: int, body: ExchangeReviewIn, db: Session = Depends(get_db)):
+    row = need(db, HttpExchange, ident)
+    row.review_status = body.review_status
+    db.commit()
+    db.refresh(row)
+    return public_exchange(row)
+
 
 @router.get("/exchanges/{base_id}/compare/{current_id}")
 def compare_exchanges(base_id: int, current_id: int,

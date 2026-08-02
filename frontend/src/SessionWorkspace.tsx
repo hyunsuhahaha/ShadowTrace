@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EmptyState, ErrorState, LoadingState } from "./ui";
 type Target = { id: number; project_id: number; name: string; ip: string };
 type Tunnel = {
   id: number;
@@ -67,6 +68,9 @@ export default function SessionWorkspace() {
       setForm((x) => ({ ...x, ssh_host: targets.data![0].ip }));
     }
   }, [targets.data, targetId]);
+  useEffect(() => {
+    if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
+  }, [targetId]);
   const set = (k: string, v: any) => setForm((x) => ({ ...x, [k]: v }));
   const start = async () => {
     if (!target) return;
@@ -89,6 +93,8 @@ export default function SessionWorkspace() {
     }
   };
   const stop = async (kind: "tunnels" | "interactive-sessions", id: number) => {
+    const label = kind === "tunnels" ? "터널" : "세션";
+    if (!window.confirm(`활성 ${label}을 중지합니다. 재연결이 필요할 수 있습니다. 계속할까요?`)) return;
     await fetch(`/api/${kind}/${id}/stop`, { method: "POST" });
     qc.invalidateQueries();
   };
@@ -119,11 +125,14 @@ export default function SessionWorkspace() {
       <main className="sessionLayout">
         <aside>
           <h3>새 SSH Tunnel</h3>
-          {["name", "ssh_host", "username", "bind_host", "remote_host"].map(
+          {(["name", "ssh_host", "username", "bind_host", "remote_host"] as const).map(
             (k) => (
               <input
                 key={k}
-                placeholder={k.replace("_", " ")}
+                placeholder={{
+                  name: "Tunnel 이름", ssh_host: "SSH 호스트", username: "사용자명",
+                  bind_host: "Bind 호스트", remote_host: "원격 호스트",
+                }[k]}
                 value={(form as any)[k]}
                 onChange={(e) => set(k, e.target.value)}
               />
@@ -179,6 +188,10 @@ export default function SessionWorkspace() {
         <section>
           <h2>SSH Tunnel</h2>
           <div className="connectionList">
+            {tunnels.isLoading && <LoadingState label="터널 목록을 불러오는 중" />}
+            {tunnels.error && <ErrorState message={String(tunnels.error)} />}
+            {!tunnels.isLoading && !tunnels.data?.length &&
+              <EmptyState title="열린 터널이 없습니다" description="왼쪽에서 새 터널을 시작하세요." />}
             {tunnels.data?.map((t) => (
               <article key={t.id}>
                 <div>
@@ -200,6 +213,10 @@ export default function SessionWorkspace() {
           </div>
           <h2>대화형 세션</h2>
           <div className="connectionList">
+            {sessions.isLoading && <LoadingState label="세션 목록을 불러오는 중" />}
+            {sessions.error && <ErrorState message={String(sessions.error)} />}
+            {!sessions.isLoading && !sessions.data?.length &&
+              <EmptyState title="대화형 세션이 없습니다" description="Service Enumeration에서 대화형 명령을 실행하면 여기에 표시됩니다." />}
             {sessions.data?.map((s) => (
               <article key={s.id}>
                 <div>
