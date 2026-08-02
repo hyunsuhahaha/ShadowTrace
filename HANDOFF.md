@@ -12,6 +12,7 @@
   - `b5e17f5` — Masscan discovery와 Nmap 후속 스캔
   - `2427d7c` — Post-exploitation credential hunting
   - `0167ea8` — core/Execution/Session backend 라우트 모듈화
+  - `10495b6`..`fe3f8be` — Enumeration scope/dashboard/credential UI 단계별 모듈화
 - 진행 중: 백엔드와 프런트엔드의 점진적 모듈화
 - 원칙: URL, 요청/응답 형식, DB 스키마를 유지하며 작은 단계로 파일만 분리한다.
 
@@ -56,6 +57,9 @@
     지연 경고를 `JobStatus.tsx`로 이동하고 독립 테스트 추가
   - 저장 자격증명 선택·삭제, NetExec 단일 계정 입력, 출처·비밀 저장 UI를
     `CredentialStoreForm.tsx`로 이동하고 인증 실행 잠금 테스트 추가
+  - NetExec 성공 판정, 후속 psexec/SSH/WinRM/RDP/MSSQL/hashcat 및 Evidence/Finding
+    액션을 `NetexecOutcome.tsx`로 이동하고 SMB 관리자 결과 테스트 추가
+  - 현재 `App.tsx`는 최초 2,062줄에서 1,158줄로 축소됐다.
 
 ## 검증
 
@@ -94,15 +98,19 @@
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - Frontend credential-store-form 분리 후: 전체 Vitest `32 files / 81 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
+- Frontend netexec-outcome 분리 후: 전체 Vitest `33 files / 82 tests` 통과,
+  production build 통과, Chrome Service Enumeration 정상, console error 없음,
+  모든 관찰 asset/API 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`에서 NetExec 인증 성공 후 후속 셸·Evidence 액션을 다음
-   seam으로 분리한다.
-2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
-   유지할지 검토한다.
-3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.
+1. `App.tsx`의 `psexecSession` 권한 상승 서버/InteractiveTerminal 영역과 실시간
+   출력 영역을 각각 작은 컴포넌트로 분리한다.
+2. 이어서 `ScanCenter.tsx`(현재 1,131줄)를 profile/preview/job history 경계로 분리한다.
+3. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
+   나눈다. URL과 request/response schema는 유지한다.
+4. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
 
 ## 주의점
 

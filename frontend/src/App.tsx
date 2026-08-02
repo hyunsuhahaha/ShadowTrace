@@ -25,6 +25,7 @@ import InvestigationCommandList from "./InvestigationCommandList";
 import ManualGuidance from "./ManualGuidance";
 import JobStatus from "./JobStatus";
 import CredentialStoreForm from "./CredentialStoreForm";
+import NetexecOutcome, {type NetexecProtocol} from "./NetexecOutcome";
 import {
   keepSelectedService,
   parseSmbShares,
@@ -763,8 +764,7 @@ export default function App() {
       )
     : null;
   const serviceNameLower = (service?.name || "").toLowerCase();
-  const netexecProtocol:
-    "smb" | "ssh" | "winrm" | "rdp" | "mssql" | "ldap" | undefined =
+  const netexecProtocol: NetexecProtocol | undefined =
     ["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) ? "smb"
     : serviceNameLower === "ssh" ? "ssh"
     : ["wsman", "wsmans", "winrm"].includes(serviceNameLower) ? "winrm"
@@ -779,14 +779,6 @@ export default function App() {
   } as const)[netexecProtocol];
   const netexecCredentialResult = netexecCredCommandId
     ? runStates[netexecCredCommandId] : undefined;
-  const netexecSuccess = netexecCredentialResult?.status === "completed"
-    && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
-  const netexecPwned = netexecProtocol === "smb" && netexecSuccess
-    && /pwn3d/i.test(netexecCredentialResult?.stdout || "");
-  const netexecSshOk = netexecProtocol === "ssh" && netexecSuccess;
-  const netexecWinrmOk = netexecProtocol === "winrm" && netexecSuccess;
-  const netexecRdpOk = netexecProtocol === "rdp" && netexecSuccess;
-  const netexecMssqlOk = netexecProtocol === "mssql" && netexecSuccess;
   const latestSmbEnum = serviceExecutions
     .filter((item) => item.template_id === "smb-enum" && item.status === "completed")
     .sort((a, b) => b.id - a.id)[0];
@@ -988,93 +980,22 @@ export default function App() {
               </header>
               <CredentialStoreForm store={credStore}
                 result={netexecCredentialResult} onCheck={checkNetexecCredential} />
-              {netexecPwned && (
-                <div className="netexecPwned">
-                  <b>로컬 관리자 권한 확인됨 (Pwn3d!)</b>
-                  <span>원문 출력은 실행 이력에서 확인하세요. 아래 버튼들은 같은 계정으로
-                    impacket 명령을 데스크톱 셸에 입력만 해둡니다 — 대상과 명령을 다시
-                    확인한 뒤 직접 Enter를 눌러야 실행됩니다. 하나가 막히면 다른 걸
-                    시도하세요.</span>
-                  <div className="netexecPwnedActions">
-                    <button onClick={() => void openPsexecShell()}>psexec</button>
-                    <button onClick={() => void openLateralShell("wmiexec")}>wmiexec</button>
-                    <button onClick={() => void openLateralShell("smbexec")}>smbexec</button>
-                    <button onClick={() => void openLateralShell("atexec")}>atexec</button>
-                  </div>
-                </div>
-              )}
-              {netexecSshOk && (
-                <div className="netexecPwned">
-                  <b>SSH 인증 성공</b>
-                  <span>원문 출력은 실행 이력에서 확인하세요. 아래 버튼은 순수 셸을 열고
-                    ssh 명령을 입력만 해둡니다 — 대상을 다시 확인한 뒤 직접 Enter를
-                    누르고, 프롬프트가 뜨면 위에 입력한 비밀번호를 직접 입력하세요.</span>
-                  <button onClick={() => void openSshShell()}>SSH 명령 준비하기</button>
-                </div>
-              )}
-              {netexecWinrmOk && (
-                <div className="netexecPwned">
-                  <b>WinRM 인증 성공</b>
-                  <span>원문 출력은 실행 이력에서 확인하세요. 아래 버튼은 순수 셸을 열고
-                    evil-winrm 명령을 입력만 해둡니다 — 대상과 계정을 다시 확인한 뒤
-                    직접 Enter를 눌러야 실행됩니다.</span>
-                  <button onClick={() => void openEvilWinrmShell()}>
-                    evil-winrm 명령 준비하기
-                  </button>
-                </div>
-              )}
-              {netexecRdpOk && (
-                <div className="netexecPwned">
-                  <b>RDP 인증 성공</b>
-                  <span>RDP는 GUI라 이 앱 안에서 열 수 없습니다. 아래 버튼은 xfreerdp
-                    명령을 클립보드에 복사해둘 뿐이며, 직접 터미널에서 확인 후 붙여넣어
-                    실행해야 합니다.</span>
-                  <button onClick={() => void copyXfreerdpCommand()}>
-                    xfreerdp 명령 복사
-                  </button>
-                </div>
-              )}
-              {netexecMssqlOk && (
-                <div className="netexecPwned">
-                  <b>MS SQL 인증 성공</b>
-                  <span>원문 출력은 실행 이력에서 확인하세요. 아래 버튼은 순수 셸을 열고
-                    impacket-mssqlclient 명령을 입력만 해둡니다 — 대상과 계정을 다시
-                    확인한 뒤 직접 Enter를 눌러야 실행됩니다.</span>
-                  <button onClick={() => void openMssqlShell()}>
-                    impacket-mssqlclient 명령 준비하기
-                  </button>
-                </div>
-              )}
-              {netexecProtocol === "ldap" && (
-                <div className="netexecPwnedActions" style={{marginTop: "12px"}}>
-                  <button onClick={() => void openHashcatShell()}>
-                    Kerberoast 해시 → hashcat 명령 준비
-                  </button>
-                </div>
-              )}
-              {netexecSuccess && netexecCredentialResult?.id && (
-                <div className="netexecEvidence">
-                  <button onClick={() => void captureEvidence(
-                    {id: netexecCredentialResult.id!,
-                     stdout: netexecCredentialResult.stdout,
-                     stderr: netexecCredentialResult.stderr},
-                    `${netexecProtocol?.toUpperCase()} 자격증명 검증 · ${credStore.username}`,
-                    "sensitive")}>
-                    Evidence로 저장
-                  </button>
-                  <button onClick={() => void promoteToFinding(
-                    {id: netexecCredentialResult.id!,
-                     stdout: netexecCredentialResult.stdout,
-                     stderr: netexecCredentialResult.stderr},
-                    `${netexecProtocol?.toUpperCase()} 유효 자격증명 · ${credStore.username}`,
-                    `${target?.ip} ${service?.port}/${service?.name}에 대해 ` +
-                    `${credStore.domain ? credStore.domain + "\\" : ""}${credStore.username} 계정으로 ` +
-                    `NetExec ${netexecProtocol} 인증에 성공함.`, "sensitive")}>
-                    Finding(Draft)으로 승격
-                  </button>
-                  {evidenceMsg && <span>{evidenceMsg}</span>}
-                </div>
-              )}
+              <NetexecOutcome protocol={netexecProtocol}
+                result={netexecCredentialResult} username={credStore.username}
+                domain={credStore.domain} target={target} service={service}
+                evidenceMsg={evidenceMsg} actions={{
+                  openPsexec: () => void openPsexecShell(),
+                  openLateral: (kind) => void openLateralShell(kind),
+                  openSsh: () => void openSshShell(),
+                  openWinrm: () => void openEvilWinrmShell(),
+                  copyRdp: () => void copyXfreerdpCommand(),
+                  openMssql: () => void openMssqlShell(),
+                  openHashcat: () => void openHashcatShell(),
+                  captureEvidence: (execution, title) => void captureEvidence(
+                    execution, title, "sensitive"),
+                  promoteFinding: (execution, title, description) => void promoteToFinding(
+                    execution, title, description, "sensitive"),
+                }} />
             </section>
           )}
           {psexecSession && (
