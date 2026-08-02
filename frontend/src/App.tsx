@@ -14,6 +14,7 @@ import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
 import SmbShareResults from "./SmbShareResults";
+import ServiceList from "./ServiceList";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -938,35 +939,14 @@ export default function App() {
               return !collapsed;
             })}
           >{servicesCollapsed ? "›" : "‹"}</button>
-          <div className="panelTitle">
-            <span>서비스</span>
-            <em>{services.data?.length || 0}개 열림</em>
-          </div>
-          {services.data?.map((s) => (
-            <button
-              className={s.id === serviceId ? "active" : ""}
-              key={s.id}
-              onClick={() => {
-                setServiceId(s.id);
-                workRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-            >
-              <strong>{s.port}</strong>
-              <span>
-                {s.name.toUpperCase()}
-                <small>
-                  {[s.product, s.version].filter(Boolean).join(" ") ||
-                    "제품·버전 미식별"}
-                </small>
-              </span>
-              <i>{s.protocol}</i>
-            </button>
-          ))}
-          {!services.data?.length && (
-            <div className="empty">
-              서비스 목록을 채우려면 Nmap XML 스캔을 가져오세요.
-            </div>
-          )}
+          <ServiceList
+            services={services.data}
+            selectedId={serviceId}
+            onSelect={(id) => {
+              setServiceId(id);
+              workRef.current?.scrollTo({top: 0, behavior: "smooth"});
+            }}
+          />
           {!servicesCollapsed && <div
             className="layoutResizeHandle servicesResizeHandle"
             role="separator"
