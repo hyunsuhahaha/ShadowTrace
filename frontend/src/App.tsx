@@ -3,7 +3,6 @@ import {
   type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import VpnControl from "./VpnControl";
 import InteractiveTerminal from "./InteractiveTerminal";
 import ServiceIntelligencePanel from "./ServiceIntelligencePanel";
 import "./service-intelligence.css";
@@ -19,6 +18,7 @@ import ExecutionHistory from "./ExecutionHistory";
 import ExecutionMonitor from "./ExecutionMonitor";
 import ServiceWorkspace from "./ServiceWorkspace";
 import CommandReviewModal from "./CommandReviewModal";
+import EnumerationScope from "./EnumerationScope";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -850,74 +850,25 @@ export default function App() {
   const smbShares = parseSmbShares(smbOutput);
   return (
     <div className="app">
-      <header>
-        <div className="brand">
-          <span className="mark">OW</span>
-          <div>
-            <b>OSCP Workspace</b>
-            <small>로컬 Enumeration 작업 공간</small>
-          </div>
-        </div>
-        <div className="target">
-          <span>프로젝트</span>
-          <b>{project?.name || "프로젝트 없음"}</b>
-          <i>/</i>
-          <span>대상</span>
-          <b>{target?.ip || "—"}</b>
-        </div>
-        <VpnControl />
-      </header>
-      <nav>
-        <button onClick={() => createProject.mutate()}>＋ 프로젝트</button>
-        <select
-          value={projectId || ""}
-          onChange={(e) => {
-            const id = Number(e.target.value);
-            setProjectId(id);
-            localStorage.setItem("oscp-workspace-project", String(id));
-            dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
-          }}
-        >
-          <option value="">프로젝트 선택</option>
-          {projects.data?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button disabled={!projectId} onClick={() => createTarget.mutate()}>
-          ＋ 대상
-        </button>
-        <select
-          value={targetId || ""}
-          onChange={(e) => setTargetId(+e.target.value)}
-        >
-          <option value="">대상 선택</option>
-          {targets.data?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} · {t.ip}
-            </option>
-          ))}
-        </select>
-        <label className="upload">
-          Nmap XML 가져오기
-          <input
-            type="file"
-            accept=".xml"
-            onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-          />
-        </label>
-        <span
-          className="tools"
-          title={missingTools.map((item: any) => item.install).join("\n")}
-        >
-          {status.isLoading
-            ? "도구 상태 확인 중"
-            : missingTools.length
-              ? `미설치: ${missingTools.map((item: any) => item.name).join(", ")}`
-              : "필수 도구 설치됨"}
-        </span>
-      </nav>
+      <EnumerationScope
+        project={project}
+        target={target}
+        projects={projects.data}
+        targets={targets.data}
+        projectId={projectId}
+        targetId={targetId}
+        toolsLoading={status.isLoading}
+        missingTools={missingTools}
+        onCreateProject={() => createProject.mutate()}
+        onSelectProject={(id) => {
+          setProjectId(id);
+          localStorage.setItem("oscp-workspace-project", String(id));
+          dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
+        }}
+        onCreateTarget={() => createTarget.mutate()}
+        onSelectTarget={setTargetId}
+        onUpload={upload}
+      />
       <main
         className="enumerationLayout"
         style={{
