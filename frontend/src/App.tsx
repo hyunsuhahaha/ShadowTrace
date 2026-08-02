@@ -12,11 +12,11 @@ import { getServiceGuidance } from "./serviceGuidance";
 import { getCredentialAuditProfile } from "./credentialAudit";
 import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
+import FuzzingPanel from "./FuzzingPanel";
+import SmbShareResults from "./SmbShareResults";
 import {
   keepSelectedService,
   missingServiceFacts,
-  parseFeroxbusterResults,
-  parseSmbFiles,
   parseSmbShares,
   parseScriptObservations,
   rankInvestigationCommands,
@@ -58,6 +58,8 @@ type RunState = {
   status: "starting" | "running" | "completed" | "failed" | "stopped" |
     "no_response" | "error";
   startedAt: number;
+  lastEventAt?: number;
+  processAlive?: boolean;
   exitCode?: number | null;
   message?: string;
   stdout?: string;
@@ -92,11 +94,13 @@ const authContextNotice: Record<string, string> = {
 };
 export default function App() {
   const qc = useQueryClient();
-  const runGenerationRef = useRef(0);
-  const activeEventSourceRef = useRef<EventSource | null>(null);
+  // Keyed by template_id: nothing backend-side serializes executions (each
+  // is its own asyncio task/subprocess), so the UI tracks as many
+  // concurrently-running commands as the user starts, one slot per command.
+  const activeEventSourcesRef = useRef<Record<string, EventSource>>({});
+  const focusedRunIdRef = useRef<string>();
   const workRef = useRef<HTMLElement>(null);
   const credentialAuditRef = useRef<HTMLElement>(null);
-  const smbResultsRef = useRef<HTMLElement>(null);
   const servicesResize = useRef({x: 0, width: 235});
   const notesResize = useRef({x: 0, width: 360});
   const notesRef = useRef<HTMLElement>(null);
@@ -110,11 +114,8 @@ export default function App() {
   const [executionView, setExecutionView] = useState<"list" | "detail">("list");
   const [selectedExecutionId, setSelectedExecutionId] = useState<number>();
   const [executionDetail, setExecutionDetail] = useState<any>();
-  const [smbConnecting, setSmbConnecting] = useState<string>();
   const [lastSpiderShare, setLastSpiderShare] = useState<string>();
   const [evidenceMsg, setEvidenceMsg] = useState("");
-  const [fuzzWordlist, setFuzzWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
-  const [fuzzFilter, setFuzzFilter] = useState("");
   const [psexecSession, setPsexecSession] = useState<
     {id: number; command: string} | undefined
   >();
@@ -125,7 +126,6 @@ export default function App() {
     {running: boolean; port?: number; base_url?: string} | undefined
   >();
   const [privescServerBusy, setPrivescServerBusy] = useState(false);
-  const [smbConnectError, setSmbConnectError] = useState("");
   const [servicesWidth, setServicesWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-services-panel-width"));
     return saved >= 180 && saved <= 420 ? saved : 235;
@@ -159,9 +159,11 @@ export default function App() {
   const [serviceSaveState, setServiceSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  const [runState, setRunState] = useState<RunState>();
-  const [lastRunEventAt, setLastRunEventAt] = useState<number>();
-  const [runProcessAlive, setRunProcessAlive] = useState<boolean>();
+  const [runStates, setRunStates] = useState<Record<string, RunState>>({});
+  // Which run's live output/detail the terminal & status panels follow.
+  // Other runs keep executing and updating their own runStates entry
+  // regardless of focus — focus only picks what's shown front-and-center.
+  const [focusedRunId, setFocusedRunId] = useState<string>();
   const [clock, setClock] = useState(Date.now());
   const projects = useQuery({
     queryKey: ["projects"],
@@ -226,8 +228,6 @@ export default function App() {
     setExecutionView("list");
     setSelectedExecutionId(undefined);
     setExecutionDetail(undefined);
-    setSmbConnecting(undefined);
-    setSmbConnectError("");
   }, [serviceId]);
   useEffect(() => {
     const selected = services.data?.find((x) => x.id === serviceId) as any;
@@ -241,11 +241,14 @@ export default function App() {
       setServiceTags("");
     }
   }, [serviceId, services.data]);
+  const anyRunActive = Object.values(runStates).some(
+    (r) => ["starting", "running"].includes(r.status),
+  );
   useEffect(() => {
-    if (!runState || !["starting", "running"].includes(runState.status)) return;
+    if (!anyRunActive) return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [runState?.status]);
+  }, [anyRunActive]);
   const project = projects.data?.find((x) => x.id === projectId),
     target = targets.data?.find((x) => x.id === targetId),
     service = services.data?.find((x) => x.id === serviceId);
@@ -329,26 +332,31 @@ export default function App() {
     );
   };
   const autoCheckState = (templateIds: string[], resolved = false) => {
-    if (!runState || !templateIds.includes(runState.templateId)) return null;
-    if (["starting", "running"].includes(runState.status)) {
+    const candidate = templateIds
+      .map((id) => runStates[id])
+      .filter((run): run is RunState => !!run)
+      .sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (!candidate) return null;
+    if (["starting", "running"].includes(candidate.status)) {
+      const elapsed = Math.max(0, Math.floor((clock - candidate.startedAt) / 1000));
       return {
         busy: true,
         content: (
           <>
             <span className="buttonSpinner" aria-hidden="true" />
-            {runElapsed}s · 확인 중
+            {elapsed}s · 확인 중
           </>
         ),
       };
     }
-    if (runState.status === "completed")
+    if (candidate.status === "completed")
       return {
         busy: false,
         content: resolved ? <>값 확인 완료</> : <>값 미확인 · 다른 명령 시도</>,
       };
-    if (runState.status === "no_response")
+    if (candidate.status === "no_response")
       return { busy: false, content: <>결과 없음 · 재시도</> };
-    if (["failed", "error", "stopped"].includes(runState.status))
+    if (["failed", "error", "stopped"].includes(candidate.status))
       return { busy: false, content: <>실패 · 재시도</> };
     return null;
   };
@@ -419,15 +427,18 @@ export default function App() {
       }
       return;
     }
-    setClock(Date.now());
-    setLastRunEventAt(Date.now());
-    setRunProcessAlive(undefined);
-    setRunState({
-      templateId: c.id,
-      name: c.name,
-      status: "starting",
-      startedAt: Date.now(),
-    });
+    const templateId = c.id;
+    const startedAt = Date.now();
+    setClock(startedAt);
+    focusedRunIdRef.current = templateId;
+    setFocusedRunId(templateId);
+    setRunStates((current) => ({
+      ...current,
+      [templateId]: {
+        templateId, name: c.name, status: "starting", startedAt,
+        lastEventAt: startedAt,
+      },
+    }));
     setOutput(`$ ${c.preview}\n\n[실행 요청 중]\n`);
     let e: any;
     try {
@@ -444,26 +455,35 @@ export default function App() {
       });
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
-      setRunState((state) => state && {
-        ...state, status: "error", message,
-      });
-      setOutput((value) => `${value}\n[실행 요청 실패] ${message}\n`);
+      setRunStates((current) => current[templateId] ? {
+        ...current, [templateId]: {...current[templateId], status: "error", message},
+      } : current);
+      if (focusedRunIdRef.current === templateId)
+        setOutput((value) => `${value}\n[실행 요청 실패] ${message}\n`);
       return;
     }
-    setRunState((state) => state && {
-      ...state, id: e.id, status: "running",
-    });
-    setOutput(`$ ${c.preview}\n\n[실행 중 · 작업 #${e.id}]\n`);
-    activeEventSourceRef.current?.close();
-    const myGeneration = ++runGenerationRef.current;
+    setRunStates((current) => current[templateId] ? {
+      ...current, [templateId]: {...current[templateId], id: e.id, status: "running"},
+    } : current);
+    if (focusedRunIdRef.current === templateId)
+      setOutput(`$ ${c.preview}\n\n[실행 중 · 작업 #${e.id}]\n`);
+    activeEventSourcesRef.current[templateId]?.close();
     const s = new EventSource(`/api/executions/${e.id}/events`);
-    activeEventSourceRef.current = s;
+    activeEventSourcesRef.current[templateId] = s;
     s.onmessage = async (ev) => {
-      if (runGenerationRef.current !== myGeneration) { s.close(); return; }
       const d = JSON.parse(ev.data);
-      setLastRunEventAt(Date.now());
-      if (d.stream === "heartbeat")
-        setRunProcessAlive(Boolean(d.process_alive));
+      if (d.stream === "heartbeat" || d.stream === "status") {
+        setRunStates((current) => current[templateId] ? {
+          ...current,
+          [templateId]: {
+            ...current[templateId],
+            lastEventAt: Date.now(),
+            processAlive: d.stream === "heartbeat"
+              ? Boolean(d.process_alive) : current[templateId].processAlive,
+          },
+        } : current);
+      }
+      const isFocused = () => focusedRunIdRef.current === templateId;
       if (d.stream === "status") {
         let result = {
           status: d.status,
@@ -477,18 +497,22 @@ export default function App() {
         } catch {
           // The live terminal still contains streamed output if saved output lookup fails.
         }
-        if (runGenerationRef.current !== myGeneration) { s.close(); return; }
-        setRunState((state) => state && {
-          ...state,
-          status: result.status,
-          exitCode: result.exit_code,
-          message: result.error,
-          stdout: result.stdout,
-          stderr: result.stderr,
-        });
-        setSelectedExecutionId(e.id);
-        setExecutionDetail(result);
-        setExecutionView("detail");
+        setRunStates((current) => current[templateId] ? {
+          ...current,
+          [templateId]: {
+            ...current[templateId],
+            status: result.status,
+            exitCode: result.exit_code,
+            message: result.error,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          },
+        } : current);
+        if (isFocused()) {
+          setSelectedExecutionId(e.id);
+          setExecutionDetail(result);
+          setExecutionView("detail");
+        }
         try {
           await openSuccessfulFtpTerminal(
             c.id,
@@ -501,11 +525,13 @@ export default function App() {
             `${value}\n[성공한 FTP 터미널을 열지 못했습니다] ${message}\n`
           );
         }
-        setOutput(
-          (x) =>
-            x +
-            `\n[${statusLabel[d.status] || d.status}${d.exit_code == null ? "" : ` · 종료 코드 ${d.exit_code}`}]`,
-        );
+        if (isFocused())
+          setOutput(
+            (x) =>
+              x +
+              `\n[${statusLabel[d.status] || d.status}${d.exit_code == null ? "" : ` · 종료 코드 ${d.exit_code}`}]`,
+          );
+        delete activeEventSourcesRef.current[templateId];
         s.close();
         await Promise.all([
           qc.invalidateQueries({ queryKey: ["executions", targetId] }),
@@ -514,15 +540,18 @@ export default function App() {
           qc.invalidateQueries({ queryKey: ["serviceIntelligence"] }),
         ]);
       } else if (d.stream === "stdout" || d.stream === "stderr") {
-        setOutput((x) => x + d.data);
+        if (isFocused()) setOutput((x) => x + d.data);
       }
     };
     s.onerror = () => {
-      setRunState((state) =>
-        state && ["starting", "running"].includes(state.status)
-          ? {...state, status: "error", message: "실시간 연결이 끊겼습니다."}
-          : state,
+      setRunStates((current) =>
+        current[templateId] && ["starting", "running"].includes(current[templateId].status)
+          ? {...current, [templateId]: {
+              ...current[templateId], status: "error", message: "실시간 연결이 끊겼습니다.",
+            }}
+          : current,
       );
+      delete activeEventSourcesRef.current[templateId];
       s.close();
     };
   };
@@ -552,8 +581,10 @@ export default function App() {
   const openExecution = async (id: number) => {
     const data = await api<any>(`/executions/${id}/output`);
     // A still-streaming live run must not overwrite this history view when its
-    // own completion event arrives later; retire its generation so it no-ops.
-    runGenerationRef.current++;
+    // own completion event arrives later; clearing focus makes every run's
+    // isFocused() check in run() false, so none of them touch this view.
+    focusedRunIdRef.current = undefined;
+    setFocusedRunId(undefined);
     setSelectedExecutionId(id);
     setExecutionDetail(data);
     setExecutionView("detail");
@@ -571,45 +602,14 @@ export default function App() {
       ...current, status: "stopped",
     });
   };
-  const stopCurrentExecution = async () => {
-    if (!runState?.id) return;
-    await api(`/executions/${runState.id}/stop`, { method: "POST" });
-    setRunState((current) => current && { ...current, status: "stopped" });
+  const stopRun = async (templateId: string) => {
+    const id = runStates[templateId]?.id;
+    if (!id) return;
+    await api(`/executions/${id}/stop`, { method: "POST" });
+    setRunStates((current) => current[templateId] ? {
+      ...current, [templateId]: { ...current[templateId], status: "stopped" },
+    } : current);
     await qc.invalidateQueries({ queryKey: ["executions", targetId] });
-  };
-  const connectSmbShare = async (share: string) => {
-    if (!targetId || !serviceId) return;
-    setSmbConnectError("");
-    setSmbConnecting(share);
-    try {
-      const session = await api<any>("/interactive-sessions", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          target_id: targetId,
-          service_id: serviceId,
-          template_id: "smb-share-client",
-          variables: {share},
-          run_as_root: false,
-        }),
-      });
-      // Every other interactive session (SSH/FTP/Telnet) opens in a real Kali
-      // desktop terminal; the embedded xterm.js panel used here previously
-      // was a one-off that didn't match, and its blank rendering was reported
-      // as a bug against the desktop pattern users already expect.
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {
-        method: "POST",
-      });
-      setOutput((value) =>
-        `${value}\n[Kali 데스크톱 터미널에서 ${share} 공유에 접속했습니다.]\n`
-      );
-    } catch (reason) {
-      setSmbConnectError(
-        reason instanceof Error ? reason.message : "SMB 공유 세션을 만들지 못했습니다.",
-      );
-    } finally {
-      setSmbConnecting(undefined);
-    }
   };
   const spiderSmbShare = (share: string) => {
     if (!target || !service) return;
@@ -766,16 +766,16 @@ export default function App() {
       setEvidenceMsg(`Finding 승격 실패: ${reason instanceof Error ? reason.message : reason}`);
     }
   };
-  const runDirectoryFuzz = () => {
-    if (!target || !service || !fuzzWordlist.trim()) return;
+  const runDirectoryFuzz = (wordlist: string) => {
+    if (!target || !service || !wordlist.trim()) return;
     setRunWithSudo(false);
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "http-directory-fuzz",
       preview: `feroxbuster -u ${scheme}://${target.ip}:${service.port}/` +
-        ` -w ${fuzzWordlist} --json --silent -n`,
+        ` -w ${wordlist} --json --silent -n`,
       target_level: false,
-      variables: {wordlist: fuzzWordlist},
+      variables: {wordlist},
     });
   };
   const togglePrivescServer = async () => {
@@ -876,14 +876,18 @@ export default function App() {
   };
   const missingTools =
     status.data?.tools?.filter((x: any) => !x.installed) || [];
-  const runElapsed = runState
-    ? Math.max(0, Math.floor((clock - runState.startedAt) / 1000))
+  const focusedRun = focusedRunId ? runStates[focusedRunId] : undefined;
+  const runElapsed = focusedRun
+    ? Math.max(0, Math.floor((clock - focusedRun.startedAt) / 1000))
     : 0;
-  const currentOutcome = runState && !["starting", "running"].includes(runState.status)
+  const activeRuns = Object.values(runStates)
+    .filter((r) => ["starting", "running"].includes(r.status))
+    .sort((a, b) => a.startedAt - b.startedAt);
+  const currentOutcome = focusedRun && !["starting", "running"].includes(focusedRun.status)
     ? summarizeExecutionResult(
-        runState.templateId, runState.status, runState.stdout,
-        runState.stderr,
-        serviceExecutions.find((item) => item.id === runState.id)?.command,
+        focusedRun.templateId, focusedRun.status, focusedRun.stdout,
+        focusedRun.stderr,
+        serviceExecutions.find((item) => item.id === focusedRun.id)?.command,
       )
     : null;
   const selectedOutcome = selectedExecution && executionDetail
@@ -908,7 +912,7 @@ export default function App() {
     mssql: "mssql-credential-check-netexec", ldap: "ldap-credential-check-netexec",
   } as const)[netexecProtocol];
   const netexecCredentialResult = netexecCredCommandId
-    && runState?.templateId === netexecCredCommandId ? runState : undefined;
+    ? runStates[netexecCredCommandId] : undefined;
   const netexecSuccess = netexecCredentialResult?.status === "completed"
     && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
   const netexecPwned = netexecProtocol === "smb" && netexecSuccess
@@ -917,36 +921,13 @@ export default function App() {
   const netexecWinrmOk = netexecProtocol === "winrm" && netexecSuccess;
   const netexecRdpOk = netexecProtocol === "rdp" && netexecSuccess;
   const netexecMssqlOk = netexecProtocol === "mssql" && netexecSuccess;
-  const latestSmbSpider = serviceExecutions
-    .filter((item) => item.template_id === "smb-share-spider" && item.status === "completed")
-    .sort((a, b) => b.id - a.id)[0];
-  const smbSpiderOutput = runState?.templateId === "smb-share-spider"
-    ? runState.stdout || "" : latestSmbSpider?.stdout || "";
-  const smbFiles = lastSpiderShare ? parseSmbFiles(smbSpiderOutput) : [];
-  const fuzzRunState = runState?.templateId === "http-directory-fuzz" ? runState : undefined;
-  const latestFuzz = serviceExecutions
-    .filter((item) => item.template_id === "http-directory-fuzz" && item.status === "completed")
-    .sort((a, b) => b.id - a.id)[0];
-  const fuzzOutput = fuzzRunState?.stdout || latestFuzz?.stdout || "";
-  const fuzzResults = parseFeroxbusterResults(fuzzOutput);
-  const fuzzVisible = fuzzResults.filter((item) => !fuzzFilter
-    || `${item.path} ${item.status}`.toLowerCase().includes(fuzzFilter.toLowerCase()));
   const latestSmbEnum = serviceExecutions
     .filter((item) => item.template_id === "smb-enum" && item.status === "completed")
     .sort((a, b) => b.id - a.id)[0];
   const smbOutput = selectedExecution?.template_id === "smb-enum"
     ? executionDetail?.stdout || ""
-    : runState?.templateId === "smb-enum"
-      ? runState.stdout || ""
-      : latestSmbEnum?.stdout || "";
+    : runStates["smb-enum"]?.stdout || latestSmbEnum?.stdout || "";
   const smbShares = parseSmbShares(smbOutput);
-  const smbShareKey = smbShares.map((share) => `${share.name}:${share.type}`).join("|");
-  useEffect(() => {
-    if (!smbShareKey) return;
-    requestAnimationFrame(() => smbResultsRef.current?.scrollIntoView({
-      behavior: "smooth", block: "start",
-    }));
-  }, [smbShareKey]);
   return (
     <div className="app">
       <header>
@@ -1327,10 +1308,11 @@ export default function App() {
               </div>
               <div className="credentialActions">
                 {authenticationCommands.map((command) => {
-                  const commandRun = runState?.templateId === command.id
-                    ? runState : undefined;
+                  const commandRun = runStates[command.id];
                   const commandBusy = !!commandRun &&
                     ["starting", "running"].includes(commandRun.status);
+                  const commandElapsed = commandRun
+                    ? Math.max(0, Math.floor((clock - commandRun.startedAt) / 1000)) : 0;
                   const auditSummary = commandRun?.status === "completed" &&
                       commandRun.stdout != null
                     ? summarizeCredentialAudit(
@@ -1352,8 +1334,8 @@ export default function App() {
                         <span className={`credentialRun credentialRun--${commandRun.status}`}>
                           <i aria-hidden="true" />
                           {commandBusy
-                            ? `${commandRun.status === "starting" ? "실행 준비" : "프로세스 실행 중"} · ${runElapsed}초`
-                            : `${statusLabel[commandRun.status] || commandRun.status} · ${runElapsed}초`}
+                            ? `${commandRun.status === "starting" ? "실행 준비" : "프로세스 실행 중"} · ${commandElapsed}초`
+                            : `${statusLabel[commandRun.status] || commandRun.status} · ${commandElapsed}초`}
                         </span>
                       )}
                     </div>
@@ -1380,16 +1362,21 @@ export default function App() {
             </section>
           )}
           <div className="cards">
-            {investigationCommands.map((c) => (
+            {investigationCommands.map((c) => {
+              const cRun = runStates[c.id];
+              const cBusy = !!cRun && ["starting", "running"].includes(cRun.status);
+              const cElapsed = cRun
+                ? Math.max(0, Math.floor((clock - cRun.startedAt) / 1000)) : 0;
+              return (
               <article
                 key={c.id}
-                className={runState?.templateId === c.id ? "isRunning" : ""}
+                className={cBusy ? "isRunning" : ""}
               >
                 <div>
-                  {runState && runState.templateId === c.id ? (
-                    <span className={`commandStatus commandStatus--${runState.status}`}>
-                      {statusLabel[runState.status] || (
-                        runState.status === "starting" ? "실행 준비 중" : runState.status
+                  {cRun ? (
+                    <span className={`commandStatus commandStatus--${cRun.status}`}>
+                      {statusLabel[cRun.status] || (
+                        cRun.status === "starting" ? "실행 준비 중" : cRun.status
                       )}
                     </span>
                   ) : (
@@ -1409,20 +1396,17 @@ export default function App() {
                   </button>
                   <button
                     className="primary"
-                    disabled={!!runState && runState.templateId === c.id &&
-                      ["starting", "running"].includes(runState.status)}
+                    disabled={cBusy}
                     onClick={() => {
                       reviewCommand(c);
                     }}
                   >
-                    {runState && runState.templateId === c.id &&
-                    ["starting", "running"].includes(runState.status)
-                      ? `실행 중 · ${runElapsed}초`
-                      : "검토 후 실행 →"}
+                    {cBusy ? `실행 중 · ${cElapsed}초` : "검토 후 실행 →"}
                   </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
             {!investigationCommands.length && (
               <p className="investigationEmpty">
                 이미 확인된 항목을 제외하면 실행할 명령이 없습니다.
@@ -1483,29 +1467,29 @@ export default function App() {
               )}
             </section>
           )}
-          {runState && (
+          {focusedRun && (
             <section
-              className={`jobStatus jobStatus--${runState.status}`}
+              className={`jobStatus jobStatus--${focusedRun.status}`}
               aria-live="polite"
               aria-label="현재 명령 실행 상태"
             >
               <span className="jobStatus__dot" aria-hidden="true" />
               <div>
                 <b>
-                  작업 #{runState.id || "준비"} ·{" "}
-                  {statusLabel[runState.status] || runState.status}
+                  작업 #{focusedRun.id || "준비"} ·{" "}
+                  {statusLabel[focusedRun.status] || focusedRun.status}
                 </b>
                 <small>
-                  {runState.status === "starting" && "실행 요청을 준비하고 있습니다."}
-                  {runState.status === "running" &&
-                    (runProcessAlive
+                  {focusedRun.status === "starting" && "실행 요청을 준비하고 있습니다."}
+                  {focusedRun.status === "running" &&
+                    (focusedRun.processAlive
                       ? "백엔드가 명령 프로세스 실행을 확인했습니다."
                       : "명령을 실행했으며 다음 상태 신호를 기다리고 있습니다.")}
-                  {runState.status === "completed" && "명령 실행과 결과 저장이 완료되었습니다."}
-                  {runState.status === "no_response" && "대상 응답 또는 식별 결과가 없습니다."}
-                  {["failed", "error"].includes(runState.status) &&
-                    (runState.message || "명령 실행에 실패했습니다.")}
-                  {runState.status === "stopped" && "명령 실행이 중단되었습니다."}
+                  {focusedRun.status === "completed" && "명령 실행과 결과 저장이 완료되었습니다."}
+                  {focusedRun.status === "no_response" && "대상 응답 또는 식별 결과가 없습니다."}
+                  {["failed", "error"].includes(focusedRun.status) &&
+                    (focusedRun.message || "명령 실행에 실패했습니다.")}
+                  {focusedRun.status === "stopped" && "명령 실행이 중단되었습니다."}
                 </small>
               </div>
               <dl>
@@ -1517,136 +1501,43 @@ export default function App() {
                 </div>
                 <div>
                   <dt>프로세스</dt>
-                  <dd>{runState.status === "running"
-                    ? runProcessAlive ? "실행 확인됨" : "확인 중"
+                  <dd>{focusedRun.status === "running"
+                    ? focusedRun.processAlive ? "실행 확인됨" : "확인 중"
                     : "종료됨"}</dd>
                 </div>
                 <div>
                   <dt>마지막 서버 응답</dt>
-                  <dd>{lastRunEventAt
-                    ? `${Math.max(0, Math.floor((clock - lastRunEventAt) / 1000))}초 전`
+                  <dd>{focusedRun.lastEventAt
+                    ? `${Math.max(0, Math.floor((clock - focusedRun.lastEventAt) / 1000))}초 전`
                     : "대기 중"}</dd>
                 </div>
               </dl>
-              {runState.status === "running" && lastRunEventAt &&
-                clock - lastRunEventAt > 30000 && (
+              {focusedRun.status === "running" && focusedRun.lastEventAt &&
+                clock - focusedRun.lastEventAt > 30000 && (
                   <p className="jobStatus__warning" role="alert">
                     30초 이상 서버 상태 신호가 없습니다. 백엔드 연결을 확인하세요.
                   </p>
                 )}
-            </section>
-          )}
-          {smbShares.length > 0 && (
-            <section ref={smbResultsRef} className="smbShareResults"
-              aria-labelledby="smb-shares-title">
-              <header>
-                <div>
-                  <span>익명 열거 결과</span>
-                  <h2 id="smb-shares-title">SMB 공유 {smbShares.length}개</h2>
-                </div>
-                <small>Disk 공유는 아래에서 바로 접속할 수 있습니다.</small>
-              </header>
-              <div className="smbShareTable" role="table" aria-label="SMB 공유 목록">
-                <div role="row" className="smbShareHead">
-                  <span role="columnheader">공유 이름</span>
-                  <span role="columnheader">형식</span>
-                  <span role="columnheader">설명</span>
-                  <span role="columnheader">작업</span>
-                </div>
-                {smbShares.map((share) => (
-                  <div role="row" key={`${share.name}-${share.type}`}>
-                    <b role="cell">{share.name}</b>
-                    <span role="cell">{share.type}</span>
-                    <span role="cell">{share.comment || "—"}</span>
-                    <span role="cell" className="smbShareAction">
-                      <button
-                        disabled={share.type.toLowerCase() !== "disk"
-                          || smbConnecting === share.name}
-                        onClick={() => connectSmbShare(share.name)}
-                      >
-                        {smbConnecting === share.name ? "여는 중…" : "접속"}
-                      </button>
-                      <button
-                        disabled={share.type.toLowerCase() !== "disk"}
-                        title="smbclient recurse ON; ls로 이 공유의 파일을 재귀적으로 나열합니다."
-                        onClick={() => spiderSmbShare(share.name)}
-                      >
-                        재귀 목록
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {smbConnectError && (
-                <p className="smbConnectError" role="alert">{smbConnectError}</p>
-              )}
-              {!!smbFiles.length && (
-                <div className="smbFileList">
-                  <b>{lastSpiderShare} 재귀 목록 · 파일 {smbFiles.length}개</b>
-                  {smbFiles.map((file) => (
-                    <div key={file.path} className="smbFileRow">
-                      <code>{file.path}</code>
-                      <span>{file.size}B</span>
-                      <button onClick={() => viewSmbFile(file.path)}>원문 보기</button>
-                    </div>
-                  ))}
-                </div>
+              {activeRuns.length > 1 && (
+                <p className="jobStatus__parallelNote">
+                  다른 작업 {activeRuns.length - 1}개가 백그라운드에서 함께 실행 중입니다.
+                  아래 실행 모니터에서 전환할 수 있습니다.
+                </p>
               )}
             </section>
           )}
+          <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
+            shares={smbShares} activeShare={lastSpiderShare}
+            runState={runStates["smb-share-spider"]}
+            serviceExecutions={serviceExecutions} onSpider={spiderSmbShare}
+            onViewFile={viewSmbFile}
+            onLog={(line) => setOutput((value) => `${value}\n${line}\n`)} />
           {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
-            <section className="netexecCredCheck" aria-labelledby="fuzz-heading">
-              <header>
-                <h2 id="fuzz-heading">디렉터리·파일 퍼징 (feroxbuster)</h2>
-                <small>정적 워드리스트로 존재하는 경로만 찾습니다. 재귀 탐색은 하지 않습니다.</small>
-              </header>
-              <div className="netexecCredForm netexecCredForm--save">
-                <select value={fuzzWordlist} onChange={(e) => setFuzzWordlist(e.target.value)}>
-                  <option value="/usr/share/wordlists/dirb/small.txt">dirb small (~950개)</option>
-                  <option value="/usr/share/wordlists/dirb/common.txt">dirb common (~4,600개)</option>
-                  <option value="/usr/share/wordlists/dirb/big.txt">dirb big (~2만개)</option>
-                </select>
-                <button disabled={!!fuzzRunState
-                  && ["starting", "running"].includes(fuzzRunState.status)}
-                  onClick={runDirectoryFuzz}>
-                  {fuzzRunState && ["starting", "running"].includes(fuzzRunState.status)
-                    ? "탐색 중…" : "퍼징 시작"}
-                </button>
-              </div>
-              {!!fuzzResults.length && (
-                <div className="intruderResults">
-                  <header><div><b>발견된 경로</b><span>{fuzzVisible.length}개 표시</span></div>
-                    <input aria-label="결과 필터" value={fuzzFilter} placeholder="경로, Status 필터"
-                      onChange={(e) => setFuzzFilter(e.target.value)} />
-                    {(fuzzRunState?.id || latestFuzz?.id) && (
-                      <button onClick={() => {
-                        const ex = fuzzRunState?.id
-                          ? {id: fuzzRunState.id, stdout: fuzzRunState.stdout,
-                             stderr: fuzzRunState.stderr}
-                          : {id: latestFuzz.id, stdout: latestFuzz.stdout,
-                             stderr: latestFuzz.stderr};
-                        void captureEvidence(ex, `디렉터리 퍼징 · ${target?.ip}:${service?.port}`);
-                      }}>Evidence로 저장</button>
-                    )}
-                  </header>
-                  {evidenceMsg && <p className="netexecEvidenceMsg">{evidenceMsg}</p>}
-                  <table>
-                    <thead><tr><th>경로</th><th>Status</th><th>길이</th><th>단어/줄</th><th></th></tr></thead>
-                    <tbody>{fuzzVisible.map((item) => (
-                      <tr key={item.path}>
-                        <td><code>{item.path}</code></td>
-                        <td>{item.status}</td>
-                        <td>{item.length}</td>
-                        <td>{item.words}/{item.lines}</td>
-                        <td><a href={`${serviceNameLower.includes("ssl") ? "https" : "http"}` +
-                          `://${target?.ip}:${service?.port}${item.path}`}
-                          target="_blank" rel="noreferrer">열기</a></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+            <FuzzingPanel target={target} service={service}
+              runState={runStates["http-directory-fuzz"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runDirectoryFuzz}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"
@@ -1851,19 +1742,19 @@ export default function App() {
             </>
           )}
           <div className="terminal">
-            <div className={`terminalStatus${runState ? ` terminalStatus--${runState.status}` : ""}`}>
+            <div className={`terminalStatus${focusedRun ? ` terminalStatus--${focusedRun.status}` : ""}`}>
               <span aria-hidden="true" />
               <b>실시간 출력</b>
               <small role="status" aria-live="polite">
-                {!runState
+                {!focusedRun
                   ? "명령 실행 대기"
-                  : `${runState.name} · ${statusLabel[runState.status] ||
-                    (runState.status === "starting" ? "실행 준비 중" : runState.status)} · ${runElapsed}초${
-                    runState.exitCode == null ? "" : ` · 종료 코드 ${runState.exitCode}`
+                  : `${focusedRun.name} · ${statusLabel[focusedRun.status] ||
+                    (focusedRun.status === "starting" ? "실행 준비 중" : focusedRun.status)} · ${runElapsed}초${
+                    focusedRun.exitCode == null ? "" : ` · 종료 코드 ${focusedRun.exitCode}`
                   }`}
               </small>
             </div>
-            {runState?.message && <p className="terminalError">{runState.message}</p>}
+            {focusedRun?.message && <p className="terminalError">{focusedRun.message}</p>}
             {currentOutcome && (
               <div className={`executionOutcome executionOutcome--${currentOutcome.tone}`}>
                 <b>{currentOutcome.title}</b>
@@ -2065,40 +1956,63 @@ export default function App() {
           </section>
         </aside>
       </main>
-      {runState && ["starting", "running"].includes(runState.status) && (
-        <aside className="executionMonitor" aria-live="polite" aria-label="현재 실행 상태">
-          <div className="executionMonitor__head">
-            <span className="executionMonitor__pulse" aria-hidden="true" />
-            <div>
-              <b>{runState.name}</b>
-              <small>
-                {runState.status === "starting"
-                  ? "실행 요청을 보내는 중"
-                  : runProcessAlive
-                    ? "프로세스 실행 확인됨"
-                    : "프로세스 상태 확인 중"}
-              </small>
-            </div>
-            <strong>{runElapsed < 60
-              ? `${runElapsed}초`
-              : `${Math.floor(runElapsed / 60)}분 ${runElapsed % 60}초`}</strong>
-          </div>
-          <div className="executionMonitor__track" aria-hidden="true"><span /></div>
-          <div className="executionMonitor__meta">
-            <span>작업 #{runState.id || "생성 중"}</span>
-            <span>
-              마지막 서버 응답{" "}
-              {lastRunEventAt
-                ? `${Math.max(0, Math.floor((clock - lastRunEventAt) / 1000))}초 전`
-                : "대기 중"}
-            </span>
-            {runState.status === "running" && runState.id && (
-              <button onClick={stopCurrentExecution}>작업 중단</button>
-            )}
-          </div>
-          {lastRunEventAt && clock - lastRunEventAt > 30000 && (
-            <p role="alert">30초 이상 상태 신호가 없습니다. 연결 또는 백엔드 상태를 확인하세요.</p>
-          )}
+      {activeRuns.length > 0 && (
+        <aside className="executionMonitor" aria-live="polite" aria-label="현재 실행 중인 작업">
+          {activeRuns.map((run) => {
+            const elapsed = Math.max(0, Math.floor((clock - run.startedAt) / 1000));
+            const focus = () => {
+              focusedRunIdRef.current = run.templateId;
+              setFocusedRunId(run.templateId);
+            };
+            return (
+              <div key={run.templateId}
+                className={`executionMonitor__job${
+                  run.templateId === focusedRunId ? " isFocused" : ""}`}
+                role="button" tabIndex={0}
+                aria-label={`${run.name} 작업으로 전환`}
+                onClick={focus}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") focus();
+                }}
+              >
+                <div className="executionMonitor__head">
+                  <span className="executionMonitor__pulse" aria-hidden="true" />
+                  <div>
+                    <b>{run.name}</b>
+                    <small>
+                      {run.status === "starting"
+                        ? "실행 요청을 보내는 중"
+                        : run.processAlive
+                          ? "프로세스 실행 확인됨"
+                          : "프로세스 상태 확인 중"}
+                    </small>
+                  </div>
+                  <strong>{elapsed < 60
+                    ? `${elapsed}초`
+                    : `${Math.floor(elapsed / 60)}분 ${elapsed % 60}초`}</strong>
+                </div>
+                <div className="executionMonitor__track" aria-hidden="true"><span /></div>
+                <div className="executionMonitor__meta">
+                  <span>작업 #{run.id || "생성 중"}</span>
+                  <span>
+                    마지막 서버 응답{" "}
+                    {run.lastEventAt
+                      ? `${Math.max(0, Math.floor((clock - run.lastEventAt) / 1000))}초 전`
+                      : "대기 중"}
+                  </span>
+                  {run.status === "running" && run.id && (
+                    <button onClick={(event) => {
+                      event.stopPropagation();
+                      void stopRun(run.templateId);
+                    }}>작업 중단</button>
+                  )}
+                </div>
+                {run.lastEventAt && clock - run.lastEventAt > 30000 && (
+                  <p role="alert">30초 이상 상태 신호가 없습니다. 연결 또는 백엔드 상태를 확인하세요.</p>
+                )}
+              </div>
+            );
+          })}
         </aside>
       )}
       {confirm && (
@@ -2132,7 +2046,7 @@ export default function App() {
               <button onClick={() => setConfirm(null)}>취소</button>
               <button
                 className="danger"
-                onClick={run}
+                onClick={() => run()}
               >
                 명령 실행
               </button>

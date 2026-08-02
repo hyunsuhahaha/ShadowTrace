@@ -11,6 +11,11 @@ class ProjectIn(BaseModel):
 class ProjectOut(ProjectIn, ORM):
     id: int
     created_at: datetime
+    metasploit_target_id: int | None = None
+    metasploit_locked_at: datetime | None = None
+
+class MetasploitLockIn(BaseModel):
+    target_id: int | None = None
 
 class TargetIn(BaseModel):
     project_id: int

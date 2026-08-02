@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
+import SqlPayloadReference from "./SqlPayloadReference";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
 type SavedRequest = {
@@ -72,7 +73,8 @@ export default function WebWorkspace() {
     [variables, setVariables] = useState("{}"),
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
-    [workspaceTab, setWorkspaceTab] = useState<"request" | "intruder" | "results">("request"),
+    [workspaceTab, setWorkspaceTab] =
+      useState<"request" | "intruder" | "sqli" | "results">("request"),
     [error, setError] = useState("");
   const targets = useQuery({
       queryKey: ["allTargets"],
@@ -227,6 +229,8 @@ export default function WebWorkspace() {
             onClick={() => setWorkspaceTab("request")}>Request</button>
           <button role="tab" aria-selected={workspaceTab === "intruder"}
             onClick={() => setWorkspaceTab("intruder")}>Intruder</button>
+          <button role="tab" aria-selected={workspaceTab === "sqli"}
+            onClick={() => setWorkspaceTab("sqli")}>SQLi 참고</button>
           <button role="tab" aria-selected={workspaceTab === "results"}
             onClick={() => setWorkspaceTab("results")}>Response</button>
         </div>
@@ -252,6 +256,8 @@ export default function WebWorkspace() {
             <IntruderPanel requestId={requestId} timeout={draft.timeout || 30}
               projectId={draft.project_id} targetId={draft.target_id}
               serviceId={draft.service_id} />
+          ) : workspaceTab === "sqli" ? (
+            <SqlPayloadReference />
           ) : <>
           {workspaceTab === "results" && <div className="webSectionTitle">
             <span>Recorded exchanges</span><h2>응답 이력과 비교</h2>

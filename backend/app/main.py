@@ -41,8 +41,8 @@ from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
 from .schemas import (
     ExecutionIn, ExecutionOut, InteractiveSessionIn, InteractiveSessionOut,
-    ManualTerminalIn, ProjectIn, ProjectOut, ServiceOut, ServiceUpdate,
-    TargetEnsureIn, TargetIn, TargetOut,
+    ManualTerminalIn, MetasploitLockIn, ProjectIn, ProjectOut, ServiceOut,
+    ServiceUpdate, TargetEnsureIn, TargetIn, TargetOut,
 )
 from .templates import catalog
 from .time import utcnow
@@ -142,6 +142,19 @@ def update_project(ident:int, body:ProjectIn, db:Session=Depends(get_db)):
     row=need(db,Project,ident)
     for k,v in body.model_dump().items(): setattr(row,k,v)
     db.commit(); return row
+@app.put("/api/projects/{ident}/metasploit-lock", response_model=ProjectOut)
+def set_metasploit_lock(ident:int, body:MetasploitLockIn, db:Session=Depends(get_db)):
+    # OSCP exam rules allow Metasploit/Meterpreter against only one target for
+    # the whole exam; this records that commitment so the UI can warn before
+    # a second target gets used. It does not gate any execution itself.
+    project=need(db,Project,ident)
+    if body.target_id is not None:
+        target=need(db,Target,body.target_id)
+        if target.project_id!=ident:
+            raise HTTPException(400,"Target does not belong to this project")
+    project.metasploit_target_id=body.target_id
+    project.metasploit_locked_at=utcnow() if body.target_id is not None else None
+    db.commit(); db.refresh(project); return project
 @app.delete("/api/projects/{ident}", status_code=204)
 def delete_project(ident:int, db:Session=Depends(get_db)):
     project=need(db,Project,ident)

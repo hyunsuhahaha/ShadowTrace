@@ -97,7 +97,11 @@ class ServiceIntelligenceCatalog:
     def build(self, service: Any, related_services: Iterable[Any] = (),
               executions: Iterable[Any] = (),
               resolved_stage_ids: Iterable[str] = ()) -> dict[str, Any]:
+        from ...templates import catalog as command_catalog
         resolved_stage_ids = set(resolved_stage_ids)
+        available_refs = {item["id"] for item in command_catalog.commands_for(
+            str(_get(service, "name", "")), int(_get(service, "port", 0) or 0),
+            str(_get(service, "protocol", "tcp")))}
         matches = self.match(service)
         specific = [item for item in matches if item.level != "generic"]
         selected = specific or [item for item in matches if item.level == "generic"]
@@ -139,7 +143,8 @@ class ServiceIntelligenceCatalog:
                 stage = deepcopy(row)
                 stage["source"] = source
                 stage["commands"] = [self._command_summary(ref, assessments)
-                                     for ref in stage.get("command_refs", [])]
+                                     for ref in stage.get("command_refs", [])
+                                     if ref in available_refs]
                 if any(item["completed"] for item in stage["commands"]):
                     stage["state"] = "observed"
                 elif any(item.get("outcome") == "error" for item in stage["commands"]):
@@ -351,9 +356,13 @@ def extract_rpc_bind_results(text: str) -> list[dict[str, Any]]:
 
 
 def extract_redis_info(text: str) -> list[dict[str, Any]]:
+    # nmap's redis-info script reformats Redis's raw INFO reply (which uses
+    # bare "redis_version:5.0.7" lines) into "|   Version: 5.0.7" style
+    # script output, so the extractor has to look for its field labels.
     rows = []
-    for key in ("redis_version", "redis_mode", "role", "os"):
-        match = re.search(rf"(?im)^{key}:([^\r\n]+)", text)
+    for key, label in (("redis_version", "Version"), ("redis_mode", "Mode"),
+                       ("role", "Role"), ("os", "Operating System")):
+        match = re.search(rf"(?im)^\|_?\s*{label}:\s*([^\r\n]+)", text)
         if match:
             rows.append({"key": f"redis.{key}", "label": key.replace("_", " ").title(),
                          "value": match.group(1).strip()})

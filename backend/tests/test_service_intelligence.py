@@ -10,6 +10,7 @@ from app.models import (
 )
 from app.modules.service_intelligence.catalog import catalog
 from app.modules.service_intelligence.router import sync_instance_executions
+from app.templates import catalog as command_catalog
 
 
 def service(name, port, product="", cpe="[]", protocol="tcp"):
@@ -132,3 +133,23 @@ def test_representative_profiles_have_investigation_questions():
         assert all(stage.get("question") and stage.get("purpose")
                    for stage in data["stages"])
         assert data["runbook_keys"]
+
+
+def test_stage_commands_only_reference_ids_the_service_can_actually_run():
+    # A profile (e.g. "database") can be shared by several concrete services
+    # (mysql, redis, mongodb, ...). Every command button surfaced for a given
+    # service must correspond to a command /services/{id}/commands would
+    # actually return for that service, or the button silently no-ops when
+    # clicked (App.tsx looks up the id in that list and finds nothing).
+    for row in [service("redis", 6379), service("mysql", 3306),
+                service("mongodb", 27017), service("postgresql", 5432),
+                service("http", 80), service("https", 443)]:
+        runnable_ids = {item["id"] for item in command_catalog.commands_for(
+            row["name"], row["port"], row["protocol"])}
+        data = catalog.build(row)
+        for stage in data["stages"]:
+            for command in stage["commands"]:
+                assert command["id"] in runnable_ids, (
+                    f"{row['name']}:{row['port']} stage {stage['id']} exposes "
+                    f"{command['id']!r} which is not a runnable command for this service"
+                )

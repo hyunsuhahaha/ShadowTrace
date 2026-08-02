@@ -10,7 +10,15 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(120), unique=True)
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    targets: Mapped[list["Target"]] = relationship(cascade="all, delete-orphan")
+    # OSCP exam rules allow Metasploit/Meterpreter against only one target for
+    # the whole exam. This tracks which target (if any) a project has already
+    # committed to, so the UI can warn before a second target gets used.
+    metasploit_target_id: Mapped[int | None] = mapped_column(
+        ForeignKey("targets.id"), nullable=True)
+    metasploit_locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    targets: Mapped[list["Target"]] = relationship(
+        cascade="all, delete-orphan", foreign_keys="Target.project_id")
 
 class Target(Base):
     __tablename__ = "targets"

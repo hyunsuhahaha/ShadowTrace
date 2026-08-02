@@ -430,7 +430,7 @@ assessments:
     extractors: [rpc_bind_results]
   redis-unauthenticated-info:
     rules:
-      - {pattern: '(?im)^redis_version:', outcome: confirmed, summary: Redis가 인증 없이 INFO 정보를 반환했습니다., next: [db-authorization, db-research]}
+      - {pattern: '(?im)^\|_?\s*Version:\s*\S', outcome: confirmed, summary: Redis가 인증 없이 INFO 정보를 반환했습니다., next: [db-authorization, db-research]}
       - {pattern: '(?i)NOAUTH|authentication required', outcome: access_denied, summary: Redis가 인증 없는 INFO 조회를 거부했습니다., next: [db-authorization]}
     extractors: [redis_info]
   database-info:

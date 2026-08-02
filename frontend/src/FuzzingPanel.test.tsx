@@ -1,0 +1,62 @@
+// @vitest-environment jsdom
+import React from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import FuzzingPanel from "./FuzzingPanel";
+
+afterEach(cleanup);
+
+const target = { ip: "10.10.10.5" };
+const service = { port: 80, name: "http" };
+
+it("starts a fuzz run with the currently selected wordlist", () => {
+  const onFuzz = vi.fn();
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
+
+  fireEvent.change(screen.getByRole("combobox"), {
+    target: { value: "/usr/share/wordlists/dirb/big.txt" },
+  });
+  fireEvent.click(screen.getByText("퍼징 시작"));
+
+  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/big.txt");
+});
+
+it("parses feroxbuster json output from the live run and filters by path", () => {
+  const stdout = [
+    JSON.stringify({ type: "response", path: "/admin", status: 200,
+      content_length: 42, word_count: 3, line_count: 1 }),
+    JSON.stringify({ type: "response", path: "/backup.zip", status: 301,
+      content_length: 0, word_count: 0, line_count: 0 }),
+  ].join("\n");
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz", status: "running", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("/admin")).toBeTruthy();
+  expect(screen.getByText("/backup.zip")).toBeTruthy();
+  expect(screen.getByText("탐색 중…")).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText("결과 필터"), { target: { value: "admin" } });
+
+  expect(screen.getByText("/admin")).toBeTruthy();
+  expect(screen.queryByText("/backup.zip")).toBeNull();
+});
+
+it("captures the active execution as evidence, preferring the live run over history", () => {
+  const onCaptureEvidence = vi.fn();
+  const stdout = JSON.stringify({ type: "response", path: "/x", status: 200,
+    content_length: 1, word_count: 1, line_count: 1 });
+  render(<FuzzingPanel target={target} service={service}
+    serviceExecutions={[{ id: 1, template_id: "http-directory-fuzz", status: "completed",
+      stdout: "stale" }]}
+    runState={{ id: 2, templateId: "http-directory-fuzz", status: "completed", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={onCaptureEvidence} />);
+
+  fireEvent.click(screen.getByText("Evidence로 저장"));
+
+  expect(onCaptureEvidence).toHaveBeenCalledWith(
+    { id: 2, stdout, stderr: undefined },
+    `디렉터리 퍼징 · ${target.ip}:${service.port}`,
+  );
+});

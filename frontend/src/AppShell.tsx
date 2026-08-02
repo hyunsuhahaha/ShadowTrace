@@ -5,9 +5,10 @@ import {
 } from "react";
 import { Badge, Button, ErrorState, LoadingState } from "./ui";
 import VpnControl from "./VpnControl";
+import MetasploitLock from "./MetasploitLock";
 import "./layout-controls.css";
 
-type Project = { id: number; name: string };
+type Project = { id: number; name: string; metasploit_target_id?: number | null };
 type Target = { id: number; project_id: number; name: string; ip: string };
 
 const sidebarMin = 184;
@@ -94,6 +95,15 @@ export default function AppShell({
     localStorage.setItem("oscp-workspace-project", String(id));
     setActiveProjectId(id);
     dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
+  };
+  const setMetasploitLock = async (lockTargetId: number | null) => {
+    if (!project) return;
+    await fetch(`/api/projects/${project.id}/metasploit-lock`, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({target_id: lockTargetId}),
+    });
+    await queryClient.invalidateQueries({queryKey: ["projects"]});
   };
   const applySidebarWidth = (width: number) => {
     const next = clampSidebar(width);
@@ -256,6 +266,8 @@ export default function AppShell({
             <span>현재 작업</span>
             <strong>{pageNames[route] || "Scan Center"}</strong>
           </div>
+          <MetasploitLock project={project} targets={targets.data} targetId={target?.id}
+            onSetLock={(id) => void setMetasploitLock(id)} />
           <VpnControl />
         </header>
         <div id="workspace-content" className="pageStage" tabIndex={-1}>
