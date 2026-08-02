@@ -46,6 +46,8 @@
     이동하고 독립 테스트 추가
   - 프로젝트·Target 선택, Nmap XML 업로드와 도구 상태 UI를
     `EnumerationScope.tsx`로 이동하고 선택·업로드 회귀 테스트 추가
+  - 프로토콜별 인증 명령, 실행 상태·경과 시간과 노출 결과 UI를
+    `CredentialAuditPanel.tsx`로 이동하고 검토·실행 상태 테스트 추가
 
 ## 검증
 
@@ -74,12 +76,14 @@
 - Frontend scope-controls 분리 후: 전체 Vitest `26 files / 72 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상 렌더링, console error 없음,
   모든 관찰 asset/API 요청 HTTP 200.
+- Frontend credential-audit 분리 후: 전체 Vitest `27 files / 74 tests` 통과,
+  production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`에서 서비스 대시보드처럼 계산 결과만 표시하는 화면 영역을
-   다음 작은 seam으로 분리한다.
+1. 프런트엔드 `App.tsx`에서 서비스 대시보드의 요약·관찰 화면을 다음 작은 seam으로
+   분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.

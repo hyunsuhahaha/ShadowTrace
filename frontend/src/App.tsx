@@ -19,6 +19,7 @@ import ExecutionMonitor from "./ExecutionMonitor";
 import ServiceWorkspace from "./ServiceWorkspace";
 import CommandReviewModal from "./CommandReviewModal";
 import EnumerationScope from "./EnumerationScope";
+import CredentialAuditPanel from "./CredentialAuditPanel";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -1125,92 +1126,15 @@ export default function App() {
               </div>
             </section>
           )}
-          {!!authenticationCommands.length && (
-            <section ref={credentialAuditRef} className="credentialAudit"
-              aria-labelledby="credential-audit-title">
-              <header>
-                <div>
-                  <span>프로토콜별 인증 점검</span>
-                  <h2 id="credential-audit-title">{credentialProfile.title}</h2>
-                </div>
-                <strong>선택한 {service?.name || "서비스"}에만 실행</strong>
-              </header>
-              <p>
-                {credentialProfile.description} 각 작업은 자동 실행되지 않으며
-                전체 명령과 잠금 위험을 검토한 뒤 시작됩니다.
-              </p>
-              <a className="intruderLaunch" href="#web">
-                <span>HTTP 요청 후보를 직접 구성하려면</span>
-                <b>Web Testing · Intruder 열기 →</b>
-              </a>
-              <div className="credentialDataset">
-                <div>
-                  <b>{credentialProfile.identityLabel}</b>
-                  <code>{credentialProfile.identities}</code>
-                </div>
-                <div>
-                  <b>{credentialProfile.secretLabel}</b>
-                  <code>{credentialProfile.secrets}</code>
-                </div>
-                <small>
-                  {credentialProfile.limits}
-                </small>
-              </div>
-              <div className="credentialActions">
-                {authenticationCommands.map((command) => {
-                  const commandRun = runStates[command.id];
-                  const commandBusy = !!commandRun &&
-                    ["starting", "running"].includes(commandRun.status);
-                  const commandElapsed = commandRun
-                    ? Math.max(0, Math.floor((clock - commandRun.startedAt) / 1000)) : 0;
-                  const auditSummary = commandRun?.status === "completed" &&
-                      commandRun.stdout != null
-                    ? summarizeCredentialAudit(
-                      command.id,
-                      commandRun.stdout,
-                      commandRun.stderr || "",
-                    )
-                    : null;
-                  const auditOutput = commandRun
-                    ? `${commandRun.stdout || ""}${commandRun.stderr || ""}`
-                    : "";
-                  return <article key={command.id}
-                    className={commandBusy ? "isRunning" : ""}
-                    aria-busy={commandBusy}>
-                    <div>
-                      <b>{command.name}</b>
-                      <small>{command.description}</small>
-                      {commandRun && (
-                        <span className={`credentialRun credentialRun--${commandRun.status}`}>
-                          <i aria-hidden="true" />
-                          {commandBusy
-                            ? `${commandRun.status === "starting" ? "실행 준비" : "프로세스 실행 중"} · ${commandElapsed}초`
-                            : `${statusLabel[commandRun.status] || commandRun.status} · ${commandElapsed}초`}
-                        </span>
-                      )}
-                    </div>
-                    <span className={`credentialRisk credentialRisk--${command.risk}`}>
-                      {command.risk === "high" ? "잠금 위험" : "노출 확인"}
-                    </span>
-                    <button disabled={commandBusy}
-                      onClick={() => reviewCommand(command)}>
-                      {commandBusy ? "대입 중…" : "대입 공격 검토·실행"}
-                    </button>
-                    {auditSummary && (
-                      <section className={`credentialResult credentialResult--${auditSummary.status}`}>
-                        <b>{auditSummary.label}</b>
-                        <details>
-                          <summary>검사 원문 보기</summary>
-                          <pre>{auditOutput ||
-                            "명령이 출력 없이 완료되었습니다."}</pre>
-                        </details>
-                      </section>
-                    )}
-                  </article>;
-                })}
-              </div>
-            </section>
-          )}
+          <CredentialAuditPanel
+            ref={credentialAuditRef}
+            profile={credentialProfile}
+            serviceName={service?.name}
+            commands={authenticationCommands}
+            runStates={runStates}
+            clock={clock}
+            onReview={reviewCommand}
+          />
           <div className="cards">
             {investigationCommands.map((c) => {
               const cRun = runStates[c.id];
