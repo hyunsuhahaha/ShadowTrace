@@ -17,6 +17,7 @@ import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
 import ExecutionHistory from "./ExecutionHistory";
 import ExecutionMonitor from "./ExecutionMonitor";
+import ServiceWorkspace from "./ServiceWorkspace";
 import {
   keepSelectedService,
   missingServiceFacts,
@@ -1732,59 +1733,22 @@ export default function App() {
               else applyWorkspaceHeight(workspaceHeight + (event.key === "ArrowUp" ? 24 : -24));
             }}
           />}
-          <section className={`serviceWorkspacePanel${workspaceCollapsed ? " isCollapsed" : ""}`}>
-            <div className="panelTitle">
-              <span>서비스 작업 공간</span>
-              <button type="button" className="workspaceCollapseButton"
-                aria-expanded={!workspaceCollapsed}
-                onClick={() => setWorkspaceCollapsed((collapsed) => {
-                  localStorage.setItem("oscp-service-workspace-collapsed", String(!collapsed));
-                  return !collapsed;
-                })}>
-                {workspaceCollapsed ? "펼치기 ↑" : "접기 ↓"}
-              </button>
-            </div>
-            {!workspaceCollapsed && <div className="serviceWorkspaceBody">
-            <div className="meta">
-              <label>Hostname<b>{target?.hostname || "알 수 없음"}</b></label>
-              <label>추정 OS<b>{target?.os_guess || "탐지되지 않음"}</b></label>
-            </div>
-            <h3>Enumeration 체크리스트</h3>
-            {[
-              "서비스 Banner 확인", "기본 Credential 정책 검토", "버전 증적 저장",
-              "주요 경로 기록", "다음 수동 작업 계획",
-            ].map((x, i) => (
-              <label className="check" key={x}>
-                <input type="checkbox" /><span>{x}</span><small>0{i + 1}</small>
-              </label>
-            ))}
-            <h3>검토한 제품·버전</h3>
-            <input value={serviceProduct} onChange={(e) => setServiceProduct(e.target.value)}
-              placeholder="예: Linux telnetd" aria-label="검토한 서비스 제품" />
-            <input value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}
-              placeholder="예: 0.17" aria-label="검토한 서비스 버전" />
-            <h3>서비스 태그</h3>
-            <input value={serviceTags} onChange={(e) => setServiceTags(e.target.value)}
-              placeholder="web, reviewed" />
-            <h3>서비스 메모</h3>
-            <textarea value={serviceNotes} onChange={(e) => setServiceNotes(e.target.value)}
-              placeholder="이 포트에 대한 Markdown 메모…" />
-            <button onClick={saveService}
-              disabled={!serviceId || serviceSaveState === "saving"}>
-              {serviceSaveState === "saving" ? "저장 중…" :
-                serviceSaveState === "saved" ? "저장됨" : "작업 공간 저장"}
-            </button>
-            {serviceSaveState === "error" && (
-              <p className="webError" role="alert">
-                제품·버전과 작업 공간을 저장하지 못했습니다.
-              </p>
-            )}
-            <div className="warning">
-              <b>실행 안내</b>
-              <p>명령은 이 Kali 호스트에서 실행됩니다. 허가 범위와 최종 명령을 확인하세요.</p>
-            </div>
-            </div>}
-          </section>
+          <ServiceWorkspace target={target}
+            draft={{product: serviceProduct, version: serviceVersion,
+              tags: serviceTags, notes: serviceNotes}}
+            saveState={serviceSaveState} disabled={!serviceId}
+            collapsed={workspaceCollapsed}
+            onDraft={(draft) => {
+              setServiceProduct(draft.product);
+              setServiceVersion(draft.version);
+              setServiceTags(draft.tags);
+              setServiceNotes(draft.notes);
+            }}
+            onSave={saveService}
+            onToggle={() => setWorkspaceCollapsed((collapsed) => {
+              localStorage.setItem("oscp-service-workspace-collapsed", String(!collapsed));
+              return !collapsed;
+            })} />
         </aside>
       </main>
       <ExecutionMonitor runs={activeRuns} focusedId={focusedRunId} now={clock}

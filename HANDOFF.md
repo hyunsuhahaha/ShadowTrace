@@ -40,6 +40,8 @@
     독립 테스트 추가
   - 동시 실행 monitor의 focus·중단·경과 시간·상태 신호 경고를
     `ExecutionMonitor.tsx`로 이동하고 독립 테스트 추가
+  - 서비스 제품·버전·태그·메모 draft, 체크리스트, 저장 상태 UI를
+    `ServiceWorkspace.tsx`로 이동하고 독립 테스트 추가
 
 ## 검증
 
@@ -61,11 +63,14 @@
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - Frontend execution-monitor 분리 후: 전체 Vitest `23 files / 67 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
+- Frontend service-workspace 분리 후: 전체 Vitest `24 files / 69 tests` 통과,
+  production build 통과, Chrome Service Enumeration 정상 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`에서 서비스 작업 공간 영역을 다음 작은 seam으로 분리한다.
+1. 프런트엔드 `App.tsx`에서 상단 프로젝트/Target 선택 또는 command review modal을
+   다음 작은 seam으로 분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.
