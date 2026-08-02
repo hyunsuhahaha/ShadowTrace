@@ -11,6 +11,7 @@
 - 최근 기능 커밋:
   - `b5e17f5` — Masscan discovery와 Nmap 후속 스캔
   - `2427d7c` — Post-exploitation credential hunting
+  - `0167ea8` — core/Execution/Session backend 라우트 모듈화
 - 진행 중: 백엔드와 프런트엔드의 점진적 모듈화
 - 원칙: URL, 요청/응답 형식, DB 스키마를 유지하며 작은 단계로 파일만 분리한다.
 
@@ -28,6 +29,9 @@
   제공만 남아 있다.
 - `test_directory.py`, `test_evidence.py`의 가짜 업로드를 실제 multipart와 같은
   `SpooledTemporaryFile` fixture로 바꿔 Python 3.13/AnyIO timeout을 제거했다.
+- 프런트엔드 `App.tsx` 1차 분리 진행 중:
+  - 도메인 타입, 표시 상수와 PTY `shellQuote`를 `enumerationModel.ts`로 이동
+  - shell quoting 회귀 테스트 추가
 
 ## 검증
 
@@ -39,11 +43,14 @@
 - Chrome production smoke: Scan Center, Service Enumeration, Sessions,
   Post-Exploitation 정상 렌더링. Chrome console error 없음. 관찰된 asset/API 요청은
   모두 HTTP 200. `/tmp/oscp-browser-validation`의 격리 DB와 프로필을 사용했다.
+- Frontend model 분리 후: 전체 Vitest `19 files / 60 tests` 통과, production build
+  통과, Chrome Service Enumeration 재검증 및 모든 관찰 요청 HTTP 200.
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. 프런트엔드 `App.tsx`의 타입과 순수 helper부터 점진적으로 분리한다.
+1. 프런트엔드 `App.tsx`의 서버 query 묶음 또는 독립 화면 영역을 다음 작은 seam으로
+   분리한다.
 2. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에
    유지할지 검토한다.
 3. 프런트엔드는 `App.tsx`, `ScanCenter.tsx` 순서로 상태와 화면을 분리한다.
