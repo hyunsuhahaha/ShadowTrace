@@ -59,7 +59,10 @@
     `CredentialStoreForm.tsx`로 이동하고 인증 실행 잠금 테스트 추가
   - NetExec 성공 판정, 후속 psexec/SSH/WinRM/RDP/MSSQL/hashcat 및 Evidence/Finding
     액션을 `NetexecOutcome.tsx`로 이동하고 SMB 관리자 결과 테스트 추가
-  - 현재 `App.tsx`는 최초 2,062줄에서 1,158줄로 축소됐다.
+  - 권한 상승 스크립트 서버(LinPEAS/WinPEAS)와 psexec InteractiveTerminal 영역을
+    `PrivescSessionPanel.tsx`로, 실시간 출력(상태 헤더·에러 메시지·실행 결과 요약·
+    출력 텍스트)을 `LiveOutputPanel.tsx`로 이동하고 각각 독립 테스트 추가.
+  - 현재 `App.tsx`는 최초 2,062줄에서 1,110줄로 축소됐다.
 
 ## 검증
 
@@ -101,16 +104,21 @@
 - Frontend netexec-outcome 분리 후: 전체 Vitest `33 files / 82 tests` 통과,
   production build 통과, Chrome Service Enumeration 정상, console error 없음,
   모든 관찰 asset/API 요청 HTTP 200.
+- Frontend privesc-session/live-output 분리 후: 전체 Vitest `35 files / 87 tests`
+  통과, production build 통과. Chrome 검증: 격리 DB(`/tmp/oscp-browser-validation`)에
+  프로젝트·대상·SSH/SMB 서비스(nmap XML 직접 업로드)를 만들어 Service Enumeration에서
+  두 서비스 모두 렌더링 확인, SMB NetExec 자격증명 확인 섹션과 그 아래 실시간 출력
+  패널까지 정상 표시, console error 없음. (참고: 브라우저의 `window.prompt()` 기반
+  "+ 대상" 흐름은 CDP 자동화와 상성이 나빠 API로 직접 시드했다 — 기존 UI 동작 자체의
+  회귀는 아니다.)
 - `git diff --check`: 통과
 
 ## 다음 작업
 
-1. `App.tsx`의 `psexecSession` 권한 상승 서버/InteractiveTerminal 영역과 실시간
-   출력 영역을 각각 작은 컴포넌트로 분리한다.
-2. 이어서 `ScanCenter.tsx`(현재 1,131줄)를 profile/preview/job history 경계로 분리한다.
-3. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
+1. `ScanCenter.tsx`(현재 1,131줄)를 profile/preview/job history 경계로 분리한다.
+2. 백엔드 `runbooks/router.py`(현재 1,185줄)를 credential/workflow/execution 라우터로
    나눈다. URL과 request/response schema는 유지한다.
-4. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
+3. system status를 작은 system 모듈로 이동하고 정적 프런트 제공은 앱 조립에 유지한다.
 
 ## 주의점
 

