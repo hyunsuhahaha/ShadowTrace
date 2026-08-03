@@ -3,6 +3,18 @@ import {
   SHELL_PAYLOAD_KINDS, buildReverseShellPayload, type ShellPayloadKind,
 } from "./reverseShellPayloads";
 
+// A raw nc/webshell reverse shell has no job control, no tab completion,
+// and dies if you press Ctrl+C — needed after nearly every foothold, so
+// it lives right next to the payload that gets you the raw shell.
+const STABILIZE_STEPS = [
+  "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'",
+  "export TERM=xterm",
+  "# Ctrl+Z 로 백그라운드 전환 후:",
+  "stty raw -echo; fg",
+  "# 다시 쉘로 돌아온 뒤 Enter 두 번, 그리고 로컬 터미널 크기에 맞춰:",
+  "stty rows <행수> columns <열수>",
+];
+
 // Getting a payload onto whatever RCE point was just found (webshell param,
 // command injection, upload) and having a listener ready for it is close to
 // universal across every box, so — unlike the other panels here — this
@@ -47,6 +59,10 @@ export default function ReverseShellPanel({ onStartListener }: {
         URL 인코딩 (GET 파라미터에 바로 붙여넣기용)
       </label>
       {payload && <code className="revshellPayload">{display}</code>}
+      <details className="revshellStabilize">
+        <summary>쉘 안정화 (Ctrl+C에도 안 죽게, 탭 완성·job control 살리기)</summary>
+        <code className="revshellPayload">{STABILIZE_STEPS.join("\n")}</code>
+      </details>
     </section>
   );
 }

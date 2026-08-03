@@ -35,3 +35,9 @@ it("starts the listener on the typed port", () => {
   fireEvent.click(screen.getByText("리스너 준비 (nc -lvnp)"));
   expect(onStartListener).toHaveBeenCalledWith("9001");
 });
+
+it("includes the pty.spawn shell-stabilization steps", () => {
+  render(<ReverseShellPanel onStartListener={vi.fn()} />);
+  expect(screen.getByText(/pty\.spawn/)).toBeTruthy();
+  expect(screen.getByText(/stty raw -echo/)).toBeTruthy();
+});
