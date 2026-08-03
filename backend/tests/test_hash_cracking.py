@@ -59,7 +59,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     assert ids == {
         "ntlm", "netntlmv2", "kerberoast", "asreproast", "linux_sha512crypt",
         "linux_md5crypt", "bcrypt", "winzip", "sevenzip", "rar5", "wpa",
-        "ms_office_2007", "ms_office_2010", "ms_office_2013",
+        "ms_office_2007", "ms_office_2010", "ms_office_2013", "keepass",
         "werkzeug_pbkdf2", "ike_psk", "sha256", "md5",
     }
     by_id = {item["id"]: item["mode"] for item in catalog.HASH_MODES}
@@ -79,6 +79,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     ("$2y$05$abcdefghijklmnopqrstuv", "bcrypt"),
     ("$7z$2$19$0$salt", "sevenzip"),
     ("$rar5$16$salt$15$iv$8$checksum", "rar5"),
+    ("$keepass$*2*60000*0*abcdef", "keepass"),
     ("$office$*2007*20*128*16*salt*hash*verifier", "ms_office_2007"),
     ("$office$*2010*100000*128*16*salt*hash*verifier", "ms_office_2010"),
     ("$office$*2013*100000*256*16*salt*hash*verifier", "ms_office_2013"),

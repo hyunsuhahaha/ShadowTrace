@@ -38,6 +38,8 @@ HASH_MODES = [
      "example": "$7z$2$19$0$salt$8$iv$...", "detect": r"^\$7z\$"},
     {"id": "rar5", "name": "RAR5", "mode": "13000",
      "example": "$rar5$16$salt$15$iv$8$checksum", "detect": r"^\$rar5\$"},
+    {"id": "keepass", "name": "KeePass 1/2 (keepass2john)", "mode": "13400",
+     "example": "$keepass$*2*60000*0*...", "detect": r"^\$keepass\$\*"},
     # office2john.py (from the john project) writes the version into the hash
     # itself ($office$*2007*..., *2010*, *2013*), so each version gets its
     # own hashcat -m number and its own detect regex on that field.
