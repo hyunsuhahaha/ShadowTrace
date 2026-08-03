@@ -1,0 +1,31 @@
+.crackPage{min-height:100vh;background:#070b0d}
+.crackPage>header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:24px 28px;border-bottom:1px solid var(--line)}
+.crackPage>header h1{margin:0;font-size:22px}
+.crackPage>header p{margin:6px 0 0;color:var(--muted);font-size:12px;max-width:60ch}
+.crackSelectors{display:flex;gap:8px}
+.crackSelectors select{background:#0b1113;border:1px solid #29373b;color:#c9d5d8;padding:8px;border-radius:3px}
+.crackWarning{margin:0 28px;padding:10px 14px;border-left:2px solid var(--warning);background:#1d1813;color:#e3b47f;font-size:11px}
+.crackLayout{display:grid;grid-template-columns:300px minmax(420px,1fr) 260px;min-height:calc(100vh - 96px)}
+.crackForm{background:#0a0f11;border-right:1px solid var(--line);overflow:auto;padding:16px;display:grid;gap:12px;align-content:start}
+.crackForm label{display:grid;gap:5px;font-size:11px;color:#9aadb2}
+.crackForm input,.crackForm select,.crackForm textarea{background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:8px;border-radius:3px;font:inherit;font-size:12px}
+.crackForm textarea{font-family:ui-monospace,monospace;resize:vertical}
+.crackExample{background:#040708;border:1px solid var(--line);color:#8ed9bd;padding:8px;font-size:10px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.crackAutoBadge{margin-left:6px;font-style:normal;color:var(--green);font-size:9px;letter-spacing:.02em}
+.crackMaskHint{color:#71868c;font-size:9px}
+.crackForm>button{margin-top:4px;border:1px solid #365136;background:var(--green);color:#0a120b;font-weight:700;border-radius:3px;padding:10px;font-size:12px}
+.crackMain{padding:20px 24px;overflow:auto}
+.crackTerminal{margin-bottom:14px}
+.crackTerminal .terminalStatus button{margin-left:auto;border:1px solid #71443f;background:#241816;color:#f1aaa3;border-radius:3px;padding:4px 8px;font-size:10px}
+.crackResults{padding:14px;border:1px solid var(--line);background:#0c1315;display:grid;gap:8px}
+.crackResultRow{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #182226;font-size:11px}
+.crackResultRow code{color:#8fa3a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crackResultRow b{color:var(--green-strong)}
+.crackResultRow button{border:1px solid #304047;background:#172125;color:#9aadb2;border-radius:3px;padding:6px 9px;font-size:10px}
+.crackHistory{background:#0a0f11;border-left:1px solid var(--line);overflow:auto;padding-bottom:16px}
+.crackRow{display:grid;gap:4px;padding:12px 14px;border-bottom:1px solid #182226;cursor:pointer;color:#c9d5d8}
+.crackRow.active{background:#101a1d;box-shadow:inset 3px 0 var(--green)}
+.crackRow span{display:flex;justify-content:space-between}
+.crackRow em{font-style:normal;color:var(--green);font-size:9px}
+.crackRow small{color:var(--muted);font-size:10px}
+.crackPage .modal input{width:100%;margin-top:6px;background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:8px;border-radius:3px}

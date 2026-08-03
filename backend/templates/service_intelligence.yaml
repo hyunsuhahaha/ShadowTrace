@@ -366,7 +366,7 @@ profiles:
     runbook_keys: [ldap-baseline]
     attack_surface: [RootDSE, naming context, 익명 bind, 객체·속성 ACL, TLS·서명]
     stages:
-      - {id: ldap-surface, phase: anonymous, title: RootDSE와 익명 조회, question: "익명 사용자가 naming context와 객체·속성을 어디까지 조회할 수 있는가?", purpose: 연결 성공과 실제 검색 권한을 구분합니다., command_refs: [ldap-rootdse], manual_checks: [Base DN, namingContexts, 익명 bind와 검색 범위], prerequisites: [identity], auth: anonymous, safety: low}
+      - {id: ldap-surface, phase: anonymous, title: RootDSE와 익명 조회, question: "익명 사용자가 naming context와 객체·속성을 어디까지 조회할 수 있는가?", purpose: 연결 성공과 실제 검색 권한을 구분합니다., command_refs: [ldap-rootdse, ldap-anonymous-users], manual_checks: [Base DN, namingContexts, 익명 bind와 검색 범위], prerequisites: [identity], auth: anonymous, safety: low}
 
   nfs:
     level: protocol

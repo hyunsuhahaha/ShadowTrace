@@ -13,8 +13,12 @@ TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sud
 "ssh":"sudo apt install openssh-client","searchsploit":"sudo apt install exploitdb",
 "hydra":"sudo apt install hydra","smbget":"sudo apt install smbclient",
 "impacket-psexec":"sudo apt install python3-impacket","impacket-mssqlclient":"sudo apt install python3-impacket",
+"impacket-GetNPUsers":"sudo apt install python3-impacket",
+"impacket-secretsdump":"sudo apt install python3-impacket",
 "evil-winrm":"sudo apt install evil-winrm","xfreerdp":"sudo apt install freerdp2-x11",
-"hashcat":"sudo apt install hashcat"}
+"hashcat":"sudo apt install hashcat","bloodhound-python":"sudo apt install bloodhound.py",
+"kerbrute":"apt에 없음 — https://github.com/ropnop/kerbrute/releases 에서 "
+           "kerbrute_linux_amd64를 받아 PATH에 kerbrute로 저장"}
 @router.get("/api/system/status")
 def status():
     tools=[{"name":k,"installed":bool(p:=shutil.which(k)),"path":p,"install":v} for k,v in TOOLS.items()]

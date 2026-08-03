@@ -59,11 +59,16 @@ class ExecutionIn(BaseModel):
     template_id: str = Field(pattern=r"^[a-z0-9-]+$")
     variables: dict[str, str] = {}
     run_as_root: bool = True
+    output_filename: str = Field(default="", max_length=120, pattern=r"^[\w .-]*$")
 class ExecutionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; stdout: str; stderr: str; cwd: str
     started_at: datetime; ended_at: datetime | None; exit_code: int | None; stopped: bool
     status: str; error: str; output_path: str
+
+class ExecutionDeriveIn(BaseModel):
+    content: str = Field(min_length=1, max_length=5_000_000)
+    filename: str = Field(min_length=1, max_length=120, pattern=r"^[\w .-]+$")
 
 class ScanProfileOut(ORM):
     id: int; name: str; kind: str; description: str; arguments: str; builtin: bool

@@ -1,5 +1,6 @@
 import {summarizeExecutionResult} from "./serviceIntel";
 import {statusCopy as statusLabel} from "./ui";
+import OutputColumnExtractor from "./OutputColumnExtractor";
 
 export type ExecutionRecord = {
   id: number;
@@ -26,6 +27,7 @@ export default function ExecutionHistory({
   onView,
   onOpen,
   onStop,
+  onDerived,
 }: {
   executions: ExecutionRecord[];
   view: "list" | "detail";
@@ -34,6 +36,7 @@ export default function ExecutionHistory({
   onView: (view: "list" | "detail") => void;
   onOpen: (id: number) => void;
   onStop: () => void;
+  onDerived?: (filePath: string) => void;
 }) {
   const outcome = selected && detail
     ? summarizeExecutionResult(
@@ -92,6 +95,10 @@ export default function ExecutionHistory({
         {detail?.stdout && <details open>
           <summary>표준 출력</summary><pre>{detail.stdout}</pre>
         </details>}
+        {detail?.stdout && (
+          <OutputColumnExtractor executionId={selected.id} stdout={detail.stdout}
+            onSaved={onDerived} />
+        )}
         {detail?.stderr && <details>
           <summary>오류 출력</summary><pre>{detail.stderr}</pre>
         </details>}

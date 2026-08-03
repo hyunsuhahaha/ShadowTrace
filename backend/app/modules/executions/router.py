@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import shlex
 import shutil
@@ -18,13 +19,27 @@ from ...executor import (
     run_execution,
     stop_execution,
 )
-from ...models import Execution, Project, Service, Target
-from ...schemas import ExecutionIn, ExecutionOut
+from ...models import Evidence, Execution, Project, Service, Target
+from ...schemas import ExecutionDeriveIn, ExecutionIn, ExecutionOut, EvidenceOut
 from ...templates import catalog
 from ..core.support import need, safe_part
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
+
+
+def _output_path(output_dir: Path, raw_filename: str, template_id: str) -> Path:
+    if not raw_filename.strip():
+        return output_dir / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_part(template_id)}.txt"
+    base = safe_part(raw_filename.strip())
+    if base.lower().endswith(".txt"):
+        base = base[:-4] or "output"
+    candidate = output_dir / f"{base}.txt"
+    counter = 2
+    while candidate.exists():
+        candidate = output_dir / f"{base}-{counter}.txt"
+        counter += 1
+    return candidate
 
 
 @router.get("/api/executions", response_model=list[ExecutionOut])
@@ -73,7 +88,7 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
     db.refresh(row)
-    output = output_dir / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_part(item['id'])}.txt"
+    output = _output_path(output_dir, body.output_filename, item["id"])
     queues[row.id] = asyncio.Queue()
     asyncio.create_task(run_execution(row.id, argv, target_dir, output))
     return row
@@ -119,3 +134,55 @@ async def events(ident: int):
 @router.post("/api/executions/{ident}/stop")
 async def stop(ident: int):
     return {"stopped": await stop_execution(ident)}
+
+
+def _execution_output_dir(db: Session, execution: Execution) -> tuple[Target, Path]:
+    target = need(db, Target, execution.target_id)
+    project = need(db, Project, target.project_id)
+    target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
+                  "targets" / safe_part(target.ip))
+    return target, target_dir / "outputs"
+
+
+@router.get("/api/executions/{ident}/file")
+def execution_output_file(ident: int, name: str, db: Session = Depends(get_db)):
+    """Read a file a command wrote directly into the target's output folder
+    (e.g. impacket-GetNPUsers' -outputfile), separate from the execution's
+    own stdout/stderr capture."""
+    execution = need(db, Execution, ident)
+    _, output_dir = _execution_output_dir(db, execution)
+    path = output_dir / safe_part(name)
+    if not path.is_file():
+        raise HTTPException(404, "Output file not found")
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        raise HTTPException(404, "Output file not found")
+    return {"name": path.name, "content": content}
+
+
+@router.post("/api/executions/{ident}/derive", response_model=EvidenceOut,
+            status_code=201)
+def derive_output(ident: int, body: ExecutionDeriveIn, db: Session = Depends(get_db)):
+    execution = need(db, Execution, ident)
+    target, output_dir = _execution_output_dir(db, execution)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = _output_path(output_dir, body.filename, f"{execution.template_id}-derived")
+    content = body.content.encode("utf-8")
+    path.write_bytes(content)
+    row = Evidence(
+        project_id=target.project_id, target_id=target.id,
+        service_id=execution.service_id,
+        title=f"{execution.template_id} 결과 · {path.name}",
+        description=f"실행 #{execution.id} 결과에서 추출한 값: {execution.command}",
+        kind="command_output", source_type="execution", source_id=execution.id,
+        file_path=str(path), original_name=path.name,
+        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
+        hostname=target.hostname or target.ip, include_report=False,
+        tags=json.dumps(["auto-captured", "derived", execution.template_id],
+                        ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

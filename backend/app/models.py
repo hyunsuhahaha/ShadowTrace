@@ -551,6 +551,37 @@ class RemoteExecution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class HashCrackJob(Base):
+    __tablename__ = "hash_crack_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    label: Mapped[str] = mapped_column(String(200), default="")
+    hash_mode_id: Mapped[str] = mapped_column(String(40))
+    hash_mode: Mapped[str] = mapped_column(String(20))
+    hash_type_name: Mapped[str] = mapped_column(String(120), default="")
+    wordlist_id: Mapped[str] = mapped_column(String(80), default="")
+    rule_id: Mapped[str] = mapped_column(String(80), default="")
+    attack_mode: Mapped[str] = mapped_column(String(1), default="0")
+    wordlist2_id: Mapped[str] = mapped_column(String(80), default="")
+    mask: Mapped[str] = mapped_column(String(64), default="")
+    hash_count: Mapped[int] = mapped_column(Integer, default=0)
+    argv_json: Mapped[str] = mapped_column(Text, default="[]")
+    command_display: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="prepared", index=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cracked_count: Mapped[int] = mapped_column(Integer, default=0)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    evidence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("evidence.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RunbookTemplate(Base):
     __tablename__ = "runbook_templates"
     id: Mapped[int] = mapped_column(primary_key=True)

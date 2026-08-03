@@ -3,6 +3,9 @@ import {
   keepSelectedService,
   missingServiceFacts,
   parseFeroxbusterResults,
+  parseKerbruteResults,
+  parseNetexecSprayHits,
+  parseSecretsdumpHashes,
   parseSmbFiles,
   parseSmbShares,
   parseScriptObservations,
@@ -144,5 +147,65 @@ describe("service investigation summary", () => {
       {path: "/config.txt", status: 200, length: 12, words: 2, lines: 1},
       {path: "/secret.php", status: 403, length: 0, words: 0, lines: 0},
     ]);
+  });
+
+  it("extracts only VALID USERNAME lines from kerbrute output", () => {
+    const output = [
+      "2026/08/02 12:00:00 >  Using KDC(s):",
+      "2026/08/02 12:00:00 >  \t10.10.10.10:88",
+      "2026/08/02 12:00:01 >  [+] VALID USERNAME:\t administrator@CORP.LOCAL",
+      "2026/08/02 12:00:02 >  [-] CORP.LOCAL\\guest:",
+      "2026/08/02 12:00:03 >  [+] VALID USERNAME:\t svc-sql@CORP.LOCAL",
+      "2026/08/02 12:00:04 >  Done enumerating",
+    ].join("\n");
+    expect(parseKerbruteResults(output)).toEqual([
+      "administrator@CORP.LOCAL", "svc-sql@CORP.LOCAL",
+    ]);
+  });
+
+  it("returns no usernames from output with no matches", () => {
+    expect(parseKerbruteResults("Using KDC(s):\n\t10.10.10.10:88\n")).toEqual([]);
+  });
+
+  it("extracts only [+] hit lines from a netexec spray run", () => {
+    const output = [
+      "LDAP        10.10.10.161   389    FOREST           [*] Windows Server 2016",
+      "LDAP        10.10.10.161   389    FOREST           [-] htb.local\\andy:Fall2018!",
+      "LDAP        10.10.10.161   389    FOREST           [+] htb.local\\sebastien:s3bastien1",
+      "LDAP        10.10.10.161   389    FOREST           [-] htb.local\\mark:Fall2018!",
+    ].join("\n");
+    expect(parseNetexecSprayHits(output)).toEqual(["htb.local\\sebastien:s3bastien1"]);
+  });
+
+  it("returns no hits from a spray run with no valid credentials", () => {
+    expect(parseNetexecSprayHits(
+      "LDAP  10.10.10.161  389  FOREST  [-] htb.local\\andy:Fall2018!\n",
+    )).toEqual([]);
+  });
+
+  it("extracts user:rid:lmhash:nthash lines from a secretsdump DCSync run", () => {
+    const output = [
+      "Impacket v0.11.0 - Copyright 2023 Fortra",
+      "[*] Using the DRSUAPI method to get NTDS.DIT secrets",
+      "Administrator:500:aad3b435b51404eeaad3b435b51404ee:32693b11e6aa90eb43d32c72a07ceea6:::",
+      "krbtgt:502:aad3b435b51404eeaad3b435b51404ee:1693c6cefaf12a68b57f6660c83cf43d:::",
+      "htb.local\\svc-alfresco:1104:aad3b435b51404eeaad3b435b51404ee:9deb5a092a9baf843c8f2726a1a12b8b:::",
+      "[*] Kerberos keys grabbed",
+      "Administrator:aes256-cts-hmac-sha1-96:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    ].join("\n");
+    expect(parseSecretsdumpHashes(output)).toEqual([
+      { username: "Administrator", rid: "500", lmhash: "aad3b435b51404eeaad3b435b51404ee",
+        nthash: "32693b11e6aa90eb43d32c72a07ceea6" },
+      { username: "krbtgt", rid: "502", lmhash: "aad3b435b51404eeaad3b435b51404ee",
+        nthash: "1693c6cefaf12a68b57f6660c83cf43d" },
+      { username: "htb.local\\svc-alfresco", rid: "1104",
+        lmhash: "aad3b435b51404eeaad3b435b51404ee", nthash: "9deb5a092a9baf843c8f2726a1a12b8b" },
+    ]);
+  });
+
+  it("returns no hashes when DCSync failed or was denied", () => {
+    expect(parseSecretsdumpHashes(
+      "[-] RemoteOperations failed: DCERPC Runtime Error: code: 0x5 - rpc_s_access_denied\n",
+    )).toEqual([]);
   });
 });

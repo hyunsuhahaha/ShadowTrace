@@ -8,12 +8,16 @@ export default function CommandReviewModal({
   command,
   runWithSudo,
   onSudo,
+  outputFilename,
+  onOutputFilename,
   onCancel,
   onRun,
 }: {
   command?: ReviewCommand;
   runWithSudo: boolean;
   onSudo: (enabled: boolean) => void;
+  outputFilename: string;
+  onOutputFilename: (value: string) => void;
   onCancel: () => void;
   onRun: () => void;
 }) {
@@ -31,6 +35,13 @@ export default function CommandReviewModal({
         <input type="checkbox" checked={runWithSudo}
           onChange={(event) => onSudo(event.target.checked)} />
         sudo로 실행
+      </label>
+      <label className="outputFilenameOption">
+        결과 저장 파일명(선택)
+        <input type="text" placeholder="예: hello → hello.txt로 저장"
+          value={outputFilename}
+          onChange={(event) => onOutputFilename(event.target.value)} />
+        <small>비워두면 자동 생성된 파일명으로 저장됩니다.</small>
       </label>
       {command.risk === "high" && <p className="intrusiveConfirm">
         이 명령은 계정 잠금이나 인증 로그를 발생시킬 수 있습니다.

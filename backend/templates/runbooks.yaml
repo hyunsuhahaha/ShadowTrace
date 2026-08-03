@@ -269,7 +269,7 @@ runbooks:
         expected_observations: [키·설정·백업 파일의 위치와 권한]
 
   - key: ldap-baseline
-    revision: 1
+    revision: 2
     name: LDAP·Kerberos 기본 열거
     description: RootDSE, Base DN, 도메인 문맥과 승인된 인증 범위를 확인합니다.
     tags: [ldap, kerberos, active-directory]
@@ -280,7 +280,8 @@ runbooks:
         command_refs: [ldap-rootdse]
         expected_observations: [Base DN, naming contexts, 도메인과 서버 기능]
       - title: 익명 조회 범위 확인
-        expected_observations: [익명 bind 허용 여부, 공개 객체와 속성]
+        command_refs: [ldap-anonymous-users]
+        expected_observations: [익명 bind 허용 여부, 공개 객체와 속성, 사용자 목록]
       - title: 제한된 기본 Credential 점검
         command_refs: [ldap-default-audit]
         expected_observations: [bind 성공 여부, Base DN 요구, 잠금 신호]

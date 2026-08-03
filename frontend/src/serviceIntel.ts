@@ -81,6 +81,51 @@ export function parseFeroxbusterResults(output = ""): FuzzResult[] {
   return results;
 }
 
+// kerbrute userenum prints "[+] VALID USERNAME:\t user@REALM" to stdout for
+// every account that answers Kerberos pre-auth; everything else is log noise.
+export function parseKerbruteResults(output = ""): string[] {
+  const usernames: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/\[\+\]\s*VALID USERNAME:\s*(\S+)/);
+    if (match) usernames.push(match[1]);
+  }
+  return usernames;
+}
+
+export type SecretsdumpHash = {
+  username: string; rid: string; lmhash: string; nthash: string;
+};
+
+// impacket-secretsdump prints one "user:rid:lmhash:nthash:::" line per
+// dumped account (DCSync via -just-dc), interleaved with banner/progress
+// text that never matches this exact shape.
+export function parseSecretsdumpHashes(output = ""): SecretsdumpHash[] {
+  const results: SecretsdumpHash[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.trim().match(
+      /^([^\s:]+):(\d+):([0-9a-fA-F]{32}):([0-9a-fA-F]{32}):::$/,
+    );
+    if (match) {
+      results.push({
+        username: match[1], rid: match[2], lmhash: match[3], nthash: match[4],
+      });
+    }
+  }
+  return results;
+}
+
+// NetExec prints "[+] domain\username:password" for every account a spray
+// (or single credential check) validates against; everything else — login
+// failures, connection banners — never starts a line with "[+]".
+export function parseNetexecSprayHits(output = ""): string[] {
+  const hits: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/\[\+\]\s*(\S+)/);
+    if (match) hits.push(match[1]);
+  }
+  return hits;
+}
+
 export function keepSelectedService<T extends {id: number}>(
   current: number | undefined,
   services: T[] | undefined,
