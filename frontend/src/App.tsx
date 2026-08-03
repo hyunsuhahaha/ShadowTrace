@@ -21,6 +21,7 @@ import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
+import RecycleBinDecoder from "./RecycleBinDecoder";
 import ReverseShellPanel from "./ReverseShellPanel";
 import ChiselPivotPanel from "./ChiselPivotPanel";
 import ResponderPanel from "./ResponderPanel";
@@ -1136,6 +1137,7 @@ export default function App() {
           {!!service && <ResponderPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <DpapiDecoderPanel />}
+          {!!service && <RecycleBinDecoder />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
             shares={smbShares} activeShare={lastSpiderShare}
