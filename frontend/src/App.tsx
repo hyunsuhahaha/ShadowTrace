@@ -735,6 +735,16 @@ export default function App() {
       },
     });
   };
+  const runGmsa = () => {
+    if (!target || !credStore.username.trim() || !credStore.password.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-gmsa-password-netexec",
+      preview: `nxc ldap ${target.ip} -u ${credStore.username} -p *** --gmsa`,
+      target_level: true,
+      variables: {username: credStore.username, password: credStore.password},
+    });
+  };
   const runDcsync = () => {
     if (!target || !credStore.username.trim() || !credStore.password.trim()) return;
     setRunWithSudo(false);
@@ -1173,8 +1183,10 @@ export default function App() {
               password={credStore.password}
               bloodhoundRunState={runStates["ad-bloodhound-collect"]}
               dcsyncRunState={runStates["ad-dcsync-secretsdump"]}
+              gmsaRunState={runStates["ad-gmsa-password-netexec"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onCollectBloodhound={runBloodhoundCollect} onDcsync={runDcsync}
+              onGmsa={runGmsa}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)}
               onFillCredential={(u, h) => { credStore.setUsername(u); credStore.setPassword(h); }}
               onSaveHash={(u, h) => void saveDcsyncHash(u, h)}

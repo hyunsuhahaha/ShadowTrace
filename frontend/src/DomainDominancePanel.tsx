@@ -27,16 +27,18 @@ const activeOf = (
 // generic reviewed-command list.
 export default function DomainDominancePanel({
   target, domain, username, password, bloodhoundRunState, dcsyncRunState,
-  serviceExecutions, evidenceMsg, onCollectBloodhound, onDcsync,
-  onCaptureEvidence, onFillCredential, onSaveHash, saveHashMsg,
+  gmsaRunState, serviceExecutions, evidenceMsg, onCollectBloodhound, onDcsync,
+  onGmsa, onCaptureEvidence, onFillCredential, onSaveHash, saveHashMsg,
 }: {
   target?: { ip: string };
   domain: string; username: string; password: string;
   bloodhoundRunState?: DomainOpRunState; dcsyncRunState?: DomainOpRunState;
+  gmsaRunState?: DomainOpRunState;
   serviceExecutions: DomainOpExecution[];
   evidenceMsg: string;
   onCollectBloodhound: () => void;
   onDcsync: () => void;
+  onGmsa: () => void;
   onCaptureEvidence: (
     execution: { id: number; stdout?: string; stderr?: string }, title: string,
   ) => void;
@@ -46,8 +48,10 @@ export default function DomainDominancePanel({
 }) {
   const bloodhound = activeOf(bloodhoundRunState, "ad-bloodhound-collect", serviceExecutions);
   const dcsync = activeOf(dcsyncRunState, "ad-dcsync-secretsdump", serviceExecutions);
+  const gmsa = activeOf(gmsaRunState, "ad-gmsa-password-netexec", serviceExecutions);
   const bloodhoundBusy = ["starting", "running"].includes(bloodhound?.status || "");
   const dcsyncBusy = ["starting", "running"].includes(dcsync?.status || "");
+  const gmsaBusy = ["starting", "running"].includes(gmsa?.status || "");
   const hashes = parseSecretsdumpHashes(dcsync?.stdout || "");
   const ready = !!username.trim() && !!password.trim();
 
@@ -64,6 +68,9 @@ export default function DomainDominancePanel({
         </button>
         <button disabled={!ready || dcsyncBusy} onClick={onDcsync}>
           {dcsyncBusy ? "시도 중…" : "DCSync 시도"}
+        </button>
+        <button disabled={!ready || gmsaBusy} onClick={onGmsa}>
+          {gmsaBusy ? "시도 중…" : "gMSA 비밀번호 추출"}
         </button>
       </div>
       {bloodhound?.status === "completed" && (
@@ -100,6 +107,16 @@ export default function DomainDominancePanel({
               </button>
             </li>
           ))}</ul>
+        </div>
+      )}
+      {gmsa?.status === "completed" && (
+        <div className="intruderResults">
+          <header><div><b>gMSA 조회 결과</b></div>
+            <button onClick={() => onCaptureEvidence(
+              gmsa, `gMSA 비밀번호 추출 · ${target?.ip}`,
+            )}>Evidence로 저장</button>
+          </header>
+          <pre>{gmsa.stdout}</pre>
         </div>
       )}
       {evidenceMsg && <p className="netexecEvidenceMsg">{evidenceMsg}</p>}

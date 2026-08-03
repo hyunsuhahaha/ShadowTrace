@@ -13,7 +13,7 @@ it("disables both actions until a domain credential is filled in, then triggers 
   const onDcsync = vi.fn();
   const { rerender } = render(<DomainDominancePanel target={target}
     domain="htb.local" username="" password="" serviceExecutions={[]} evidenceMsg=""
-    onCollectBloodhound={onCollectBloodhound} onDcsync={onDcsync}
+    onCollectBloodhound={onCollectBloodhound} onDcsync={onDcsync} onGmsa={vi.fn()}
     onCaptureEvidence={vi.fn()} onFillCredential={vi.fn()} onSaveHash={vi.fn()}
     saveHashMsg="" />);
 
@@ -23,7 +23,7 @@ it("disables both actions until a domain credential is filled in, then triggers 
   rerender(<DomainDominancePanel target={target}
     domain="htb.local" username="svc-alfresco" password="s3rvice"
     serviceExecutions={[]} evidenceMsg=""
-    onCollectBloodhound={onCollectBloodhound} onDcsync={onDcsync}
+    onCollectBloodhound={onCollectBloodhound} onDcsync={onDcsync} onGmsa={vi.fn()}
     onCaptureEvidence={vi.fn()} onFillCredential={vi.fn()} onSaveHash={vi.fn()}
     saveHashMsg="" />);
   fireEvent.click(screen.getByText("BloodHound 데이터 수집"));
@@ -43,7 +43,7 @@ it("parses dumped hashes from the DCSync run and wires fill/save actions", () =>
     domain="htb.local" username="svc-alfresco" password="s3rvice"
     dcsyncRunState={{ id: 5, templateId: "ad-dcsync-secretsdump", status: "completed", stdout }}
     serviceExecutions={[]} evidenceMsg=""
-    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onCaptureEvidence={vi.fn()}
+    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onGmsa={vi.fn()} onCaptureEvidence={vi.fn()}
     onFillCredential={onFillCredential} onSaveHash={onSaveHash} saveHashMsg="" />);
 
   expect(screen.getByText("Administrator")).toBeTruthy();
@@ -58,13 +58,38 @@ it("parses dumped hashes from the DCSync run and wires fill/save actions", () =>
   );
 });
 
+it("triggers the gMSA lookup and offers evidence capture on a completed run", () => {
+  const onGmsa = vi.fn();
+  const onCaptureEvidence = vi.fn();
+  const { rerender } = render(<DomainDominancePanel target={target}
+    domain="htb.local" username="alfred" password="basketball"
+    serviceExecutions={[]} evidenceMsg=""
+    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onGmsa={onGmsa}
+    onCaptureEvidence={onCaptureEvidence} onFillCredential={vi.fn()} onSaveHash={vi.fn()}
+    saveHashMsg="" />);
+  fireEvent.click(screen.getByText("gMSA 비밀번호 추출"));
+  expect(onGmsa).toHaveBeenCalledOnce();
+
+  rerender(<DomainDominancePanel target={target}
+    domain="htb.local" username="alfred" password="basketball"
+    gmsaRunState={{ id: 8, templateId: "ad-gmsa-password-netexec", status: "completed",
+      stdout: "Account: ANSIBLE_DEV$ NTLM: 1c37d00093dc2a5f25176bf2d474afdc\n" }}
+    serviceExecutions={[]} evidenceMsg=""
+    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onGmsa={onGmsa}
+    onCaptureEvidence={onCaptureEvidence} onFillCredential={vi.fn()} onSaveHash={vi.fn()}
+    saveHashMsg="" />);
+  expect(screen.getByText(/ANSIBLE_DEV\$/)).toBeTruthy();
+  fireEvent.click(screen.getByText("Evidence로 저장"));
+  expect(onCaptureEvidence).toHaveBeenCalledOnce();
+});
+
 it("shows a plain-language message when DCSync completed with no dumped accounts", () => {
   render(<DomainDominancePanel target={target}
     domain="htb.local" username="svc-alfresco" password="s3rvice"
     dcsyncRunState={{ id: 5, templateId: "ad-dcsync-secretsdump", status: "completed",
       stdout: "[-] RemoteOperations failed: rpc_s_access_denied\n" }}
     serviceExecutions={[]} evidenceMsg=""
-    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onCaptureEvidence={vi.fn()}
+    onCollectBloodhound={vi.fn()} onDcsync={vi.fn()} onGmsa={vi.fn()} onCaptureEvidence={vi.fn()}
     onFillCredential={vi.fn()} onSaveHash={vi.fn()} saveHashMsg="" />);
 
   expect(screen.getByText(/DCSync 권한이 없을 수 있습니다/)).toBeTruthy();
