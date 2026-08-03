@@ -1,8 +1,10 @@
+import asyncio
 import base64
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from Cryptodome.Cipher import DES3
 from Cryptodome.Util.Padding import pad
 from app.modules.decoders import router
@@ -180,4 +182,54 @@ def test_putty_to_openssh_times_out(monkeypatch):
     monkeypatch.setattr(router.subprocess, "run", timeout)
     with pytest.raises(HTTPException) as exc:
         router.putty_to_openssh(PuttyKeyIn(ppk_content="PuTTY-User-Key-File-3: ssh-rsa\n"))
+    assert exc.value.status_code == 504
+
+
+def upload(content: bytes, filename: str = "lsass.dmp") -> UploadFile:
+    spooled = tempfile.SpooledTemporaryFile()
+    spooled.write(content)
+    spooled.seek(0)
+    return UploadFile(filename=filename, file=spooled)
+
+
+def test_pypykatz_lsass_reports_not_installed_without_the_binary(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: None)
+    result = asyncio.run(router.pypykatz_lsass(upload(b"MDMP fake dump")))
+    assert result == {"installed": False, "raw_output": ""}
+
+
+def test_pypykatz_lsass_runs_against_the_uploaded_dump(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/pypykatz")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        return SimpleNamespace(
+            stdout="== LogonSession ==\nusername: Administrator\nNThash: aad3b435b\n",
+            stderr="", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = asyncio.run(router.pypykatz_lsass(upload(b"MDMP fake dump", "blackfield_lsass.dmp")))
+    assert result["installed"] is True
+    assert "Administrator" in result["raw_output"]
+    assert captured["argv"][:3] == ["/usr/bin/pypykatz", "lsa", "minidump"]
+    assert captured["argv"][3].endswith("blackfield_lsass.dmp")
+
+
+def test_pypykatz_lsass_rejects_a_dump_over_the_size_limit(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/pypykatz")
+    monkeypatch.setattr(router, "LSASS_DUMP_MAX_BYTES", 10)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.pypykatz_lsass(upload(b"this is more than ten bytes")))
+    assert exc.value.status_code == 413
+
+
+def test_pypykatz_lsass_times_out(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/pypykatz")
+
+    def timeout(*args, **kwargs):
+        raise router.subprocess.TimeoutExpired(args[0], 120)
+    monkeypatch.setattr(router.subprocess, "run", timeout)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.pypykatz_lsass(upload(b"MDMP fake dump")))
     assert exc.value.status_code == 504

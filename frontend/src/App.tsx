@@ -23,6 +23,7 @@ import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
 import PuttyKeyConverter from "./PuttyKeyConverter";
+import PypykatzLsassPanel from "./PypykatzLsassPanel";
 import RecycleBinDecoder from "./RecycleBinDecoder";
 import GiteaHashFormatter from "./GiteaHashFormatter";
 import ReverseShellPanel from "./ReverseShellPanel";
@@ -1167,6 +1168,7 @@ export default function App() {
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <DpapiDecoderPanel />}
           {!!service && <PuttyKeyConverter />}
+          {!!service && <PypykatzLsassPanel />}
           {!!service && <RecycleBinDecoder />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}

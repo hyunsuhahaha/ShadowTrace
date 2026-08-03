@@ -5,13 +5,14 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from Cryptodome.Cipher import DES3
 from Cryptodome.Util.Padding import unpad
 from .schemas import DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn
 
 router = APIRouter(prefix="/api/decoders", tags=["Decoders"])
 DPAPI_KEY_PATTERN = re.compile(r"Decrypted key:\s*0x([0-9a-fA-F]+)")
+LSASS_DUMP_MAX_BYTES = 300 * 1024 * 1024
 
 
 def decrypt_roundcube_des(key: str, value: str) -> str | None:
@@ -127,4 +128,29 @@ def putty_to_openssh(body: PuttyKeyIn):
     return {
         "installed": True, "private_key": private_key,
         "stderr": completed.stderr[:5_000], "exit_code": completed.returncode,
+    }
+
+
+@router.post("/pypykatz-lsass")
+async def pypykatz_lsass(file: UploadFile = File(...)):
+    """A dumped lsass.exe process (procdump, comsvcs.dll MiniDump, Task
+    Manager, etc.) is a full Mimikatz-format minidump — pypykatz is a pure
+    Python re-implementation of the same MSV/wdigest/Kerberos/DPAPI secret
+    extraction, so this wraps it rather than reimplementing minidump
+    parsing. Unlike the other decoders, the dump is uploaded as a file (it's
+    binary and can run to hundreds of MB), not pasted as base64 text."""
+    binary = shutil.which("pypykatz")
+    if not binary:
+        return {"installed": False, "raw_output": ""}
+    content = await file.read(LSASS_DUMP_MAX_BYTES + 1)
+    if len(content) > LSASS_DUMP_MAX_BYTES:
+        raise HTTPException(413, f"Dump exceeds the {LSASS_DUMP_MAX_BYTES // (1024 * 1024)}MB limit")
+    with tempfile.TemporaryDirectory() as tmp:
+        dump_path = Path(tmp) / (file.filename or "lsass.dmp")
+        dump_path.write_bytes(content)
+        completed = _run_tool([binary, "lsa", "minidump", str(dump_path)],
+                              "pypykatz", timeout=120)
+    return {
+        "installed": True, "raw_output": completed.stdout[:1_000_000],
+        "stderr": completed.stderr[:20_000], "exit_code": completed.returncode,
     }
