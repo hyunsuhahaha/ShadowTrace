@@ -226,6 +226,25 @@ def test_mssql_rid_brute_renders_with_manually_supplied_credentials():
     ]
     assert command == "nxc mssql 10.10.10.18 --port 1433 -u kevin -p 'iNa2we6haRj2gaw!' --rid-brute"
 
+def test_ike_scan_commands_render_for_isakmp_service():
+    commands = {item["id"] for item in catalog.commands_for("isakmp", 500, protocol="udp")}
+    assert {"ike-scan-info", "ike-scan-aggressive-pskcrack"} <= commands
+    item, command, argv = catalog.render("ike-scan-aggressive-pskcrack", {"host": "10.10.10.10"})
+    assert item["tool"] == "ike-scan"
+    assert argv == ["ike-scan", "-M", "-A", "--pskcrack=/dev/stdout", "10.10.10.10"]
+    assert command == "ike-scan -M -A --pskcrack=/dev/stdout 10.10.10.10"
+
+def test_tftp_get_file_is_hidden_from_the_generic_list_but_renders_with_a_path():
+    # like http-directory-fuzz, the target filename isn't nmap-derived, so
+    # this stays out of the auto-populated tftp list and needs render().
+    commands = {item["id"] for item in catalog.commands_for("tftp", 69, protocol="udp")}
+    assert "tftp-get-file" not in commands
+    item, command, argv = catalog.render("tftp-get-file", {
+        "host": "10.10.10.10", "path": "ciscortr.cfg"})
+    assert item["tool"] == "curl"
+    assert argv == ["curl", "-s", "tftp://10.10.10.10/ciscortr.cfg"]
+    assert command == "curl -s tftp://10.10.10.10/ciscortr.cfg"
+
 def test_current_auth_protocols_have_specific_reviewed_checks():
     expected = {
         ("smtp", 25, "tcp"): {"smtp-info", "smtp-default-audit"},

@@ -18,6 +18,7 @@ TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sud
 "impacket-lookupsid":"sudo apt install python3-impacket",
 "evil-winrm":"sudo apt install evil-winrm","xfreerdp":"sudo apt install freerdp2-x11",
 "hashcat":"sudo apt install hashcat","bloodhound-python":"sudo apt install bloodhound.py",
+"ike-scan":"sudo apt install ike-scan",
 "kerbrute":"apt에 없음 — https://github.com/ropnop/kerbrute/releases 에서 "
            "kerbrute_linux_amd64를 받아 PATH에 kerbrute로 저장"}
 @router.get("/api/system/status")

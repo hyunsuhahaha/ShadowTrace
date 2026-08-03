@@ -138,6 +138,17 @@ rsync:
   commands:
     - {id: rsync-modules, name: Rsync 공개 모듈 확인, description: 인증 없이 노출된 Rsync 모듈 목록을 확인합니다., command: "nmap -Pn -p{port} --script rsync-list-modules {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: rsync-default-audit, name: Rsync 기본 자격증명 제한 점검, description: Rsync 인증에 사용자 8개와 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script rsync-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed}
+ike:
+  display_name: IKE/IPsec
+  match: {services: [isakmp], ports: [500]}
+  commands:
+    - {id: ike-scan-info, name: IKE 기본 정보 확인, description: 지원되는 변환 집합(transform set)과 IKE 버전을 확인합니다 (Main 모드)., command: "ike-scan {host}", execution_mode: captured, risk: low, tool: ike-scan, sudo: false, output: text, policy: allowed}
+    - {id: ike-scan-aggressive-pskcrack, name: IKE Aggressive 모드 · PSK 해시 추출, description: Aggressive 모드가 활성화되어 있는지 확인하고, 활성화된 경우 hashcat -m 5400으로 대입 가능한 PSK 해시를 표준출력으로 바로 뽑아냅니다., command: "ike-scan -M -A --pskcrack=/dev/stdout {host}", execution_mode: captured, risk: medium, tool: ike-scan, sudo: false, output: text, policy: allowed}
+tftp:
+  display_name: TFTP
+  match: {services: [tftp], ports: [69]}
+  commands:
+    - {id: tftp-get-file, name: TFTP 파일 다운로드, description: "파일명을 알고 있을 때(예: Cisco 라우터 설정 파일) TFTP로 받아 표준출력에 그대로 표시합니다. Type 7로 인코딩된 비밀번호가 있다면 Cisco Type 7 디코더로 바로 이어 사용할 수 있습니다.", command: "curl -s tftp://{host}/{path}", execution_mode: captured, risk: low, tool: curl, sudo: false, output: text, policy: allowed, match: {services: [], ports: []}}
 unknown:
   display_name: Unknown
   match: {services: [unknown], ports: []}

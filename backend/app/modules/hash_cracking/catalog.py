@@ -47,6 +47,12 @@ HASH_MODES = [
     {"id": "werkzeug_pbkdf2", "name": "Werkzeug/Flask PBKDF2-SHA256", "mode": "10900",
      "example": "pbkdf2:sha256:600000$saltsalt$" + "a" * 64,
      "detect": r"^pbkdf2:sha256:\d+\$"},
+    {"id": "ike_psk", "name": "IKE-PSK (Aggressive Mode, SHA1)", "mode": "5400",
+     # ike-scan's own --pskcrack=/dev/stdout output is already hashcat -m
+     # 5400's native input line (colon-separated hex fields) — no reformatting
+     # needed, unlike the Werkzeug PBKDF2 mode above.
+     "example": "<init_cookie>:<resp_cookie>:<sa>:<nonce_i>:<nonce_r>:<ke_i>:<ke_r>:<hash_r>:1",
+     "detect": r"^[0-9a-fA-F]+(?::[0-9a-fA-F]+){6,}$"},
     {"id": "sha256", "name": "SHA256 (일반 체크섬)", "mode": "1400",
      "example": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
      "detect": r"^[0-9a-fA-F]{64}$"},
