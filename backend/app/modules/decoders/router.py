@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from Cryptodome.Cipher import DES3
 from Cryptodome.Util.Padding import unpad
-from .schemas import DpapiCredentialIn, DpapiMasterkeyIn, RoundcubeDesIn
+from .schemas import DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn
 
 router = APIRouter(prefix="/api/decoders", tags=["Decoders"])
 DPAPI_KEY_PATTERN = re.compile(r"Decrypted key:\s*0x([0-9a-fA-F]+)")
@@ -50,11 +50,15 @@ def roundcube_des(body: RoundcubeDesIn):
     return {"plaintext": decrypt_roundcube_des(body.key, body.value)}
 
 
-def _run_dpapi(argv: list[str]) -> subprocess.CompletedProcess:
+def _run_tool(argv: list[str], name: str, timeout: int = 30) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False)
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
-        raise HTTPException(504, "impacket-dpapi timed out after 30 seconds")
+        raise HTTPException(504, f"{name} timed out after {timeout} seconds")
+
+
+def _run_dpapi(argv: list[str]) -> subprocess.CompletedProcess:
+    return _run_tool(argv, "impacket-dpapi")
 
 
 @router.post("/dpapi-masterkey")
@@ -100,4 +104,27 @@ def dpapi_credential(body: DpapiCredentialIn):
     return {
         "installed": True, "raw_output": completed.stdout[:100_000],
         "stderr": completed.stderr[:20_000], "exit_code": completed.returncode,
+    }
+
+
+@router.post("/putty-to-openssh")
+def putty_to_openssh(body: PuttyKeyIn):
+    """A PuTTY .ppk private key (found in saved sessions, Pageant exports,
+    etc.) isn't directly usable with ssh/impacket — puttygen converts it to
+    OpenSSH format in one step, so this just wraps that rather than parsing
+    the .ppk format (which has three incompatible versions) by hand."""
+    binary = shutil.which("puttygen")
+    if not binary:
+        return {"installed": False, "private_key": None, "stderr": ""}
+    with tempfile.TemporaryDirectory() as tmp:
+        ppk_path = Path(tmp) / "key.ppk"
+        ppk_path.write_text(body.ppk_content, encoding="utf-8")
+        out_path = Path(tmp) / "key.openssh"
+        completed = _run_tool(
+            [binary, str(ppk_path), "-O", "private-openssh", "-o", str(out_path)],
+            "puttygen", timeout=15)
+        private_key = out_path.read_text(encoding="utf-8") if out_path.is_file() else None
+    return {
+        "installed": True, "private_key": private_key,
+        "stderr": completed.stderr[:5_000], "exit_code": completed.returncode,
     }

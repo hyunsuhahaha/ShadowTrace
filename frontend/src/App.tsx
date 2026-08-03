@@ -21,6 +21,7 @@ import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
+import PuttyKeyConverter from "./PuttyKeyConverter";
 import RecycleBinDecoder from "./RecycleBinDecoder";
 import GiteaHashFormatter from "./GiteaHashFormatter";
 import ReverseShellPanel from "./ReverseShellPanel";
@@ -1138,6 +1139,7 @@ export default function App() {
           {!!service && <ResponderPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <DpapiDecoderPanel />}
+          {!!service && <PuttyKeyConverter />}
           {!!service && <RecycleBinDecoder />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}

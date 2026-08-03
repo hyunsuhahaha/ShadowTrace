@@ -15,3 +15,7 @@ class DpapiMasterkeyIn(BaseModel):
 class DpapiCredentialIn(BaseModel):
     credential_b64: str = Field(min_length=1, max_length=2_000_000)
     key_hex: str = Field(min_length=1, max_length=200)
+
+
+class PuttyKeyIn(BaseModel):
+    ppk_content: str = Field(min_length=1, max_length=200_000)

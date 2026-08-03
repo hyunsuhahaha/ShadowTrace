@@ -1,4 +1,5 @@
 import base64
+from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
@@ -7,7 +8,7 @@ from Cryptodome.Util.Padding import pad
 from app.modules.decoders import router
 from app.modules.decoders.router import decrypt_roundcube_des, roundcube_des
 from app.modules.decoders.schemas import (
-    DpapiCredentialIn, DpapiMasterkeyIn, RoundcubeDesIn,
+    DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn,
 )
 
 KEY = "rcmail-!24ByteDESkey*Str"
@@ -130,3 +131,53 @@ def test_dpapi_credential_runs_with_the_supplied_key(monkeypatch):
     assert "steph.cooper_adm" in result["raw_output"]
     assert captured["argv"][:3] == ["/usr/bin/impacket-dpapi", "credential", "-file"]
     assert captured["argv"][-2:] == ["-key", "deadbeefcafebabe"]
+
+
+def test_putty_to_openssh_reports_not_installed_without_the_binary(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: None)
+    result = router.putty_to_openssh(PuttyKeyIn(ppk_content="PuTTY-User-Key-File-3: ssh-rsa\n"))
+    assert result == {"installed": False, "private_key": None, "stderr": ""}
+
+
+def test_putty_to_openssh_converts_and_returns_the_openssh_key(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/puttygen")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        out_path = Path(argv[-1])
+        out_path.write_text(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nfakekeydata\n-----END OPENSSH PRIVATE KEY-----\n",
+            encoding="utf-8")
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = router.putty_to_openssh(PuttyKeyIn(ppk_content="PuTTY-User-Key-File-3: ssh-rsa\n..."))
+    assert result["installed"] is True
+    assert "BEGIN OPENSSH PRIVATE KEY" in result["private_key"]
+    assert captured["argv"][2:4] == ["-O", "private-openssh"]
+    assert captured["argv"][0].endswith("puttygen") or captured["argv"][0] == "/usr/bin/puttygen"
+
+
+def test_putty_to_openssh_returns_none_key_when_conversion_fails(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/puttygen")
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="puttygen: unable to parse", returncode=1)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = router.putty_to_openssh(PuttyKeyIn(ppk_content="not a real key"))
+    assert result["installed"] is True
+    assert result["private_key"] is None
+    assert "unable to parse" in result["stderr"]
+
+
+def test_putty_to_openssh_times_out(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/puttygen")
+
+    def timeout(*args, **kwargs):
+        raise router.subprocess.TimeoutExpired(args[0], 15)
+    monkeypatch.setattr(router.subprocess, "run", timeout)
+    with pytest.raises(HTTPException) as exc:
+        router.putty_to_openssh(PuttyKeyIn(ppk_content="PuTTY-User-Key-File-3: ssh-rsa\n"))
+    assert exc.value.status_code == 504
