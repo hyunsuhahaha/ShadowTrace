@@ -59,15 +59,18 @@ export const profileLabel: Record<string, { name: string; description: string }>
   },
   full_tcp: {
     name: "전체 TCP 빠른 탐색",
-    description: "모든 TCP 포트 · 속도를 높여 불안정한 회선에서는 누락 가능",
+    description:
+      "모든 TCP 포트 · 속도를 높여 불안정한 회선에서는 누락 가능 · 완료 후 발견된 포트에 -sC -sV 상세 스캔을 자동으로 대기열에 추가 (sudo 필요)",
   },
   full_tcp_syn: {
     name: "전체 TCP 빠른 탐색 (sudo)",
-    description: "sudo nmap -Pn -p- --min-rate 1000 -T4 · Kali 비밀번호 필요",
+    description:
+      "sudo nmap -Pn -p- --min-rate 1000 -T4 · Kali 비밀번호 필요 · 완료 후 발견된 포트에 -sC -sV 상세 스캔을 자동으로 대기열에 추가",
   },
   full_tcp_balanced: {
     name: "전체 TCP 안정 탐색",
-    description: "모든 TCP 포트 · 속도는 느리지만 회선 상태에 맞춰 조절",
+    description:
+      "모든 TCP 포트 · 속도는 느리지만 회선 상태에 맞춰 조절 · 완료 후 발견된 포트에 -sC -sV 상세 스캔을 자동으로 대기열에 추가 (sudo 필요)",
   },
   selected_version: {
     name: "선택 포트 버전 확인",
