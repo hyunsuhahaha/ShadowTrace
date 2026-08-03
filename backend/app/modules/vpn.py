@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import os
 import re
 import secrets
@@ -34,6 +35,17 @@ _approvals: dict[str, dict] = {}
 
 class VpnApproval(BaseModel):
     approval_token: str = Field(min_length=32, max_length=200)
+
+
+class TargetDns(BaseModel):
+    ip: str
+
+
+def _validate_ipv4(value: str) -> str:
+    try:
+        return str(ipaddress.IPv4Address(value))
+    except ValueError:
+        raise HTTPException(400, "올바른 IPv4 주소가 아닙니다.")
 
 
 def _run(argv: list[str], timeout: int = 30) -> dict:
@@ -126,7 +138,17 @@ def _tun0_link_type() -> str:
     return ""
 
 
+def _target_dns(connection_uuid: str) -> str:
+    if not connection_uuid:
+        return ""
+    result = _run([
+        NMCLI, "-g", "ipv4.dns", "connection", "show", "uuid", connection_uuid],
+        timeout=3)
+    return result["stdout"].strip() if result["exit_code"] == 0 else ""
+
+
 def vpn_status() -> dict:
+    connection_uuid = _saved_uuid()
     operation = _status_operation()
     values = operation["stdout"].splitlines() if operation["exit_code"] == 0 else []
     state = values[1].lower() if len(values) > 1 else ""
@@ -138,6 +160,7 @@ def vpn_status() -> dict:
         "link_type": _tun0_link_type(),
         "routes": routes["stdout"].splitlines()[:8],
         "connection_name": values[0] if values else "",
+        "target_dns": _target_dns(connection_uuid),
         "operation": operation,
     }
 
@@ -255,5 +278,34 @@ def _disconnect() -> dict:
 def disconnect_vpn():
     operation = _disconnect()
     status = vpn_status(); status["operations"] = [operation]
+    return status
+
+
+@router.post("/dns")
+def set_target_dns(body: TargetDns):
+    ip = _validate_ipv4(body.ip)
+    connection_uuid = _saved_uuid()
+    if not connection_uuid:
+        raise HTTPException(409, "앱이 관리하는 VPN 연결이 없습니다. 먼저 VPN을 연결하세요.")
+    operations = [
+        _run([NMCLI, "connection", "modify", "uuid", connection_uuid,
+              "ipv4.dns", ip, "ipv4.dns-priority", "-1"]),
+        _run([NMCLI, "device", "reapply", "tun0"]),
+    ]
+    status = vpn_status(); status["operations"] = operations
+    return status
+
+
+@router.delete("/dns")
+def clear_target_dns():
+    connection_uuid = _saved_uuid()
+    if not connection_uuid:
+        raise HTTPException(409, "앱이 관리하는 VPN 연결이 없습니다.")
+    operations = [
+        _run([NMCLI, "connection", "modify", "uuid", connection_uuid,
+              "ipv4.dns", "", "ipv4.dns-priority", "0"]),
+        _run([NMCLI, "device", "reapply", "tun0"]),
+    ]
+    status = vpn_status(); status["operations"] = operations
     return status
 

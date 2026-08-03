@@ -161,3 +161,82 @@ def test_vpn_status_reports_link_type(monkeypatch):
     })
     status = vpn.vpn_status()
     assert status["link_type"] == "tun"
+
+
+def test_set_target_dns_rejects_invalid_ip(tmp_path, monkeypatch):
+    vpn_paths(tmp_path, monkeypatch)
+    with pytest.raises(HTTPException) as error:
+        vpn.set_target_dns(vpn.TargetDns(ip="not-an-ip"))
+    assert error.value.status_code == 400
+
+
+def test_set_target_dns_requires_an_app_managed_connection(tmp_path, monkeypatch):
+    vpn_paths(tmp_path, monkeypatch)
+    with pytest.raises(HTTPException) as error:
+        vpn.set_target_dns(vpn.TargetDns(ip="10.10.10.161"))
+    assert error.value.status_code == 409
+
+
+def test_set_target_dns_modifies_and_reapplies_the_vpn_connection(
+        tmp_path, monkeypatch):
+    folder = vpn_paths(tmp_path, monkeypatch)
+    connection_uuid = "12345678-1234-1234-1234-123456789abc"
+    folder.mkdir(parents=True, exist_ok=True)
+    vpn.UUID_FILE.write_text(connection_uuid)
+    calls = []
+
+    def run(argv, timeout=30):
+        calls.append(argv)
+        return {"action": argv[1], "argv": argv, "stdout": "", "stderr": "",
+                "exit_code": 0}
+
+    monkeypatch.setattr(vpn, "_run", run)
+    monkeypatch.setattr(vpn, "vpn_status", lambda: {"connected": True})
+    result = vpn.set_target_dns(vpn.TargetDns(ip="10.10.10.161"))
+    assert calls[0] == [
+        vpn.NMCLI, "connection", "modify", "uuid", connection_uuid,
+        "ipv4.dns", "10.10.10.161", "ipv4.dns-priority", "-1"]
+    assert calls[1] == [vpn.NMCLI, "device", "reapply", "tun0"]
+    assert [step["exit_code"] for step in result["operations"]] == [0, 0]
+
+
+def test_clear_target_dns_resets_the_vpn_connection(tmp_path, monkeypatch):
+    folder = vpn_paths(tmp_path, monkeypatch)
+    connection_uuid = "12345678-1234-1234-1234-123456789abc"
+    folder.mkdir(parents=True, exist_ok=True)
+    vpn.UUID_FILE.write_text(connection_uuid)
+    calls = []
+
+    def run(argv, timeout=30):
+        calls.append(argv)
+        return {"action": argv[1], "argv": argv, "stdout": "", "stderr": "",
+                "exit_code": 0}
+
+    monkeypatch.setattr(vpn, "_run", run)
+    monkeypatch.setattr(vpn, "vpn_status", lambda: {"connected": True})
+    vpn.clear_target_dns()
+    assert calls[0] == [
+        vpn.NMCLI, "connection", "modify", "uuid", connection_uuid,
+        "ipv4.dns", "", "ipv4.dns-priority", "0"]
+    assert calls[1] == [vpn.NMCLI, "device", "reapply", "tun0"]
+
+
+def test_vpn_status_reports_the_currently_applied_target_dns(
+        tmp_path, monkeypatch):
+    folder = vpn_paths(tmp_path, monkeypatch)
+    connection_uuid = "12345678-1234-1234-1234-123456789abc"
+    folder.mkdir(parents=True, exist_ok=True)
+    vpn.UUID_FILE.write_text(connection_uuid)
+    monkeypatch.setattr(vpn, "_status_operation", lambda: {
+        "action": "status", "argv": [], "stdout": "", "stderr": "", "exit_code": 0,
+    })
+    monkeypatch.setattr(vpn, "_tun0_link_type", lambda: "tun")
+
+    def run(argv, timeout=2):
+        if argv[1:4] == ["-g", "ipv4.dns", "connection"]:
+            return {"exit_code": 0, "stdout": "10.10.10.161\n"}
+        return {"action": "status", "argv": argv, "stdout": "", "stderr": "",
+                "exit_code": 0}
+
+    monkeypatch.setattr(vpn, "_run", run)
+    assert vpn.vpn_status()["target_dns"] == "10.10.10.161"

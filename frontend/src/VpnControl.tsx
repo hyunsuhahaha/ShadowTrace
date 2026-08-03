@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const api = async (path: string, init?: RequestInit) => {
@@ -10,11 +10,15 @@ const api = async (path: string, init?: RequestInit) => {
   return response.json();
 };
 
-export default function VpnControl() {
+export default function VpnControl({ targetIp }: { targetIp?: string }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [prepared, setPrepared] = useState<any>();
+  const [dnsIp, setDnsIp] = useState(targetIp || "");
+  useEffect(() => {
+    if (targetIp) setDnsIp(targetIp);
+  }, [targetIp]);
   const status = useQuery({
     queryKey: ["vpnStatus"],
     queryFn: () => api("/vpn/status"),
@@ -73,6 +77,38 @@ export default function VpnControl() {
     }
   };
 
+  const setDns = async () => {
+    if (!dnsIp.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await api("/vpn/dns", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ip: dnsIp.trim()}),
+      });
+      queryClient.setQueryData(["vpnStatus"], updated);
+      await queryClient.invalidateQueries({ queryKey: ["vpnStatus"] });
+    } catch (reason) {
+      setError(String(reason).replace(/^Error:\s*/, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearDns = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await api("/vpn/dns", { method: "DELETE" });
+      queryClient.setQueryData(["vpnStatus"], updated);
+      await queryClient.invalidateQueries({ queryKey: ["vpnStatus"] });
+    } catch (reason) {
+      setError(String(reason).replace(/^Error:\s*/, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className={`vpn ${vpn?.connected ? "ok" : ""}`}>
       <span className="dot" />
@@ -96,6 +132,28 @@ export default function VpnControl() {
           </button>
         )}
       </div>
+      {vpn?.connected && (
+        <div className="vpnDns">
+          {vpn.target_dns ? (
+            <>
+              <small>대상 DNS: {vpn.target_dns}</small>
+              <button disabled={busy} onClick={clearDns}>해제</button>
+            </>
+          ) : (
+            <>
+              <input
+                aria-label="대상 DC를 DNS로 지정"
+                placeholder="DC IP (예: 10.10.10.161)"
+                value={dnsIp}
+                onChange={(event) => setDnsIp(event.target.value)}
+              />
+              <button disabled={busy || !dnsIp.trim()} onClick={setDns}>
+                대상 DNS로 지정
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {error && <em role="alert">{error}</em>}
       {prepared && <div className="modal" role="dialog"
         aria-label="VPN 연결 승인">
