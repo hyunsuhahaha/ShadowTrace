@@ -81,6 +81,23 @@ export function parseFeroxbusterResults(output = ""): FuzzResult[] {
   return results;
 }
 
+export type VhostResult = { name: string; status: number; size: number };
+
+// ffuf's default (non-JSON) output prints one line per match:
+// "admin                   [Status: 200, Size: 154, Words: 10, Lines: 5, ...]"
+// The FUZZ word itself, not the full hostname, so callers reattach the
+// domain suffix that was fuzzed against.
+export function parseFfufVhostResults(output = ""): VhostResult[] {
+  const results: VhostResult[] = [];
+  const pattern = /^(\S+)\s+\[Status:\s*(\d+),\s*Size:\s*(\d+)/;
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(pattern);
+    if (!match) continue;
+    results.push({ name: match[1], status: Number(match[2]), size: Number(match[3]) });
+  }
+  return results;
+}
+
 // kerbrute userenum prints "[+] VALID USERNAME:\t user@REALM" to stdout for
 // every account that answers Kerberos pre-auth; everything else is log noise.
 export function parseKerbruteResults(output = ""): string[] {

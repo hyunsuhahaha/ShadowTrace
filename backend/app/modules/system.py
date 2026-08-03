@@ -8,6 +8,7 @@ router = APIRouter()
 TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sudo apt install wget",
 "whatweb":"sudo apt install whatweb","gobuster":"sudo apt install gobuster","feroxbuster":"sudo apt install feroxbuster",
 "nikto":"sudo apt install nikto","smbclient":"sudo apt install smbclient","enum4linux-ng":"sudo apt install enum4linux-ng",
+"ffuf":"sudo apt install ffuf",
 "netexec":"sudo apt install netexec","rpcclient":"sudo apt install smbclient","dig":"sudo apt install dnsutils",
 "snmpwalk":"sudo apt install snmp","showmount":"sudo apt install nfs-common","ftp":"sudo apt install ftp",
 "ssh":"sudo apt install openssh-client","searchsploit":"sudo apt install exploitdb",

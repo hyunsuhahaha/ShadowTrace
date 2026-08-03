@@ -11,6 +11,7 @@ import { getCredentialAuditProfile } from "./credentialAudit";
 import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
+import VhostFuzzPanel from "./VhostFuzzPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
@@ -676,6 +677,18 @@ export default function App() {
       variables: {wordlist},
     });
   };
+  const runVhostFuzz = (domain: string, wordlist: string) => {
+    if (!target || !service || !domain.trim() || !wordlist.trim()) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "http-vhost-fuzz",
+      preview: `ffuf -u ${scheme}://${target.ip}:${service.port}/` +
+        ` -H "Host: FUZZ.${domain}" -w ${wordlist} -mc all -t 40`,
+      target_level: false,
+      variables: {domain, wordlist},
+    });
+  };
   const runKerbruteEnum = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
     setRunWithSudo(false);
@@ -1119,6 +1132,13 @@ export default function App() {
               runState={runStates["http-directory-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runDirectoryFuzz}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <VhostFuzzPanel target={target}
+              runState={runStates["http-vhost-fuzz"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runVhostFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (

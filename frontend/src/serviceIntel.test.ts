@@ -3,6 +3,7 @@ import {
   keepSelectedService,
   missingServiceFacts,
   parseFeroxbusterResults,
+  parseFfufVhostResults,
   parseKerbruteResults,
   parseNetexecSprayHits,
   parseSecretsdumpHashes,
@@ -165,6 +166,26 @@ describe("service investigation summary", () => {
 
   it("returns no usernames from output with no matches", () => {
     expect(parseKerbruteResults("Using KDC(s):\n\t10.10.10.10:88\n")).toEqual([]);
+  });
+
+  it("extracts hostname/status/size from ffuf's default vhost output", () => {
+    const output = [
+      "",
+      "       /'___\\  /'___\\           /'___\\       ",
+      ":: Progress: [5000/5000] :: Job [1/1] :: 200 req/sec",
+      "",
+      "admin                   [Status: 200, Size: 1543, Words: 120, Lines: 40, Duration: 45ms]",
+      "wiki                    [Status: 200, Size: 8821, Words: 900, Lines: 210, Duration: 51ms]",
+      ":: Progress: [5000/5000] :: Job [1/1] :: 200 req/sec :: Errors: 0 ::",
+    ].join("\n");
+    expect(parseFfufVhostResults(output)).toEqual([
+      { name: "admin", status: 200, size: 1543 },
+      { name: "wiki", status: 200, size: 8821 },
+    ]);
+  });
+
+  it("returns no vhost results from output with no matches", () => {
+    expect(parseFfufVhostResults(":: Progress: [0/5000] ::\n")).toEqual([]);
   });
 
   it("extracts only [+] hit lines from a netexec spray run", () => {
