@@ -18,6 +18,7 @@ TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sud
 "impacket-secretsdump":"sudo apt install python3-impacket",
 "impacket-lookupsid":"sudo apt install python3-impacket",
 "impacket-ticketer":"sudo apt install python3-impacket",
+"impacket-dpapi":"sudo apt install python3-impacket",
 "evil-winrm":"sudo apt install evil-winrm","xfreerdp":"sudo apt install freerdp2-x11",
 "hashcat":"sudo apt install hashcat","bloodhound-python":"sudo apt install bloodhound.py",
 "ike-scan":"sudo apt install ike-scan",

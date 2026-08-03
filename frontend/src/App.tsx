@@ -20,6 +20,7 @@ import SilverTicketPanel from "./SilverTicketPanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
+import DpapiDecoderPanel from "./DpapiDecoderPanel";
 import ReverseShellPanel from "./ReverseShellPanel";
 import ChiselPivotPanel from "./ChiselPivotPanel";
 import SmbShareResults from "./SmbShareResults";
@@ -1131,6 +1132,7 @@ export default function App() {
             onStartListener={(port) => void openListenerShell(port)} />}
           {!!service && <ChiselPivotPanel
             onStartListener={(command) => void openManualShell(command)} />}
+          {!!service && <DpapiDecoderPanel />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
             shares={smbShares} activeShare={lastSpiderShare}
