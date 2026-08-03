@@ -59,7 +59,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     assert ids == {
         "ntlm", "netntlmv2", "kerberoast", "asreproast", "linux_sha512crypt",
         "linux_md5crypt", "bcrypt", "winzip", "sevenzip", "rar5", "wpa",
-        "sha256", "md5",
+        "werkzeug_pbkdf2", "sha256", "md5",
     }
     by_id = {item["id"]: item["mode"] for item in catalog.HASH_MODES}
     assert by_id["md5"] == "0"
@@ -79,6 +79,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     ("$7z$2$19$0$salt", "sevenzip"),
     ("$rar5$16$salt$15$iv$8$checksum", "rar5"),
     ("WPA*02*deadbeef*aabbccddeeff*112233445566*essid***", "wpa"),
+    ("pbkdf2:sha256:600000$abc123$deadbeef", "werkzeug_pbkdf2"),
     ("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8", "sha256"),
     ("5f4dcc3b5aa765d61d8327deb882cf99", "md5"),
     ("not a recognizable hash", None),
@@ -86,6 +87,40 @@ def test_catalog_covers_the_common_oscp_hash_families():
 ])
 def test_detect_hash_mode_matches_known_formats(sample, expected):
     assert catalog.detect_hash_mode(sample) == expected
+
+
+def test_werkzeug_pbkdf2_line_is_reencoded_to_hashcat_mode_10900_format():
+    import base64
+    # Werkzeug's own storage string: pbkdf2:sha256:<iter>$<ascii salt>$<hex digest>
+    line = "pbkdf2:sha256:600000$AMtzteQIG7yAbZIa$" + "0673ad90a0b4afb19d662336f0fce3a9" * 2
+    converted = catalog.to_hashcat_line("werkzeug_pbkdf2", line)
+    scheme, iterations, salt_b64, hash_b64 = converted.split(":")
+    assert scheme == "sha256"
+    assert iterations == "600000"
+    assert base64.b64decode(salt_b64) == b"AMtzteQIG7yAbZIa"
+    assert base64.b64decode(hash_b64).hex() == "0673ad90a0b4afb19d662336f0fce3a9" * 2
+    # a mode with no registered transform (or a line that doesn't match the
+    # expected shape) passes through unchanged
+    assert catalog.to_hashcat_line("ntlm", "aad3b435:31d6cfe0") == "aad3b435:31d6cfe0"
+    assert catalog.to_hashcat_line("werkzeug_pbkdf2", "not-the-right-shape") == \
+        "not-the-right-shape"
+
+
+def test_create_job_reencodes_werkzeug_hashes_before_writing_the_hash_file(
+        wordlist, tmp_path, monkeypatch):
+    from app.modules.hash_cracking import router as router_module
+    monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    line = "pbkdf2:sha256:600000$AMtzteQIG7yAbZIa$" + "0673ad90a0b4afb19d662336f0fce3a9" * 2
+    job = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="werkzeug_pbkdf2",
+        hashes=line, wordlist_id="test_list"), db)
+    assert job.hash_mode == "10900"
+    folder = router_module.job_directory(project, target, job.id)
+    written = (folder / "hashes.txt").read_text(encoding="utf-8").strip()
+    assert written.startswith("sha256:600000:")
+    assert written != line
 
 
 def test_create_job_requires_known_hash_mode_and_wordlist(wordlist):

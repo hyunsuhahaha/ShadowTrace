@@ -88,7 +88,8 @@ def create_job(body: JobIn, db: Session = Depends(get_db)):
     hash_mode = catalog.HASH_MODE_INDEX.get(body.hash_mode_id)
     if not hash_mode:
         raise HTTPException(400, "Unknown hash_mode_id")
-    hash_lines = [line for line in body.hashes.splitlines() if line.strip()]
+    hash_lines = [catalog.to_hashcat_line(hash_mode["id"], line)
+                  for line in body.hashes.splitlines() if line.strip()]
     if not hash_lines:
         raise HTTPException(400, "No hash lines were provided")
 

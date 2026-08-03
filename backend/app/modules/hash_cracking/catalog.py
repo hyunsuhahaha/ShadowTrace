@@ -1,3 +1,4 @@
+import base64
 import re
 from pathlib import Path
 
@@ -43,6 +44,9 @@ HASH_MODES = [
      # Python's inline flag groups. hcxpcapngtool always emits "WPA" upper-case.
      "detect": r"^WPA\*0[12]\*",
      "example": "WPA*02*hash*mac_ap*mac_sta*essid***"},
+    {"id": "werkzeug_pbkdf2", "name": "Werkzeug/Flask PBKDF2-SHA256", "mode": "10900",
+     "example": "pbkdf2:sha256:600000$saltsalt$" + "a" * 64,
+     "detect": r"^pbkdf2:sha256:\d+\$"},
     {"id": "sha256", "name": "SHA256 (일반 체크섬)", "mode": "1400",
      "example": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
      "detect": r"^[0-9a-fA-F]{64}$"},
@@ -63,6 +67,37 @@ def detect_hash_mode(sample: str) -> str | None:
         if re.match(item["detect"], text):
             return item["id"]
     return None
+
+
+_WERKZEUG_PBKDF2 = re.compile(r"^pbkdf2:sha256:(\d+)\$([^$]+)\$([0-9a-fA-F]+)$")
+
+
+def _werkzeug_to_hashcat_10900(line: str) -> str:
+    """Werkzeug's own storage format (`pbkdf2:sha256:<iter>$<salt>$<hexhash>`,
+    salt as raw ASCII, digest as hex) isn't hashcat -m 10900's input format
+    (`sha256:<iter>:<b64 salt>:<b64 hash>`) — hashcat would just reject the
+    line as-is, so every hash of this mode is re-encoded before being
+    written to hashes.txt."""
+    match = _WERKZEUG_PBKDF2.match(line.strip())
+    if not match:
+        return line
+    iterations, salt, hexhash = match.groups()
+    salt_b64 = base64.b64encode(salt.encode()).decode()
+    hash_b64 = base64.b64encode(bytes.fromhex(hexhash)).decode()
+    return f"sha256:{iterations}:{salt_b64}:{hash_b64}"
+
+
+# Per-mode re-encoders for hash formats whose natural/pasted form isn't
+# already what hashcat expects on the command line (most modes need none —
+# NTLM, kerberoast, etc. are pasted in hashcat's own native format).
+HASH_LINE_TRANSFORMS = {
+    "werkzeug_pbkdf2": _werkzeug_to_hashcat_10900,
+}
+
+
+def to_hashcat_line(hash_mode_id: str, line: str) -> str:
+    transform = HASH_LINE_TRANSFORMS.get(hash_mode_id)
+    return transform(line) if transform else line
 
 CANDIDATE_WORDLISTS = [
     {"id": "rockyou", "name": "rockyou.txt", "path": "/usr/share/wordlists/rockyou.txt",
