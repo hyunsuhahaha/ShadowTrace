@@ -191,6 +191,25 @@ def test_interactive_command_preview_renders_service_variables():
     assert share_command == "smbclient //10.0.0.4/'Work Shares' -N -p 445"
     assert share_argv[1] == "//10.0.0.4/Work Shares"
 
+def test_kerbrute_userenum_is_hidden_from_the_generic_list_but_renders_with_extra_variables():
+    # domain/wordlist aren't nmap-derived, so — like http-directory-fuzz — this
+    # command must stay out of commands_for()'s auto-populated list and only be
+    # reachable through a direct catalog.render() call that supplies them.
+    commands = {item["id"] for item in catalog.commands_for("kerberos-sec", 88)}
+    assert "kerberos-user-enum-kerbrute" not in commands
+    item, command, argv = catalog.render("kerberos-user-enum-kerbrute", {
+        "host": "10.10.10.10", "domain": "corp.local",
+        "wordlist": "/usr/share/seclists/Usernames/top-usernames-shortlist.txt",
+    })
+    assert item["tool"] == "kerbrute"
+    assert argv == [
+        "kerbrute", "userenum", "-d", "corp.local", "--dc", "10.10.10.10",
+        "/usr/share/seclists/Usernames/top-usernames-shortlist.txt",
+    ]
+    assert command == (
+        "kerbrute userenum -d corp.local --dc 10.10.10.10 "
+        "/usr/share/seclists/Usernames/top-usernames-shortlist.txt")
+
 def test_current_auth_protocols_have_specific_reviewed_checks():
     expected = {
         ("smtp", 25, "tcp"): {"smtp-info", "smtp-default-audit"},
