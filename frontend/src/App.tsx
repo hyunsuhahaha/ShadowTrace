@@ -37,6 +37,8 @@ import {
   summarizeExecutionResult,
 } from "./serviceIntel";
 import {
+  impacketAuthArgs,
+  isNtlmHash,
   shellQuote,
   type Project,
   type RunState,
@@ -536,15 +538,15 @@ export default function App() {
   };
   const openPsexecShell = async () => {
     if (!target) return;
-    const identity = [credStore.domain, credStore.username].filter(Boolean).join("/")
-      + (credStore.password ? `:${credStore.password}` : "") + "@" + target.ip;
-    await openManualShell(`impacket-psexec ${shellQuote(identity)}`);
+    const auth = impacketAuthArgs(
+      credStore.domain, credStore.username, credStore.password, target.ip);
+    await openManualShell(`impacket-psexec ${auth}`);
   };
   const openLateralShell = async (tool: "wmiexec" | "smbexec" | "atexec") => {
     if (!target) return;
-    const identity = [credStore.domain, credStore.username].filter(Boolean).join("/")
-      + (credStore.password ? `:${credStore.password}` : "") + "@" + target.ip;
-    await openManualShell(`impacket-${tool} ${shellQuote(identity)}`);
+    const auth = impacketAuthArgs(
+      credStore.domain, credStore.username, credStore.password, target.ip);
+    await openManualShell(`impacket-${tool} ${auth}`);
   };
   const openSshShell = async () => {
     if (!target || !service || !credStore.username.trim()) return;
@@ -554,9 +556,11 @@ export default function App() {
   };
   const openEvilWinrmShell = async () => {
     if (!target || !credStore.username.trim()) return;
+    const secretFlag = isNtlmHash(credStore.password)
+      ? `-H ${shellQuote(credStore.password.trim())}`
+      : `-p ${shellQuote(credStore.password)}`;
     await openManualShell(
-      `evil-winrm -i ${target.ip} -u ${shellQuote(credStore.username)}` +
-      ` -p ${shellQuote(credStore.password)}`,
+      `evil-winrm -i ${target.ip} -u ${shellQuote(credStore.username)} ${secretFlag}`,
     );
   };
   const copyXfreerdpCommand = async () => {
@@ -569,11 +573,10 @@ export default function App() {
   };
   const openMssqlShell = async () => {
     if (!target || !service || !credStore.username.trim()) return;
-    const auth = credStore.domain
-      ? `${credStore.domain}/${credStore.username}:${credStore.password}@${target.ip}`
-      : `${credStore.username}:${credStore.password}@${target.ip}`;
+    const auth = impacketAuthArgs(
+      credStore.domain, credStore.username, credStore.password, target.ip);
     await openManualShell(
-      `impacket-mssqlclient ${shellQuote(auth)} -port ${service.port}`,
+      `impacket-mssqlclient ${auth} -port ${service.port}`,
     );
   };
   const openHashcatShell = (mode: string = "kerberoast") => {

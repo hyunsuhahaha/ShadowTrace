@@ -49,6 +49,25 @@ export type RunState = {
 export const shellQuote = (value: string) =>
   `'${value.replace(/'/g, "'\\''")}'`;
 
+// A bare 32-hex string in the password field is almost certainly an NTLM
+// hash (e.g. dumped via DCSync), not a literal password — swap tools to
+// pass-the-hash instead of asking them to authenticate with the hash text
+// as if it were the password itself, which would just fail.
+export const isNtlmHash = (value: string) => /^[0-9a-fA-F]{32}$/.test(value.trim());
+
+// impacket tools take "[domain/]user[:password]@host" normally, but
+// pass-the-hash drops the password from that string entirely and moves it
+// into a separate "-hashes :NTHASH" argument.
+export const impacketAuthArgs = (
+  domain: string, username: string, secret: string, host: string,
+): string => {
+  const userPart = [domain, username].filter(Boolean).join("/");
+  if (isNtlmHash(secret)) {
+    return `${shellQuote(`${userPart}@${host}`)} -hashes ${shellQuote(`:${secret.trim()}`)}`;
+  }
+  return shellQuote(`${userPart}${secret ? `:${secret}` : ""}@${host}`);
+};
+
 export const sourceLabel: Record<string, string> = {
   manual: "직접 입력",
   "share-file": "공유 파일",
