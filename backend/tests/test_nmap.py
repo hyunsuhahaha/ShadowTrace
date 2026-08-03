@@ -210,6 +210,22 @@ def test_kerbrute_userenum_is_hidden_from_the_generic_list_but_renders_with_extr
         "kerbrute userenum -d corp.local --dc 10.10.10.10 "
         "/usr/share/seclists/Usernames/top-usernames-shortlist.txt")
 
+def test_mssql_rid_brute_renders_with_manually_supplied_credentials():
+    # Like the netexec credential-check entry it sits next to, this needs a
+    # username/password the operator supplies, so it stays out of the
+    # ms-sql-s auto-populated list and is only reachable via render().
+    commands = {item["id"] for item in catalog.commands_for("ms-sql-s", 1433)}
+    assert "mssql-rid-brute-netexec" not in commands
+    item, command, argv = catalog.render("mssql-rid-brute-netexec", {
+        "host": "10.10.10.18", "port": "1433", "username": "kevin", "password": "iNa2we6haRj2gaw!",
+    })
+    assert item["tool"] == "netexec"
+    assert argv == [
+        "nxc", "mssql", "10.10.10.18", "--port", "1433",
+        "-u", "kevin", "-p", "iNa2we6haRj2gaw!", "--rid-brute",
+    ]
+    assert command == "nxc mssql 10.10.10.18 --port 1433 -u kevin -p 'iNa2we6haRj2gaw!' --rid-brute"
+
 def test_current_auth_protocols_have_specific_reviewed_checks():
     expected = {
         ("smtp", 25, "tcp"): {"smtp-info", "smtp-default-audit"},

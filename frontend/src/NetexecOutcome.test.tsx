@@ -7,7 +7,8 @@ afterEach(cleanup);
 
 const actions = {openPsexec: vi.fn(), openLateral: vi.fn(), openSsh: vi.fn(),
   openWinrm: vi.fn(), copyRdp: vi.fn(), openMssql: vi.fn(), openHashcat: vi.fn(),
-  openLookupsid: vi.fn(), captureEvidence: vi.fn(), promoteFinding: vi.fn()};
+  openLookupsid: vi.fn(), openMssqlRidBrute: vi.fn(),
+  captureEvidence: vi.fn(), promoteFinding: vi.fn()};
 
 it("offers explicit post-auth actions for an SMB admin result", () => {
   render(<NetexecOutcome protocol="smb" username="admin" domain="LAB"
@@ -25,4 +26,13 @@ it("offers SID-cycling enumeration for any successful SMB login, not just local 
       stdout: "[+] WORKGROUP\\hazard:stealth1agent"}} />);
   fireEvent.click(screen.getByText("SID 순환으로 사용자 열거 (lookupsid)"));
   expect(actions.openLookupsid).toHaveBeenCalledOnce();
+});
+
+it("offers RID-brute enumeration for a successful MS SQL login", () => {
+  render(<NetexecOutcome protocol="mssql" username="kevin" domain=""
+    evidenceMsg="" actions={actions} result={{id: 14, templateId: "mssql-check",
+      name: "MSSQL", status: "completed", startedAt: 0,
+      stdout: "[+] eighteen.htb\\kevin:iNa2we6haRj2gaw!"}} />);
+  fireEvent.click(screen.getByText("RID 순환으로 사용자 열거 (--rid-brute)"));
+  expect(actions.openMssqlRidBrute).toHaveBeenCalledOnce();
 });

@@ -768,6 +768,17 @@ export default function App() {
       },
     });
   };
+  const runMssqlRidBrute = () => {
+    if (!target || !service || !credStore.username.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "mssql-rid-brute-netexec",
+      preview: `nxc mssql ${target.ip} --port ${service.port}` +
+        ` -u ${credStore.username} -p *** --rid-brute`,
+      target_level: false,
+      variables: {username: credStore.username, password: credStore.password},
+    });
+  };
   const togglePrivescServer = async () => {
     setPrivescServerBusy(true);
     try {
@@ -1155,6 +1166,7 @@ export default function App() {
                   openMssql: () => void openMssqlShell(),
                   openHashcat: () => void openHashcatShell(),
                   openLookupsid: () => void runLookupsid(),
+                  openMssqlRidBrute: () => void runMssqlRidBrute(),
                   captureEvidence: (execution, title) => void captureEvidence(
                     execution, title, "sensitive"),
                   promoteFinding: (execution, title, description) => void promoteToFinding(
