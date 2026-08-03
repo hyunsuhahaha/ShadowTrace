@@ -7,7 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from .database import SessionLocal, ensure_compatible_schema
 from .executor import reconcile_completed_observations, shutdown_executions
 from .models import (
-    AppSetting, AuditEvent, Execution, InteractiveSession, RemoteExecution, Tunnel,
+    AppSetting, AuditEvent, Execution, HashCrackJob, InteractiveSession, RemoteExecution,
+    Tunnel,
 )
 from .nmap_parser import parse_nmap
 from .modules.scan_center.router import router as scan_router
@@ -35,6 +36,8 @@ from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
 from .modules.post_exploitation.router import router as post_exploitation_router
 from .modules.post_exploitation.manager import manager as post_exploitation_manager
+from .modules.hash_cracking.router import router as hash_cracking_router
+from .modules.hash_cracking.manager import manager as hash_cracking_manager
 from .modules.privesc_analysis.router import router as privesc_analysis_router
 from .modules.core.router import (
     delete_project,
@@ -78,6 +81,10 @@ async def lifespan(_: FastAPI):
                 RemoteExecution.status.in_(("prepared","running"))):
             row.status="failed";row.error="Application restarted"
             row.ended_at=utcnow()
+        for row in db.query(HashCrackJob).filter(
+                HashCrackJob.status.in_(("prepared","running"))):
+            row.status="failed";row.error="Application restarted"
+            row.ended_at=utcnow()
         db.commit()
         reconcile_completed_observations(db)
     yield
@@ -86,6 +93,7 @@ async def lifespan(_: FastAPI):
     await pty_manager.shutdown()
     await tunnel_manager.shutdown()
     await post_exploitation_manager.shutdown()
+    await hash_cracking_manager.shutdown()
     shutdown_local_runs()
     stop_privesc_server()
 
@@ -106,6 +114,7 @@ app.include_router(runbook_execution_router)
 app.include_router(runbook_credentials_router)
 app.include_router(service_intelligence_router)
 app.include_router(post_exploitation_router)
+app.include_router(hash_cracking_router)
 app.include_router(privesc_analysis_router)
 app.include_router(core_router)
 app.include_router(execution_router)

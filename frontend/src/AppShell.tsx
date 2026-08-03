@@ -26,6 +26,7 @@ const pages = [
       { route: "exploit-research", step: "04", label: "Exploit Research", detail: "후보와 PoC 기록" },
       { route: "runbooks", step: "", label: "Runbooks", detail: "방법론과 수행 진행률" },
       { route: "post-exploitation", step: "", label: "Post-Exploitation", detail: "자격 증명 헌팅" },
+      { route: "hash-cracking", step: "", label: "Hash Cracking", detail: "탈취한 해시 크래킹" },
     ],
   },
   {
