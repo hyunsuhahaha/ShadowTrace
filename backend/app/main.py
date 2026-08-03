@@ -35,6 +35,7 @@ from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
 from .modules.post_exploitation.router import router as post_exploitation_router
 from .modules.post_exploitation.manager import manager as post_exploitation_manager
+from .modules.privesc_analysis.router import router as privesc_analysis_router
 from .modules.core.router import (
     delete_project,
     ensure_target,
@@ -105,6 +106,7 @@ app.include_router(runbook_execution_router)
 app.include_router(runbook_credentials_router)
 app.include_router(service_intelligence_router)
 app.include_router(post_exploitation_router)
+app.include_router(privesc_analysis_router)
 app.include_router(core_router)
 app.include_router(execution_router)
 app.include_router(session_router)
