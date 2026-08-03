@@ -292,6 +292,20 @@ def test_gmsa_password_netexec_renders_with_manually_supplied_credentials():
     assert item["tool"] == "netexec"
     assert argv == ["nxc", "ldap", "10.10.11.x", "-u", "alfred", "-p", "basketball", "--gmsa"]
 
+def test_git_exposure_commands_render_for_the_generic_http_list():
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert {"git-head-check", "git-dumper-clone"} <= commands
+    item, command, argv = catalog.render("git-head-check", {
+        "scheme": "http", "host": "10.10.11.58", "port": "80"})
+    assert item["tool"] == "curl"
+    assert command == "curl -s http://10.10.11.58:80/.git/HEAD"
+    item, command, argv = catalog.render("git-dumper-clone", {
+        "scheme": "http", "host": "10.10.11.58", "port": "80",
+        "output_dir": "/tmp/proj/outputs"})
+    assert item["tool"] == "git-dumper"
+    assert argv == [
+        "git-dumper", "http://10.10.11.58:80/.git/", "/tmp/proj/outputs/git-dump"]
+
 def test_current_auth_protocols_have_specific_reviewed_checks():
     expected = {
         ("smtp", 25, "tcp"): {"smtp-info", "smtp-default-audit"},
