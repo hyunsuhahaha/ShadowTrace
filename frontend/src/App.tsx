@@ -16,6 +16,7 @@ import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
 import DomainDominancePanel from "./DomainDominancePanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
+import ReverseShellPanel from "./ReverseShellPanel";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
 import ExecutionHistory from "./ExecutionHistory";
@@ -549,6 +550,10 @@ export default function App() {
       credStore.domain, credStore.username, credStore.password, target.ip);
     await openManualShell(`impacket-${tool} ${auth}`);
   };
+  const openListenerShell = async (port: string) => {
+    if (!targetId || !serviceId || !port.trim()) return;
+    await openManualShell(`nc -lvnp ${port.trim()}`);
+  };
   const openSshShell = async () => {
     if (!target || !service || !credStore.username.trim()) return;
     await openManualShell(
@@ -1066,6 +1071,8 @@ export default function App() {
             onReview={reviewCommand}
           />
           <ManualGuidance serviceName={service?.name} guidance={guidance} />
+          {!!service && <ReverseShellPanel
+            onStartListener={(port) => void openListenerShell(port)} />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
             shares={smbShares} activeShare={lastSpiderShare}
