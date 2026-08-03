@@ -22,6 +22,7 @@ import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
 import RecycleBinDecoder from "./RecycleBinDecoder";
+import GiteaHashFormatter from "./GiteaHashFormatter";
 import ReverseShellPanel from "./ReverseShellPanel";
 import ChiselPivotPanel from "./ChiselPivotPanel";
 import ResponderPanel from "./ResponderPanel";
@@ -1215,6 +1216,9 @@ export default function App() {
           )}
           {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
             <RoundcubeDesDecoder />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <GiteaHashFormatter />
           )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"
