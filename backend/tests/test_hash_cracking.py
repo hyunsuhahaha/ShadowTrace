@@ -60,7 +60,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
         "ntlm", "netntlmv2", "kerberoast", "asreproast", "linux_sha512crypt",
         "linux_md5crypt", "bcrypt", "winzip", "sevenzip", "rar5", "wpa",
         "ms_office_2007", "ms_office_2010", "ms_office_2013", "keepass", "sha256_salt_pass",
-        "werkzeug_pbkdf2", "ike_psk", "sha256", "md5",
+        "werkzeug_pbkdf2", "pbkdf2_sha256_generic", "ike_psk", "sha256", "md5",
     }
     by_id = {item["id"]: item["mode"] for item in catalog.HASH_MODES}
     assert by_id["md5"] == "0"
@@ -86,6 +86,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     ("$office$*2013*100000*256*16*salt*hash*verifier", "ms_office_2013"),
     ("WPA*02*deadbeef*aabbccddeeff*112233445566*essid***", "wpa"),
     ("pbkdf2:sha256:600000$abc123$deadbeef", "werkzeug_pbkdf2"),
+    ("sha256:50000:c2FsdHNhbHQ=:aGFzaGhhc2g=", "pbkdf2_sha256_generic"),
     ("aabbcc:112233:deadbeef:cafebabe:1122ff:aa11bb:cc22dd:ee33ff:1", "ike_psk"),
     ("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8", "sha256"),
     ("5f4dcc3b5aa765d61d8327deb882cf99", "md5"),

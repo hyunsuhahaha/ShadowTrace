@@ -66,6 +66,13 @@ HASH_MODES = [
     {"id": "werkzeug_pbkdf2", "name": "Werkzeug/Flask PBKDF2-SHA256", "mode": "10900",
      "example": "pbkdf2:sha256:600000$saltsalt$" + "a" * 64,
      "detect": r"^pbkdf2:sha256:\d+\$"},
+    {"id": "pbkdf2_sha256_generic", "name": "PBKDF2-HMAC-SHA256 (일반, 예: Gitea)", "mode": "10900",
+     # Already hashcat -m 10900's own native input line — no transform. This
+     # is what a Gitea `passwd`/`salt` hex column pair looks like once
+     # base64-re-encoded (see the Gitea hash formatter), distinct from
+     # Werkzeug's own on-disk string format above.
+     "example": "sha256:50000:c2FsdHNhbHQ=:" + "aGFzaGhhc2g=",
+     "detect": r"^sha256:\d+:"},
     {"id": "ike_psk", "name": "IKE-PSK (Aggressive Mode, SHA1)", "mode": "5400",
      # ike-scan's own --pskcrack=/dev/stdout output is already hashcat -m
      # 5400's native input line (colon-separated hex fields) — no reformatting
