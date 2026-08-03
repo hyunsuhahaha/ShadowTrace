@@ -38,6 +38,18 @@ HASH_MODES = [
      "example": "$7z$2$19$0$salt$8$iv$...", "detect": r"^\$7z\$"},
     {"id": "rar5", "name": "RAR5", "mode": "13000",
      "example": "$rar5$16$salt$15$iv$8$checksum", "detect": r"^\$rar5\$"},
+    # office2john.py (from the john project) writes the version into the hash
+    # itself ($office$*2007*..., *2010*, *2013*), so each version gets its
+    # own hashcat -m number and its own detect regex on that field.
+    {"id": "ms_office_2007", "name": "MS Office 2007", "mode": "9400",
+     "example": "$office$*2007*20*128*16*salt*hash*verifier",
+     "detect": r"^\$office\$\*2007\*"},
+    {"id": "ms_office_2010", "name": "MS Office 2010", "mode": "9500",
+     "example": "$office$*2010*100000*128*16*salt*hash*verifier",
+     "detect": r"^\$office\$\*2010\*"},
+    {"id": "ms_office_2013", "name": "MS Office 2013+", "mode": "9600",
+     "example": "$office$*2013*100000*256*16*salt*hash*verifier",
+     "detect": r"^\$office\$\*2013\*"},
     {"id": "wpa", "name": "WPA-PBKDF2 (PMKID/EAPOL)", "mode": "22000",
      # No inline (?i) here: this pattern is reused verbatim as a JS RegExp
      # on the frontend for hash-mode auto-detection, and JS doesn't support
