@@ -19,6 +19,7 @@ import DomainDominancePanel from "./DomainDominancePanel";
 import SilverTicketPanel from "./SilverTicketPanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
+import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import ReverseShellPanel from "./ReverseShellPanel";
 import ChiselPivotPanel from "./ChiselPivotPanel";
 import SmbShareResults from "./SmbShareResults";
@@ -1192,6 +1193,9 @@ export default function App() {
           )}
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
             <GppCpasswordDecoder />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <RoundcubeDesDecoder />
           )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"

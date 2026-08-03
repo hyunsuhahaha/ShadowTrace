@@ -39,6 +39,7 @@ from .modules.post_exploitation.manager import manager as post_exploitation_mana
 from .modules.hash_cracking.router import router as hash_cracking_router
 from .modules.hash_cracking.manager import manager as hash_cracking_manager
 from .modules.privesc_analysis.router import router as privesc_analysis_router
+from .modules.decoders.router import router as decoders_router
 from .modules.core.router import (
     delete_project,
     ensure_target,
@@ -116,6 +117,7 @@ app.include_router(service_intelligence_router)
 app.include_router(post_exploitation_router)
 app.include_router(hash_cracking_router)
 app.include_router(privesc_analysis_router)
+app.include_router(decoders_router)
 app.include_router(core_router)
 app.include_router(execution_router)
 app.include_router(session_router)
