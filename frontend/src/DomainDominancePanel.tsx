@@ -27,18 +27,19 @@ const activeOf = (
 // generic reviewed-command list.
 export default function DomainDominancePanel({
   target, domain, username, password, bloodhoundRunState, dcsyncRunState,
-  gmsaRunState, serviceExecutions, evidenceMsg, onCollectBloodhound, onDcsync,
-  onGmsa, onCaptureEvidence, onFillCredential, onSaveHash, saveHashMsg,
+  gmsaRunState, lapsRunState, serviceExecutions, evidenceMsg, onCollectBloodhound,
+  onDcsync, onGmsa, onLaps, onCaptureEvidence, onFillCredential, onSaveHash, saveHashMsg,
 }: {
   target?: { ip: string };
   domain: string; username: string; password: string;
   bloodhoundRunState?: DomainOpRunState; dcsyncRunState?: DomainOpRunState;
-  gmsaRunState?: DomainOpRunState;
+  gmsaRunState?: DomainOpRunState; lapsRunState?: DomainOpRunState;
   serviceExecutions: DomainOpExecution[];
   evidenceMsg: string;
   onCollectBloodhound: () => void;
   onDcsync: () => void;
   onGmsa: () => void;
+  onLaps: () => void;
   onCaptureEvidence: (
     execution: { id: number; stdout?: string; stderr?: string }, title: string,
   ) => void;
@@ -49,9 +50,11 @@ export default function DomainDominancePanel({
   const bloodhound = activeOf(bloodhoundRunState, "ad-bloodhound-collect", serviceExecutions);
   const dcsync = activeOf(dcsyncRunState, "ad-dcsync-secretsdump", serviceExecutions);
   const gmsa = activeOf(gmsaRunState, "ad-gmsa-password-netexec", serviceExecutions);
+  const laps = activeOf(lapsRunState, "ad-laps-password-netexec", serviceExecutions);
   const bloodhoundBusy = ["starting", "running"].includes(bloodhound?.status || "");
   const dcsyncBusy = ["starting", "running"].includes(dcsync?.status || "");
   const gmsaBusy = ["starting", "running"].includes(gmsa?.status || "");
+  const lapsBusy = ["starting", "running"].includes(laps?.status || "");
   const hashes = parseSecretsdumpHashes(dcsync?.stdout || "");
   const ready = !!username.trim() && !!password.trim();
 
@@ -71,6 +74,9 @@ export default function DomainDominancePanel({
         </button>
         <button disabled={!ready || gmsaBusy} onClick={onGmsa}>
           {gmsaBusy ? "시도 중…" : "gMSA 비밀번호 추출"}
+        </button>
+        <button disabled={!ready || lapsBusy} onClick={onLaps}>
+          {lapsBusy ? "시도 중…" : "LAPS 비밀번호 조회"}
         </button>
       </div>
       {bloodhound?.status === "completed" && (
@@ -117,6 +123,16 @@ export default function DomainDominancePanel({
             )}>Evidence로 저장</button>
           </header>
           <pre>{gmsa.stdout}</pre>
+        </div>
+      )}
+      {laps?.status === "completed" && (
+        <div className="intruderResults">
+          <header><div><b>LAPS 조회 결과</b></div>
+            <button onClick={() => onCaptureEvidence(
+              laps, `LAPS 비밀번호 조회 · ${target?.ip}`,
+            )}>Evidence로 저장</button>
+          </header>
+          <pre>{laps.stdout}</pre>
         </div>
       )}
       {evidenceMsg && <p className="netexecEvidenceMsg">{evidenceMsg}</p>}

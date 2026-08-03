@@ -284,6 +284,14 @@ def test_vhost_fuzz_is_hidden_from_the_generic_list_but_renders_with_a_wordlist(
         'ffuf -u http://10.10.11.80:80/ -H "Host: FUZZ.editor.htb" '
         "-w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -t 40")
 
+def test_laps_password_netexec_renders_with_manually_supplied_credentials():
+    commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
+    assert "ad-laps-password-netexec" not in commands
+    item, command, argv = catalog.render("ad-laps-password-netexec", {
+        "host": "10.10.11.x", "username": "t.hackett", "password": "Password123"})
+    assert item["tool"] == "netexec"
+    assert argv == ["nxc", "ldap", "10.10.11.x", "-u", "t.hackett", "-p", "Password123", "--laps"]
+
 def test_gmsa_password_netexec_renders_with_manually_supplied_credentials():
     commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
     assert "ad-gmsa-password-netexec" not in commands
