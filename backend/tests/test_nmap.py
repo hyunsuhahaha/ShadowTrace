@@ -292,6 +292,14 @@ def test_gmsa_password_netexec_renders_with_manually_supplied_credentials():
     assert item["tool"] == "netexec"
     assert argv == ["nxc", "ldap", "10.10.11.x", "-u", "alfred", "-p", "basketball", "--gmsa"]
 
+def test_spring_actuator_commands_render_for_the_generic_http_list():
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert {"spring-actuator-check", "spring-actuator-env", "spring-actuator-sessions"} <= commands
+    _, command, argv = catalog.render("spring-actuator-sessions", {
+        "scheme": "http", "host": "10.10.11.10", "port": "8080"})
+    assert argv == ["curl", "-s", "http://10.10.11.10:8080/actuator/sessions"]
+    assert command == "curl -s http://10.10.11.10:8080/actuator/sessions"
+
 def test_git_exposure_commands_render_for_the_generic_http_list():
     commands = {item["id"] for item in catalog.commands_for("http", 80)}
     assert {"git-head-check", "git-dumper-clone"} <= commands
