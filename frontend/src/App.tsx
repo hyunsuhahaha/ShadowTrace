@@ -23,6 +23,7 @@ import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
 import ReverseShellPanel from "./ReverseShellPanel";
 import ChiselPivotPanel from "./ChiselPivotPanel";
+import ResponderPanel from "./ResponderPanel";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
 import ExecutionHistory from "./ExecutionHistory";
@@ -1131,6 +1132,8 @@ export default function App() {
           {!!service && <ReverseShellPanel
             onStartListener={(port) => void openListenerShell(port)} />}
           {!!service && <ChiselPivotPanel
+            onStartListener={(command) => void openManualShell(command)} />}
+          {!!service && <ResponderPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <DpapiDecoderPanel />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
