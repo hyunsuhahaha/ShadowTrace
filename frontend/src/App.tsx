@@ -16,6 +16,7 @@ import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
 import DomainDominancePanel from "./DomainDominancePanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
+import GppCpasswordDecoder from "./GppCpasswordDecoder";
 import ReverseShellPanel from "./ReverseShellPanel";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
@@ -1127,6 +1128,9 @@ export default function App() {
           )}
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
             <CiscoType7Decoder />
+          )}
+          {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
+            <GppCpasswordDecoder />
           )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"
