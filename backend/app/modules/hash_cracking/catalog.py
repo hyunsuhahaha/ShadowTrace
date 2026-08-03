@@ -40,6 +40,11 @@ HASH_MODES = [
      "example": "$rar5$16$salt$15$iv$8$checksum", "detect": r"^\$rar5\$"},
     {"id": "keepass", "name": "KeePass 1/2 (keepass2john)", "mode": "13400",
      "example": "$keepass$*2*60000*0*...", "detect": r"^\$keepass\$\*"},
+    {"id": "sha256_salt_pass", "name": "salted SHA256 (sha256($salt.$pass), 웹앱 DB)",
+     "mode": "1420", "example": "hash(64자 hex):salt",
+     # hash:salt is the only unambiguous shape available for this mode — a
+     # bare 64-hex string is already claimed by plain sha256 above.
+     "detect": r"^[0-9a-fA-F]{64}:"},
     # office2john.py (from the john project) writes the version into the hash
     # itself ($office$*2007*..., *2010*, *2013*), so each version gets its
     # own hashcat -m number and its own detect regex on that field.
