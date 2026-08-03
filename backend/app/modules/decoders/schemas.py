@@ -19,3 +19,7 @@ class DpapiCredentialIn(BaseModel):
 
 class PuttyKeyIn(BaseModel):
     ppk_content: str = Field(min_length=1, max_length=200_000)
+
+
+class VncPasswordIn(BaseModel):
+    ciphertext_hex: str = Field(min_length=1, max_length=200)

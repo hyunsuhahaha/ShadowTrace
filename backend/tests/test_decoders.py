@@ -5,12 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, UploadFile
-from Cryptodome.Cipher import DES3
+from Cryptodome.Cipher import DES, DES3
 from Cryptodome.Util.Padding import pad
 from app.modules.decoders import router
-from app.modules.decoders.router import decrypt_roundcube_des, roundcube_des
+from app.modules.decoders.router import decrypt_roundcube_des, decrypt_vnc_password, roundcube_des
 from app.modules.decoders.schemas import (
-    DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn,
+    DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn, VncPasswordIn,
 )
 
 KEY = "rcmail-!24ByteDESkey*Str"
@@ -233,3 +233,24 @@ def test_pypykatz_lsass_times_out(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(router.pypykatz_lsass(upload(b"MDMP fake dump")))
     assert exc.value.status_code == 504
+
+
+def encrypt_vnc(password: str) -> str:
+    padded = password.encode("ascii")[:8].ljust(8, b"\x00")
+    return DES.new(router.VNC_DES_KEY, DES.MODE_ECB).encrypt(padded).hex()
+
+
+def test_decrypt_vnc_password_recovers_the_plaintext():
+    assert decrypt_vnc_password(encrypt_vnc("s3cr3t12")) == "s3cr3t12"
+    assert decrypt_vnc_password(encrypt_vnc("hi")) == "hi"
+
+
+def test_decrypt_vnc_password_rejects_malformed_input():
+    assert decrypt_vnc_password("not hex") is None
+    assert decrypt_vnc_password("aabb") is None  # not a multiple of 8 bytes
+    assert decrypt_vnc_password("") is None
+
+
+def test_vnc_password_endpoint_returns_plaintext():
+    result = router.vnc_password(VncPasswordIn(ciphertext_hex=encrypt_vnc("password")))
+    assert result == {"plaintext": "password"}

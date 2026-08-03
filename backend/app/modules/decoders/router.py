@@ -6,9 +6,17 @@ import subprocess
 import tempfile
 from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from Cryptodome.Cipher import DES3
+from Cryptodome.Cipher import DES, DES3
 from Cryptodome.Util.Padding import unpad
-from .schemas import DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn
+from .schemas import (
+    DpapiCredentialIn, DpapiMasterkeyIn, PuttyKeyIn, RoundcubeDesIn, VncPasswordIn,
+)
+
+# VNC (RealVNC/TightVNC/UltraVNC) obfuscates the stored password with DES-ECB
+# under a single fixed, publicly-documented key — 17:52:6b:06:23:4e:58:07 —
+# except the RFB spec's DES implementation reverses the bit order within
+# each key byte before use; these are that key's bytes pre-reversed.
+VNC_DES_KEY = bytes([0xE8, 0x4A, 0xD6, 0x60, 0xC4, 0x72, 0x1A, 0xE0])
 
 router = APIRouter(prefix="/api/decoders", tags=["Decoders"])
 DPAPI_KEY_PATTERN = re.compile(r"Decrypted key:\s*0x([0-9a-fA-F]+)")
@@ -49,6 +57,29 @@ def decrypt_roundcube_des(key: str, value: str) -> str | None:
 @router.post("/roundcube-des")
 def roundcube_des(body: RoundcubeDesIn):
     return {"plaintext": decrypt_roundcube_des(body.key, body.value)}
+
+
+def decrypt_vnc_password(ciphertext_hex: str) -> str | None:
+    try:
+        raw = bytes.fromhex(ciphertext_hex.strip())
+    except ValueError:
+        return None
+    if not raw or len(raw) % 8 != 0:
+        return None
+    try:
+        plain = DES.new(VNC_DES_KEY, DES.MODE_ECB).decrypt(raw)
+    except ValueError:
+        return None
+    try:
+        text = plain.split(b"\x00", 1)[0].decode("ascii")
+    except UnicodeDecodeError:
+        return None
+    return text[:8] or None
+
+
+@router.post("/vnc-password")
+def vnc_password(body: VncPasswordIn):
+    return {"plaintext": decrypt_vnc_password(body.ciphertext_hex)}
 
 
 def _run_tool(argv: list[str], name: str, timeout: int = 30) -> subprocess.CompletedProcess:

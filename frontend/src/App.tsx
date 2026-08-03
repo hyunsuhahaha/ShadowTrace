@@ -20,6 +20,7 @@ import SilverTicketPanel from "./SilverTicketPanel";
 import ConstrainedDelegationPanel from "./ConstrainedDelegationPanel";
 import CiscoType7Decoder from "./CiscoType7Decoder";
 import GppCpasswordDecoder from "./GppCpasswordDecoder";
+import VncPasswordDecoder from "./VncPasswordDecoder";
 import RoundcubeDesDecoder from "./RoundcubeDesDecoder";
 import DpapiDecoderPanel from "./DpapiDecoderPanel";
 import PuttyKeyConverter from "./PuttyKeyConverter";
@@ -1252,6 +1253,9 @@ export default function App() {
           )}
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
             <GppCpasswordDecoder />
+          )}
+          {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
+            <VncPasswordDecoder />
           )}
           {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
             <RoundcubeDesDecoder />
