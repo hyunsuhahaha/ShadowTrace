@@ -370,7 +370,7 @@ export default function ScanCenter() {
             <small>Scan Center</small>
           </div>
         </div>
-        <VpnControl />
+        <VpnControl targetIp={target?.ip} />
       </header>
       <nav>
         <a href="#enumeration">Enumeration</a>
