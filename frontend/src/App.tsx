@@ -15,6 +15,7 @@ import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
 import DomainDominancePanel from "./DomainDominancePanel";
+import CiscoType7Decoder from "./CiscoType7Decoder";
 import SmbShareResults from "./SmbShareResults";
 import ServiceList from "./ServiceList";
 import ExecutionHistory from "./ExecutionHistory";
@@ -747,6 +748,20 @@ export default function App() {
       setSaveHashMsg(`저장 실패: ${reason instanceof Error ? reason.message : reason}`);
     }
   };
+  const runLookupsid = () => {
+    if (!target || !credStore.username.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ad-lookupsid-impacket",
+      preview: `impacket-lookupsid ${credStore.domain || "WORKGROUP"}/` +
+        `${credStore.username}:***@${target.ip}`,
+      target_level: true,
+      variables: {
+        username: credStore.username, password: credStore.password,
+        domain: credStore.domain || "WORKGROUP",
+      },
+    });
+  };
   const togglePrivescServer = async () => {
     setPrivescServerBusy(true);
     try {
@@ -1103,6 +1118,9 @@ export default function App() {
               onSaveHash={(u, h) => void saveDcsyncHash(u, h)}
               saveHashMsg={saveHashMsg} />
           )}
+          {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
+            <CiscoType7Decoder />
+          )}
           {!!netexecProtocol && (
             <section className="netexecCredCheck"
               aria-labelledby="netexec-cred-heading">
@@ -1125,6 +1143,7 @@ export default function App() {
                   copyRdp: () => void copyXfreerdpCommand(),
                   openMssql: () => void openMssqlShell(),
                   openHashcat: () => void openHashcatShell(),
+                  openLookupsid: () => void runLookupsid(),
                   captureEvidence: (execution, title) => void captureEvidence(
                     execution, title, "sensitive"),
                   promoteFinding: (execution, title, description) => void promoteToFinding(

@@ -6,7 +6,7 @@ type Actions = {
   openPsexec: () => void;
   openLateral: (kind: "wmiexec" | "smbexec" | "atexec") => void;
   openSsh: () => void; openWinrm: () => void; copyRdp: () => void;
-  openMssql: () => void; openHashcat: () => void;
+  openMssql: () => void; openHashcat: () => void; openLookupsid: () => void;
   captureEvidence: (execution: ExecutionEvidence, title: string) => void;
   promoteFinding: (execution: ExecutionEvidence, title: string, description: string) => void;
 };
@@ -33,6 +33,9 @@ export default function NetexecOutcome({protocol, result, username, domain, targ
             <button key={kind} onClick={() => actions.openLateral(kind)}>{kind}</button>)}
         </div>
       </div>}
+    {protocol === "smb" && success && <div className="netexecPwnedActions" style={{marginTop: "12px"}}>
+      <button onClick={actions.openLookupsid}>SID 순환으로 사용자 열거 (lookupsid)</button>
+    </div>}
     {protocol === "ssh" && success && <div className="netexecPwned">
       <b>SSH 인증 성공</b><span>원문 출력은 실행 이력에서 확인하세요. 아래 버튼은
         ssh 명령을 입력만 해둡니다. 대상을 확인한 뒤 직접 Enter를 누르세요.</span>
