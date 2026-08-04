@@ -33,6 +33,9 @@ class TargetOut(TargetIn, ORM):
     id: int
     updated_at: datetime
 
+class TargetHostnameIn(BaseModel):
+    hostname: str = Field(default="", max_length=253)
+
 class TargetEnsureIn(BaseModel):
     ip: str
     name: str = Field(default="", max_length=120, pattern=r"^[\w ._-]*$")

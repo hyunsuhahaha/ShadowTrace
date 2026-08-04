@@ -16,6 +16,7 @@ from ...schemas import (
     ServiceOut,
     ServiceUpdate,
     TargetEnsureIn,
+    TargetHostnameIn,
     TargetIn,
     TargetOut,
 )
@@ -194,6 +195,18 @@ def update_target(ident: int, body: TargetIn, db: Session = Depends(get_db)):
     row = need(db, Target, ident)
     for key, value in body.model_dump().items():
         setattr(row, key, value)
+    row.updated_at = utcnow()
+    db.commit()
+    return row
+
+
+@router.patch("/api/targets/{ident}/hostname", response_model=TargetOut)
+def set_target_hostname(ident: int, body: TargetHostnameIn, db: Session = Depends(get_db)):
+    """Confirm a hostname discovered through means the app doesn't automate
+    (SMB/LDAP enumeration, the HTB machine page, etc.) without touching the
+    rest of the target's fields the way a full PUT would."""
+    row = need(db, Target, ident)
+    row.hostname = body.hostname.strip()
     row.updated_at = utcnow()
     db.commit()
     return row

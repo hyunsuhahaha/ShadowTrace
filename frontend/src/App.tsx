@@ -134,6 +134,8 @@ export default function App() {
   const [serviceSaveState, setServiceSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [hostnameDraft, setHostnameDraft] = useState("");
+  const [hostnameSaving, setHostnameSaving] = useState(false);
   const [runStates, setRunStates] = useState<Record<string, RunState>>({});
   // Which run's live output/detail the terminal & status panels follow.
   // Other runs keep executing and updating their own runStates entry
@@ -186,6 +188,7 @@ export default function App() {
     setFocusedRunId(undefined);
     setRunStates({});
     setOutput("서비스를 선택하고 검토한 명령을 실행하세요.\n");
+    setHostnameDraft("");
   }, [targetId]);
   useEffect(() => {
     setServiceId((current) => keepSelectedService(current, services.data));
@@ -248,6 +251,21 @@ export default function App() {
       body: JSON.stringify({hostname: target.hostname, ip: target.ip}),
     }).catch(() => {});
   }, [target?.id, target?.hostname, target?.ip]);
+  const saveHostname = async () => {
+    if (!target || !hostnameDraft.trim()) return;
+    setHostnameSaving(true);
+    try {
+      await api(`/targets/${target.id}/hostname`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({hostname: hostnameDraft.trim()}),
+      });
+      await qc.invalidateQueries({queryKey: ["targets", projectId]});
+      setHostnameDraft("");
+    } finally {
+      setHostnameSaving(false);
+    }
+  };
   const selectedExecution = serviceExecutions.find(
     (item) => item.id === selectedExecutionId,
   );
@@ -1150,6 +1168,16 @@ export default function App() {
                   <button disabled={hostnameBusy || !hostnameCommand}
                     onClick={() => hostnameCommand && reviewCommand(hostnameCommand)}>
                     {hostnameBusy ? "확인 중…" : "Hostname 자동 확인"}
+                  </button>
+                  <input placeholder="예: unika.htb (다른 경로로 확인한 값 직접 입력)"
+                    value={hostnameDraft}
+                    onChange={(event) => setHostnameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveHostname();
+                    }} />
+                  <button disabled={hostnameSaving || !hostnameDraft.trim()}
+                    onClick={() => void saveHostname()}>
+                    {hostnameSaving ? "저장 중…" : "직접 입력"}
                   </button>
                 </div>;
               })()}
