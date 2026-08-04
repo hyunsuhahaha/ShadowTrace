@@ -30,16 +30,18 @@ function actionState(
 // but need awscli rather than curl/ffuf, so — like the fuzzing panels next
 // to it — this lives on its own with direct run() calls per action.
 export default function S3BucketPanel({
-  target, bucketRunState, objectRunState, serviceExecutions, evidenceMsg,
-  onListBuckets, onListObjects, onCaptureEvidence,
+  target, bucketRunState, objectRunState, uploadRunState, serviceExecutions, evidenceMsg,
+  onListBuckets, onListObjects, onUploadWebshell, onCaptureEvidence,
 }: {
   target?: { ip: string };
   bucketRunState?: S3PanelRunState;
   objectRunState?: S3PanelRunState;
+  uploadRunState?: S3PanelRunState;
   serviceExecutions: S3PanelExecution[];
   evidenceMsg: string;
   onListBuckets: () => void;
   onListObjects: (bucket: string) => void;
+  onUploadWebshell: (bucket: string) => void;
   onCaptureEvidence: (
     execution: { id: number; stdout?: string; stderr?: string }, title: string,
   ) => void;
@@ -47,6 +49,7 @@ export default function S3BucketPanel({
   const [bucket, setBucket] = useState("");
   const bucketList = actionState("s3-bucket-list", bucketRunState, serviceExecutions);
   const objectList = actionState("s3-object-list", objectRunState, serviceExecutions);
+  const upload = actionState("s3-webshell-upload", uploadRunState, serviceExecutions);
 
   return (
     <section className="netexecCredCheck" aria-labelledby="s3-heading">
@@ -80,7 +83,15 @@ export default function S3BucketPanel({
           onClick={() => onListObjects(bucket.trim())}>
           {objectList.busy ? "조회 중…" : "버킷 파일 목록 조회"}
         </button>
+        <button disabled={upload.busy || !bucket.trim()}
+          onClick={() => onUploadWebshell(bucket.trim())}>
+          {upload.busy ? "업로드 중…" : "PHP 웹쉘 업로드"}
+        </button>
       </div>
+      <small className="netexecEvidenceMsg">
+        웹쉘은 system($_GET['cmd'])만 담은 최소 형태로 버킷 루트에 shell.php로 업로드됩니다.
+        업로드 전에 위 파일 목록 조회로 이 버킷이 실제 웹 루트와 연결돼 있는지 먼저 확인하세요.
+      </small>
       {!!objectList.output && (
         <div className="intruderResults">
           <header><div><b>버킷 파일 목록</b></div>
@@ -91,6 +102,18 @@ export default function S3BucketPanel({
             )}
           </header>
           <pre>{objectList.output}</pre>
+        </div>
+      )}
+      {!!upload.output && (
+        <div className="intruderResults">
+          <header><div><b>웹쉘 업로드 결과</b></div>
+            {upload.executionForEvidence && (
+              <button onClick={() => onCaptureEvidence(
+                upload.executionForEvidence!, `S3 웹쉘 업로드 · ${bucket}/shell.php`,
+              )}>Evidence로 저장</button>
+            )}
+          </header>
+          <pre>{upload.output}</pre>
         </div>
       )}
     </section>

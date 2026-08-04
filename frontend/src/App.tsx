@@ -821,6 +821,18 @@ export default function App() {
       variables: {path: bucket},
     });
   };
+  const runS3WebshellUpload = (bucket: string) => {
+    if (!target || !service || !bucket.trim()) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "s3-webshell-upload",
+      preview: `bash backend/scripts/s3_webshell_upload.sh ` +
+        `${scheme}://${target.ip}:${service.port} ${bucket} <output_dir>`,
+      target_level: false,
+      variables: {path: bucket},
+    });
+  };
   const runKerbruteEnum = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
     setRunWithSudo(false);
@@ -1366,9 +1378,11 @@ export default function App() {
             <S3BucketPanel target={target}
               bucketRunState={runStates["s3-bucket-list"]}
               objectRunState={runStates["s3-object-list"]}
+              uploadRunState={runStates["s3-webshell-upload"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onListBuckets={runS3BucketList}
               onListObjects={runS3ObjectList}
+              onUploadWebshell={runS3WebshellUpload}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (

