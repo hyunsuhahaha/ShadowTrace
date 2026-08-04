@@ -27,6 +27,7 @@ export default function ExecutionHistory({
   onView,
   onOpen,
   onStop,
+  onDelete,
   onDerived,
 }: {
   executions: ExecutionRecord[];
@@ -36,6 +37,7 @@ export default function ExecutionHistory({
   onView: (view: "list" | "detail") => void;
   onOpen: (id: number) => void;
   onStop: () => void;
+  onDelete: (id: number) => void;
   onDerived?: (filePath: string) => void;
 }) {
   const outcome = selected && detail
@@ -62,13 +64,29 @@ export default function ExecutionHistory({
     {view === "list" ? (
       <div className="executionHistory">
         {executions.map((execution) => (
-          <button key={execution.id} onClick={() => onOpen(execution.id)}>
+          <div key={execution.id} role="button" tabIndex={0} className="executionRow"
+            onClick={() => onOpen(execution.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen(execution.id);
+              }
+            }}>
             <b>#{execution.id} {execution.template_id}</b>
             <small>
               {statusLabel[execution.status] || execution.status}
               {execution.exit_code == null ? "" : ` · exit ${execution.exit_code}`}
             </small>
-          </button>
+            {!["queued", "running"].includes(execution.status) && (
+              <button type="button" className="executionDelete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(execution.id);
+                }}>
+                삭제
+              </button>
+            )}
+          </div>
         ))}
         {!executions.length && <p>아직 실행 기록이 없습니다.</p>}
       </div>
@@ -103,8 +121,12 @@ export default function ExecutionHistory({
           <summary>오류 출력</summary><pre>{detail.stderr}</pre>
         </details>}
         {!detail?.stdout && !detail?.stderr && <p>저장된 출력이 없습니다.</p>}
-        {["queued", "running"].includes(detail?.status || selected.status) && (
+        {["queued", "running"].includes(detail?.status || selected.status) ? (
           <button className="executionStop" onClick={onStop}>실행 중단</button>
+        ) : (
+          <button className="executionDelete" onClick={() => onDelete(selected.id)}>
+            삭제
+          </button>
         )}
       </div>
     ) : null}

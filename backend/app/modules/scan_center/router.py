@@ -6,12 +6,12 @@ import shlex
 import shutil
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import (
-    AppSetting, Evidence, Finding, Project, ScanArtifact, ScanJob, ScanProfile,
-    ServiceObservation, Target,
+    AppSetting, Evidence, Finding, HostObservation, Project, ScanArtifact,
+    ScanJob, ScanProfile, ServiceObservation, Target,
 )
 from ...schemas import (
     ObservationOut, ScanArtifactOut, ScanJobOut, ScanJobUpdate,
@@ -166,6 +166,27 @@ def jobs(target_id: int | None = None, db: Session = Depends(get_db)):
 @router.get("/{scan_id}", response_model=ScanJobOut)
 def job(scan_id: int, db: Session = Depends(get_db)):
     return need(db, ScanJob, scan_id)
+
+def _delete_scan_job(db: Session, job: ScanJob) -> None:
+    for child in db.scalars(select(ScanJob).where(
+            ScanJob.parent_scan_id == job.id)).all():
+        _delete_scan_job(db, child)
+    project = db.get(Project, job.project_id)
+    target = db.get(Target, job.target_id)
+    if project and target:
+        shutil.rmtree(scan_directory(project, target, job.id), ignore_errors=True)
+    db.execute(sa_delete(ScanArtifact).where(ScanArtifact.scan_job_id == job.id))
+    db.execute(sa_delete(HostObservation).where(HostObservation.scan_job_id == job.id))
+    db.execute(sa_delete(ServiceObservation).where(ServiceObservation.scan_job_id == job.id))
+    db.delete(job)
+
+@router.delete("/{scan_id}", status_code=204)
+def delete_scan(scan_id: int, db: Session = Depends(get_db)):
+    job = need(db, ScanJob, scan_id)
+    if job.status in ("queued", "running"):
+        raise HTTPException(409, "Stop the scan before deleting it")
+    _delete_scan_job(db, job)
+    db.commit()
 
 @router.patch("/{scan_id}", response_model=ScanJobOut)
 def update_job(scan_id: int, body: ScanJobUpdate, db: Session = Depends(get_db)):

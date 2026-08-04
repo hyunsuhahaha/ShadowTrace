@@ -11,7 +11,9 @@ from app.schemas import ExecutionDeriveIn
 from fastapi import HTTPException
 
 import app.modules.executions.router as executions_router
-from app.modules.executions.router import _output_path, derive_output, execution_output_file
+from app.modules.executions.router import (
+    _output_path, delete_execution, derive_output, execution_output_file,
+)
 
 
 def database():
@@ -129,3 +131,39 @@ def test_execution_output_file_404s_for_a_missing_or_traversal_name(
     with pytest.raises(HTTPException) as traversal:
         execution_output_file(execution.id, "../../secret.txt", db=db)
     assert traversal.value.status_code == 404
+
+
+def test_delete_execution_removes_the_row_and_its_output_file(tmp_path):
+    db = database()
+    project = Project(name="Forest", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="DC", ip="10.10.10.161")
+    db.add(target); db.flush()
+    output = tmp_path / "smb-enum.txt"
+    output.write_text("results")
+    execution = Execution(
+        target_id=target.id, template_id="smb-enum", command="enum4linux",
+        cwd=".", status="completed", output_path=str(output))
+    db.add(execution); db.commit()
+
+    delete_execution(execution.id, db=db)
+
+    assert db.get(Execution, execution.id) is None
+    assert not output.exists()
+
+
+def test_delete_execution_blocks_a_still_running_command():
+    db = database()
+    project = Project(name="Forest", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="DC", ip="10.10.10.161")
+    db.add(target); db.flush()
+    execution = Execution(
+        target_id=target.id, template_id="smb-enum", command="enum4linux",
+        cwd=".", status="running")
+    db.add(execution); db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        delete_execution(execution.id, db=db)
+    assert exc.value.status_code == 409
+    assert db.get(Execution, execution.id) is not None

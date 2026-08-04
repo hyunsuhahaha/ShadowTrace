@@ -547,6 +547,21 @@ export default function App() {
       ...current, status: "stopped",
     });
   };
+  const deleteSavedExecution = async (id: number) => {
+    try {
+      await api(`/executions/${id}`, { method: "DELETE" });
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setOutput((value) => `${value}\n[실행 이력 삭제 실패] ${message}\n`);
+      return;
+    }
+    await qc.invalidateQueries({ queryKey: ["executions", targetId] });
+    if (selectedExecutionId === id) {
+      setSelectedExecutionId(undefined);
+      setExecutionDetail(undefined);
+      setExecutionView("list");
+    }
+  };
   const stopRun = async (templateId: string) => {
     const id = runStates[templateId]?.id;
     if (!id) return;
@@ -1400,6 +1415,7 @@ export default function App() {
             onView={setExecutionView}
             onOpen={openExecution}
             onStop={stopSavedExecution}
+            onDelete={deleteSavedExecution}
             onDerived={setDerivedWordlistPath}
           />
           {!workspaceCollapsed && <div

@@ -343,6 +343,14 @@ export default function ScanCenter() {
       setScanId(job.id);
       await refresh();
     },
+    deleteScan = async (id: number) => {
+      const r = await fetch(`/api/scans/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        setOutput(`[error] ${(await r.json()).detail}\n`);
+        return;
+      }
+      await refresh();
+    },
     saveMetadata = async () => {
       if (!selected) return;
       const alias = prompt("Scan alias", selected.alias);
@@ -560,7 +568,7 @@ export default function ScanCenter() {
           isLoading={scans.isLoading} error={scans.error}
           query={query} statusFilter={statusFilter}
           onQueryChange={setQuery} onStatusFilterChange={setStatusFilter}
-          onSelectScan={setScanId} onStop={stop} onRerun={rerun}
+          onSelectScan={setScanId} onStop={stop} onRerun={rerun} onDelete={deleteScan}
           baseId={baseId} onSelectBase={setBaseId} diff={diff.data} />
       </main>
       {review && (

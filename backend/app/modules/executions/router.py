@@ -136,6 +136,17 @@ async def stop(ident: int):
     return {"stopped": await stop_execution(ident)}
 
 
+@router.delete("/api/executions/{ident}", status_code=204)
+def delete_execution(ident: int, db: Session = Depends(get_db)):
+    row = need(db, Execution, ident)
+    if row.status in ("queued", "running"):
+        raise HTTPException(409, "Stop the command before deleting it")
+    if row.output_path:
+        Path(row.output_path).unlink(missing_ok=True)
+    db.delete(row)
+    db.commit()
+
+
 def _execution_output_dir(db: Session, execution: Execution) -> tuple[Target, Path]:
     target = need(db, Target, execution.target_id)
     project = need(db, Project, target.project_id)

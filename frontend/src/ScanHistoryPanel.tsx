@@ -10,7 +10,7 @@ type Diff = {
 
 export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoading,
   error, query, statusFilter, onQueryChange, onStatusFilterChange, onSelectScan,
-  onStop, onRerun, baseId, onSelectBase, diff}: {
+  onStop, onRerun, onDelete, baseId, onSelectBase, diff}: {
   visibleScans: Scan[]; allScans?: Scan[]; scanId?: number;
   isLoading: boolean; error: unknown;
   query: string; statusFilter: string;
@@ -18,6 +18,7 @@ export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoad
   onStatusFilterChange: (value: string) => void;
   onSelectScan: (id: number) => void;
   onStop: (id: number) => void; onRerun: (id: number) => void;
+  onDelete: (id: number) => void;
   baseId?: number; onSelectBase: (id: number) => void;
   diff?: Diff;
 }) {
@@ -89,6 +90,17 @@ export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoad
               }}
             >
               재실행
+            </button>
+          )}
+          {terminal.includes(s.status) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(s.id);
+              }}
+            >
+              삭제
             </button>
           )}
           {s.exit_code != null && <small>exit {s.exit_code}</small>}

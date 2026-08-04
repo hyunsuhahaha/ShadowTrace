@@ -2,8 +2,10 @@
 .contextProject{display:grid;gap:.18rem;min-width:11rem}.contextProject select{max-width:18rem;border:1px solid transparent;border-radius:4px;padding:.2rem 1.7rem .2rem .35rem;background:var(--canvas);color:var(--text);font-size:.8rem;font-weight:700;cursor:pointer}.contextProject select:hover{border-color:var(--line-strong);background:var(--surface)}
 .notes>button{width:100%;margin-top:8px;background:#9fe870;border:0;padding:8px;font-weight:800}
 .executionHistory{display:grid;gap:5px;max-height:180px;overflow:auto}
-.executionHistory button{display:flex;justify-content:space-between;background:#0b1113;border:1px solid #253136;color:#b9c8cb;padding:7px;text-align:left}
+.executionHistory .executionRow{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#0b1113;border:1px solid #253136;color:#b9c8cb;padding:7px;text-align:left;cursor:pointer}
+.executionHistory .executionRow>b{flex:1;min-width:0}
 .executionHistory small{color:#72868b}
+.executionDelete{border:1px solid #714744;background:#382422;color:#ffd8d4;padding:4px 7px;font-size:9px;border-radius:3px;flex:none}
 .ptyPanel{height:min(460px,58dvh);min-height:300px;margin:16px 0;border:1px solid #405158;border-radius:var(--radius);background:#050809;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
 .ptyBar{position:relative;z-index:2;display:flex;align-items:center;gap:14px;padding:10px 12px;background:#10181b;border-bottom:1px solid #29373b}
 .ptyBar>div{display:grid;gap:3px;min-width:0}.ptyBar b{font-size:12px}.ptyBar span{font-size:10px;color:#7d9196}.ptyBar button{margin-left:0;border:1px solid #714744;border-radius:var(--radius);background:#382422;color:#ffd8d4;padding:7px 10px;font-size:10px;font-weight:700;white-space:nowrap}

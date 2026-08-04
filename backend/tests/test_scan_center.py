@@ -1,11 +1,13 @@
 from pathlib import Path
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Evidence, Finding, FindingEvidence, Project, ScanArtifact, ScanProfile, Target
 from app.models import ScanJob, Service, ServiceObservation
 from app.modules.scan_center.router import (
-    download_artifact, export_observations, update_job,
+    delete_scan, download_artifact, export_observations, update_job,
 )
 from app.modules.scan_center.service import (
     BUILTIN_PROFILES, compare_jobs, create_chain_job, import_xml, render_scan,
@@ -354,6 +356,47 @@ def test_scan_metadata_exports_and_artifact_download(tmp_path, monkeypatch):
     artifact = db.query(ScanArtifact).filter_by(scan_job_id=job.id).one()
     response = download_artifact(job.id, artifact.id, db)
     assert Path(response.path).read_bytes() == xml
+
+def test_delete_scan_removes_artifacts_children_and_the_scan_directory(
+        tmp_path, monkeypatch):
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Delete Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.13")
+    db.add(target); db.commit()
+    xml = b'<nmaprun><host><address addr="10.10.10.13"/><ports><port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port></ports></host></nmaprun>'
+    job = import_xml(db, target, project, xml, "source.xml")
+    child = ScanJob(project_id=project.id, target_id=target.id,
+                    parent_scan_id=job.id, source="executed", status="completed",
+                    command="nmap -Pn -sC -sV -p80 10.10.10.13")
+    db.add(child); db.commit()
+    job_dir = service.scan_directory(project, target, job.id)
+    assert job_dir.exists()
+
+    delete_scan(job.id, db)
+
+    assert db.get(ScanJob, job.id) is None
+    assert db.get(ScanJob, child.id) is None
+    assert not job_dir.exists()
+    assert db.query(ScanArtifact).filter_by(scan_job_id=job.id).count() == 0
+    assert db.query(ServiceObservation).filter_by(scan_job_id=job.id).count() == 0
+
+def test_delete_scan_blocks_a_still_running_scan():
+    db = database()
+    project = Project(name="Delete Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.14")
+    db.add(target); db.commit()
+    job = ScanJob(project_id=project.id, target_id=target.id, source="executed",
+                 status="running", command="nmap -Pn -p- 10.10.10.14")
+    db.add(job); db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        delete_scan(job.id, db)
+    assert exc.value.status_code == 409
+    assert db.get(ScanJob, job.id) is not None
 
 def test_scan_manager_broadcasts_to_each_subscriber():
     import asyncio

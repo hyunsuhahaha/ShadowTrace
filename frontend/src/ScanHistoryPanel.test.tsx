@@ -20,12 +20,27 @@ it("lets a queued scan be cancelled and a completed one be rerun", () => {
     query="" statusFilter="all"
     onQueryChange={vi.fn()} onStatusFilterChange={vi.fn()}
     onSelectScan={vi.fn()} onStop={onStop} onRerun={onRerun}
-    onSelectBase={vi.fn()} />);
+    onDelete={vi.fn()} onSelectBase={vi.fn()} />);
 
   fireEvent.click(screen.getByText("취소"));
   expect(onStop).toHaveBeenCalledWith(5);
   fireEvent.click(screen.getByText("재실행"));
   expect(onRerun).toHaveBeenCalledWith(6);
+});
+
+it("only offers to delete a finished scan, not a running one", () => {
+  const onDelete = vi.fn();
+  render(<ScanHistoryPanel
+    visibleScans={[scan, {...scan, id: 6, status: "completed"}]}
+    isLoading={false} error={undefined}
+    query="" statusFilter="all"
+    onQueryChange={vi.fn()} onStatusFilterChange={vi.fn()}
+    onSelectScan={vi.fn()} onStop={vi.fn()} onRerun={vi.fn()}
+    onDelete={onDelete} onSelectBase={vi.fn()} />);
+
+  expect(screen.queryAllByText("삭제")).toHaveLength(1);
+  fireEvent.click(screen.getByText("삭제"));
+  expect(onDelete).toHaveBeenCalledWith(6);
 });
 
 it("shows the diff summary against a chosen baseline scan", () => {
@@ -34,7 +49,7 @@ it("shows the diff summary against a chosen baseline scan", () => {
     scanId={5} isLoading={false} error={undefined}
     query="" statusFilter="all"
     onQueryChange={vi.fn()} onStatusFilterChange={vi.fn()}
-    onSelectScan={vi.fn()} onStop={vi.fn()} onRerun={vi.fn()}
+    onSelectScan={vi.fn()} onStop={vi.fn()} onRerun={vi.fn()} onDelete={vi.fn()}
     baseId={6} onSelectBase={vi.fn()}
     diff={{
       added: [{protocol: "tcp", port: 443, name: "https", product: "", version: ""}],
@@ -49,7 +64,7 @@ it("shows the empty state when no scans match the filters", () => {
     visibleScans={[]} isLoading={false} error={undefined}
     query="" statusFilter="all"
     onQueryChange={vi.fn()} onStatusFilterChange={vi.fn()}
-    onSelectScan={vi.fn()} onStop={vi.fn()} onRerun={vi.fn()}
+    onSelectScan={vi.fn()} onStop={vi.fn()} onRerun={vi.fn()} onDelete={vi.fn()}
     onSelectBase={vi.fn()} />);
   expect(screen.getByText("조건에 맞는 스캔이 없습니다.")).toBeTruthy();
 });
