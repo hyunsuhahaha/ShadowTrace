@@ -154,6 +154,23 @@ def masked_snapshot(row: HttpRequest, url: str, query: dict[str, str],
                       ensure_ascii=False)
 
 
+def persist_exchange_body(db: Session, project: Project, target: Target,
+                          row: HttpRequest, exchange: HttpExchange,
+                          content: bytes) -> None:
+    if len(content) > MAX_RESPONSE:
+        raise ValueError("Response exceeded the 10 MiB preservation limit")
+    folder = (WORKSPACE_DIR / "projects" / _safe(project.name) / "targets" /
+              _safe(target.ip) / "http" / str(row.id))
+    folder.mkdir(parents=True, exist_ok=True)
+    db.add(exchange); db.flush()
+    path = folder / f"response-{exchange.id}.bin"
+    path.write_bytes(content)
+    exchange.size = len(content)
+    exchange.response_body = content
+    exchange.body_path = str(path)
+    exchange.sha256 = hashlib.sha256(content).hexdigest()
+
+
 async def send_once(db: Session, row: HttpRequest,
                     variables: dict[str, str]) -> HttpExchange:
     target = need(db, Target, row.target_id)
@@ -184,22 +201,11 @@ async def send_once(db: Session, row: HttpRequest,
             max_redirects=10) as client:
             response = await client.request(row.method, url, **kwargs)
         content = response.content
-        if len(content) > MAX_RESPONSE:
-            raise ValueError("Response exceeded the 10 MiB preservation limit")
-        folder = (WORKSPACE_DIR / "projects" / _safe(project.name) / "targets" /
-                  _safe(target.ip) / "http" / str(row.id))
-        folder.mkdir(parents=True, exist_ok=True)
-        db.add(exchange); db.flush()
-        path = folder / f"response-{exchange.id}.bin"
-        path.write_bytes(content)
+        persist_exchange_body(db, project, target, row, exchange, content)
         exchange.status_code = response.status_code
         exchange.duration_ms = round((time.perf_counter() - started) * 1000)
-        exchange.size = len(content)
         exchange.response_headers = json.dumps(dict(response.headers), ensure_ascii=False)
         exchange.response_cookies = json.dumps(dict(response.cookies), ensure_ascii=False)
-        exchange.response_body = content
-        exchange.body_path = str(path)
-        exchange.sha256 = hashlib.sha256(content).hexdigest()
     except Exception as exc:
         exchange.duration_ms = round((time.perf_counter() - started) * 1000)
         exchange.error = str(exc)

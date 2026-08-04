@@ -34,6 +34,8 @@ from .modules.runbooks.workflow_router import router as runbook_workflow_router
 from .modules.service_intelligence.router import router as service_intelligence_router
 from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
+from .modules.web_proxy.router import router as web_proxy_router
+from .modules.web_proxy.manager import manager as web_proxy_manager
 from .modules.post_exploitation.router import router as post_exploitation_router
 from .modules.post_exploitation.manager import manager as post_exploitation_manager
 from .modules.hash_cracking.router import router as hash_cracking_router
@@ -95,12 +97,14 @@ async def lifespan(_: FastAPI):
     await tunnel_manager.shutdown()
     await post_exploitation_manager.shutdown()
     await hash_cracking_manager.shutdown()
+    await web_proxy_manager.shutdown()
     shutdown_local_runs()
     stop_privesc_server()
 
 app = FastAPI(title="OSCP Workspace", version="0.1.0", lifespan=lifespan)
 app.include_router(scan_router)
 app.include_router(web_router)
+app.include_router(web_proxy_router)
 app.include_router(evidence_router)
 app.include_router(directory_router)
 app.include_router(tunnel_router)

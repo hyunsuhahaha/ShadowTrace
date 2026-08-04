@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
+import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
-type SavedRequest = {
+export type SavedRequest = {
   id: number;
   project_id: number;
   target_id: number;
@@ -86,7 +87,7 @@ export default function WebWorkspace() {
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
     [workspaceTab, setWorkspaceTab] =
-      useState<"request" | "intruder" | "sqli" | "results">("request"),
+      useState<"request" | "intruder" | "sqli" | "proxy" | "results">("request"),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [curlInput, setCurlInput] = useState(""),
     [error, setError] = useState("");
@@ -156,6 +157,14 @@ export default function WebWorkspace() {
     setDraft(request);
     setExchangeId(undefined);
     setResponse("응답을 선택하거나 이 요청을 전송하세요.");
+  };
+  const openCapturedRequest = (request: SavedRequest) => {
+    select(request);
+    setWorkspaceTab("request");
+  };
+  const sendCapturedToIntruder = (request: SavedRequest) => {
+    select(request);
+    setWorkspaceTab("intruder");
   };
   const payload = () => ({
     project_id: draft.project_id,
@@ -293,6 +302,8 @@ export default function WebWorkspace() {
             onClick={() => setWorkspaceTab("intruder")}>Intruder</button>
           <button role="tab" aria-selected={workspaceTab === "sqli"}
             onClick={() => setWorkspaceTab("sqli")}>SQLi 참고</button>
+          <button role="tab" aria-selected={workspaceTab === "proxy"}
+            onClick={() => setWorkspaceTab("proxy")}>Proxy</button>
           <button role="tab" aria-selected={workspaceTab === "results"}
             onClick={() => setWorkspaceTab("results")}>Response</button>
         </div>
@@ -330,6 +341,10 @@ export default function WebWorkspace() {
               onGoToRequest={() => setWorkspaceTab("request")} />
           ) : workspaceTab === "sqli" ? (
             <SqlPayloadReference onSendToIntruder={sendToIntruder} />
+          ) : workspaceTab === "proxy" ? (
+            <ProxyPanel projectId={targets.data?.find((t) => t.id === targetId)?.project_id}
+              targetId={targetId} onOpenRequest={openCapturedRequest}
+              onSendToIntruder={sendCapturedToIntruder} />
           ) : <>
           {workspaceTab === "results" && <div className="webSectionTitle">
             <span>Recorded exchanges</span><h2>응답 이력과 비교</h2>

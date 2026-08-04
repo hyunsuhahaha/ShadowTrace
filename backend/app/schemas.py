@@ -197,6 +197,25 @@ class HttpExchangeOut(ORM):
 class ExchangeReviewIn(BaseModel):
     review_status: Literal["pending", "confirmed", "dismissed"]
 
+class ProxyStartIn(BaseModel):
+    project_id: int
+    target_id: int
+    port: int = Field(default=8081, ge=1024, le=65535)
+
+class ProxyCaptureIn(BaseModel):
+    project_id: int
+    target_id: int
+    method: str = Field(max_length=12)
+    url: str = Field(max_length=4000)
+    headers: dict[str, str] = Field(default_factory=dict)
+    cookies: dict[str, str] = Field(default_factory=dict)
+    body: str = Field(default="", max_length=15_000_000)
+    status_code: int | None = None
+    response_headers: dict[str, str] = Field(default_factory=dict)
+    response_cookies: dict[str, str] = Field(default_factory=dict)
+    response_body: str = Field(default="", max_length=15_000_000)
+    duration_ms: int = Field(default=0, ge=0)
+
 class EvidenceOut(ORM):
     id: int; project_id: int; target_id: int; service_id: int | None
     title: str; description: str; kind: str; source_type: str

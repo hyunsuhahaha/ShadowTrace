@@ -112,6 +112,32 @@ it("imports a pasted curl command into the request editor", async () => {
     .toBe('{"PHPSESSID":"abc"}');
 });
 
+it("opens a captured request into Intruder from the Proxy tab", async () => {
+  const capturedRequest = {
+    id: 9, project_id: 1, target_id: 1, name: "POST http://10.10.10.10/login.php",
+    folder: "Proxy Capture", tags: '["proxy-capture"]', method: "POST",
+    url: "http://10.10.10.10/login.php", query: "{}", headers: "{}", cookies: "{}",
+    body: "username=admin&password=x", body_mode: "raw", tls_verify: true,
+    proxy: "", timeout: 30, follow_redirects: false,
+  };
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    if (url === "/api/web/proxy/status") return response({ running: false, stderr_tail: [] });
+    if (url.startsWith("/api/web/proxy/captures")) return response([capturedRequest]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  fireEvent.click(screen.getByRole("tab", { name: "Proxy" }));
+  await screen.findByText("POST http://10.10.10.10/login.php");
+  fireEvent.click(screen.getByText("Intruder로"));
+
+  expect(screen.getByRole("tab", { name: "Intruder" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByText("먼저 저장된 요청이 필요합니다.")).toBeNull();
+});
+
 it("shows an error and leaves the draft alone for text that isn't a curl command", async () => {
   const fetcher = vi.fn((url: string) => {
     if (url === "/api/targets") return response([target]);
