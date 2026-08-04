@@ -17,11 +17,17 @@ export default function InteractiveTerminal({
   inputRequest?: { id: number; data: string };
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const targetErrorRef = useRef("");
   const [connection, setConnection] = useState<
     "connecting" | "pty" | "active" | "closed" | "error"
   >("connecting");
+  // Sessions open far down the page with no visible change near the button
+  // that started them — scroll to the new terminal so it's clear one opened.
+  useEffect(() => {
+    panel.current?.scrollIntoView({behavior: "smooth", block: "center"});
+  }, [sessionId]);
   useEffect(() => {
     if (!container.current) return;
     let disposed = false;
@@ -152,7 +158,7 @@ export default function InteractiveTerminal({
     onClose();
   };
   return (
-    <section className="ptyPanel" aria-label={title}>
+    <section className="ptyPanel" aria-label={title} ref={panel}>
       <div className="ptyBar">
         <div>
           <b>{title}</b>

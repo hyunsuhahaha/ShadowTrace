@@ -54,7 +54,7 @@ export default function PrivescSessionPanel({session, server, serverBusy,
         <small>pspy가 설치되어 있지 않아 pspy는 제공할 수 없습니다.</small>}
     </section>
     <InteractiveTerminal sessionId={session.id}
-      title="impacket-psexec · 검토 후 Enter"
+      title={`${session.command} · 검토 후 Enter`}
       initialInput={session.command}
       inputRequest={inputRequest}
       onClose={onClose} />

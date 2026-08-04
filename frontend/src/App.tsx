@@ -1181,7 +1181,7 @@ export default function App() {
             onReview={reviewCommand}
           />
           <CredentialAuditPanel
-            key={serviceId}
+            key={`credential-audit-${serviceId}`}
             ref={credentialAuditRef}
             profile={credentialProfile}
             serviceName={service?.name}
@@ -1212,7 +1212,7 @@ export default function App() {
           {!!service && <PypykatzLsassPanel />}
           {!!service && <RecycleBinDecoder />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
-          <SmbShareResults key={serviceId} targetId={targetId} serviceId={serviceId}
+          <SmbShareResults key={`smb-share-${serviceId}`} targetId={targetId} serviceId={serviceId}
             shares={smbShares} activeShare={lastSpiderShare}
             runState={runStates["smb-share-spider"]}
             serviceExecutions={serviceExecutions} onSpider={spiderSmbShare}
