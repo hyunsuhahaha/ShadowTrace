@@ -230,7 +230,7 @@ export default function App() {
     (item) => item.id === selectedExecutionId,
   );
   const authenticationCommands = (commands.data || []).filter((item) =>
-    /(?:anon|null-session|empty-password|unauthenticated|auth-methods|default-audit|community-audit|root-connect)/i
+    /(?:anon|null-session|empty-password|unauthenticated|auth-methods|default-audit|community-audit|credential-probe)/i
       .test(item.id),
   );
   const credentialProfile = getCredentialAuditProfile(service?.name);

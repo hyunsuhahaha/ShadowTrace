@@ -45,17 +45,20 @@ export function summarizeCredentialAudit(
         }
       : {status: "clear", label: "빈 비밀번호 허용되지 않음"};
   }
-  if (templateId === "mysql-root-connect") {
-    // The mysql client refuses to connect with a plain error (e.g. "ERROR
-    // 1045 (28000): Access denied...") when the login fails; anything else
-    // means the SELECT actually ran, i.e. root has no password.
-    return /error \d+/i.test(output)
-      ? {status: "clear", label: "root 계정 빈 비밀번호로 접속 실패"}
-      : {
-          status: "exposed",
-          label: "root 계정 빈 비밀번호로 접속 성공",
-          credential: {username: "root", password: ""},
-        };
+  if (templateId === "mysql-credential-probe") {
+    // mysql_credential_probe.sh prints a "[+] SUCCESS user:pass" line (own
+    // format, not nmap's) the moment a real login works and stops there;
+    // every failed attempt before that is a distinct "[-] FAILED user:pass"
+    // line, so there's no ambiguity between a hit and nmap-style "No valid
+    // accounts found" noise.
+    const match = output.match(/^\[\+\] SUCCESS (\S+):(.*)$/m);
+    if (!match) return {status: "clear", label: "유효한 인증 정보 발견되지 않음"};
+    const password = match[2] === "<empty>" ? "" : match[2];
+    return {
+      status: "exposed",
+      label: `로그인 성공 · ${match[1]} / ${password || "(빈 비밀번호)"}`,
+      credential: {username: match[1], password},
+    };
   }
   if (!/(?:default-audit|community-audit)/i.test(templateId)) {
     return {status: "clear", label: "검사 완료 · 원문 확인"};

@@ -1,3 +1,4 @@
+from pathlib import Path
 from app.nmap_parser import parse_nmap
 from app.executor import (
     classify_execution_status,
@@ -389,21 +390,27 @@ def test_custom_audit_engines_only_claim_supported_limits():
         assert "unpwdb.timelimit=2m" in command
         assert "brute.threads" not in command
 
-def test_mysql_root_connect_uses_a_generous_handshake_timeout():
+def test_mysql_credential_probe_invokes_the_bundled_script_with_repo_dir():
     # mysql-empty-password.nse hard-codes socket:set_timeout(5000) with no
     # script-arg to override it, so a slow handshake (e.g. a reverse-DNS
     # lookup on the client IP with skip-name-resolve unset) makes it miss a
     # real empty password. That script isn't ours to fix, so this direct
-    # mysql-client fallback needs its own timeout to survive the same case.
-    _, command, _ = catalog.render("mysql-root-connect", {
-        "host": "10.10.10.23", "port": "3306"})
-    assert "--connect-timeout=30" in command
+    # mysql-client probe (a small candidate list, not just root) needs its
+    # own generous timeout to survive the same case.
+    _, command, argv = catalog.render("mysql-credential-probe", {
+        "host": "10.10.10.23", "port": "3306", "repo_dir": "/opt/oscp-workspace"})
+    assert argv[:2] == ["bash", "/opt/oscp-workspace/backend/scripts/mysql_credential_probe.sh"]
+    assert argv[2:] == ["10.10.10.23", "3306"]
+
+def test_mysql_credential_probe_script_uses_a_generous_per_attempt_timeout():
+    script = (Path(__file__).parents[1] / "scripts" / "mysql_credential_probe.sh").read_text()
+    assert "timeout_seconds=30" in script
 
 def test_mysql_default_audit_overrides_mysql_brutes_five_second_default():
     # Unlike mysql-empty-password, mysql-brute.nse reads its timeout from
     # stdnse.get_script_args("mysql-brute.timeout") (5s default) — this one
     # actually can be raised via --script-args, so do that instead of
-    # relying solely on the mysql-root-connect fallback.
+    # relying solely on the mysql-credential-probe fallback.
     _, command, _ = catalog.render("mysql-default-audit", {
         "host": "10.10.10.23", "port": "3306"})
     assert "mysql-brute.timeout=30" in command

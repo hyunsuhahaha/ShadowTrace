@@ -78,26 +78,37 @@ describe("credential audit result summary", () => {
     )).toEqual({status: "clear", label: "빈 비밀번호 허용되지 않음"});
   });
 
-  it("reports a direct mysql client login as success when the query actually runs", () => {
+  it("reports the winning candidate from a direct mysql credential probe", () => {
     expect(summarizeCredentialAudit(
-      "mysql-root-connect",
-      "+----------------+-----------+\n| CURRENT_USER() | VERSION() |\n" +
-        "+----------------+-----------+\n| root@%         | 8.0.36    |\n" +
-        "+----------------+-----------+\n",
+      "mysql-credential-probe",
+      "[+] SUCCESS root:<empty>\nCURRENT_USER()\tVERSION()\nroot@%\t10.3.27-MariaDB\n",
       "",
     )).toEqual({
       status: "exposed",
-      label: "root 계정 빈 비밀번호로 접속 성공",
+      label: "로그인 성공 · root / (빈 비밀번호)",
       credential: {username: "root", password: ""},
     });
   });
 
-  it("reports a direct mysql client login as failed when the server rejects it", () => {
+  it("reports a non-blank winning password from the credential probe", () => {
     expect(summarizeCredentialAudit(
-      "mysql-root-connect",
+      "mysql-credential-probe",
+      "[-] FAILED root:<empty>\n[+] SUCCESS mysql:mysql\nCURRENT_USER()\nmysql@%\n",
       "",
-      "ERROR 1045 (28000): Access denied for user 'root'@'10.10.14.5' (using password: NO)\n",
-    )).toEqual({status: "clear", label: "root 계정 빈 비밀번호로 접속 실패"});
+    )).toEqual({
+      status: "exposed",
+      label: "로그인 성공 · mysql / mysql",
+      credential: {username: "mysql", password: "mysql"},
+    });
+  });
+
+  it("reports the credential probe as clear when every candidate fails", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-credential-probe",
+      "[-] FAILED root:<empty>\n[-] FAILED root:root\n" +
+        "[-] No valid MySQL credentials found among 12 candidates.\n",
+      "",
+    )).toEqual({status: "clear", label: "유효한 인증 정보 발견되지 않음"});
   });
 
   it("does not report success from nmap's own 'No valid accounts found' failure message", () => {
