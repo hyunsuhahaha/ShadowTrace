@@ -37,6 +37,7 @@ type Props = {
   runStates: Record<string, RunState>;
   clock: number;
   onReview: (command: AuditCommand) => void;
+  onOpenTerminal?: (username: string) => void;
 };
 
 const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialAuditPanel({
@@ -46,6 +47,7 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
   runStates,
   clock,
   onReview,
+  onOpenTerminal,
 }, ref) {
   const [userText, setUserText] = useState(() => profile.identities.replaceAll(" · ", "\n"));
   const [passwordText, setPasswordText] = useState(() => profile.secrets.replaceAll(" · ", "\n"));
@@ -132,6 +134,17 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
           {summary && (
             <section className={`credentialResult credentialResult--${summary.status}`}>
               <b>{summary.label}</b>
+              {summary.status === "exposed" && summary.credential && onOpenTerminal && (
+                <div className="credentialTerminalLaunch">
+                  <button onClick={() => onOpenTerminal(summary.credential!.username)}>
+                    터미널 열기
+                  </button>
+                  <small>
+                    비밀번호 프롬프트가 뜨면 {summary.credential.password
+                      ? `"${summary.credential.password}"를 입력하세요` : "그냥 Enter를 누르세요 (빈 비밀번호)"}
+                  </small>
+                </div>
+              )}
               <details>
                 <summary>검사 원문 보기</summary>
                 <pre>{output || "명령이 출력 없이 완료되었습니다."}</pre>

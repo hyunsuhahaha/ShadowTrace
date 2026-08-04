@@ -98,6 +98,39 @@ it("does not attach candidate variables to commands whose template has no place 
   expect(onReview).toHaveBeenCalledWith(command);
 });
 
+it("offers a terminal-open button for an exposed credential when onOpenTerminal is given", () => {
+  const onOpenTerminal = vi.fn();
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
+    runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS root:<empty>\nCURRENT_USER()\nroot@%\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} onOpenTerminal={onOpenTerminal} />);
+
+  expect(screen.getByText(/그냥 Enter를 누르세요/)).toBeTruthy();
+  fireEvent.click(screen.getByText("터미널 열기"));
+  expect(onOpenTerminal).toHaveBeenCalledWith("root");
+});
+
+it("shows the found password to type when it isn't blank", () => {
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
+    runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS mysql:mysql\nCURRENT_USER()\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} onOpenTerminal={vi.fn()} />);
+
+  expect(screen.getByText('비밀번호 프롬프트가 뜨면 "mysql"를 입력하세요')).toBeTruthy();
+});
+
+it("hides the terminal-open button when no onOpenTerminal handler is given", () => {
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
+    runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS root:<empty>\nCURRENT_USER()\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} />);
+
+  expect(screen.queryByText("터미널 열기")).toBeNull();
+});
+
 it("blocks running the probe once the candidate combinations exceed the script's cap", () => {
   const onReview = vi.fn();
   render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}

@@ -194,6 +194,19 @@ def test_interactive_command_preview_renders_service_variables():
     assert share_command == "smbclient //10.0.0.4/'Work Shares' -N -p 445"
     assert share_argv[1] == "//10.0.0.4/Work Shares"
 
+def test_mysql_client_opens_with_the_discovered_username_and_always_prompts_for_a_password():
+    # create_interactive_session() rejects a "password" variable outright
+    # ("Passwords must be entered interactively"), so this always prompts
+    # with a bare -p — even for a blank-password find, the user just hits
+    # Enter — rather than trying to smuggle a known password into argv.
+    item, command, argv = catalog.render(
+        "mysql-client", {"host": "10.10.10.23", "port": "3306", "username": "root"},
+        execution_mode="interactive",
+    )
+    assert item["id"] == "mysql-client"
+    assert command == "mysql -h 10.10.10.23 -P 3306 -u root -p"
+    assert argv[-1] == "-p"
+
 def test_kerbrute_userenum_is_hidden_from_the_generic_list_but_renders_with_extra_variables():
     # domain/wordlist aren't nmap-derived, so — like http-directory-fuzz — this
     # command must stay out of commands_for()'s auto-populated list and only be
