@@ -23,6 +23,14 @@ type SavedSet = { name: string; values: string[]; sensitive: boolean };
 type Progress = { status: string; completed: number; total: number };
 const SETS_KEY = "oscp-intruder-candidate-sets";
 
+// ffuf-style matcher/filter semantics: match = keep only results whose value
+// is in the list (empty list = no constraint); filter = drop results whose
+// value is in the list. Mirrors -mc/-fc, -ms/-fs, -mw/-fw, -ml/-fl.
+const parseIntList = (text: string): number[] =>
+  text.split(",").map((item) => parseInt(item.trim(), 10)).filter((value) => !Number.isNaN(value));
+const passesListFilter = (value: number, match: number[], filter: number[]): boolean =>
+  (!match.length || match.includes(value)) && (!filter.length || !filter.includes(value));
+
 const newPosition = (index: number): PayloadPosition => ({
   name: `position_${index}`,
   candidates: [],
@@ -51,6 +59,16 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress>();
   const [filter, setFilter] = useState("");
+  const [matchStatus, setMatchStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [matchSize, setMatchSize] = useState("");
+  const [filterSize, setFilterSize] = useState("");
+  const [matchWords, setMatchWords] = useState("");
+  const [filterWords, setFilterWords] = useState("");
+  const [matchLines, setMatchLines] = useState("");
+  const [filterLines, setFilterLines] = useState("");
+  const [matchGrep, setMatchGrep] = useState(false);
+  const [filterGrep, setFilterGrep] = useState(false);
   const [maskValues, setMaskValues] = useState(true);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [savedSets, setSavedSets] = useState<SavedSet[]>(() => {
@@ -63,9 +81,24 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
     () => previewCombinations(attackType, positions, 5),
     [attackType, positions],
   );
-  const visibleResults = useMemo(() => results.filter((result) =>
-    !filter || JSON.stringify(result).toLowerCase().includes(filter.toLowerCase()),
-  ), [filter, results]);
+  const visibleResults = useMemo(() => {
+    const statusMatch = parseIntList(matchStatus), statusFilter = parseIntList(filterStatus);
+    const sizeMatch = parseIntList(matchSize), sizeFilter = parseIntList(filterSize);
+    const wordsMatch = parseIntList(matchWords), wordsFilter = parseIntList(filterWords);
+    const linesMatch = parseIntList(matchLines), linesFilter = parseIntList(filterLines);
+    return results.filter((result) => {
+      if (filter && !JSON.stringify(result).toLowerCase().includes(filter.toLowerCase())) return false;
+      if (!passesListFilter(result.status_code ?? -1, statusMatch, statusFilter)) return false;
+      if (!passesListFilter(result.response_length, sizeMatch, sizeFilter)) return false;
+      if (!passesListFilter(result.word_count, wordsMatch, wordsFilter)) return false;
+      if (!passesListFilter(result.line_count, linesMatch, linesFilter)) return false;
+      const grepHit = [...result.string_matches, ...result.regex_matches].some(Boolean);
+      if (matchGrep && !grepHit) return false;
+      if (filterGrep && grepHit) return false;
+      return true;
+    });
+  }, [filter, results, matchStatus, filterStatus, matchSize, filterSize,
+    matchWords, filterWords, matchLines, filterLines, matchGrep, filterGrep]);
   useEffect(() => {
     if (!running || !runId.current) return;
     const timer = setInterval(async () => {
@@ -343,6 +376,32 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
             .then(() => setError("")).catch((reason) => setError(String(reason)))}>Evidence 연결</button>
           <button onClick={() => download("json")}>JSON</button><button onClick={() => download("csv")}>CSV</button>
         </header>
+        <div className="intruderMatchFilterBar">
+          <div className="intruderStopRules">
+            <label>Match status<input value={matchStatus} placeholder="ffuf -mc · 200,301"
+              onChange={(event) => setMatchStatus(event.target.value)} /></label>
+            <label>Match 크기<input value={matchSize} placeholder="ffuf -ms · 1234"
+              onChange={(event) => setMatchSize(event.target.value)} /></label>
+            <label>Match 단어수<input value={matchWords} placeholder="ffuf -mw · 42"
+              onChange={(event) => setMatchWords(event.target.value)} /></label>
+            <label>Match 줄수<input value={matchLines} placeholder="ffuf -ml · 10"
+              onChange={(event) => setMatchLines(event.target.value)} /></label>
+            <label className="check"><input type="checkbox" checked={matchGrep}
+              onChange={(event) => setMatchGrep(event.target.checked)} /> Grep 일치만</label>
+          </div>
+          <div className="intruderStopRules">
+            <label>Filter status<input value={filterStatus} placeholder="ffuf -fc · 404"
+              onChange={(event) => setFilterStatus(event.target.value)} /></label>
+            <label>Filter 크기<input value={filterSize} placeholder="ffuf -fs · 0"
+              onChange={(event) => setFilterSize(event.target.value)} /></label>
+            <label>Filter 단어수<input value={filterWords} placeholder="ffuf -fw · 1"
+              onChange={(event) => setFilterWords(event.target.value)} /></label>
+            <label>Filter 줄수<input value={filterLines} placeholder="ffuf -fl · 1"
+              onChange={(event) => setFilterLines(event.target.value)} /></label>
+            <label className="check"><input type="checkbox" checked={filterGrep}
+              onChange={(event) => setFilterGrep(event.target.checked)} /> Grep 일치 숨김</label>
+          </div>
+        </div>
         <table><thead><tr><th></th><th>#</th><th>위치 값</th><th>Status</th><th>길이</th><th>기준 차이</th><th>단어/줄</th><th>시간</th><th>Match</th><th>검토</th></tr></thead>
           <tbody>{visibleResults.map((result, index) => <tr key={result.exchange_id}>
             <td><input type="checkbox" checked={selected.has(result.exchange_id)} onChange={(event) =>

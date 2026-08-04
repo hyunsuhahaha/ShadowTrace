@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
+import LfiPayloadReference from "./LfiPayloadReference";
 import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
@@ -87,7 +88,7 @@ export default function WebWorkspace() {
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
     [workspaceTab, setWorkspaceTab] =
-      useState<"request" | "intruder" | "sqli" | "proxy" | "results">("request"),
+      useState<"request" | "intruder" | "sqli" | "lfi" | "proxy" | "results">("request"),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [curlInput, setCurlInput] = useState(""),
     [error, setError] = useState("");
@@ -302,6 +303,8 @@ export default function WebWorkspace() {
             onClick={() => setWorkspaceTab("intruder")}>Intruder</button>
           <button role="tab" aria-selected={workspaceTab === "sqli"}
             onClick={() => setWorkspaceTab("sqli")}>SQLi 참고</button>
+          <button role="tab" aria-selected={workspaceTab === "lfi"}
+            onClick={() => setWorkspaceTab("lfi")}>LFI 참고</button>
           <button role="tab" aria-selected={workspaceTab === "proxy"}
             onClick={() => setWorkspaceTab("proxy")}>Proxy</button>
           <button role="tab" aria-selected={workspaceTab === "results"}
@@ -341,6 +344,8 @@ export default function WebWorkspace() {
               onGoToRequest={() => setWorkspaceTab("request")} />
           ) : workspaceTab === "sqli" ? (
             <SqlPayloadReference onSendToIntruder={sendToIntruder} />
+          ) : workspaceTab === "lfi" ? (
+            <LfiPayloadReference onSendToIntruder={sendToIntruder} />
           ) : workspaceTab === "proxy" ? (
             <ProxyPanel projectId={targets.data?.find((t) => t.id === targetId)?.project_id}
               targetId={targetId} onOpenRequest={openCapturedRequest}
@@ -352,7 +357,7 @@ export default function WebWorkspace() {
           </div>}
           {workspaceTab === "request" && <>
           {intruderSeed && !requestId && <div className="intruderPendingNotice">
-            <b>SQLi 페이로드 {intruderSeed.values.length}개가 대기 중입니다.</b>
+            <b>페이로드 {intruderSeed.values.length}개가 대기 중입니다.</b>
             <p>
               아래에서 요청을 완성하고 저장하면 Intruder 탭에 자동으로 채워집니다.
               테스트할 파라미터 값을 <code>{"{{position_1}}"}</code>으로 바꾸는 것도 잊지 마세요.

@@ -87,7 +87,7 @@ it("sends SQLi payloads straight to the Intruder tab, even with nothing saved ye
   expect(screen.getByText("먼저 저장된 요청이 필요합니다.")).toBeTruthy();
 
   fireEvent.click(screen.getByText("Request 탭 열기 →"));
-  expect(screen.getByText(/SQLi 페이로드 \d+개가 대기 중입니다\./)).toBeTruthy();
+  expect(screen.getByText(/페이로드 \d+개가 대기 중입니다\./)).toBeTruthy();
 });
 
 it("imports a pasted curl command into the request editor", async () => {
