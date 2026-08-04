@@ -175,6 +175,19 @@ export default function App() {
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
   }, [targetId]);
   useEffect(() => {
+    // Run tracking (runStates, live-stream focus) is keyed only by template
+    // id, not target id, so it must be cleared explicitly on target switch —
+    // otherwise a target with prior scan history shows stale/other-target
+    // run status, and a switched-away-from target's in-flight completion
+    // still updates the now-unfocused output/detail panes.
+    Object.values(activeEventSourcesRef.current).forEach((source) => source.close());
+    activeEventSourcesRef.current = {};
+    focusedRunIdRef.current = undefined;
+    setFocusedRunId(undefined);
+    setRunStates({});
+    setOutput("서비스를 선택하고 검토한 명령을 실행하세요.\n");
+  }, [targetId]);
+  useEffect(() => {
     setServiceId((current) => keepSelectedService(current, services.data));
   }, [targetId, services.data]);
   useEffect(() => {
