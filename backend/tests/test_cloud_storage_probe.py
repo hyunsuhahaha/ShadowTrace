@@ -1,4 +1,4 @@
-from app.cloud_storage_probe import classify_provider
+from app.cloud_storage_probe import classify_provider, interpret_error_code
 from app.templates import catalog as command_catalog
 
 ACCESS_DENIED_XML = "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"
@@ -9,6 +9,46 @@ def test_classifies_real_aws_s3_by_the_amazon_server_header():
         {"Server": "AmazonS3", "x-amz-request-id": "ABC123"}, ACCESS_DENIED_XML)
     assert result["provider"] == "aws-s3"
     assert result["error_code"] == "AccessDenied"
+
+
+def test_access_denied_is_interpreted_as_a_real_but_private_resource():
+    # The three scenarios (private-but-real, doesn't-exist, needs-real-auth)
+    # each call for a different next enumeration step, so the meaning
+    # matters more here than which provider returned the code.
+    interpretation = interpret_error_code("AccessDenied")
+    assert "비공개" in interpretation["meaning"]
+    assert "존재" in interpretation["meaning"]
+
+
+def test_no_such_bucket_is_interpreted_as_a_naming_problem_not_a_permission_one():
+    interpretation = interpret_error_code("NoSuchBucket")
+    assert "존재하지 않습니다" in interpretation["meaning"]
+
+
+def test_invalid_access_key_id_is_interpreted_as_requiring_real_credentials():
+    interpretation = interpret_error_code("InvalidAccessKeyId")
+    assert "인증" in interpretation["meaning"]
+
+
+def test_error_code_lookup_is_case_insensitive():
+    assert interpret_error_code("accessdenied") == interpret_error_code("AccessDenied")
+
+
+def test_unrecognized_or_missing_error_code_has_no_interpretation():
+    assert interpret_error_code("SomeUnknownCode") is None
+    assert interpret_error_code(None) is None
+
+
+def test_classify_provider_attaches_the_interpretation_for_a_known_code():
+    result = classify_provider({"Server": "AmazonS3"}, ACCESS_DENIED_XML)
+    assert result["meaning"] is not None
+    assert result["next_step"] is not None
+
+
+def test_classify_provider_leaves_interpretation_blank_for_an_unknown_code():
+    result = classify_provider({}, "<html>not a storage error</html>")
+    assert result["meaning"] is None
+    assert result["next_step"] is None
 
 
 def test_classifies_minio_separately_from_real_aws_despite_shared_amz_headers():
