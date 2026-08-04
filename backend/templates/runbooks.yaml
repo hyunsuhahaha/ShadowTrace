@@ -331,7 +331,7 @@ runbooks:
         transitions:
           - {when: {approval_status: approved}, target: permissions, label: 승인됨}
           - {default: true, target: permissions, label: 인증 없이 수동 정리}
-        command_refs: [mysql-default-audit, postgres-default-audit, mssql-default-audit, redis-default-audit]
+        command_refs: [mysql-credential-probe, postgres-default-audit, mssql-default-audit, redis-default-audit]
         expected_observations: [성공 계정, 잠금 또는 속도 제한, 인증 방식]
       - title: 권한과 데이터 접근 수동 확인
         node_key: permissions

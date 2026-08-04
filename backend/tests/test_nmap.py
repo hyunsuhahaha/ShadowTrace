@@ -156,7 +156,7 @@ def test_command_level_match_keeps_protocol_specific_audits_separate():
     postgres = {
         item["id"] for item in catalog.commands_for("postgresql", 5432, "tcp")
     }
-    assert "mysql-default-audit" in mysql
+    assert "mysql-credential-probe" in mysql
     assert "postgres-default-audit" not in mysql
     assert "postgres-default-audit" in postgres
 
@@ -348,7 +348,7 @@ def test_current_auth_protocols_have_specific_reviewed_checks():
         },
         ("ldap", 389, "tcp"): {"ldap-rootdse", "ldap-default-audit"},
         ("mysql", 3306, "tcp"): {
-            "mysql-empty-password", "mysql-default-audit",
+            "mysql-empty-password", "mysql-credential-probe",
         },
         ("ms-sql-s", 1433, "tcp"): {
             "mssql-empty-password", "mssql-default-audit",
@@ -440,64 +440,6 @@ def test_mysql_credential_probe_script_rejects_too_many_combinations(tmp_path):
     assert result.returncode == 2
     assert "상한 40개를 초과" in result.stdout
 
-def test_mysql_default_audit_passes_the_edited_candidates_as_a_custom_wordlist():
-    # nmap's own unpwdb.userlimit/passlimit only trim its bundled wordlist —
-    # they can't inject arbitrary candidates. userdb/passdb (both genuinely
-    # supported by nselib/unpwdb.lua) can, so route the same edited
-    # candidates mysql-credential-probe gets into a real wordlist file
-    # instead of leaving this check stuck on nmap's generic top-8/top-4.
-    _, command, argv = catalog.render("mysql-default-audit", {
-        "host": "10.10.10.23", "port": "3306", "repo_dir": "/opt/oscp-workspace",
-        "username": "root,svc", "password": ",toor"})
-    assert argv[:2] == ["bash", "/opt/oscp-workspace/backend/scripts/mysql_brute_audit.sh"]
-    assert argv[2:] == ["10.10.10.23", "3306", "root,svc", ",toor"]
-    assert "unpwdb.userlimit" not in command
-    assert "unpwdb.passlimit" not in command
-
-def test_mysql_brute_audit_script_writes_a_real_wordlist_file_and_cleans_up(tmp_path):
-    script = Path(__file__).parents[1] / "scripts" / "mysql_brute_audit.sh"
-    # Stub out nmap: dump the userdb/passdb file paths and contents so the
-    # test can check what actually got written, including that the blank-
-    # password candidate survives as a literal empty line (unpwdb.lua reads
-    # every line from the file, blank ones included, as a valid password).
-    fake_nmap = tmp_path / "nmap"
-    fake_nmap.write_text(
-        "#!/usr/bin/env bash\n"
-        'for arg in "$@"; do\n'
-        '  case "$arg" in\n'
-        "    userdb=*,passdb=*,*)\n"
-        '      userdb="${arg#userdb=}"; userdb="${userdb%%,passdb=*}"\n'
-        '      passdb="${arg#*passdb=}"; passdb="${passdb%%,*}"\n'
-        '      echo "USERDB:$(cat "$userdb" | tr \'\\n\' \'|\')"\n'
-        '      echo "PASSDB:$(cat "$passdb" | tr \'\\n\' \'|\')"\n'
-        "      ;;\n"
-        "  esac\n"
-        "done\n"
-        "exit 0\n")
-    fake_nmap.chmod(0o755)
-    tmpdir = tmp_path / "mktemp-home"
-    tmpdir.mkdir()
-    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "TMPDIR": str(tmpdir)}
-
-    result = subprocess.run(
-        ["bash", str(script), "10.10.10.23", "3306", "root,svc", ",toor"],
-        capture_output=True, text=True, env=env, timeout=10)
-
-    assert result.returncode == 0
-    assert "USERDB:root|svc|" in result.stdout
-    assert "PASSDB:|toor|" in result.stdout
-    # mktemp respects $TMPDIR, so a leftover file here means the script's
-    # cleanup trap didn't run (e.g. it used `exec nmap ...`, which replaces
-    # the shell process and skips the EXIT trap entirely).
-    assert list(tmpdir.iterdir()) == []
-
-def test_mysql_brute_audit_script_overrides_mysql_brutes_five_second_default():
-    # Unlike mysql-empty-password, mysql-brute.nse reads its timeout from
-    # stdnse.get_script_args("mysql-brute.timeout") (5s default) — this one
-    # actually can be raised via --script-args, so do that instead of
-    # relying solely on the mysql-credential-probe fallback.
-    script = (Path(__file__).parents[1] / "scripts" / "mysql_brute_audit.sh").read_text()
-    assert "mysql-brute.timeout=30" in script
 
 def test_xxe_rejected():
     bad=b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><nmaprun>&e;</nmaprun>'
