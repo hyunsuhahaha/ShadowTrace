@@ -37,6 +37,47 @@ describe("credential audit result summary", () => {
     });
   });
 
+  it("reports MySQL accounts with an empty password", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-empty-password",
+      "3306/tcp open  mysql\n| mysql-empty-password:\n" +
+        "|   anonymous account has empty password\n|_  root account has empty password\n",
+      "",
+    )).toEqual({
+      status: "exposed",
+      label: "빈 비밀번호 허용됨 · anonymous, root",
+      credential: {username: "anonymous", password: ""},
+    });
+  });
+
+  it("reports MySQL as clear when the empty-password script finds nothing", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-empty-password",
+      "3306/tcp open  mysql\n",
+      "",
+    )).toEqual({status: "clear", label: "빈 비밀번호 허용되지 않음"});
+  });
+
+  it("reports the MSSQL sa account when its password is empty", () => {
+    expect(summarizeCredentialAudit(
+      "mssql-empty-password",
+      "| ms-sql-empty-password:\n|   [10.0.0.1\\SQLEXPRESS]\n|_    sa:<empty> => Login Success\n",
+      "",
+    )).toEqual({
+      status: "exposed",
+      label: "빈 비밀번호 허용됨 · sa",
+      credential: {username: "sa", password: ""},
+    });
+  });
+
+  it("reports MSSQL as clear when sa's password isn't blank", () => {
+    expect(summarizeCredentialAudit(
+      "mssql-empty-password",
+      "1433/tcp open  ms-sql-s\n",
+      "",
+    )).toEqual({status: "clear", label: "빈 비밀번호 허용되지 않음"});
+  });
+
   it("does not report success from nmap's own 'No valid accounts found' failure message", () => {
     expect(summarizeCredentialAudit(
       "mysql-default-audit",

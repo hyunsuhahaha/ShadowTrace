@@ -19,6 +19,32 @@ export function summarizeCredentialAudit(
         }
       : {status: "clear", label: "익명 로그인 허용되지 않음"};
   }
+  if (templateId === "mysql-empty-password") {
+    // mysql-empty-password.nse prints one line per vulnerable account and
+    // nothing at all when neither account is vulnerable — there's no
+    // separate "not vulnerable" marker to look for.
+    const accounts = [...output.matchAll(/(anonymous|root) account has empty password/gi)]
+      .map((match) => match[1]);
+    return accounts.length
+      ? {
+          status: "exposed",
+          label: `빈 비밀번호 허용됨 · ${accounts.join(", ")}`,
+          credential: {username: accounts[0], password: ""},
+        }
+      : {status: "clear", label: "빈 비밀번호 허용되지 않음"};
+  }
+  if (templateId === "mssql-empty-password") {
+    // ms-sql-empty-password.nse reports a hit as "sa:<empty> => Login
+    // Success"; like mysql-empty-password it prints nothing when sa's
+    // password isn't blank (at default verbosity).
+    return /sa:<empty>\s*=>\s*Login Success/i.test(output)
+      ? {
+          status: "exposed",
+          label: "빈 비밀번호 허용됨 · sa",
+          credential: {username: "sa", password: ""},
+        }
+      : {status: "clear", label: "빈 비밀번호 허용되지 않음"};
+  }
   if (!/(?:default-audit|community-audit)/i.test(templateId)) {
     return {status: "clear", label: "검사 완료 · 원문 확인"};
   }
