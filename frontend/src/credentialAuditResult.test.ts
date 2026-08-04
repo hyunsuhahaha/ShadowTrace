@@ -78,6 +78,28 @@ describe("credential audit result summary", () => {
     )).toEqual({status: "clear", label: "빈 비밀번호 허용되지 않음"});
   });
 
+  it("reports a direct mysql client login as success when the query actually runs", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-root-connect",
+      "+----------------+-----------+\n| CURRENT_USER() | VERSION() |\n" +
+        "+----------------+-----------+\n| root@%         | 8.0.36    |\n" +
+        "+----------------+-----------+\n",
+      "",
+    )).toEqual({
+      status: "exposed",
+      label: "root 계정 빈 비밀번호로 접속 성공",
+      credential: {username: "root", password: ""},
+    });
+  });
+
+  it("reports a direct mysql client login as failed when the server rejects it", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-root-connect",
+      "",
+      "ERROR 1045 (28000): Access denied for user 'root'@'10.10.14.5' (using password: NO)\n",
+    )).toEqual({status: "clear", label: "root 계정 빈 비밀번호로 접속 실패"});
+  });
+
   it("does not report success from nmap's own 'No valid accounts found' failure message", () => {
     expect(summarizeCredentialAudit(
       "mysql-default-audit",

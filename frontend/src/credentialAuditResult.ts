@@ -45,6 +45,18 @@ export function summarizeCredentialAudit(
         }
       : {status: "clear", label: "빈 비밀번호 허용되지 않음"};
   }
+  if (templateId === "mysql-root-connect") {
+    // The mysql client refuses to connect with a plain error (e.g. "ERROR
+    // 1045 (28000): Access denied...") when the login fails; anything else
+    // means the SELECT actually ran, i.e. root has no password.
+    return /error \d+/i.test(output)
+      ? {status: "clear", label: "root 계정 빈 비밀번호로 접속 실패"}
+      : {
+          status: "exposed",
+          label: "root 계정 빈 비밀번호로 접속 성공",
+          credential: {username: "root", password: ""},
+        };
+  }
   if (!/(?:default-audit|community-audit)/i.test(templateId)) {
     return {status: "clear", label: "검사 완료 · 원문 확인"};
   }
