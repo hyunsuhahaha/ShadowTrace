@@ -20,6 +20,7 @@ from .modules.reports.router import router as report_router
 from .modules.findings.router import router as finding_router
 from .modules.operations.router import router as operations_router
 from .modules.vpn import router as vpn_router
+from .modules.hosts import router as hosts_router
 from .modules.system import router as system_router
 from .modules.privesc_server import (
     kill_orphaned_server, router as privesc_server_router,
@@ -112,6 +113,7 @@ app.include_router(report_router)
 app.include_router(finding_router)
 app.include_router(operations_router)
 app.include_router(vpn_router)
+app.include_router(hosts_router)
 app.include_router(privesc_server_router)
 app.include_router(exploit_research_router)
 app.include_router(runbook_workflow_router)

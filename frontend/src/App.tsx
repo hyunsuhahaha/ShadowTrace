@@ -238,7 +238,16 @@ export default function App() {
   const webScheme = service?.tls || /https|ssl/i.test(service?.name || "") ? "https" : "http";
   const webPort = service && !(["http:80", "https:443"].includes(
     `${webScheme}:${service.port}`)) ? `:${service.port}` : "";
-  const webUrl = target && service ? `${webScheme}://${target.ip}${webPort}/` : "";
+  const webUrl = target && service
+    ? `${webScheme}://${target.hostname || target.ip}${webPort}/` : "";
+  useEffect(() => {
+    if (!target?.hostname || !target.ip) return;
+    api("/hosts/sync", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({hostname: target.hostname, ip: target.ip}),
+    }).catch(() => {});
+  }, [target?.id, target?.hostname, target?.ip]);
   const selectedExecution = serviceExecutions.find(
     (item) => item.id === selectedExecutionId,
   );
