@@ -90,7 +90,9 @@ export default function WebWorkspace() {
     [error, setError] = useState("");
   const sendToIntruder = (payloads: string[]) => {
     setIntruderSeed({ token: Date.now(), values: payloads });
-    setWorkspaceTab("intruder");
+    // Intruder can't run without a saved request to attack, so without one
+    // send the user to build/save it first instead of a dead-end Intruder tab.
+    setWorkspaceTab(requestId ? "intruder" : "request");
   };
   const targets = useQuery({
       queryKey: ["allTargets"],
@@ -209,6 +211,21 @@ export default function WebWorkspace() {
   };
   const field = (key: keyof SavedRequest, value: any) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const deleteRequest = async (request: SavedRequest) => {
+    if (!confirm(`"${request.name}" 요청과 저장된 응답 이력을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    try {
+      await api(`/web/requests/${request.id}`, { method: "DELETE" });
+      if (request.id === requestId) {
+        setRequestId(undefined);
+        setDraft(empty(targets.data?.find((x) => x.id === targetId)));
+        setExchangeId(undefined);
+        setResponse("Send a user-authored request to inspect the response.");
+      }
+      qc.invalidateQueries({ queryKey: ["webRequests", targetId] });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
   const duplicate = async () => {
     if (!requestId) return;
     const copy = await api<SavedRequest>(
@@ -270,16 +287,21 @@ export default function WebWorkspace() {
           {!requests.isLoading && !requests.data?.length &&
             <EmptyState title="저장된 요청이 없습니다" description="새 요청을 만들어 저장하세요." />}
           {requests.data?.map((r) => (
-            <button
-              className={r.id === requestId ? "active" : ""}
-              key={r.id}
-              onClick={() => select(r)}
-            >
-              <b>{r.name}</b>
-              <small>
-                {r.method} · {r.folder || "분류 없음"}
-              </small>
-            </button>
+            <div className="collectionRow" key={r.id}>
+              <button
+                className={r.id === requestId ? "active" : ""}
+                onClick={() => select(r)}
+              >
+                <b>{r.name}</b>
+                <small>
+                  {r.method} · {r.folder || "분류 없음"}
+                </small>
+              </button>
+              <button className="collectionDelete" aria-label={`${r.name} 삭제`}
+                onClick={() => deleteRequest(r)}>
+                삭제
+              </button>
+            </div>
           ))}
         </aside>
         <section className={`requestEditor requestEditor--${workspaceTab}`}>
@@ -296,6 +318,13 @@ export default function WebWorkspace() {
             <p>오른쪽 응답을 선택하고 기준 응답과 차이를 검토하세요.</p>
           </div>}
           {workspaceTab === "request" && <>
+          {intruderSeed && !requestId && <div className="intruderPendingNotice">
+            <b>SQLi 페이로드 {intruderSeed.values.length}개가 대기 중입니다.</b>
+            <p>
+              아래에서 요청을 완성하고 저장하면 Intruder 탭에 자동으로 채워집니다.
+              테스트할 파라미터 값을 <code>{"{{position_1}}"}</code>으로 바꾸는 것도 잊지 마세요.
+            </p>
+          </div>}
           <div className="requestLine">
             <select
               value={draft.method}
