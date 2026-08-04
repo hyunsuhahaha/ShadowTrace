@@ -1139,6 +1139,20 @@ export default function App() {
               <h1>{service?.name?.toUpperCase() || "서비스 선택"}</h1>
             </div>
             <div className="serviceHeadActions">
+              {isWebService&&!target?.hostname&&(() => {
+                const hostnameCommand = targetCommands.data?.find(
+                  (item: any) => item.id === "target-hostname-identity");
+                const hostnameState = runStates["target-hostname-identity"];
+                const hostnameBusy = !!hostnameState
+                  && ["starting", "running"].includes(hostnameState.status);
+                return <div className="webServiceActions webServiceActions--hostname">
+                  <span>Hostname 미확인 · IP로 접속됩니다</span>
+                  <button disabled={hostnameBusy || !hostnameCommand}
+                    onClick={() => hostnameCommand && reviewCommand(hostnameCommand)}>
+                    {hostnameBusy ? "확인 중…" : "Hostname 자동 확인"}
+                  </button>
+                </div>;
+              })()}
               {isWebService&&webUrl&&<div className="webServiceActions">
                 <a href={webUrl} target="_blank" rel="noreferrer">사이트 열기 ↗</a>
                 <button onClick={()=>{
