@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .models import Execution, Service, Target
 from .nmap_parser import parse_nmap
+from .pty_manager import _terminate_tree
 from .time import utcnow
 
 processes: dict[int, asyncio.subprocess.Process] = {}
@@ -198,11 +199,11 @@ async def stop_execution(execution_id: int):
     process = processes.get(execution_id)
     if not process or process.returncode is not None:
         return False
-    os.killpg(process.pid, signal.SIGTERM)
+    _terminate_tree(process.pid, signal.SIGTERM)
     try:
         await asyncio.wait_for(process.wait(), timeout=3)
     except asyncio.TimeoutError:
-        os.killpg(process.pid, signal.SIGKILL)
+        _terminate_tree(process.pid, signal.SIGKILL)
     with SessionLocal() as db:
         row = db.get(Execution, execution_id)
         if row:

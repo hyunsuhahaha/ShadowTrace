@@ -11,6 +11,50 @@ from .models import InteractiveSession
 from .time import utcnow
 
 
+def _descendant_pids(root_pid: int) -> list[int]:
+    """Walk /proc's PPid links to find every descendant of root_pid.
+
+    killpg() alone misses processes sudo detaches into a fresh session --
+    sudoers' `use_pty` (the Kali/Debian default) does exactly that for
+    long-running children like `sudo responder`, so a killed PTY session
+    left the actual Responder process orphaned and still holding its
+    ports for every later listener to fight over."""
+    parents: dict[int, int] = {}
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/status") as handle:
+                for line in handle:
+                    if line.startswith("PPid:"):
+                        parents[int(entry)] = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            continue
+    children: dict[int, list[int]] = {}
+    for pid, ppid in parents.items():
+        children.setdefault(ppid, []).append(pid)
+    result: list[int] = []
+    stack = [root_pid]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            result.append(child)
+            stack.append(child)
+    return result
+
+
+def _terminate_tree(root_pid: int, sig: signal.Signals) -> None:
+    for pid in [root_pid, *_descendant_pids(root_pid)]:
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            pass
+    try:
+        os.killpg(root_pid, sig)
+    except ProcessLookupError:
+        pass
+
+
 class PtyManager:
     def __init__(self):
         self.processes: dict[int, asyncio.subprocess.Process] = {}
@@ -108,7 +152,7 @@ class PtyManager:
                     row.ended_at = utcnow(); row.pid = None; db.commit()
         finally:
             if process and process.returncode is None:
-                os.killpg(process.pid, signal.SIGTERM)
+                _terminate_tree(process.pid, signal.SIGTERM)
             self.processes.pop(session_id, None)
             self.masters.pop(session_id, None)
             try:
@@ -128,11 +172,11 @@ class PtyManager:
             row = db.get(InteractiveSession, session_id)
             if row:
                 row.status = "stopping"; db.commit()
-        os.killpg(process.pid, signal.SIGTERM)
+        _terminate_tree(process.pid, signal.SIGTERM)
         try:
             await asyncio.wait_for(process.wait(), 3)
         except asyncio.TimeoutError:
-            os.killpg(process.pid, signal.SIGKILL)
+            _terminate_tree(process.pid, signal.SIGKILL)
         return True
 
     async def shutdown(self) -> None:
