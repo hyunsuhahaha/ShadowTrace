@@ -294,9 +294,11 @@ def target_identity_commands(ident: int, db: Session = Depends(get_db)):
     project = need(db, Project, target.project_id)
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
-    variables = {"host": target.ip, "output_dir": str(target_dir / "outputs")}
+    variables = {"host": target.ip, "output_dir": str(target_dir / "outputs"),
+                 "repo_dir": str(REPOSITORY_DIR)}
     result = []
-    for template_id in ("target-hostname-identity", "target-os-identity"):
+    for template_id in ("target-hostname-redirect", "target-hostname-ntlm",
+                        "target-hostname-identity", "target-os-identity"):
         item = catalog.items.get(template_id)
         if not item:
             raise HTTPException(500, "Target identity command is not configured")

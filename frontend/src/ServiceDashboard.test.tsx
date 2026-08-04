@@ -10,7 +10,7 @@ const service = {id: 7, target_id: 2, port: 445, protocol: "tcp", state: "open",
   notes: "", tags: "", cpe: "[]", tls: false, detection_evidence: ""} as Service;
 const target = {id: 2, project_id: 1, name: "DC", ip: "10.10.10.10",
   hostname: "", os_guess: "", vpn: "", notes: ""} as Target;
-const hostnameCommand = {id: "target-hostname-identity", name: "Hostname 확인",
+const hostnameCommand = {id: "target-hostname-redirect", name: "Hostname 확인",
   risk: "low", execution_mode: "argv"};
 
 it("summarizes missing facts and forwards a target identity check", () => {

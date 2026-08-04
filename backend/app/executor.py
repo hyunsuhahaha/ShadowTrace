@@ -1,4 +1,4 @@
-import asyncio, json, os, shlex, signal
+import asyncio, json, os, re, shlex, signal
 from pathlib import Path
 from sqlalchemy.orm import Session
 from .database import SessionLocal
@@ -8,6 +8,30 @@ from .time import utcnow
 
 processes: dict[int, asyncio.subprocess.Process] = {}
 queues: dict[int, asyncio.Queue] = {}
+
+_REDIRECT_HOSTNAME_LINE = re.compile(r"^REDIRECT_HOSTNAME (\{.*\})$", re.MULTILINE)
+
+
+def update_target_hostname_from_redirect(db: Session, execution: Execution) -> bool:
+    """A site disclosing its own canonical vhost via redirect/meta-refresh is
+    a high-confidence signal for the exact value 사이트 열기 needs, so this
+    (unlike the NTLM info-leak probe, which names the underlying machine
+    rather than the site) is allowed to auto-fill Target.hostname."""
+    match = _REDIRECT_HOSTNAME_LINE.search(execution.stdout)
+    if not match:
+        return False
+    try:
+        hostname = json.loads(match.group(1)).get("hostname", "").strip()
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    if not hostname:
+        return False
+    target = db.get(Target, execution.target_id)
+    if not target or target.hostname:
+        return False
+    target.hostname = hostname
+    target.updated_at = utcnow()
+    return True
 
 
 def classify_execution_status(
@@ -147,6 +171,8 @@ async def run_execution(execution_id: int, argv: list[str], cwd: Path, output_fi
                         code, argv, row.stdout, row.stderr,
                     )
                 )
+                if code == 0 and row.template_id == "target-hostname-redirect":
+                    update_target_hostname_from_redirect(db, row)
                 observed = False
                 if code == 0 and "-oX" in argv:
                     xml_path = Path(argv[argv.index("-oX") + 1])

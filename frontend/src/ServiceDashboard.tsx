@@ -62,11 +62,12 @@ export default function ServiceDashboard({service, target, commands, targetComma
     <div className="serviceIntel__lower">
       <section><h3>미확인 항목</h3><div className="missingFacts">
         {!target?.hostname && (() => {
-          const state = autoCheckState(["target-hostname-identity"]);
+          const state = autoCheckState(["target-hostname-redirect",
+            "target-hostname-ntlm", "target-hostname-identity"]);
           return <div><span>Hostname</span><button
             className={state?.busy ? "isChecking" : ""}
             disabled={state?.busy || !targetCommands}
-            onClick={() => reviewTargetCommand("target-hostname-identity")}>
+            onClick={() => reviewTargetCommand("target-hostname-redirect")}>
             {state?.content || "자동 확인하기"}</button></div>;
         })()}
         {!target?.os_guess && (() => {

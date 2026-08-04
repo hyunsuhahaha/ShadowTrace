@@ -1159,8 +1159,10 @@ export default function App() {
             <div className="serviceHeadActions">
               {isWebService&&!target?.hostname&&(() => {
                 const hostnameCommand = targetCommands.data?.find(
-                  (item: any) => item.id === "target-hostname-identity");
-                const hostnameState = runStates["target-hostname-identity"];
+                  (item: any) => item.id === "target-hostname-redirect");
+                const hostnameState = ["target-hostname-redirect",
+                  "target-hostname-ntlm", "target-hostname-identity"]
+                  .map((id) => runStates[id]).find(Boolean);
                 const hostnameBusy = !!hostnameState
                   && ["starting", "running"].includes(hostnameState.status);
                 return <div className="webServiceActions webServiceActions--hostname">

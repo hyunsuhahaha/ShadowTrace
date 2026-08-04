@@ -2,7 +2,9 @@ target_identity:
   display_name: Target identity
   match: {services: [], ports: []}
   commands:
-    - {id: target-hostname-identity, name: Hostname 확인, description: 역방향 DNS 조회로 대상이 공개하는 Hostname을 확인하고 Target에 자동 저장합니다., command: "nmap -sn -R -oX {output_dir}/target-hostname-identity.xml {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: target-hostname-redirect, name: Hostname 확인 (HTTP 리다이렉트), description: IP로 접속했을 때 웹 서버가 3xx Location 헤더나 meta-refresh로 스스로 공개하는 정식 vhost 이름을 확인하고 Target에 자동 저장합니다. PTR 레코드가 없어도 동작합니다., command: "{repo_dir}/.venv/bin/python -m app.redirect_probe --host {host}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
+    - {id: target-hostname-ntlm, name: Hostname 확인 (NTLM 정보 노출), description: 인증 없이 NTLM negotiate만 보내 WinRM·IIS 등에서 노출되는 NetBIOS·DNS 컴퓨터명을 확인합니다. 실제 웹 vhost 이름과 다를 수 있어 참고 정보로만 표시되고 자동 저장되지 않습니다., command: "{repo_dir}/.venv/bin/python -m app.ntlm_probe --host {host}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
+    - {id: target-hostname-identity, name: Hostname 확인 (역방향 DNS), description: 역방향 DNS 조회로 대상이 공개하는 Hostname을 확인하고 Target에 자동 저장합니다. 대상 DNS 서버에 리버스 존이 설정돼 있어야 동작합니다., command: "nmap -sn -R -oX {output_dir}/target-hostname-identity.xml {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: target-os-identity, name: 운영체제·호스트명 식별, description: Nmap OS 탐지와 역방향 호스트명 조회를 실행하고 관찰된 운영체제와 호스트명을 Target에 자동 저장합니다. OS 탐지는 권한이 필요합니다., command: "nmap -O --osscan-guess -oX {output_dir}/target-os-identity.xml {host}", execution_mode: captured, risk: medium, tool: nmap, sudo: true, output: text, policy: allowed}
 ftp:
   display_name: FTP
@@ -61,6 +63,7 @@ http:
     - {id: http-default-audit, name: HTTP 루트 인증 제한 점검, description: 루트 경로의 Basic·Digest·NTLM 인증에 사용자 8개와 비밀번호 4개만 2분 동안 저속으로 점검합니다. Form 로그인은 포함하지 않습니다., command: "nmap -Pn -p{port} --script http-brute --script-args http-brute.path=/,brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: http-directory-fuzz, name: 디렉터리·파일 퍼징 (feroxbuster), description: 정적 워드리스트로 존재하는 경로를 찾습니다. 재귀 탐색은 하지 않으며 발견된 항목만 표시합니다., command: "feroxbuster -u {scheme}://{host}:{port}/ -w {wordlist} --json --silent -n", execution_mode: captured, risk: medium, tool: feroxbuster, sudo: false, output: text, policy: allowed, match: {services: [], ports: []}}
     - {id: http-vhost-fuzz, name: "가상 호스트 퍼징 (ffuf)", description: "Host 헤더를 워드리스트로 대입해 같은 IP·포트에 라우팅되는 다른 가상 호스트(서브도메인)를 찾습니다. 모든 응답을 보여주므로 baseline과 크기가 다른 결과 위주로 확인하세요.", command: "ffuf -u {scheme}://{host}:{port}/ -H \"Host: FUZZ.{domain}\" -w {wordlist} -mc all -t 40", execution_mode: captured, risk: medium, tool: ffuf, sudo: false, output: text, policy: allowed, match: {services: [], ports: []}}
+    - {id: http-param-fuzz, name: "GET 파라미터 이름 퍼징 (ffuf)", description: "지정한 경로에서 워드리스트의 각 이름을 GET 파라미터로 대입해 서버가 실제로 반응하는(page, file, include 등) 파라미터를 찾습니다. 모든 응답을 보여주므로 baseline과 크기가 다른 결과 위주로 확인하세요.", command: "ffuf -u {scheme}://{host}:{port}{path}?FUZZ=test -w {wordlist} -mc all -t 40", execution_mode: captured, risk: medium, tool: ffuf, sudo: false, output: text, policy: allowed, match: {services: [], ports: []}}
 smb:
   display_name: SMB and RPC
   match: {services: [microsoft-ds, netbios-ssn, smb], ports: [139, 445]}
