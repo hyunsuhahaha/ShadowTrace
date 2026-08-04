@@ -1,6 +1,7 @@
 import {forwardRef, useState} from "react";
 import {parseCandidates} from "./credentialCandidates";
 import {summarizeCredentialAudit} from "./credentialAuditResult";
+import {getDbExplorationGuide} from "./dbExplorationCommands";
 import type {RunState} from "./enumerationModel";
 import {statusCopy as statusLabel} from "./ui";
 
@@ -51,7 +52,16 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
 }, ref) {
   const [userText, setUserText] = useState(() => profile.identities.replaceAll(" · ", "\n"));
   const [passwordText, setPasswordText] = useState(() => profile.secrets.replaceAll(" · ", "\n"));
+  const [copiedCommand, setCopiedCommand] = useState<string>();
   if (!commands.length) return null;
+
+  const explorationGuide = getDbExplorationGuide(serviceName);
+  const copyCommand = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopiedCommand(value);
+    window.setTimeout(() => setCopiedCommand((current) =>
+      current === value ? undefined : current), 1500);
+  };
 
   const userCandidates = parseCandidates(userText);
   const passwordCandidates = parseCandidates(passwordText)
@@ -144,6 +154,23 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
                       ? `"${summary.credential.password}"를 입력하세요` : "그냥 Enter를 누르세요 (빈 비밀번호)"}
                   </small>
                 </div>
+              )}
+              {summary.status === "exposed" && explorationGuide && (
+                <details className="credentialExplorationGuide">
+                  <summary>{explorationGuide.title} · 접속 후 입력할 명령</summary>
+                  {explorationGuide.commands.map((item) => (
+                    <div className="credentialExplorationRow" key={item.label}>
+                      <div>
+                        <b>{item.label}</b>
+                        <code>{item.command}</code>
+                        {item.note && <small>{item.note}</small>}
+                      </div>
+                      <button type="button" onClick={() => void copyCommand(item.command)}>
+                        {copiedCommand === item.command ? "복사됨" : "복사"}
+                      </button>
+                    </div>
+                  ))}
+                </details>
               )}
               <details>
                 <summary>검사 원문 보기</summary>

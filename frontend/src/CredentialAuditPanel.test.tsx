@@ -121,6 +121,33 @@ it("shows the found password to type when it isn't blank", () => {
   expect(screen.getByText('비밀번호 프롬프트가 뜨면 "mysql"를 입력하세요')).toBeTruthy();
 });
 
+it("shows the DB exploration cheat sheet for a service that has one, with copy support", async () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  vi.stubGlobal("navigator", {...navigator, clipboard: {writeText}});
+  render(<CredentialAuditPanel profile={mysqlProfile} serviceName="mysql"
+    commands={[probeCommand]} runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS root:<empty>\nCURRENT_USER()\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} />);
+
+  expect(screen.getByText("MySQL 탐색 명령 · 접속 후 입력할 명령")).toBeTruthy();
+  expect(screen.getByText("SHOW DATABASES;")).toBeTruthy();
+
+  fireEvent.click(screen.getAllByText("복사")[0]);
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("SHOW DATABASES;"));
+  vi.unstubAllGlobals();
+});
+
+it("does not show a cheat sheet for a service with no exploration guide", () => {
+  render(<CredentialAuditPanel profile={profile} serviceName="smb" commands={[command]}
+    runStates={{[command.id]: {
+      templateId: command.id, name: command.name, status: "completed",
+      startedAt: 0, stdout: "admin:password - Valid credentials\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} />);
+
+  expect(screen.queryByText(/탐색 명령/)).toBeNull();
+});
+
 it("hides the terminal-open button when no onOpenTerminal handler is given", () => {
   render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
     runStates={{[probeCommand.id]: {
