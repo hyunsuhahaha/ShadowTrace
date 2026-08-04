@@ -22,6 +22,11 @@ export function summarizeCredentialAudit(
   if (!/(?:default-audit|community-audit)/i.test(templateId)) {
     return {status: "clear", label: "검사 완료 · 원문 확인"};
   }
+  // nmap's brute library always reports a real find as "user:pass - Valid
+  // credentials" on one line, so this pattern alone is sufficient — a looser
+  // fallback that just searched for "Valid account" anywhere in the output
+  // used to fire on nmap's own failure message "No valid accounts found",
+  // since that phrase contains "valid account" as a substring.
   const credential = output.match(
     /([^\s:|]+):(.*?)\s+-\s+(?:Valid credentials|Valid account|Authentication succeeded)/i,
   );
@@ -32,7 +37,5 @@ export function summarizeCredentialAudit(
       credential: {username: credential[1], password: credential[2]},
     };
   }
-  return /Valid credentials|Valid account|Authentication succeeded/i.test(output)
-    ? {status: "exposed", label: "로그인 성공 · 검사 원문에서 계정 확인"}
-    : {status: "clear", label: "유효한 인증 정보 발견되지 않음"};
+  return {status: "clear", label: "유효한 인증 정보 발견되지 않음"};
 }

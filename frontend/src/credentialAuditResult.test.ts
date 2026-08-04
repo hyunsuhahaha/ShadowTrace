@@ -36,4 +36,17 @@ describe("credential audit result summary", () => {
       credential: {username: "admin", password: "password"},
     });
   });
+
+  it("does not report success from nmap's own 'No valid accounts found' failure message", () => {
+    expect(summarizeCredentialAudit(
+      "mysql-default-audit",
+      "| mysql-brute: \n|   Accounts: No valid accounts found \n" +
+        "|   Statistics: Performed 0 guesses in 5 seconds, average tps: 0.0\n" +
+        "|_  ERROR: The service seems to have failed or is heavily firewalled...\n",
+      "",
+    )).toEqual({
+      status: "clear",
+      label: "유효한 인증 정보 발견되지 않음",
+    });
+  });
 });
