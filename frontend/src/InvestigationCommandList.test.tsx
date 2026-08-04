@@ -18,12 +18,26 @@ it("shows a remaining command and forwards review", () => {
   expect(onReview).toHaveBeenCalledWith(command);
 });
 
-it("hides a completed command", () => {
+it("hides a version prompt once the fact is already known", () => {
   render(<InvestigationCommandList commands={[command]}
-    executions={[{template_id: command.id, status: "completed"}]}
+    executions={[{id: 1, template_id: command.id, status: "completed"}]}
     target={{hostname: "dc.lab", os_guess: "Windows"} as Target}
     service={{product: "Samba", version: "4.19"} as Service}
     runStates={{}} clock={0} onReview={vi.fn()} />);
   expect(screen.getByText("이미 확인된 항목을 제외하면 실행할 명령이 없습니다."))
     .toBeTruthy();
+});
+
+it("keeps a finished command visible with its result instead of vanishing", () => {
+  const probe = {id: "spring-actuator-detect", name: "Actuator 노출 확인",
+    description: "인증 없이 노출되는지 확인", preview: "curl -s host/actuator",
+    risk: "low", execution_mode: "captured"};
+  render(<InvestigationCommandList commands={[probe]}
+    executions={[{id: 7, template_id: probe.id, status: "completed", stdout: "{}"}]}
+    runStates={{}} clock={0} onReview={vi.fn()} />);
+  expect(screen.getByText("Actuator 노출 확인")).toBeTruthy();
+  expect(screen.getByText("완료")).toBeTruthy();
+  expect(screen.getByText("다시 실행")).toBeTruthy();
+  fireEvent.click(screen.getByText("결과 보기"));
+  expect(screen.getByText("{}")).toBeTruthy();
 });

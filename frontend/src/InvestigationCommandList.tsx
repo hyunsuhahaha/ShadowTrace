@@ -7,7 +7,9 @@ type Command = {
   id: string; name: string; description: string; preview: string; risk: string;
   execution_mode: string;
 };
-type Execution = {template_id: string; status: string};
+type Execution = {
+  id: number; template_id: string; status: string; stdout?: string; stderr?: string;
+};
 type Props = {
   commands: Command[]; executions: Execution[]; target?: Target; service?: Service;
   runStates: Record<string, RunState>; clock: number;
@@ -16,15 +18,16 @@ type Props = {
 
 export default function InvestigationCommandList({commands, executions, target, service,
   runStates, clock, onReview}: Props) {
-  const completedTemplateIds = new Set(executions
-    .filter((item) => item.status === "completed")
-    .map((item) => item.template_id));
+  // Hostname/OS/version prompts still drop off once the fact is known some
+  // other way — but everything else (Actuator probes, git-dumper, etc.)
+  // stays listed after it runs so its result is visible instead of the card
+  // just vanishing with no trace.
   const investigationCommands = remainingInvestigationCommands(commands, {
     hostname: target?.hostname || "",
     osGuess: target?.os_guess || "",
     product: service?.product || "",
     version: service?.version || "",
-    completedTemplateIds,
+    completedTemplateIds: new Set(),
   });
 
   return <div className="cards">
@@ -33,10 +36,16 @@ export default function InvestigationCommandList({commands, executions, target, 
       const busy = !!run && ["starting", "running"].includes(run.status);
       const elapsed = run
         ? Math.max(0, Math.floor((clock - run.startedAt) / 1000)) : 0;
+      const latestExecution = executions
+        .filter((item) => item.template_id === command.id)
+        .sort((a, b) => b.id - a.id)[0];
       return <article key={command.id} className={busy ? "isRunning" : ""}>
         <div>
           {run ? <span className={`commandStatus commandStatus--${run.status}`}>
             {statusLabel[run.status] || (run.status === "starting" ? "실행 준비 중" : run.status)}
+          </span> : latestExecution ? <span
+            className={`commandStatus commandStatus--${latestExecution.status}`}>
+            {statusLabel[latestExecution.status] || latestExecution.status}
           </span> : <span className="badge">
             위험: {riskLabel[command.risk] || command.risk}
           </span>}
@@ -47,9 +56,13 @@ export default function InvestigationCommandList({commands, executions, target, 
         <div className="actions">
           <button onClick={() => navigator.clipboard.writeText(command.preview)}>복사</button>
           <button className="primary" disabled={busy} onClick={() => onReview(command)}>
-            {busy ? `실행 중 · ${elapsed}초` : "검토 후 실행 →"}
+            {busy ? `실행 중 · ${elapsed}초` : latestExecution ? "다시 실행" : "검토 후 실행 →"}
           </button>
         </div>
+        {!busy && latestExecution && <details className="investigationResult">
+          <summary>결과 보기</summary>
+          <pre>{latestExecution.stdout || latestExecution.stderr || "출력 없음"}</pre>
+        </details>}
       </article>;
     })}
     {!investigationCommands.length && <p className="investigationEmpty">
