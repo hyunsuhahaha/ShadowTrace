@@ -89,3 +89,41 @@ it("sends SQLi payloads straight to the Intruder tab, even with nothing saved ye
   fireEvent.click(screen.getByText("Request 탭 열기 →"));
   expect(screen.getByText(/SQLi 페이로드 \d+개가 대기 중입니다\./)).toBeTruthy();
 });
+
+it("imports a pasted curl command into the request editor", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  fireEvent.click(screen.getByText("cURL 붙여넣기로 가져오기"));
+  fireEvent.change(screen.getByPlaceholderText(/curl 'http/), { target: { value:
+    "curl 'http://10.10.10.10/login.php' -H 'Cookie: PHPSESSID=abc' --data-raw 'username=admin&password=x'" } });
+  fireEvent.click(screen.getByText("가져오기"));
+
+  expect((screen.getByDisplayValue("http://10.10.10.10/login.php") as HTMLInputElement).value)
+    .toBe("http://10.10.10.10/login.php");
+  expect((screen.getByDisplayValue("username=admin&password=x") as HTMLTextAreaElement).value)
+    .toBe("username=admin&password=x");
+  expect((screen.getByDisplayValue('{"PHPSESSID":"abc"}') as HTMLTextAreaElement).value)
+    .toBe('{"PHPSESSID":"abc"}');
+});
+
+it("shows an error and leaves the draft alone for text that isn't a curl command", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  fireEvent.click(screen.getByText("cURL 붙여넣기로 가져오기"));
+  fireEvent.change(screen.getByPlaceholderText(/curl 'http/), { target: { value: "not a curl command" } });
+  fireEvent.click(screen.getByText("가져오기"));
+
+  expect(screen.getByText(/유효한 curl 명령어가 아닙니다/)).toBeTruthy();
+});

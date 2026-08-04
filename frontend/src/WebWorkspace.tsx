@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
+import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
@@ -87,10 +88,29 @@ export default function WebWorkspace() {
     [workspaceTab, setWorkspaceTab] =
       useState<"request" | "intruder" | "sqli" | "results">("request"),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
+    [curlInput, setCurlInput] = useState(""),
     [error, setError] = useState("");
   const sendToIntruder = (payloads: string[]) => {
     setIntruderSeed({ token: Date.now(), values: payloads });
     setWorkspaceTab("intruder");
+  };
+  const importCurl = () => {
+    const parsed = parseCurl(curlInput);
+    if (!parsed) {
+      setError("유효한 curl 명령어가 아닙니다. 브라우저 Network 탭에서 \"Copy as cURL\"로 복사한 값을 붙여넣으세요.");
+      return;
+    }
+    setError("");
+    setDraft((current) => ({
+      ...current,
+      method: parsed.method,
+      url: parsed.url,
+      headers: JSON.stringify(parsed.headers),
+      cookies: JSON.stringify(parsed.cookies),
+      body: parsed.body,
+      body_mode: "raw",
+    }));
+    setCurlInput("");
   };
   const targets = useQuery({
       queryKey: ["allTargets"],
@@ -323,6 +343,16 @@ export default function WebWorkspace() {
               테스트할 파라미터 값을 <code>{"{{position_1}}"}</code>으로 바꾸는 것도 잊지 마세요.
             </p>
           </div>}
+          <details className="curlImport">
+            <summary>cURL 붙여넣기로 가져오기</summary>
+            <p>
+              브라우저 개발자도구 Network 탭(또는 Burp)에서 요청 우클릭 → "Copy as cURL"로
+              복사한 값을 붙여넣으면 Method·URL·Header·Cookie·Body를 채워줍니다.
+            </p>
+            <textarea value={curlInput} onChange={(e) => setCurlInput(e.target.value)}
+              placeholder="curl 'http://...' -H '...' --data-raw '...'" rows={3} />
+            <button type="button" disabled={!curlInput.trim()} onClick={importCurl}>가져오기</button>
+          </details>
           <div className="requestLine">
             <select
               value={draft.method}
