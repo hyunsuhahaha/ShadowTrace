@@ -12,6 +12,7 @@ import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
 import VhostFuzzPanel from "./VhostFuzzPanel";
+import ParamFuzzPanel from "./ParamFuzzPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
@@ -785,6 +786,18 @@ export default function App() {
       variables: {domain, wordlist},
     });
   };
+  const runParamFuzz = (path: string, wordlist: string) => {
+    if (!target || !service || !path.trim() || !wordlist.trim()) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "http-param-fuzz",
+      preview: `ffuf -u ${scheme}://${target.ip}:${service.port}${path}?FUZZ=test` +
+        ` -w ${wordlist} -mc all -t 40`,
+      target_level: false,
+      variables: {path, wordlist},
+    });
+  };
   const runKerbruteEnum = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
     setRunWithSudo(false);
@@ -1317,6 +1330,13 @@ export default function App() {
               runState={runStates["http-vhost-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runVhostFuzz}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <ParamFuzzPanel target={target}
+              runState={runStates["http-param-fuzz"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runParamFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (
