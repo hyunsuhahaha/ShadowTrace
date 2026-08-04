@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
 import React from "react";
-import {cleanup, render, screen} from "@testing-library/react";
+import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {afterEach, expect, it, vi} from "vitest";
 import ServiceIntelligencePanel, {type ServiceIntelligence} from "./ServiceIntelligencePanel";
+import {api} from "./api";
+
+vi.mock("./api",()=>({api:vi.fn()}));
+
+const renderPanel=(node:React.ReactElement)=>render(
+  <QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}>
+    {node}
+  </QueryClientProvider>,
+);
 
 afterEach(cleanup);
 
@@ -18,7 +28,7 @@ it("shows completed execution state without explanatory filler",()=>{
     ],
     attack_surface:[],related_services:[],runbooks:[],integration_counts:{},
   };
-  render(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
+  renderPanel(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
   expect(screen.getByLabelText("2단계 중 1단계 정보 확인")).toBeTruthy();
   expect(screen.getByText("서비스 식별")).toBeTruthy();
   expect(screen.getByText("미실행")).toBeTruthy();
@@ -36,8 +46,26 @@ it("shows a semantically empty completed process as review instead of done",()=>
         summary:"명령은 종료됐지만 RPC endpoint는 반환되지 않았습니다."}]}],
     attack_surface:[],related_services:[],runbooks:[],integration_counts:{},
   };
-  render(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
+  renderPanel(<ServiceIntelligencePanel data={data} loading={false} error={false} onRun={vi.fn()}/>);
   expect(screen.getByText("판정 필요")).toBeTruthy();
   expect(screen.getByText("다시 실행")).toBeTruthy();
   expect(screen.getByText("명령은 종료됐지만 RPC endpoint는 반환되지 않았습니다.")).toBeTruthy();
+});
+
+it("opens the latest command output on click and closes it explicitly",async()=>{
+  vi.mocked(api).mockResolvedValue({stdout:"PORT 80/tcp open http",status:"completed"});
+  const data:ServiceIntelligence={
+    identity:{name:"http",product:"Apache",version:"2.4.38",cpe:[],tls:false},
+    matches:[],stages:[{id:"identity",title:"서비스 식별",manual_checks:[],auth:"none",
+      state:"observed",completed:true,commands:[{id:"http-methods",name:"HTTP 허용 메서드",
+        description:"",risk:"low",completed:true}]}],attack_surface:[],related_services:[],
+    runbooks:[],integration_counts:{},
+  };
+  renderPanel(<ServiceIntelligencePanel data={data} loading={false} error={false}
+    onRun={vi.fn()} executions={[{id:10,template_id:"http-methods",status:"completed",command:"nmap"}]}/>);
+  fireEvent.click(screen.getByText("HTTP 허용 메서드"));
+  await waitFor(()=>expect(screen.getByText("PORT 80/tcp open http")).toBeTruthy());
+  expect(api).toHaveBeenCalledWith("/executions/10/output");
+  fireEvent.click(screen.getByLabelText("결과 닫기"));
+  expect(screen.queryByText("PORT 80/tcp open http")).toBeNull();
 });

@@ -221,6 +221,11 @@ export default function App() {
     : null;
   const serviceExecutions =
     executions.data?.filter((item) => item.service_id === serviceId) || [];
+  const isWebService = !!service && /https?|ssl\/http/i.test(service.name);
+  const webScheme = service?.tls || /https|ssl/i.test(service?.name || "") ? "https" : "http";
+  const webPort = service && !(["http:80", "https:443"].includes(
+    `${webScheme}:${service.port}`)) ? `:${service.port}` : "";
+  const webUrl = target && service ? `${webScheme}://${target.ip}${webPort}/` : "";
   const selectedExecution = serviceExecutions.find(
     (item) => item.id === selectedExecutionId,
   );
@@ -1075,7 +1080,18 @@ export default function App() {
               </span>
               <h1>{service?.name?.toUpperCase() || "서비스 선택"}</h1>
             </div>
-            <div className="risk">수동 확인 필요</div>
+            <div className="serviceHeadActions">
+              {isWebService&&webUrl&&<div className="webServiceActions">
+                <a href={webUrl} target="_blank" rel="noreferrer">사이트 열기 ↗</a>
+                <button onClick={()=>{
+                  localStorage.setItem("oscp-web-launch",JSON.stringify({
+                    targetId:target?.id,serviceId:service?.id,url:webUrl,
+                  }));
+                  location.hash="web";
+                }}>Web Testing에서 열기</button>
+              </div>}
+              <div className="risk">수동 확인 필요</div>
+            </div>
           </div>
           {service && (
             <section className="serviceIdentitySummary" aria-label="식별된 서비스 정보">
@@ -1097,6 +1113,7 @@ export default function App() {
           )}
           {service&&<ServiceIntelligencePanel data={intelligence.data}
             loading={intelligence.isLoading} error={intelligence.isError}
+            executions={serviceExecutions}
             onRun={(id)=>{const command=commands.data?.find(item=>item.id===id);
               if(command)reviewCommand(command);}}/>}
           <div className="tabs">
