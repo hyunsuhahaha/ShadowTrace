@@ -390,13 +390,23 @@ def test_custom_audit_engines_only_claim_supported_limits():
         assert "brute.threads" not in command
 
 def test_mysql_root_connect_uses_a_generous_handshake_timeout():
-    # nmap's mysql-empty-password/mysql-brute scripts hard-code a 5s socket
-    # timeout, which is too short whenever the server's handshake is slow
-    # (e.g. a reverse-DNS lookup on the client IP with skip-name-resolve
-    # unset) — the whole point of this fallback check is to survive that.
+    # mysql-empty-password.nse hard-codes socket:set_timeout(5000) with no
+    # script-arg to override it, so a slow handshake (e.g. a reverse-DNS
+    # lookup on the client IP with skip-name-resolve unset) makes it miss a
+    # real empty password. That script isn't ours to fix, so this direct
+    # mysql-client fallback needs its own timeout to survive the same case.
     _, command, _ = catalog.render("mysql-root-connect", {
         "host": "10.10.10.23", "port": "3306"})
     assert "--connect-timeout=30" in command
+
+def test_mysql_default_audit_overrides_mysql_brutes_five_second_default():
+    # Unlike mysql-empty-password, mysql-brute.nse reads its timeout from
+    # stdnse.get_script_args("mysql-brute.timeout") (5s default) — this one
+    # actually can be raised via --script-args, so do that instead of
+    # relying solely on the mysql-root-connect fallback.
+    _, command, _ = catalog.render("mysql-default-audit", {
+        "host": "10.10.10.23", "port": "3306"})
+    assert "mysql-brute.timeout=30" in command
 
 def test_xxe_rejected():
     bad=b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><nmaprun>&e;</nmaprun>'
