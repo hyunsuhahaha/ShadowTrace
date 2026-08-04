@@ -29,9 +29,9 @@ const newPosition = (index: number): PayloadPosition => ({
   rules: [],
 });
 
-export default function IntruderPanel({ requestId, timeout, projectId, targetId, serviceId, seed }: {
+export default function IntruderPanel({ requestId, timeout, projectId, targetId, serviceId, seed, onGoToRequest }: {
   requestId?: number; timeout: number; projectId?: number; targetId?: number; serviceId?: number;
-  seed?: { token: number; values: string[] };
+  seed?: { token: number; values: string[] }; onGoToRequest?: () => void;
 }) {
   const [attackType, setAttackType] = useState<AttackType>("sniper");
   const [positions, setPositions] = useState<PayloadPosition[]>([newPosition(1)]);
@@ -206,11 +206,22 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
         <div className="intruderEstimate"><small>예상 요청</small><strong>{count}</strong>
           <small>최대 약 {Math.ceil(count * (delayMs + timeout * 1000) / 1000)}초</small></div>
       </header>
-      <p>
-        저장 요청의 URL·Query·Header·Cookie·Body 값 중 테스트할 파라미터를
-        <code>{"{{position_1}}"}</code>처럼 마커로 바꾸세요. SQLi 참고 탭에서 페이로드를
-        이 위치로 보낼 수도 있습니다. 계정 잠금과 서비스 부하를 먼저 검토하세요.
-      </p>
+      {!requestId ? (
+        <div className="intruderNeedsRequest" role="alert">
+          <b>먼저 저장된 요청이 필요합니다.</b>
+          <p>
+            Request 탭에서 대상 URL·메서드·Body를 채우고 저장한 뒤, 테스트할 파라미터 값을
+            <code>{"{{position_1}}"}</code>으로 바꾸세요. 그 다음 이 탭으로 돌아오면 아래 후보로 실행할 수 있습니다.
+          </p>
+          {onGoToRequest && <button type="button" onClick={onGoToRequest}>Request 탭 열기 →</button>}
+        </div>
+      ) : (
+        <p>
+          저장 요청의 URL·Query·Header·Cookie·Body 값 중 테스트할 파라미터를
+          <code>{"{{position_1}}"}</code>처럼 마커로 바꾸세요. SQLi 참고 탭에서 페이로드를
+          이 위치로 보낼 수도 있습니다. 계정 잠금과 서비스 부하를 먼저 검토하세요.
+        </p>
+      )}
       <div className="intruderControls">
         <label>공격 유형
           <select value={attackType} onChange={(event) => { setAttackType(event.target.value as AttackType); setConfirmed(false); }}>
@@ -306,8 +317,8 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
         최종 요청, 대상 소유·허가 범위, 요청 수와 잠금·부하 위험을 확인했습니다.
       </label>
       {error && <div className="webError">{error}</div>}
-      <button disabled={!confirmed || !count || count > maxRequests || running} onClick={run}>
-        {running ? "실행 중…" : "승인한 변형 실행"}
+      <button disabled={!requestId || !confirmed || !count || count > maxRequests || running} onClick={run}>
+        {running ? "실행 중…" : !requestId ? "먼저 요청을 저장하세요" : "승인한 변형 실행"}
       </button>
       {progress && <div className="intruderProgress" role="status" aria-live="polite">
         <div><b>{progress.status === "paused" ? "일시정지" :

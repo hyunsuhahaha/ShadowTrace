@@ -286,7 +286,8 @@ export default function WebWorkspace() {
           {workspaceTab === "intruder" ? (
             <IntruderPanel requestId={requestId} timeout={draft.timeout || 30}
               projectId={draft.project_id} targetId={draft.target_id}
-              serviceId={draft.service_id} seed={intruderSeed} />
+              serviceId={draft.service_id} seed={intruderSeed}
+              onGoToRequest={() => setWorkspaceTab("request")} />
           ) : workspaceTab === "sqli" ? (
             <SqlPayloadReference onSendToIntruder={sendToIntruder} />
           ) : <>

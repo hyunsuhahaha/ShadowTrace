@@ -13,6 +13,26 @@ export type SqlPayloadCategory = {
 
 export const sqlPayloadCategories: SqlPayloadCategory[] = [
   {
+    id: "syntax-break",
+    title: "에러 유발 탐지 (Fuzzing)",
+    engines: ["generic"],
+    description: "본격적인 추출 전에 가장 먼저 시도할 구문 파괴 테스트입니다. 정상 값(예: test)을 " +
+      "먼저 보내 기준 응답(상태 코드·길이)을 확보한 뒤, 아래 값들과 비교하세요. 500 에러나 " +
+      "'SQL syntax'·'unclosed quotation mark' 같은 문구가 뜨면 SQLi 가능성이 매우 높고, " +
+      "에러가 안 보여도 응답 길이·상태 코드가 기준과 다르면 구문 파싱에 영향을 준 것입니다.",
+    payloads: [
+      { label: "싱글 쿼테이션", payload: "'",
+        note: "가장 먼저 시도. 문자열을 감싸는 따옴표와 충돌시켜 구문을 깨뜨립니다." },
+      { label: "더블 쿼테이션", payload: "\"",
+        note: "MSSQL/Oracle 등 큰따옴표를 식별자로 쓰는 DB에서 시도." },
+      { label: "백틱", payload: "`", note: "MySQL 컬럼·테이블명 구분자를 깨뜨립니다." },
+      { label: "이스케이프 역슬래시", payload: "\\",
+        note: "MySQL에서 뒤따르는 따옴표를 이스케이프해 필터링 로직이 깨지는지 확인." },
+      { label: "따옴표 + 주석", payload: "'-- -",
+        note: "따옴표 단독 결과와 비교하세요. 여기서 에러가 사라지면 뒤쪽 구문이 문제였다는 뜻입니다." },
+    ],
+  },
+  {
     id: "auth-bypass",
     title: "인증 우회",
     engines: ["generic"],
