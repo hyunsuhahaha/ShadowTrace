@@ -389,6 +389,15 @@ def test_custom_audit_engines_only_claim_supported_limits():
         assert "unpwdb.timelimit=2m" in command
         assert "brute.threads" not in command
 
+def test_mysql_root_connect_uses_a_generous_handshake_timeout():
+    # nmap's mysql-empty-password/mysql-brute scripts hard-code a 5s socket
+    # timeout, which is too short whenever the server's handshake is slow
+    # (e.g. a reverse-DNS lookup on the client IP with skip-name-resolve
+    # unset) — the whole point of this fallback check is to survive that.
+    _, command, _ = catalog.render("mysql-root-connect", {
+        "host": "10.10.10.23", "port": "3306"})
+    assert "--connect-timeout=30" in command
+
 def test_xxe_rejected():
     bad=b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><nmaprun>&e;</nmaprun>'
     try: parse_nmap(bad)
