@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 from app.nmap_parser import parse_nmap
 from app.executor import (
@@ -390,21 +392,53 @@ def test_custom_audit_engines_only_claim_supported_limits():
         assert "unpwdb.timelimit=2m" in command
         assert "brute.threads" not in command
 
-def test_mysql_credential_probe_invokes_the_bundled_script_with_repo_dir():
+def test_mysql_credential_probe_invokes_the_bundled_script_with_the_edited_candidates():
     # mysql-empty-password.nse hard-codes socket:set_timeout(5000) with no
     # script-arg to override it, so a slow handshake (e.g. a reverse-DNS
     # lookup on the client IP with skip-name-resolve unset) makes it miss a
     # real empty password. That script isn't ours to fix, so this direct
-    # mysql-client probe (a small candidate list, not just root) needs its
-    # own generous timeout to survive the same case.
+    # mysql-client probe needs its own generous timeout to survive the same
+    # case — and takes the candidate list from the UI rather than a fixed
+    # "root only" guess, same as every other audit in this catalog.
     _, command, argv = catalog.render("mysql-credential-probe", {
-        "host": "10.10.10.23", "port": "3306", "repo_dir": "/opt/oscp-workspace"})
+        "host": "10.10.10.23", "port": "3306", "repo_dir": "/opt/oscp-workspace",
+        "username": "root,svc", "password": ",toor"})
     assert argv[:2] == ["bash", "/opt/oscp-workspace/backend/scripts/mysql_credential_probe.sh"]
-    assert argv[2:] == ["10.10.10.23", "3306"]
+    assert argv[2:] == ["10.10.10.23", "3306", "root,svc", ",toor"]
 
-def test_mysql_credential_probe_script_uses_a_generous_per_attempt_timeout():
-    script = (Path(__file__).parents[1] / "scripts" / "mysql_credential_probe.sh").read_text()
-    assert "timeout_seconds=30" in script
+def test_mysql_credential_probe_script_tries_each_candidate_with_a_generous_timeout(tmp_path):
+    script = Path(__file__).parents[1] / "scripts" / "mysql_credential_probe.sh"
+    assert "timeout_seconds=30" in script.read_text()
+    # Stub out the real `mysql` binary so this runs hermetically: only
+    # "-u root" with no "-p" (the blank-password candidate) succeeds.
+    fake_mysql = tmp_path / "mysql"
+    fake_mysql.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ " $* " == *" -u root "* && " $* " != *" -p"* ]]; then\n'
+        '  echo "CURRENT_USER()\\troot@%"; exit 0\n'
+        "fi\n"
+        'echo "ERROR 1045 (28000): Access denied" >&2; exit 1\n')
+    fake_mysql.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+
+    result = subprocess.run(
+        ["bash", str(script), "10.10.10.23", "3306", "svc,root", ",toor"],
+        capture_output=True, text=True, env=env, timeout=10)
+    assert result.returncode == 0
+    assert "[-] FAILED svc:<empty>" in result.stdout
+    assert "[-] FAILED svc:toor" in result.stdout
+    assert "[+] SUCCESS root:<empty>" in result.stdout
+    assert "root@%" in result.stdout
+
+def test_mysql_credential_probe_script_rejects_too_many_combinations(tmp_path):
+    script = Path(__file__).parents[1] / "scripts" / "mysql_credential_probe.sh"
+    users = ",".join(f"u{i}" for i in range(7))
+    passwords = ",".join(f"p{i}" for i in range(7))
+    result = subprocess.run(
+        ["bash", str(script), "10.10.10.23", "3306", users, passwords],
+        capture_output=True, text=True, timeout=10)
+    assert result.returncode == 2
+    assert "상한 40개를 초과" in result.stdout
 
 def test_mysql_default_audit_overrides_mysql_brutes_five_second_default():
     # Unlike mysql-empty-password, mysql-brute.nse reads its timeout from

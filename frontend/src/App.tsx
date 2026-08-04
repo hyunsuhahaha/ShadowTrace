@@ -1160,6 +1160,7 @@ export default function App() {
             onReview={reviewCommand}
           />
           <CredentialAuditPanel
+            key={serviceId}
             ref={credentialAuditRef}
             profile={credentialProfile}
             serviceName={service?.name}

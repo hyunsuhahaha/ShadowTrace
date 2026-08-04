@@ -1,4 +1,5 @@
-import {forwardRef} from "react";
+import {forwardRef, useState} from "react";
+import {parseCandidates} from "./credentialCandidates";
 import {summarizeCredentialAudit} from "./credentialAuditResult";
 import type {RunState} from "./enumerationModel";
 import {statusCopy as statusLabel} from "./ui";
@@ -18,7 +19,16 @@ type AuditCommand = {
   name: string;
   description: string;
   risk: string;
+  command?: string;
+  variables?: Record<string, string>;
 };
+
+const BLANK_TOKEN = "빈 값";
+// Commands only take the edited candidates when their own template
+// actually has a place to put them — every other command in this panel
+// (nmap's own brute/empty-password scripts) just ignores extra variables.
+const needsCandidates = (command: AuditCommand) =>
+  !!command.command?.includes("{username}") && command.command.includes("{password}");
 
 type Props = {
   profile: AuditProfile;
@@ -37,7 +47,19 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
   clock,
   onReview,
 }, ref) {
+  const [userText, setUserText] = useState(() => profile.identities.replaceAll(" · ", "\n"));
+  const [passwordText, setPasswordText] = useState(() => profile.secrets.replaceAll(" · ", "\n"));
   if (!commands.length) return null;
+
+  const userCandidates = parseCandidates(userText);
+  const passwordCandidates = parseCandidates(passwordText)
+    .map((value) => value === BLANK_TOKEN ? "" : value);
+  const combinationCount = userCandidates.length * passwordCandidates.length;
+  const review = (command: AuditCommand) => onReview(needsCandidates(command)
+    ? {...command, variables: {
+        username: userCandidates.join(","), password: passwordCandidates.join(","),
+      }}
+    : command);
 
   return <section ref={ref} className="credentialAudit"
     aria-labelledby="credential-audit-title">
@@ -57,9 +79,14 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
       <b>Web Testing · Intruder 열기 →</b>
     </a>
     <div className="credentialDataset">
-      <div><b>{profile.identityLabel}</b><code>{profile.identities}</code></div>
-      <div><b>{profile.secretLabel}</b><code>{profile.secrets}</code></div>
-      <small>{profile.limits}</small>
+      <label><b>{profile.identityLabel}</b>
+        <textarea value={userText} onChange={(event) => setUserText(event.target.value)}
+          placeholder="한 줄에 하나씩" rows={3} /></label>
+      <label><b>{profile.secretLabel}</b>
+        <textarea value={passwordText} onChange={(event) => setPasswordText(event.target.value)}
+          placeholder={`빈 비밀번호는 "${BLANK_TOKEN}"이라고 쓰세요`} rows={3} /></label>
+      <small>{profile.limits} · 편집한 후보는 직접 대입 명령에만 적용됩니다 · {userCandidates.length}
+        × {passwordCandidates.length} = {combinationCount}개 조합</small>
     </div>
     <div className="credentialActions">
       {commands.map((command) => {
@@ -88,7 +115,14 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
           <span className={`credentialRisk credentialRisk--${command.risk}`}>
             {command.risk === "high" ? "잠금 위험" : "노출 확인"}
           </span>
-          <button disabled={busy} onClick={() => onReview(command)}>
+          {needsCandidates(command) && combinationCount > 40 && (
+            <small className="credentialOverLimit">
+              {userCandidates.length} × {passwordCandidates.length}개 조합은 스크립트 상한(40개)을 초과해 실행이 거부됩니다. 후보를 줄이세요.
+            </small>
+          )}
+          <button disabled={busy || (needsCandidates(command) &&
+            (combinationCount > 40 || !userCandidates.length || !passwordCandidates.length))}
+            onClick={() => review(command)}>
             {busy ? "대입 중…" : "대입 공격 검토·실행"}
           </button>
           {summary && (
