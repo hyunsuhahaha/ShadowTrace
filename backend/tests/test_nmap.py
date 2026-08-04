@@ -314,6 +314,27 @@ def test_vhost_fuzz_is_hidden_from_the_generic_list_but_renders_with_a_wordlist(
         'ffuf -u http://10.10.11.80:80/ -H "Host: FUZZ.editor.htb" '
         "-w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -t 40")
 
+def test_s3_bucket_list_is_hidden_from_the_generic_list_but_renders():
+    # like http-vhost-fuzz, this is only reachable through its own panel.
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert "s3-bucket-list" not in commands
+    item, command, argv = catalog.render("s3-bucket-list", {
+        "scheme": "http", "host": "10.10.11.80", "port": "80",
+    })
+    assert item["tool"] == "aws"
+    assert argv == ["aws", "--endpoint-url=http://10.10.11.80:80", "s3", "ls"]
+
+def test_s3_object_list_renders_with_a_bucket_name():
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert "s3-object-list" not in commands
+    item, command, argv = catalog.render("s3-object-list", {
+        "scheme": "http", "host": "10.10.11.80", "port": "80", "path": "the-three.htb",
+    })
+    assert item["tool"] == "aws"
+    assert argv == [
+        "aws", "--endpoint-url=http://10.10.11.80:80", "s3", "ls", "s3://the-three.htb",
+    ]
+
 def test_laps_password_netexec_renders_with_manually_supplied_credentials():
     commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
     assert "ad-laps-password-netexec" not in commands

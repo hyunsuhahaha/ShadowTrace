@@ -13,6 +13,7 @@ import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
 import VhostFuzzPanel from "./VhostFuzzPanel";
 import ParamFuzzPanel from "./ParamFuzzPanel";
+import S3BucketPanel from "./S3BucketPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
@@ -798,6 +799,28 @@ export default function App() {
       variables: {path, wordlist},
     });
   };
+  const runS3BucketList = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "s3-bucket-list",
+      preview: `aws --endpoint-url=${scheme}://${target.ip}:${service.port} s3 ls`,
+      target_level: false,
+      variables: {},
+    });
+  };
+  const runS3ObjectList = (bucket: string) => {
+    if (!target || !service || !bucket.trim()) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "s3-object-list",
+      preview: `aws --endpoint-url=${scheme}://${target.ip}:${service.port} s3 ls s3://${bucket}`,
+      target_level: false,
+      variables: {path: bucket},
+    });
+  };
   const runKerbruteEnum = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
     setRunWithSudo(false);
@@ -1337,6 +1360,15 @@ export default function App() {
               runState={runStates["http-param-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runParamFuzz}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <S3BucketPanel target={target}
+              bucketRunState={runStates["s3-bucket-list"]}
+              objectRunState={runStates["s3-object-list"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onListBuckets={runS3BucketList}
+              onListObjects={runS3ObjectList}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (
