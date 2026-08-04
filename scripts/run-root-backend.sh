@@ -30,7 +30,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 setsid /usr/bin/setpriv --regid "$OSCP_WORKSPACE_OWNER_GID" --clear-groups \
   .venv/bin/uvicorn app.main:app --app-dir backend \
-  --host 127.0.0.1 --port 8000 "$@" &
+  --host 127.0.0.1 --port 8000 --reload-include '*.yaml' "$@" &
 child=$!
 printf '%s\n' "$$" > "$pid_file"
 chown "0:$OSCP_WORKSPACE_OWNER_GID" "$pid_file"
