@@ -168,6 +168,15 @@ export default function HashCrackingWorkspace() {
       localStorage.removeItem("oscp-workspace-hash-mode");
     }
   }, [catalog.data]);
+  useEffect(() => {
+    const requestedHash = localStorage.getItem("oscp-workspace-hash-value");
+    if (requestedHash && catalog.data) {
+      setHashes(requestedHash);
+      const detected = detectHashMode(requestedHash, catalog.data.hash_modes);
+      if (detected) { setHashModeId(detected); setHashModeAuto(true); }
+      localStorage.removeItem("oscp-workspace-hash-value");
+    }
+  }, [catalog.data]);
 
   const selected = history.data?.find((r) => r.id === jobId);
   const selectedMode = catalog.data?.hash_modes.find((m) => m.id === hashModeId);

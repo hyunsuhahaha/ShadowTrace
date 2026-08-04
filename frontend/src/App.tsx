@@ -685,6 +685,12 @@ export default function App() {
     localStorage.setItem("oscp-workspace-hash-mode", mode);
     location.hash = "hash-cracking";
   };
+  const sendHashToCracking = (hash: string) => {
+    if (!targetId) return;
+    localStorage.setItem("oscp-workspace-hash-target", String(targetId));
+    localStorage.setItem("oscp-workspace-hash-value", hash);
+    location.hash = "hash-cracking";
+  };
   const viewSmbFile = (path: string) => {
     if (!target || !service || !lastSpiderShare) return;
     setRunWithSudo(false);
@@ -1419,7 +1425,8 @@ export default function App() {
             serverBusy={privescServerBusy} inputRequest={psexecInputRequest}
             onToggleServer={() => void togglePrivescServer()}
             onSendCommand={(command) => void sendPrivescCommand(command)}
-            onClose={() => setPsexecSession(undefined)} />
+            onClose={() => setPsexecSession(undefined)}
+            onSendHashToCracking={sendHashToCracking} />
           <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
             outcome={currentOutcome} output={output} />
         </section>
