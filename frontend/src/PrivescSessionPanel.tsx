@@ -10,32 +10,41 @@ type PrivescServer = {
 };
 
 export default function PrivescSessionPanel({session, server, serverBusy,
-  inputRequest, onToggleServer, onSendCommand, onClose, onSendHashToCracking}: {
+  inputRequest, onToggleServer, onSendCommand, onClose, onSendHashToCracking,
+  targetId}: {
   session?: PsexecSession; server?: PrivescServer; serverBusy: boolean;
   inputRequest?: PsexecInputRequest;
   onToggleServer: () => void;
   onSendCommand: (command: string) => void;
   onClose: () => void;
   onSendHashToCracking?: (hash: string) => void;
+  targetId?: number;
 }) {
   const [hashes, setHashes] = useState<string[]>([]);
   // The terminal is a raw xterm buffer with no plain-text state to scan, so
-  // poll the session's persisted log file instead -- same file the "log"
-  // endpoint already serves for download, just read periodically here.
+  // poll every one of this target's session logs instead of just the one
+  // currently open -- a hash Responder already captured in an earlier,
+  // now-closed listener is still sitting in that session's persisted log
+  // (Responder itself won't reprint a hash it already captured once, so
+  // scanning only the live session would silently miss it forever).
   useEffect(() => {
     setHashes([]);
-    if (!session) return;
+    if (!targetId) return;
     let cancelled = false;
     const poll = async () => {
-      const response = await fetch(`/api/interactive-sessions/${session.id}/log`);
-      if (!response.ok || cancelled) return;
-      const found = extractNtlmv2Hashes(await response.text());
-      if (!cancelled) setHashes(found);
+      const listResponse = await fetch(`/api/interactive-sessions?target_id=${targetId}`);
+      if (!listResponse.ok || cancelled) return;
+      const sessions: {id: number}[] = await listResponse.json();
+      const texts = await Promise.all(sessions.map(async (item) => {
+        const logResponse = await fetch(`/api/interactive-sessions/${item.id}/log`);
+        return logResponse.ok ? await logResponse.text() : "";
+      }));
+      if (!cancelled) setHashes(extractNtlmv2Hashes(texts.join("\n")));
     };
     void poll();
     const timer = window.setInterval(poll, 4000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [session?.id]);
+  }, [targetId]);
   if (!session) return null;
   const hasPeass = server?.available?.peass ?? true;
   const hasPspy = server?.available?.pspy ?? true;

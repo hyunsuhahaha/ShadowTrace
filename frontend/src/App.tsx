@@ -1426,7 +1426,8 @@ export default function App() {
             onToggleServer={() => void togglePrivescServer()}
             onSendCommand={(command) => void sendPrivescCommand(command)}
             onClose={() => setPsexecSession(undefined)}
-            onSendHashToCracking={sendHashToCracking} />
+            onSendHashToCracking={sendHashToCracking}
+            targetId={targetId} />
           <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
             outcome={currentOutcome} output={output} />
         </section>

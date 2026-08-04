@@ -77,14 +77,25 @@ it("disables only the pspy button when pspy is not installed but peass is", () =
   expect(screen.getByText(/pspy가 설치되어 있지 않아/)).toBeTruthy();
 });
 
-it("finds a captured NetNTLMv2 hash in the session log and forwards it to Hash Cracking", async () => {
+it("finds a captured NetNTLMv2 hash from an earlier, now-closed session and forwards it to Hash Cracking", async () => {
   const hash = "Administrator::RESPONDER:3b67a030f36498fb:" +
     "981902F11A8A942835156BBEF2E22942:0101000000000000805549A9F823DD01";
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
-    new Response(`[SMB] NTLMv2-SSP Hash     : ${hash}`, {status: 200}))));
+  // Responder won't reprint a hash it already captured, so the current
+  // (session 7) log only shows a "Skipping" notice -- the real hash text
+  // lives in an earlier, already-closed session (2) for the same target.
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    if (url.includes("target_id=1")) return Promise.resolve(new Response(
+      JSON.stringify([{id: 7}, {id: 2}]), {status: 200}));
+    if (url.endsWith("/interactive-sessions/7/log")) return Promise.resolve(
+      new Response("[*] Skipping previously captured hash for RESPONDER\\Administrator",
+        {status: 200}));
+    if (url.endsWith("/interactive-sessions/2/log")) return Promise.resolve(
+      new Response(`[SMB] NTLMv2-SSP Hash     : ${hash}`, {status: 200}));
+    return Promise.resolve(new Response("", {status: 200}));
+  }));
   const onSendHashToCracking = vi.fn();
   render(
-    <PrivescSessionPanel session={{id: 7, command: "sudo responder -I tun0"}}
+    <PrivescSessionPanel session={{id: 7, command: "sudo responder -I tun0"}} targetId={1}
       serverBusy={false} onToggleServer={vi.fn()} onSendCommand={vi.fn()}
       onClose={vi.fn()} onSendHashToCracking={onSendHashToCracking} />,
   );
@@ -93,11 +104,14 @@ it("finds a captured NetNTLMv2 hash in the session log and forwards it to Hash C
   expect(onSendHashToCracking).toHaveBeenCalledWith(hash);
 });
 
-it("does not show a captured-hash section when nothing matched yet", () => {
+it("does not show a captured-hash section when nothing matched yet", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
+    new Response(JSON.stringify([{id: 7}]), {status: 200}))));
   render(
-    <PrivescSessionPanel session={{id: 7, command: "sudo responder -I tun0"}}
+    <PrivescSessionPanel session={{id: 7, command: "sudo responder -I tun0"}} targetId={1}
       serverBusy={false} onToggleServer={vi.fn()} onSendCommand={vi.fn()}
       onClose={vi.fn()} onSendHashToCracking={vi.fn()} />,
   );
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(0));
   expect(screen.queryByText("Hash Cracking으로 보내기")).toBeNull();
 });
