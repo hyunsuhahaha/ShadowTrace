@@ -28,6 +28,14 @@ const probeCommand = {
   risk: "medium", command: "bash probe.sh {host} {port} {username} {password}",
 };
 
+it("marks which command actually uses the edited candidates and which doesn't", () => {
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand, command]}
+    runStates={{}} clock={0} onReview={vi.fn()} />);
+
+  expect(screen.getByText("↑ 위 후보 사용")).toBeTruthy();
+  expect(screen.getByText("고정 검사 (후보 미반영)")).toBeTruthy();
+});
+
 it("shows audit safety context and forwards review requests", () => {
   const onReview = vi.fn();
   render(<CredentialAuditPanel profile={profile} serviceName="smb"

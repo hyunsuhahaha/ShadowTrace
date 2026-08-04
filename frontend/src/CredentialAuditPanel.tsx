@@ -102,6 +102,10 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
           aria-busy={busy}>
           <div>
             <b>{command.name}</b>
+            <span className={needsCandidates(command)
+              ? "credentialSource credentialSource--live" : "credentialSource"}>
+              {needsCandidates(command) ? "↑ 위 후보 사용" : "고정 검사 (후보 미반영)"}
+            </span>
             <small>{command.description}</small>
             {run && (
               <span className={`credentialRun credentialRun--${run.status}`}>
