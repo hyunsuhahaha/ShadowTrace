@@ -36,6 +36,16 @@ type Exchange = {
   error: string;
   created_at: string;
 };
+export type WebLaunchContext = {targetId: number; serviceId: number; url: string};
+export const parseWebLaunchContext = (raw: string | null): WebLaunchContext | undefined => {
+  try {
+    const value = JSON.parse(raw || "null");
+    return Number.isInteger(value?.targetId) && Number.isInteger(value?.serviceId)
+      && /^https?:\/\//.test(value?.url) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch("/api" + path, init);
   if (!response.ok)
@@ -76,7 +86,12 @@ export default function WebWorkspace() {
     [confirmed, setConfirmed] = useState(false),
     [workspaceTab, setWorkspaceTab] =
       useState<"request" | "intruder" | "sqli" | "results">("request"),
+    [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [error, setError] = useState("");
+  const sendToIntruder = (payloads: string[]) => {
+    setIntruderSeed({ token: Date.now(), values: payloads });
+    setWorkspaceTab("intruder");
+  };
   const targets = useQuery({
       queryKey: ["allTargets"],
       queryFn: () => api<Target[]>("/targets"),
@@ -98,12 +113,20 @@ export default function WebWorkspace() {
       enabled: !!compareId && !!exchangeId && compareId !== exchangeId,
     });
   useEffect(() => {
-    if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
+    if (!targetId && targets.data?.[0]) {
+      const launch = parseWebLaunchContext(localStorage.getItem("oscp-web-launch"));
+      setTargetId(targets.data.find((target) => target.id === launch?.targetId)?.id
+        || targets.data[0].id);
+    }
   }, [targets.data, targetId]);
   useEffect(() => {
     const target = targets.data?.find((x) => x.id === targetId);
+    const launch = parseWebLaunchContext(localStorage.getItem("oscp-web-launch"));
     setRequestId(undefined);
-    setDraft(empty(target));
+    setDraft(launch && launch.targetId === targetId
+      ? {...empty(target), service_id: launch.serviceId, url: launch.url}
+      : empty(target));
+    if (launch?.targetId === targetId) localStorage.removeItem("oscp-web-launch");
   }, [targetId, targets.data]);
   useEffect(() => {
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
@@ -263,9 +286,9 @@ export default function WebWorkspace() {
           {workspaceTab === "intruder" ? (
             <IntruderPanel requestId={requestId} timeout={draft.timeout || 30}
               projectId={draft.project_id} targetId={draft.target_id}
-              serviceId={draft.service_id} />
+              serviceId={draft.service_id} seed={intruderSeed} />
           ) : workspaceTab === "sqli" ? (
-            <SqlPayloadReference />
+            <SqlPayloadReference onSendToIntruder={sendToIntruder} />
           ) : <>
           {workspaceTab === "results" && <div className="webSectionTitle">
             <span>Recorded exchanges</span><h2>응답 이력과 비교</h2>

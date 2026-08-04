@@ -29,8 +29,9 @@ const newPosition = (index: number): PayloadPosition => ({
   rules: [],
 });
 
-export default function IntruderPanel({ requestId, timeout, projectId, targetId, serviceId }: {
+export default function IntruderPanel({ requestId, timeout, projectId, targetId, serviceId, seed }: {
   requestId?: number; timeout: number; projectId?: number; targetId?: number; serviceId?: number;
+  seed?: { token: number; values: string[] };
 }) {
   const [attackType, setAttackType] = useState<AttackType>("sniper");
   const [positions, setPositions] = useState<PayloadPosition[]>([newPosition(1)]);
@@ -73,6 +74,17 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
     }, 350);
     return () => clearInterval(timer);
   }, [running]);
+  useEffect(() => {
+    if (!seed?.values.length) return;
+    const merged = deduplicate
+      ? [...new Set([...positions[0].candidates, ...seed.values])]
+      : [...positions[0].candidates, ...seed.values];
+    setPositions((current) => current.map((position, index) =>
+      index === 0 ? { ...position, candidates: merged } : position));
+    setInputs((current) => current.map((text, index) => index === 0 ? merged.join("\n") : text));
+    setConfirmed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.token]);
   const saveSets = (sets: SavedSet[]) => {
     setSavedSets(sets);
     localStorage.setItem(SETS_KEY, JSON.stringify(sets));
@@ -195,8 +207,9 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
           <small>최대 약 {Math.ceil(count * (delayMs + timeout * 1000) / 1000)}초</small></div>
       </header>
       <p>
-        저장 요청의 URL·Query·Header·Cookie·Body 값에 <code>{"{{position_1}}"}</code>처럼
-        마커를 넣으세요. 계정 잠금과 서비스 부하를 먼저 검토하세요.
+        저장 요청의 URL·Query·Header·Cookie·Body 값 중 테스트할 파라미터를
+        <code>{"{{position_1}}"}</code>처럼 마커로 바꾸세요. SQLi 참고 탭에서 페이로드를
+        이 위치로 보낼 수도 있습니다. 계정 잠금과 서비스 부하를 먼저 검토하세요.
       </p>
       <div className="intruderControls">
         <label>공격 유형
@@ -233,6 +246,9 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
           <label>후보 값 · {position.candidates.length}개
             <textarea value={inputs[index]} placeholder={"한 줄 또는 쉼표로 구분 · 숫자 범위 1..20\n입력 순서를 유지합니다."}
               onChange={(event) => { updateCandidates(index, event.target.value); setConfirmed(false); }} />
+            {position.candidates.some((value) => value.includes(",")) && <small className="intruderCommaHint">
+              쉼표가 포함된 값이 있습니다 — 이 목록을 다시 입력하면 쉼표 기준으로 나뉩니다. 기존 값은 그대로 두고 새 줄만 추가하세요.
+            </small>}
           </label>
           <label>처리 규칙 JSON · 순서대로 적용
             <textarea value={ruleInputs[index]} placeholder='[{"type":"prefix","value":"id-"}]'
