@@ -71,7 +71,7 @@ it("keeps the request when the confirmation is declined", async () => {
   expect(screen.getByText("Login test")).toBeTruthy();
 });
 
-it("routes SQLi payloads to the Request tab, not a dead-end Intruder tab, when nothing is saved yet", async () => {
+it("sends SQLi payloads straight to the Intruder tab, even with nothing saved yet", async () => {
   const fetcher = vi.fn((url: string) => {
     if (url === "/api/targets") return response([target]);
     if (url.startsWith("/api/web/requests?target_id=")) return response([]);
@@ -83,6 +83,9 @@ it("routes SQLi payloads to the Request tab, not a dead-end Intruder tab, when n
   fireEvent.click(screen.getByRole("tab", { name: "SQLi 참고" }));
   fireEvent.click(screen.getAllByText("Intruder로")[0]);
 
-  expect(screen.getByRole("tab", { name: "Request" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("tab", { name: "Intruder" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByText("먼저 저장된 요청이 필요합니다.")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("Request 탭 열기 →"));
   expect(screen.getByText(/SQLi 페이로드 \d+개가 대기 중입니다\./)).toBeTruthy();
 });

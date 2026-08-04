@@ -90,9 +90,7 @@ export default function WebWorkspace() {
     [error, setError] = useState("");
   const sendToIntruder = (payloads: string[]) => {
     setIntruderSeed({ token: Date.now(), values: payloads });
-    // Intruder can't run without a saved request to attack, so without one
-    // send the user to build/save it first instead of a dead-end Intruder tab.
-    setWorkspaceTab(requestId ? "intruder" : "request");
+    setWorkspaceTab("intruder");
   };
   const targets = useQuery({
       queryKey: ["allTargets"],
