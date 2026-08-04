@@ -28,6 +28,7 @@ TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sud
 "chisel":"sudo apt install chisel",
 "responder":"sudo apt install responder",
 "aws":"sudo apt install awscli",
+"cloud_enum":"sudo apt install cloud-enum",
 "git-dumper":"pip install git-dumper (apt에 없음)",
 "kerbrute":"apt에 없음 — https://github.com/ropnop/kerbrute/releases 에서 "
            "kerbrute_linux_amd64를 받아 PATH에 kerbrute로 저장"}

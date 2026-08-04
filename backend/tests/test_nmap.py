@@ -348,6 +348,18 @@ def test_s3_webshell_upload_invokes_the_bundled_script_with_bucket_and_output_di
         "http://10.10.11.80:80", "the-three.htb", "/opt/oscp-workspace/outputs",
     ]
 
+def test_cloud_enum_bucket_discovery_is_hidden_from_the_generic_list_but_renders():
+    # cloud_enum hits the real AWS/Azure/GCP endpoints from a naming keyword,
+    # not the target's host/port, so like vhost-fuzz this needs its own
+    # panel rather than the auto-populated per-service list.
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert "cloud-enum-bucket-discovery" not in commands
+    item, command, argv = catalog.render("cloud-enum-bucket-discovery", {
+        "keyword": "the-three",
+    })
+    assert item["tool"] == "cloud_enum"
+    assert argv == ["cloud_enum", "-k", "the-three"]
+
 def test_laps_password_netexec_renders_with_manually_supplied_credentials():
     commands = {item["id"] for item in catalog.commands_for("ldap", 389)}
     assert "ad-laps-password-netexec" not in commands

@@ -14,6 +14,7 @@ import FuzzingPanel from "./FuzzingPanel";
 import VhostFuzzPanel from "./VhostFuzzPanel";
 import ParamFuzzPanel from "./ParamFuzzPanel";
 import S3BucketPanel from "./S3BucketPanel";
+import CloudEnumPanel from "./CloudEnumPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
 import AsrepRoastPanel from "./AsrepRoastPanel";
 import PasswordSprayPanel from "./PasswordSprayPanel";
@@ -833,6 +834,16 @@ export default function App() {
       variables: {path: bucket},
     });
   };
+  const runCloudEnum = (keyword: string) => {
+    if (!target || !keyword.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "cloud-enum-bucket-discovery",
+      preview: `cloud_enum -k ${keyword}`,
+      target_level: true,
+      variables: {keyword},
+    });
+  };
   const runKerbruteEnum = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
     setRunWithSudo(false);
@@ -1383,6 +1394,13 @@ export default function App() {
               onListBuckets={runS3BucketList}
               onListObjects={runS3ObjectList}
               onUploadWebshell={runS3WebshellUpload}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+            <CloudEnumPanel target={target}
+              runState={runStates["cloud-enum-bucket-discovery"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onEnum={runCloudEnum}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {["kerberos-sec", "kerberos"].includes(serviceNameLower) && (

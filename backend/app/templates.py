@@ -3,7 +3,7 @@ import re, shlex, yaml
 
 ALLOWED = {"host","port","protocol","scheme","username","password","domain","wordlist",
            "output_dir","project_dir","target_dir","repo_dir","lhost","lport","share","path",
-           "nthash","domain_sid","spn","groups","target_username"}
+           "nthash","domain_sid","spn","groups","target_username","keyword"}
 TOKEN = re.compile(r"\{([a-z_]+)\}")
 
 class Catalog:
