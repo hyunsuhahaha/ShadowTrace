@@ -31,7 +31,7 @@ export default function ScanCenter() {
     [query, setQuery] = useState(""),
     [serviceFilter, setServiceFilter] = useState(""),
     [portFilter, setPortFilter] = useState(""),
-    [openOnly, setOpenOnly] = useState(false),
+    [openOnly, setOpenOnly] = useState(true),
     [changedOnly, setChangedOnly] = useState(false),
     [sort, setSort] = useState<"port" | "service">("port"),
     [portsCopied, setPortsCopied] = useState(false),
