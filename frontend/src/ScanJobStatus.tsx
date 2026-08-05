@@ -108,7 +108,7 @@ export default function ScanJobStatus({selected, clock, streamState, lastEventAt
       </section>
     )}
     {selected?.status === "completed" &&
-      selectedProfile?.kind === "masscan_discovery" &&
+      !chainedScan &&
       openTcpPorts.length > 0 && (
         <section className="scanAutomation" aria-label="발견된 포트로 상세 스캔 준비">
           <div>

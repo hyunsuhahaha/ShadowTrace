@@ -34,6 +34,7 @@ export default function ScanCenter() {
     [openOnly, setOpenOnly] = useState(false),
     [changedOnly, setChangedOnly] = useState(false),
     [sort, setSort] = useState<"port" | "service">("port"),
+    [portsCopied, setPortsCopied] = useState(false),
     [clock, setClock] = useState(Date.now()),
     [lastEventAt, setLastEventAt] = useState<number>(),
     [processAlive, setProcessAlive] = useState<boolean>(),
@@ -264,6 +265,13 @@ export default function ScanCenter() {
     if (!detail || !openTcpPorts.length) return;
     setPorts(openTcpPorts.join(","));
     setProfileId(detail.id);
+  };
+  const copyVisiblePorts = async () => {
+    const ports = Array.from(new Set(visibleObs.map((o) => o.port))).sort((a, b) => a - b);
+    if (!ports.length) return;
+    await navigator.clipboard.writeText(ports.join(","));
+    setPortsCopied(true);
+    window.setTimeout(() => setPortsCopied(false), 1500);
   };
   const refresh = async () =>
     Promise.all([
@@ -498,6 +506,14 @@ export default function ScanCenter() {
               <option value="port">포트순</option>
               <option value="service">서비스순</option>
             </select>
+            <button
+              type="button"
+              disabled={!visibleObs.length}
+              onClick={() => void copyVisiblePorts()}
+              title="위 필터와 일치하는 포트 번호를 쉼표로 구분해 복사합니다."
+            >
+              {portsCopied ? "복사됨" : `포트 복사 (${visibleObs.length})`}
+            </button>
           </div>
           <div className="scanTable">
             <div className="tableHead">

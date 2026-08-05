@@ -19,17 +19,26 @@ it("warns when a running scan has gone quiet for over 30 seconds", () => {
   expect(screen.getByRole("alert")).toBeTruthy();
 });
 
-it("offers a shortcut into a masscan discovery's open ports", () => {
+it("offers a shortcut into a completed scan's open ports regardless of which tool ran it", () => {
   const onUseDiscoveredPorts = vi.fn();
   render(<ScanJobStatus
     selected={{...scan, status: "completed"}} clock={2000} streamState="idle"
-    selectedProfile={{id: 1, name: "masscan", kind: "masscan_discovery", description: "",
-      arguments: "", engine: "masscan", chain_kind: ""}}
+    selectedProfile={{id: 1, name: "nmap quick", kind: "quick", description: "",
+      arguments: "", engine: "nmap", chain_kind: ""}}
     openTcpPorts={[22, 80, 445]}
     onOpenChainedScan={vi.fn()} onUseDiscoveredPorts={onUseDiscoveredPorts} />);
   expect(screen.getByText("열린 포트 3개 발견")).toBeTruthy();
   fireEvent.click(screen.getByText("발견된 포트로 상세 스캔 준비"));
   expect(onUseDiscoveredPorts).toHaveBeenCalledOnce();
+});
+
+it("hides the manual shortcut once a detail scan was already auto-chained", () => {
+  render(<ScanJobStatus
+    selected={{...scan, status: "completed"}} clock={2000} streamState="idle"
+    chainedScan={{...scan, id: 9, status: "running"}}
+    openTcpPorts={[22, 80, 445]}
+    onOpenChainedScan={vi.fn()} onUseDiscoveredPorts={vi.fn()} />);
+  expect(screen.queryByText("발견된 포트로 상세 스캔 준비")).toBeNull();
 });
 
 it("opens an auto-chained follow-up scan", () => {
