@@ -381,6 +381,23 @@ def test_vhost_fuzz_is_hidden_from_the_generic_list_but_renders_with_a_wordlist(
         'ffuf -u http://10.10.11.80:80/ -H "Host: FUZZ.editor.htb" '
         "-w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -t 40")
 
+def test_directory_fuzz_extensions_variant_is_hidden_and_renders_with_extensions():
+    # catalog.render() requires every {token} in a command to be supplied,
+    # so an optional -x can't live in http-directory-fuzz itself — this is
+    # a separate opt-in template the UI picks only when extensions are typed.
+    commands = {item["id"] for item in catalog.commands_for("http", 80)}
+    assert "http-directory-fuzz-ext" not in commands
+    item, command, argv = catalog.render("http-directory-fuzz-ext", {
+        "scheme": "http", "host": "10.10.11.80", "port": "80",
+        "wordlist": "/usr/share/wordlists/dirb/common.txt", "extensions": "php,txt,html",
+    })
+    assert item["tool"] == "feroxbuster"
+    assert argv == [
+        "feroxbuster", "-u", "http://10.10.11.80:80/",
+        "-w", "/usr/share/wordlists/dirb/common.txt", "-x", "php,txt,html",
+        "--json", "--silent", "-n",
+    ]
+
 def test_dns_subdomain_enum_is_hidden_from_the_generic_list_but_renders_with_a_wordlist():
     # like http-vhost-fuzz, the domain/wordlist aren't nmap-derived, so this
     # stays out of the auto-populated dns list and needs render().

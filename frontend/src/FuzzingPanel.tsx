@@ -22,16 +22,18 @@ export default function FuzzingPanel({
   runState?: FuzzRunState;
   serviceExecutions: FuzzExecution[];
   evidenceMsg: string;
-  onFuzz: (wordlist: string) => void;
+  onFuzz: (wordlist: string, extensions: string) => void;
   onCaptureEvidence: (
     execution: { id: number; stdout?: string; stderr?: string }, title: string,
   ) => void;
 }) {
   const [wordlist, setWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
+  const [extensions, setExtensions] = useState("");
   const [filter, setFilter] = useState("");
-  const fuzzRunState = runState?.templateId === "http-directory-fuzz" ? runState : undefined;
+  const fuzzTemplateIds = ["http-directory-fuzz", "http-directory-fuzz-ext"];
+  const fuzzRunState = runState && fuzzTemplateIds.includes(runState.templateId) ? runState : undefined;
   const latestFuzz = serviceExecutions
-    .filter((item) => item.template_id === "http-directory-fuzz" && item.status === "completed")
+    .filter((item) => fuzzTemplateIds.includes(item.template_id) && item.status === "completed")
     .sort((a, b) => b.id - a.id)[0];
   const output = fuzzRunState?.stdout || latestFuzz?.stdout || "";
   const results = parseFeroxbusterResults(output);
@@ -55,7 +57,9 @@ export default function FuzzingPanel({
           <option value="/usr/share/wordlists/dirb/common.txt">dirb common (~4,600개)</option>
           <option value="/usr/share/wordlists/dirb/big.txt">dirb big (~2만개)</option>
         </select>
-        <button disabled={busy} onClick={() => onFuzz(wordlist)}>
+        <input value={extensions} onChange={(e) => setExtensions(e.target.value)}
+          placeholder="확장자(선택, 예: php,txt,html)" aria-label="확장자" />
+        <button disabled={busy} onClick={() => onFuzz(wordlist, extensions.trim())}>
           {busy ? "탐색 중…" : "퍼징 시작"}
         </button>
       </div>

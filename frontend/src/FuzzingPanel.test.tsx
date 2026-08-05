@@ -9,7 +9,7 @@ afterEach(cleanup);
 const target = { ip: "10.10.10.5" };
 const service = { port: 80, name: "http" };
 
-it("starts a fuzz run with the currently selected wordlist", () => {
+it("starts a fuzz run with the currently selected wordlist and no extensions by default", () => {
   const onFuzz = vi.fn();
   render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
     evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
@@ -19,7 +19,27 @@ it("starts a fuzz run with the currently selected wordlist", () => {
   });
   fireEvent.click(screen.getByText("퍼징 시작"));
 
-  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/big.txt");
+  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/big.txt", "");
+});
+
+it("passes trimmed extensions through when the user fills in gobuster/feroxbuster's -x field", () => {
+  const onFuzz = vi.fn();
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("확장자"), { target: { value: " php,txt,html " } });
+  fireEvent.click(screen.getByText("퍼징 시작"));
+
+  expect(onFuzz).toHaveBeenCalledWith(
+    "/usr/share/wordlists/dirb/common.txt", "php,txt,html");
+});
+
+it("tracks a run under the extensions template id as busy too", () => {
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz-ext", status: "running" }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("탐색 중…")).toBeTruthy();
 });
 
 it("parses feroxbuster json output from the live run and filters by path", () => {

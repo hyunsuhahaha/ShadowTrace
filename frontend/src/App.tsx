@@ -790,17 +790,24 @@ export default function App() {
       setEvidenceMsg(`Finding 승격 실패: ${reason instanceof Error ? reason.message : reason}`);
     }
   };
-  const runDirectoryFuzz = (wordlist: string) => {
+  const runDirectoryFuzz = (wordlist: string, extensions: string) => {
     if (!target || !service || !wordlist.trim()) return;
     setRunWithSudo(false);
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
-    void run({
-      id: "http-directory-fuzz",
-      preview: `feroxbuster -u ${scheme}://${target.ip}:${service.port}/` +
-        ` -w ${wordlist} --json --silent -n`,
-      target_level: false,
-      variables: {wordlist},
-    });
+    const base = `feroxbuster -u ${scheme}://${target.ip}:${service.port}/ -w ${wordlist}`;
+    void run(extensions
+      ? {
+          id: "http-directory-fuzz-ext",
+          preview: `${base} -x ${extensions} --json --silent -n`,
+          target_level: false,
+          variables: {wordlist, extensions},
+        }
+      : {
+          id: "http-directory-fuzz",
+          preview: `${base} --json --silent -n`,
+          target_level: false,
+          variables: {wordlist},
+        });
   };
   const runVhostFuzz = (domain: string, wordlist: string) => {
     if (!target || !service || !domain.trim() || !wordlist.trim()) return;
