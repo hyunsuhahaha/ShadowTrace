@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
 import LfiPayloadReference from "./LfiPayloadReference";
+import Log4ShellPayloadReference from "./Log4ShellPayloadReference";
 import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
@@ -99,7 +100,8 @@ export default function WebWorkspace() {
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
     [workspaceTab, setWorkspaceTab] =
-      useState<"request" | "intruder" | "sqli" | "lfi" | "proxy" | "results">("request"),
+      useState<"request" | "intruder" | "sqli" | "lfi" | "log4shell" | "proxy" | "results">(
+        "request"),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [curlInput, setCurlInput] = useState(""),
     [error, setError] = useState("");
@@ -316,6 +318,8 @@ export default function WebWorkspace() {
             onClick={() => setWorkspaceTab("sqli")}>SQLi 참고</button>
           <button role="tab" aria-selected={workspaceTab === "lfi"}
             onClick={() => setWorkspaceTab("lfi")}>LFI 참고</button>
+          <button role="tab" aria-selected={workspaceTab === "log4shell"}
+            onClick={() => setWorkspaceTab("log4shell")}>Log4Shell 참고</button>
           <button role="tab" aria-selected={workspaceTab === "proxy"}
             onClick={() => setWorkspaceTab("proxy")}>Proxy</button>
           <button role="tab" aria-selected={workspaceTab === "results"}
@@ -357,6 +361,8 @@ export default function WebWorkspace() {
             <SqlPayloadReference onSendToIntruder={sendToIntruder} />
           ) : workspaceTab === "lfi" ? (
             <LfiPayloadReference onSendToIntruder={sendToIntruder} />
+          ) : workspaceTab === "log4shell" ? (
+            <Log4ShellPayloadReference onSendToIntruder={sendToIntruder} />
           ) : workspaceTab === "proxy" ? (
             <ProxyPanel projectId={targets.data?.find((t) => t.id === targetId)?.project_id}
               targetId={targetId} onOpenRequest={openCapturedRequest}
