@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import CommandPalette from "./CommandPalette";
 
@@ -77,6 +77,23 @@ it("navigates to Enumeration and scrolls to the matching panel when the entry ha
   expect(location.hash).toBe("#enumeration");
   expect(anchor.scrollIntoView).toHaveBeenCalledOnce();
   anchor.remove();
+  vi.useRealTimers();
+});
+
+it("stays open and explains why when the target has no matching service for an anchored entry", () => {
+  vi.useFakeTimers();
+  const onClose = vi.fn();
+  render(<CommandPalette onClose={onClose} />);
+
+  // No #dns-subdomain-heading exists anywhere in the DOM — the target this
+  // user is on has no DNS service, so DnsSubdomainPanel never mounted.
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster dns" } });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+  act(() => { vi.runAllTimers(); });
+
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toBe(
+    "'서브도메인 브루트포스 (gobuster dns)'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.");
   vi.useRealTimers();
 });
 

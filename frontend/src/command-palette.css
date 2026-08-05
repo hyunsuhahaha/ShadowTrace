@@ -4,6 +4,7 @@
 .commandPalette>input:focus{outline:none}
 .commandPaletteResults{overflow:auto;padding:.5rem}
 .commandPaletteEmpty{margin:1rem;color:var(--muted);font-size:.75rem;text-align:center}
+.commandPaletteMissing{margin:0;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:#211b15;color:#e3bc8f;font-size:.72rem;line-height:1.5}
 .commandPaletteGroup h3{margin:.6rem .5rem .3rem;color:#667471;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
 .commandPaletteGroup button{display:grid;gap:.15rem;width:100%;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;padding:.55rem .65rem;font:inherit;cursor:pointer}
 .commandPaletteGroup button strong{font-size:.82rem;font-weight:600}

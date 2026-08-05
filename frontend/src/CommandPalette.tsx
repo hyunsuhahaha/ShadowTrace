@@ -22,6 +22,7 @@ const rememberRecent = (id: string) => {
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
+  const [missingAnchor, setMissingAnchor] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     setSelected(0);
+    setMissingAnchor(undefined);
   }, [query]);
 
   const groups = useMemo(() => {
@@ -56,10 +58,20 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     location.hash = entry.subroute ? `${entry.route}/${entry.subroute}` : entry.route;
     if (entry.anchorId) {
       const anchorId = entry.anchorId;
-      window.setTimeout(
-        () => document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "start" }),
-        300,
-      );
+      // The Service Enumeration tools this covers (dir/vhost/param fuzz,
+      // dns subdomain) only render once a matching service is selected for
+      // the current target — closing unconditionally here used to look
+      // like the click did nothing when that service isn't present yet.
+      window.setTimeout(() => {
+        const anchor = document.getElementById(anchorId);
+        if (anchor) {
+          anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+          onClose();
+        } else {
+          setMissingAnchor(entry.label);
+        }
+      }, 300);
+      return;
     }
     onClose();
   };
@@ -104,6 +116,11 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
           placeholder="도구나 화면 검색… (예: sql injection, repeater, 백업)"
           aria-label="빠른 이동 검색"
         />
+        {missingAnchor && (
+          <p className="commandPaletteMissing" role="alert">
+            '{missingAnchor}'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.
+          </p>
+        )}
         <div className="commandPaletteResults" role="listbox">
           {!flat.length && (
             <p className="commandPaletteEmpty">
