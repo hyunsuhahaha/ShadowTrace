@@ -13,6 +13,7 @@ export OSCP_WORKSPACE_STATE="${OSCP_WORKSPACE_STATE:-$owner_home/.local/state/os
 export OSCP_WORKSPACE_ROOT="${OSCP_WORKSPACE_ROOT:-$owner_home/OSCP-Workspace}"
 export OSCP_WORKSPACE_DB="${OSCP_WORKSPACE_DB:-$OSCP_WORKSPACE_DATA/workspace.db}"
 export OSCP_WORKSPACE_OWNER_GID="$owner_gid"
+export OSCP_WORKSPACE_OWNER_HOME="$owner_home"
 mkdir -p "$OSCP_WORKSPACE_CONFIG" "$OSCP_WORKSPACE_DATA" \
   "$OSCP_WORKSPACE_STATE" "$OSCP_WORKSPACE_ROOT"
 .venv/bin/pip install -q -e ./backend
@@ -28,7 +29,7 @@ if .venv/bin/python -c \
 fi
 .venv/bin/python -m app.migrations
 sudo -v
-sudo --preserve-env=OSCP_WORKSPACE_CONFIG,OSCP_WORKSPACE_DATA,OSCP_WORKSPACE_STATE,OSCP_WORKSPACE_ROOT,OSCP_WORKSPACE_DB,OSCP_WORKSPACE_OWNER_GID \
+sudo --preserve-env=OSCP_WORKSPACE_CONFIG,OSCP_WORKSPACE_DATA,OSCP_WORKSPACE_STATE,OSCP_WORKSPACE_ROOT,OSCP_WORKSPACE_DB,OSCP_WORKSPACE_OWNER_GID,OSCP_WORKSPACE_OWNER_HOME \
   ./scripts/run-root-backend.sh --reload &
 backend=$!
 cleanup() {

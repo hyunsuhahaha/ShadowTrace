@@ -12,6 +12,12 @@ fi
 cd "$(dirname "$0")/.."
 umask 0002
 export OSCP_ALLOW_ROOT=1 OSCP_BACKEND_BIND=127.0.0.1 PYTHONDONTWRITEBYTECODE=1
+# sudo's secure_path replaces PATH wholesale (dev.sh's --preserve-env list
+# does not include it), which drops both /usr/local/bin and the invoking
+# user's ~/.local/bin — shutil.which() checks (system status, command
+# templates) then silently report a manually-downloaded or pip --user
+# installed tool as missing even though it runs fine from a normal shell.
+export PATH="${OSCP_WORKSPACE_OWNER_HOME:+$OSCP_WORKSPACE_OWNER_HOME/.local/bin:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 child=""
 pid_file="$OSCP_WORKSPACE_STATE/root-backend.pid"
 cleanup() {
