@@ -231,8 +231,12 @@ def test_mysql_client_opens_with_the_discovered_username_and_always_prompts_for_
         execution_mode="interactive",
     )
     assert item["id"] == "mysql-client"
-    assert command == "mysql -h 10.10.10.23 -P 3306 -u root -p"
+    assert command == "mysql -h 10.10.10.23 -P 3306 -u root --skip-ssl -p"
     assert argv[-1] == "-p"
+    # A modern mysql client defaults to requiring TLS; an older MariaDB
+    # target that doesn't support it fails the connection outright
+    # (ERROR 2026) before credentials are even checked, without this flag.
+    assert "--skip-ssl" in argv
 
 def test_mssql_client_templates_are_offered_and_never_carry_a_password():
     # Same rationale as the mysql-client test above: neither variant takes a
@@ -535,7 +539,13 @@ def test_mysql_credential_probe_invokes_the_bundled_script_with_the_edited_candi
 
 def test_mysql_credential_probe_script_tries_each_candidate_with_a_generous_timeout(tmp_path):
     script = Path(__file__).parents[1] / "scripts" / "mysql_credential_probe.sh"
-    assert "timeout_seconds=30" in script.read_text()
+    script_text = script.read_text()
+    assert "timeout_seconds=30" in script_text
+    # Without this, a modern mysql client's default TLS requirement makes
+    # every candidate fail the connection itself (ERROR 2026) against an
+    # older MariaDB target, misreporting a real hit as a bad credential.
+    assert script_text.count("mysql -h") == 2
+    assert all("--skip-ssl" in line for line in script_text.splitlines() if "mysql -h" in line)
     # Stub out the real `mysql` binary so this runs hermetically: only
     # "-u root" with no "-p" (the blank-password candidate) succeeds.
     fake_mysql = tmp_path / "mysql"

@@ -5,6 +5,9 @@
 # the server's handshake is slow (e.g. a reverse-DNS lookup on the client
 # IP with skip-name-resolve unset) — every attempt here uses the same
 # generous timeout for exactly that reason.
+# --skip-ssl: a modern mysql client defaults to requiring TLS, which an
+# older MariaDB target may not support (ERROR 2026) — that connection
+# failure would otherwise be misreported as a wrong credential.
 set -uo pipefail
 
 host="$1"
@@ -28,10 +31,10 @@ for user in "${users[@]}"; do
     attempted=$((attempted + 1))
     label="$user:${password:-<empty>}"
     if [ -z "$password" ]; then
-      output=$(timeout "$timeout_seconds" mysql -h "$host" -P "$port" -u "$user" \
+      output=$(timeout "$timeout_seconds" mysql -h "$host" -P "$port" -u "$user" --skip-ssl \
         --connect-timeout="$timeout_seconds" -e "SELECT CURRENT_USER(), VERSION();" 2>&1)
     else
-      output=$(timeout "$timeout_seconds" mysql -h "$host" -P "$port" -u "$user" -p"$password" \
+      output=$(timeout "$timeout_seconds" mysql -h "$host" -P "$port" -u "$user" -p"$password" --skip-ssl \
         --connect-timeout="$timeout_seconds" -e "SELECT CURRENT_USER(), VERSION();" 2>&1)
     fi
     if [ $? -eq 0 ]; then
