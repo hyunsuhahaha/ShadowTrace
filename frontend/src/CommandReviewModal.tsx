@@ -41,7 +41,6 @@ export default function CommandReviewModal({
         <input type="text" placeholder="예: hello → hello.txt로 저장"
           value={outputFilename}
           onChange={(event) => onOutputFilename(event.target.value)} />
-        <small>비워두면 자동 생성된 파일명으로 저장됩니다.</small>
       </label>
       {command.risk === "high" && <p className="intrusiveConfirm">
         이 명령은 계정 잠금이나 인증 로그를 발생시킬 수 있습니다.

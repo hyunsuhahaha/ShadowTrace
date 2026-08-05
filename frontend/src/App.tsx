@@ -1481,7 +1481,6 @@ export default function App() {
                 <h2 id="netexec-cred-heading">
                   {netexecProtocol.toUpperCase()} 자격증명 확인 (NetExec)
                 </h2>
-                <small>대입 공격이 아니라 사용자가 입력한 계정 하나만 검증합니다.</small>
               </header>
               <CredentialStoreForm store={credStore}
                 result={netexecCredentialResult} onCheck={checkNetexecCredential} />

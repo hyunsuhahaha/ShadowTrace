@@ -29,9 +29,6 @@ export default function ChiselPivotPanel({ onStartListener }: {
     <section className="netexecCredCheck" aria-labelledby="chisel-heading">
       <header>
         <h2 id="chisel-heading">Chisel 리버스 피벗</h2>
-        <small>대상이 아웃바운드만 가능할 때(NAT·방화벽 뒤) 씁니다. Kali에서 --reverse 서버를
-          띄우고, 그 클라이언트 명령을 대상 셸에 붙여넣으면 SOCKS 프록시가 Kali 쪽(기본
-          127.0.0.1:1080)에 열려 proxychains로 바로 쓸 수 있습니다.</small>
       </header>
       <div className="netexecCredForm">
         <input value={lport} onChange={(e) => setLport(e.target.value)}
@@ -58,11 +55,7 @@ export default function ChiselPivotPanel({ onStartListener }: {
             placeholder="REMOTE_PORT (Kali 쪽 노출 포트와 동일)" aria-label="REMOTE_PORT" />
         </div>
       )}
-      {clientCommand && <>
-        <code className="revshellPayload">{clientCommand}</code>
-        <small>위 명령을 대상 셸에 붙여넣어 실행하세요 (Windows는 chisel.exe). Linux 바이너리를
-          올려야 한다면 서버가 먼저 켜져 있어야 클라이언트가 접속됩니다.</small>
-      </>}
+      {clientCommand && <code className="revshellPayload">{clientCommand}</code>}
     </section>
   );
 }

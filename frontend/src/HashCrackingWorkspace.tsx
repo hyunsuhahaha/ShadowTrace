@@ -261,8 +261,6 @@ export default function HashCrackingWorkspace() {
       <header>
         <div>
           <h1>Hash Cracking</h1>
-          <p>secretsdump, Kerberoasting, ASREP roasting 등으로 확보한 해시를 hashcat으로
-            오프라인 크랙합니다. 대상에 직접 접속하지 않습니다.</p>
         </div>
         <div className="crackSelectors">
           <select aria-label="프로젝트 선택" value={projectId || ""}

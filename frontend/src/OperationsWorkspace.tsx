@@ -95,9 +95,6 @@ export default function OperationsWorkspace() {
             ))}
           </div>
           <h2>백업</h2>
-          <p>
-            SQLite 스냅샷과 산출물 파일을 함께 백업합니다. 백업 파일은 로컬에만 저장됩니다.
-          </p>
           <button onClick={createBackup}>전체 백업 생성</button>
           <button onClick={setConcurrency}>동시 스캔 수 설정</button>
           {backup && (

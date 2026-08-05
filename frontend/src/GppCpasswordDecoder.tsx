@@ -29,8 +29,6 @@ export default function GppCpasswordDecoder() {
     <section className="netexecCredCheck" aria-labelledby="gpp-heading">
       <header>
         <h2 id="gpp-heading">GPP cpassword 디코드</h2>
-        <small>Groups.xml/ScheduledTasks.xml 등 SYSVOL 파일에서 찾은 cpassword 속성 값을
-          즉시 복호화합니다. 정적 키(MS14-025 공개)라 크랙이 아니라 바로 풀립니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={input} onChange={(e) => setInput(e.target.value)}

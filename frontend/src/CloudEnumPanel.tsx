@@ -40,9 +40,6 @@ export default function CloudEnumPanel({
     <section className="netexecCredCheck" aria-labelledby="cloud-enum-heading">
       <header>
         <h2 id="cloud-enum-heading">클라우드 버킷 이름 탐색 (cloud_enum)</h2>
-        <small>키워드(회사·프로젝트명 등)로 실제 AWS S3·Azure Blob·GCS 엔드포인트에 존재하는
-          버킷·스토리지 계정을 조회합니다. 대상 IP가 아니라 각 클라우드 사업자의 실제 서비스로
-          직접 요청이 나가므로, 계약 범위에 해당 키워드 조사가 포함되는지 먼저 확인하세요.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={keyword} onChange={(e) => setKeyword(e.target.value)}

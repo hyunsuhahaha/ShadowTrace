@@ -36,12 +36,6 @@ export default function LfiPayloadReference({ onSendToIntruder }: {
         <span>LFI 페이로드 참고</span>
         <h2 id="lfi-payload-heading">페이로드 카탈로그</h2>
         <p>
-          복사해서 위 Request 편집기에 붙여넣거나, Intruder로 보내 요청 위치
-          <code>{"{{position_1}}"}</code>의 후보 값으로 채운 뒤 직접 검토하고 전송하세요.
-          경로 깊이(traversal-depth)로 먼저 몇 단계 위가 웹 루트인지 찾고, 그 뒤 대상 OS의
-          파일 카테고리로 교체하는 순서를 권장합니다.
-        </p>
-        <p>
           {lhost
             ? <>탐지된 tun0 IP <code>{lhost}</code>를 <code>{"{LHOST}"}</code> 자리에 자동으로 채웁니다.</>
             : <>tun0 IP를 아직 못 찾았습니다 — VPN이 연결돼 있는지 확인하거나, <code>{"{LHOST}"}</code>가

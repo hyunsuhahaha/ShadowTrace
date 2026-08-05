@@ -364,7 +364,6 @@ export default function WebWorkspace() {
           ) : <>
           {workspaceTab === "results" && <div className="webSectionTitle">
             <span>Recorded exchanges</span><h2>응답 이력과 비교</h2>
-            <p>오른쪽 응답을 선택하고 기준 응답과 차이를 검토하세요.</p>
           </div>}
           {workspaceTab === "request" && <>
           {intruderSeed && !requestId && <div className="intruderPendingNotice">

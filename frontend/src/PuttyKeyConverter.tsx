@@ -44,8 +44,6 @@ export default function PuttyKeyConverter() {
     <section className="netexecCredCheck" aria-labelledby="putty-key-heading">
       <header>
         <h2 id="putty-key-heading">PuTTY 개인 키 변환 (.ppk → OpenSSH)</h2>
-        <small>대상에서 찾은 .ppk 파일 내용을 그대로 붙여넣으면 ssh/impacket에서 바로 쓸 수 있는
-          OpenSSH 형식으로 변환합니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <textarea rows={6} value={ppk} onChange={(e) => setPpk(e.target.value)}

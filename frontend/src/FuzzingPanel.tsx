@@ -48,7 +48,6 @@ export default function FuzzingPanel({
     <section className="netexecCredCheck" aria-labelledby="fuzz-heading">
       <header>
         <h2 id="fuzz-heading">디렉터리·파일 퍼징 (feroxbuster)</h2>
-        <small>정적 워드리스트로 존재하는 경로만 찾습니다. 재귀 탐색은 하지 않습니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <select value={wordlist} onChange={(e) => setWordlist(e.target.value)}>

@@ -12,8 +12,6 @@ export default function CiscoType7Decoder() {
     <section className="netexecCredCheck" aria-labelledby="cisco-type7-heading">
       <header>
         <h2 id="cisco-type7-heading">Cisco Type 7 비밀번호 디코드</h2>
-        <small>router/switch 설정 파일에서 찾은 "password 7 &lt;hex&gt;" 값을 즉시 복호화합니다.
-          해시가 아니라 고정 키 XOR라 크랙 없이 바로 풀립니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={input} onChange={(e) => setInput(e.target.value)}

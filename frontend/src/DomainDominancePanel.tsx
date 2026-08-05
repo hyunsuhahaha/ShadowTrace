@@ -62,8 +62,6 @@ export default function DomainDominancePanel({
     <section className="netexecCredCheck" aria-labelledby="domain-dominance-heading">
       <header>
         <h2 id="domain-dominance-heading">도메인 장악 (BloodHound · DCSync)</h2>
-        <small>위에서 확인한 유효한 도메인 계정으로 전체 공격 경로 수집과 해시 덤프를 시도합니다.
-          DCSync는 복제 권한이 없으면 실패합니다 — 먼저 BloodHound로 경로를 확인하세요.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <button disabled={!ready || bloodhoundBusy} onClick={onCollectBloodhound}>

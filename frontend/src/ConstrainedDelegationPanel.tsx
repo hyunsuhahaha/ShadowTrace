@@ -55,8 +55,6 @@ export default function ConstrainedDelegationPanel({
     <section className="netexecCredCheck" aria-labelledby="constrained-delegation-heading">
       <header>
         <h2 id="constrained-delegation-heading">제한된 위임 남용 (Impacket getST.py)</h2>
-        <small>AllowedToDelegateTo 권한이 있는 계정으로 S4U2Self/S4U2Proxy를 사용해 원하는
-          사용자를 사칭하는 서비스 티켓을 얻습니다. 그 SPN이 가리키는 서비스에 대해서만 유효합니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={spn} onChange={(e) => setSpn(e.target.value)}

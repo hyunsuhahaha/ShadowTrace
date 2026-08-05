@@ -352,7 +352,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
           </div>
         </section>
         <section id="finding-details" className="formSection">
-          <div className="sectionTitle"><span>03</span><div><h2>설명과 영향</h2><p>Client 독자와 기술 검토자가 같은 Finding을 각자의 관점에서 이해하도록 작성합니다.</p></div></div>
+          <div className="sectionTitle"><span>03</span><div><h2>설명과 영향</h2></div></div>
           <div className="writingGrid">
             <label><span>경영진 요약</span><textarea value={draft.summary} onChange={(event) => patch({ summary: event.target.value })} placeholder="무엇이 발견됐고 왜 중요한지 2–3문장으로 작성" /></label>
             <label><span>취약점 설명</span><textarea value={draft.description} onChange={(event) => patch({ description: event.target.value })} placeholder="조건, 원인, 관찰 결과를 사실 중심으로 작성" /></label>
@@ -392,7 +392,6 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
     <aside className={`evidenceRail ${evidenceOpen ? "open" : ""}`} aria-label="연결 Evidence">
       <div className="panelHeading"><div><span>REPORT PROOF</span><h2>Evidence</h2></div><strong>{draft.evidence.length}</strong></div>
       <button className="closeEvidenceRail" aria-label="Evidence 패널 닫기" onClick={() => setEvidenceOpen(false)}>×</button>
-      <p className="railHint">Client 공개 여부를 Evidence마다 검토하세요. 민감 Evidence는 Client 보고서에 포함할 수 없습니다.</p>
       <div className="linkedEvidence">
         {!linkedEvidence.length && <EmptyState title="연결된 Evidence가 없습니다" description="아래 목록에서 재현 결과나 스크린샷을 연결하세요." />}
         {linkedEvidence.map(({ link, item }, index) => <article key={link.evidence_id}>

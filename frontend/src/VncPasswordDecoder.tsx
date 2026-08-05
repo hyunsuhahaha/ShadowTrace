@@ -41,8 +41,6 @@ export default function VncPasswordDecoder() {
     <section className="netexecCredCheck" aria-labelledby="vnc-password-heading">
       <header>
         <h2 id="vnc-password-heading">VNC 비밀번호 디코드</h2>
-        <small>레지스트리(TightVNC/RealVNC/UltraVNC의 Password 값 등)에서 찾은 16진수 값을
-          즉시 복호화합니다. 고정 키(공개됨)라 크랙이 아니라 바로 풀립니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={input} onChange={(e) => setInput(e.target.value)}

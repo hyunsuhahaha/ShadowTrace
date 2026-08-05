@@ -36,7 +36,6 @@ export default function ReverseShellPanel({ onStartListener }: {
     <section className="netexecCredCheck" aria-labelledby="revshell-heading">
       <header>
         <h2 id="revshell-heading">리버스 쉘</h2>
-        <small>RCE 지점(웹쉘·명령 인젝션 등)에 붙여넣을 페이로드를 만들고, 받을 리스너를 준비합니다.</small>
       </header>
       <div className="netexecCredForm">
         <input value={lhost} onChange={(e) => setLhost(e.target.value)}

@@ -14,8 +14,6 @@ export default function ResponderPanel({ onStartListener }: {
     <section className="netexecCredCheck" aria-labelledby="responder-heading">
       <header>
         <h2 id="responder-heading">Responder 리스너</h2>
-        <small>xp_dirtree, .library-ms 강제 인증, PetitPotam 등으로 유도한 NTLM 인증 시도를
-          캡처합니다. NetNTLMv2 해시가 잡히면 Hash Cracking 워크스페이스로 넘겨 크랙하세요.</small>
       </header>
       <div className="netexecCredForm">
         <input value={interfaceName} onChange={(e) => setInterfaceName(e.target.value)}

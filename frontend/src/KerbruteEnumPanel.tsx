@@ -47,8 +47,6 @@ export default function KerbruteEnumPanel({
     <section className="netexecCredCheck" aria-labelledby="kerbrute-heading">
       <header>
         <h2 id="kerbrute-heading">사용자명 열거 (kerbrute)</h2>
-        <small>비밀번호를 대입하지 않고 Kerberos Pre-Auth 응답만으로 존재하는 계정명을 확인합니다.
-          계정 잠금을 유발하지 않습니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={domain} onChange={(e) => setDomain(e.target.value)}

@@ -44,8 +44,6 @@ export default function VhostFuzzPanel({
     <section className="netexecCredCheck" aria-labelledby="vhost-heading">
       <header>
         <h2 id="vhost-heading">가상 호스트 퍼징 (ffuf)</h2>
-        <small>Host 헤더를 대입해 같은 IP·포트에 라우팅되는 다른 서브도메인을 찾습니다.
-          모든 응답을 보여주므로 baseline과 크기가 다른 결과 위주로 확인하세요.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={domain} onChange={(e) => setDomain(e.target.value)}

@@ -33,8 +33,6 @@ export default function PypykatzLsassPanel() {
     <section className="netexecCredCheck" aria-labelledby="pypykatz-heading">
       <header>
         <h2 id="pypykatz-heading">LSASS 덤프 분석 (pypykatz)</h2>
-        <small>procdump·comsvcs.dll MiniDump 등으로 얻은 lsass.exe 덤프 파일을 업로드하면
-          NTLM 해시·Kerberos 티켓 등 저장된 자격증명을 추출합니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input type="file" aria-label="LSASS 덤프 파일"

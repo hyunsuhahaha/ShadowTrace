@@ -65,10 +65,6 @@ export default function ProxyPanel({ projectId, targetId, onOpenRequest, onSendT
       <div className="webSectionTitle">
         <span>Proxy capture</span>
         <h2>브라우저 트래픽 캡처</h2>
-        <p>
-          브라우저 프록시 설정을 아래 주소로 맞추면 대상 IP로 가는 요청만 자동 저장됩니다.
-          다른 사이트 트래픽은 그대로 통과만 되고 기록되지 않습니다. 로컬(127.0.0.1)에서만 동작합니다.
-        </p>
       </div>
       {error && <div className="webError">{error}</div>}
       {(!projectId || !targetId) &&

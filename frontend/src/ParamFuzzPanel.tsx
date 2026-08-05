@@ -45,9 +45,6 @@ export default function ParamFuzzPanel({
     <section className="netexecCredCheck" aria-labelledby="param-fuzz-heading">
       <header>
         <h2 id="param-fuzz-heading">GET 파라미터 이름 퍼징 (ffuf)</h2>
-        <small>지정한 경로에서 워드리스트의 이름을 GET 파라미터로 하나씩 대입합니다.
-          page·file·include 같은 파일 포함(LFI) 후보를 찾을 때 씁니다.
-          모든 응답을 보여주므로 baseline과 크기가 다른 결과 위주로 확인하세요.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={path} onChange={(e) => setPath(e.target.value)}

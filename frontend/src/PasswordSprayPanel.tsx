@@ -49,9 +49,6 @@ export default function PasswordSprayPanel({
     <section className="netexecCredCheck" aria-labelledby="spray-heading">
       <header>
         <h2 id="spray-heading">패스워드 스프레이 (NetExec)</h2>
-        <small>사용자 목록에 비밀번호 하나를 대입합니다. 찾은 모든 자격증명을 모든 서비스에
-          시도하는 것은 OSCP 시험 방법론상 허용되는 기법이지만, 대입 자체이므로 계정 잠금
-          위험이 있습니다.</small>
       </header>
       <p className="intruderWarning">
         실행 전 대상의 계정 잠금 정책(시도 횟수·기간)을 반드시 확인하세요.

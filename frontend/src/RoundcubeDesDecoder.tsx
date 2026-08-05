@@ -44,8 +44,6 @@ export default function RoundcubeDesDecoder() {
     <section className="netexecCredCheck" aria-labelledby="roundcube-des-heading">
       <header>
         <h2 id="roundcube-des-heading">Roundcube 세션 비밀번호 복호화 (3DES)</h2>
-        <small>config.inc.php의 des_key와 session 테이블 vars 컬럼의 값(base64)으로
-          저장된 IMAP 비밀번호를 즉시 복호화합니다. 크랙이 아니라 대칭키 복호화입니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={key} onChange={(e) => setKey(e.target.value)}

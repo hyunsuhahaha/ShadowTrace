@@ -92,8 +92,6 @@ export default function PrivescSessionPanel({session, server, serverBusy,
       <section className="privescServer" aria-labelledby="captured-hashes-heading">
         <header>
           <h2 id="captured-hashes-heading">캡처된 NetNTLMv2 해시</h2>
-          <small>세션 로그에서 자동으로 찾은 값입니다. Hash Cracking 탭으로 보내면
-            해시가 채워지고 모드가 자동 선택됩니다.</small>
         </header>
         <div className="sqlPayloadList">
           {hashes.map((hash) => (

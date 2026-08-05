@@ -72,8 +72,6 @@ export default function AsrepRoastPanel({
     <section className="netexecCredCheck" aria-labelledby="asrep-heading">
       <header>
         <h2 id="asrep-heading">AS-REP Roasting (Impacket)</h2>
-        <small>자격증명 없이 사용자 목록만으로 Kerberos Pre-Auth 미요구 계정의 해시를 수집합니다.
-          계정 잠금을 유발하지 않습니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={domain} onChange={(e) => setDomain(e.target.value)}

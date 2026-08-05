@@ -60,8 +60,6 @@ export default function SilverTicketPanel({
     <section className="netexecCredCheck" aria-labelledby="silver-ticket-heading">
       <header>
         <h2 id="silver-ticket-heading">Silver Ticket 위조 (Impacket ticketer.py)</h2>
-        <small>서비스 계정의 NTLM 해시와 도메인 SID로 원하는 그룹 권한을 가진 위조 서비스 티켓을
-          만듭니다. 해당 서비스에 대해서만 유효하며, 티켓 파일은 이 실행의 작업 디렉터리에 저장됩니다.</small>
       </header>
       {dumpedHashes.length > 0 && (
         <div className="netexecPwnedActions">

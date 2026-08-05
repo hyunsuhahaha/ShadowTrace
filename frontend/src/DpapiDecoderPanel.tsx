@@ -64,8 +64,6 @@ export default function DpapiDecoderPanel() {
     <section className="netexecCredCheck" aria-labelledby="dpapi-heading">
       <header>
         <h2 id="dpapi-heading">DPAPI 마스터키 · Credential 복호화</h2>
-        <small>마스터키·credential 파일은 대상에서 base64로 인코딩해 붙여넣으세요 (예: PowerShell
-          [Convert]::ToBase64String([IO.File]::ReadAllBytes("경로"))).</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <textarea rows={3} value={masterkeyB64} onChange={(e) => setMasterkeyB64(e.target.value)}

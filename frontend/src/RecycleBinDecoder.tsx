@@ -26,9 +26,6 @@ export default function RecycleBinDecoder() {
     <section className="netexecCredCheck" aria-labelledby="recyclebin-heading">
       <header>
         <h2 id="recyclebin-heading">$RECYCLE.BIN 인덱스($I) 파싱</h2>
-        <small>$I&lt;random&gt; 파일을 base64로 붙여넣으면 원본 경로·크기·삭제 시각을 확인합니다.
-          같은 이름의 $R&lt;random&gt; 파일이 실제 삭제된 내용입니다 — 원본 확장자로 이름을
-          바꿔 여세요. Windows 10 이상 형식만 지원합니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <textarea rows={3} value={input} onChange={(e) => setInput(e.target.value)}

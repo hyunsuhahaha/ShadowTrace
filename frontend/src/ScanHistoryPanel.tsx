@@ -157,9 +157,6 @@ export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoad
           </div>
         </>
       )}
-      <p>
-        관찰된 변경만 표시하며 위험도나 취약점을 판단하지 않습니다.
-      </p>
     </div>
   </aside>;
 }

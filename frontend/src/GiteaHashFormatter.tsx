@@ -16,8 +16,6 @@ export default function GiteaHashFormatter() {
     <section className="netexecCredCheck" aria-labelledby="gitea-hash-heading">
       <header>
         <h2 id="gitea-hash-heading">Gitea 비밀번호 해시 변환 (hashcat -m 10900용)</h2>
-        <small>gitea.db의 user 테이블에서 얻은 passwd·salt 16진수 컬럼을 hashcat -m 10900
-          입력 형식으로 재인코딩합니다. 반복 횟수는 Gitea 기본값인 50000입니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={passwdHex} onChange={(e) => setPasswdHex(e.target.value)}

@@ -467,9 +467,7 @@ export default function RunbookWorkspace(){
             </button>)}
         </nav>}
         {activeDetail.progress.completed===0&&!(activeDetail.steps||[]).some(step=>step.execution_ids.length)&&
-          <section className="runbookStartNotice"><strong>연결된 실행 결과 없음</strong>
-            <span>아래의 실행 가능 단계에서 명령을 검토해 실행하세요. 이후 결과는 이 Runbook에 자동 연결됩니다.</span>
-          </section>}
+          <section className="runbookStartNotice"><strong>연결된 실행 결과 없음</strong></section>}
         <div className="instanceActions">
           <Button onClick={()=>setToolsOpen(value=>!value)}>
             {toolsOpen?"도구 닫기":"Credential · Finding"}

@@ -55,8 +55,6 @@ export default function S3BucketPanel({
     <section className="netexecCredCheck" aria-labelledby="s3-heading">
       <header>
         <h2 id="s3-heading">S3 호환 버킷 확인 (awscli)</h2>
-        <small>커스텀 S3 호환 엔드포인트(MinIO 등)의 버킷과 오브젝트를 열거합니다.
-          awscli에 자격증명(더미 값이라도 무방)이 미리 구성돼 있어야 합니다.</small>
       </header>
       <div className="netexecCredForm netexecCredForm--save">
         <button disabled={bucketList.busy} onClick={onListBuckets}>
@@ -88,10 +86,6 @@ export default function S3BucketPanel({
           {upload.busy ? "업로드 중…" : "PHP 웹쉘 업로드"}
         </button>
       </div>
-      <small className="netexecEvidenceMsg">
-        웹쉘은 system($_GET['cmd'])만 담은 최소 형태로 버킷 루트에 shell.php로 업로드됩니다.
-        업로드 전에 위 파일 목록 조회로 이 버킷이 실제 웹 루트와 연결돼 있는지 먼저 확인하세요.
-      </small>
       {!!objectList.output && (
         <div className="intruderResults">
           <header><div><b>버킷 파일 목록</b></div>
