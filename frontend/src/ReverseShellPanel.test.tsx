@@ -36,6 +36,26 @@ it("starts the listener on the typed port", () => {
   expect(onStartListener).toHaveBeenCalledWith("9001");
 });
 
+it("shows the -enc checkbox only for the PowerShell kind and encodes the payload when checked", () => {
+  render(<ReverseShellPanel onStartListener={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("LHOST"), { target: { value: "10.10.14.5" } });
+  fireEvent.change(screen.getByLabelText("LPORT"), { target: { value: "4444" } });
+
+  expect(screen.queryByLabelText(/-enc\(Base64\)/)).toBeNull();
+
+  fireEvent.change(screen.getByLabelText("쉘 종류"), { target: { value: "powershell" } });
+  expect(screen.getByText(/powershell -nop -c "/)).toBeTruthy();
+
+  fireEvent.click(screen.getByLabelText(/-enc\(Base64\)/));
+  const rendered = screen.getByText(/^powershell -nop -enc /).textContent || "";
+  expect(rendered).not.toContain('"');
+  const decoded = Buffer.from(
+    rendered.replace("powershell -nop -enc ", ""), "base64",
+  ).toString("utf16le");
+  expect(decoded).toContain("10.10.14.5");
+  expect(decoded).toContain("4444");
+});
+
 it("includes the pty.spawn shell-stabilization steps", () => {
   render(<ReverseShellPanel onStartListener={vi.fn()} />);
   expect(screen.getByText(/pty\.spawn/)).toBeTruthy();

