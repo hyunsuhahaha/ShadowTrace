@@ -335,6 +335,27 @@ export default function App() {
       setOutput((value) => `${value}\n[MySQL 터미널을 열지 못했습니다] ${message}\n`);
     }
   };
+  const openMysqlTerminalMycli = async (username: string) => {
+    if (!targetId || !serviceId) return;
+    try {
+      const session = await api<any>("/interactive-sessions", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          target_id: targetId,
+          service_id: serviceId,
+          template_id: "mysql-client-mycli",
+          variables: {username},
+          run_as_root: false,
+        }),
+      });
+      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
+      setOutput((value) => `${value}\n[Kali QTerminal에서 mycli 세션을 열었습니다.]\n`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setOutput((value) => `${value}\n[MySQL 터미널을 열지 못했습니다] ${message}\n`);
+    }
+  };
   const createProject = useMutation({
     mutationFn: () =>
       api<Project>("/projects", {
@@ -1358,6 +1379,7 @@ export default function App() {
             clock={clock}
             onReview={reviewCommand}
             onOpenTerminal={service?.name?.toLowerCase() === "mysql" ? openMysqlTerminal : undefined}
+            onOpenTerminalMycli={service?.name?.toLowerCase() === "mysql" ? openMysqlTerminalMycli : undefined}
           />
           <InvestigationCommandList
             commands={commands.data || []}

@@ -238,6 +238,19 @@ def test_mysql_client_opens_with_the_discovered_username_and_always_prompts_for_
     # (ERROR 2026) before credentials are even checked, without this flag.
     assert "--skip-ssl" in argv
 
+def test_mysql_client_mycli_is_a_separate_opt_in_alternative_to_the_plain_client():
+    # Kept alongside mysql-client rather than replacing it — same discovered
+    # account, same always-prompts-for-a-password rule, just a different
+    # interactive binary (autocompletion/syntax highlighting, no automation).
+    item, command, argv = catalog.render(
+        "mysql-client-mycli", {"host": "10.10.10.23", "port": "3306", "username": "root"},
+        execution_mode="interactive",
+    )
+    assert item["id"] == "mysql-client-mycli"
+    assert item["tool"] == "mycli"
+    assert command == "mycli -h 10.10.10.23 -P 3306 -u root -p"
+    assert argv[-1] == "-p"
+
 def test_mssql_client_templates_are_offered_and_never_carry_a_password():
     # Same rationale as the mysql-client test above: neither variant takes a
     # {password} token, so impacket-mssqlclient always falls back to its own

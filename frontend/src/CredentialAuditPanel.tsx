@@ -39,6 +39,7 @@ type Props = {
   clock: number;
   onReview: (command: AuditCommand) => void;
   onOpenTerminal?: (username: string) => void;
+  onOpenTerminalMycli?: (username: string) => void;
 };
 
 const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialAuditPanel({
@@ -49,6 +50,7 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
   clock,
   onReview,
   onOpenTerminal,
+  onOpenTerminalMycli,
 }, ref) {
   const [userText, setUserText] = useState(() => profile.identities.replaceAll(" · ", "\n"));
   const [passwordText, setPasswordText] = useState(() => profile.secrets.replaceAll(" · ", "\n"));
@@ -149,6 +151,11 @@ const CredentialAuditPanel = forwardRef<HTMLElement, Props>(function CredentialA
                   <button onClick={() => onOpenTerminal(summary.credential!.username)}>
                     터미널 열기
                   </button>
+                  {onOpenTerminalMycli && (
+                    <button onClick={() => onOpenTerminalMycli(summary.credential!.username)}>
+                      mycli로 열기
+                    </button>
+                  )}
                   <small>
                     비밀번호 프롬프트가 뜨면 {summary.credential.password
                       ? `"${summary.credential.password}"를 입력하세요` : "그냥 Enter를 누르세요 (빈 비밀번호)"}

@@ -111,6 +111,32 @@ it("offers a terminal-open button for an exposed credential when onOpenTerminal 
   expect(onOpenTerminal).toHaveBeenCalledWith("root");
 });
 
+it("offers a separate mycli terminal-open button alongside the plain one when given", () => {
+  const onOpenTerminal = vi.fn();
+  const onOpenTerminalMycli = vi.fn();
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
+    runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS root:<empty>\nCURRENT_USER()\nroot@%\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()}
+    onOpenTerminal={onOpenTerminal} onOpenTerminalMycli={onOpenTerminalMycli} />);
+
+  fireEvent.click(screen.getByText("mycli로 열기"));
+
+  expect(onOpenTerminalMycli).toHaveBeenCalledWith("root");
+  expect(onOpenTerminal).not.toHaveBeenCalled();
+});
+
+it("hides the mycli button when only the plain onOpenTerminal handler is given", () => {
+  render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
+    runStates={{[probeCommand.id]: {
+      templateId: probeCommand.id, name: probeCommand.name, status: "completed",
+      startedAt: 0, stdout: "[+] SUCCESS root:<empty>\nCURRENT_USER()\n", stderr: "",
+    }}} clock={0} onReview={vi.fn()} onOpenTerminal={vi.fn()} />);
+
+  expect(screen.queryByText("mycli로 열기")).toBeNull();
+});
+
 it("shows the found password to type when it isn't blank", () => {
   render(<CredentialAuditPanel profile={mysqlProfile} commands={[probeCommand]}
     runStates={{[probeCommand.id]: {
