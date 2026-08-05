@@ -1,15 +1,18 @@
+import asyncio
 import hashlib
+import sys
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
 from app.models import Execution, Project, Target
 from app.schemas import ExecutionDeriveIn
 from fastapi import HTTPException
 
+import app.executor as executor_module
 import app.modules.executions.router as executions_router
 from app.modules.executions.router import (
     _output_path, delete_execution, derive_output, execution_output_file,
@@ -167,3 +170,48 @@ def test_delete_execution_blocks_a_still_running_command():
         delete_execution(execution.id, db=db)
     assert exc.value.status_code == 409
     assert db.get(Execution, execution.id) is not None
+
+
+def test_run_execution_survives_a_long_stretch_without_a_newline(tmp_path, monkeypatch):
+    # ffuf/gobuster/feroxbuster redraw an in-place progress counter with \r
+    # (no \n) between actual result lines; under connection errors or a slow
+    # target this run can outlast the default 64KiB asyncio StreamReader
+    # limit before the next real line lands, which used to surface as
+    # "Separator is not found, and chunk exceed the limit" and mark a
+    # perfectly healthy fuzzing run as failed.
+    engine = create_engine(f"sqlite:///{tmp_path / 'exec.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(executor_module, "SessionLocal", factory)
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+        db.add(target); db.flush()
+        execution = Execution(
+            target_id=target.id, template_id="http-param-fuzz", command="ffuf ...",
+            cwd=str(tmp_path), status="queued")
+        db.add(execution); db.commit()
+        execution_id = execution.id
+
+    spam_script = tmp_path / "spam.py"
+    spam_script.write_text(
+        "import sys\n"
+        "sys.stdout.write('\\r' * (200 * 1024))\n"
+        "sys.stdout.write('done\\n')\n",
+        encoding="utf-8",
+    )
+
+    async def exercise():
+        await executor_module.run_execution(
+            execution_id, [sys.executable, str(spam_script)],
+            tmp_path, tmp_path / "out.txt",
+        )
+
+    asyncio.run(exercise())
+
+    with factory() as db:
+        row = db.get(Execution, execution_id)
+        assert row.status != "failed", row.error
+        assert row.exit_code == 0
+        assert "done" in row.stdout

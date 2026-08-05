@@ -151,7 +151,15 @@ async def run_execution(execution_id: int, argv: list[str], cwd: Path, output_fi
                 row.status = "running"; row.output_path = str(output_file); db.commit()
         process = await asyncio.create_subprocess_exec(
             *argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            start_new_session=True)
+            start_new_session=True,
+            # asyncio's readline() below needs a real \n within this many
+            # unconsumed bytes. ffuf/gobuster/feroxbuster redraw an in-place
+            # progress counter with \r (no \n) between actual result lines;
+            # a long stretch of connection errors or a slow target can push
+            # that past the 64KiB default before the next real line lands,
+            # raising LimitOverrunError and reporting the whole run as
+            # failed even though the tool itself was working fine.
+            limit=8 * 1024 * 1024)
         processes[execution_id] = process
         async def pump(stream, kind):
             while line := await stream.readline():
