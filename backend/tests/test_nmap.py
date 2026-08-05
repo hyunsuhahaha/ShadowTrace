@@ -337,6 +337,24 @@ def test_vhost_fuzz_is_hidden_from_the_generic_list_but_renders_with_a_wordlist(
         'ffuf -u http://10.10.11.80:80/ -H "Host: FUZZ.editor.htb" '
         "-w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc all -t 40")
 
+def test_dns_subdomain_enum_is_hidden_from_the_generic_list_but_renders_with_a_wordlist():
+    # like http-vhost-fuzz, the domain/wordlist aren't nmap-derived, so this
+    # stays out of the auto-populated dns list and needs render().
+    commands = {item["id"] for item in catalog.commands_for("domain", 53)}
+    assert "dns-subdomain-enum" not in commands
+    item, command, argv = catalog.render("dns-subdomain-enum", {
+        "domain": "corp.local",
+        "wordlist": "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt",
+    })
+    assert item["tool"] == "gobuster"
+    assert argv == [
+        "gobuster", "dns", "-d", "corp.local", "-w",
+        "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt", "-q", "-i",
+    ]
+    assert command == (
+        "gobuster dns -d corp.local -w "
+        "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -q -i")
+
 def test_s3_bucket_list_is_hidden_from_the_generic_list_but_renders():
     # like http-vhost-fuzz, this is only reachable through its own panel.
     commands = {item["id"] for item in catalog.commands_for("http", 80)}

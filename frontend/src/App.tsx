@@ -12,6 +12,7 @@ import { summarizeCredentialAudit } from "./credentialAuditResult";
 import { useCredentialStore } from "./useCredentialStore";
 import FuzzingPanel from "./FuzzingPanel";
 import VhostFuzzPanel from "./VhostFuzzPanel";
+import DnsSubdomainPanel from "./DnsSubdomainPanel";
 import ParamFuzzPanel from "./ParamFuzzPanel";
 import S3BucketPanel from "./S3BucketPanel";
 import CloudEnumPanel from "./CloudEnumPanel";
@@ -50,6 +51,7 @@ import NetexecOutcome, {type NetexecProtocol} from "./NetexecOutcome";
 import PrivescSessionPanel from "./PrivescSessionPanel";
 import LiveOutputPanel from "./LiveOutputPanel";
 import {
+  isDnsLikeService,
   isHttpLikeService,
   keepSelectedService,
   parseSmbEnumSharesAccess,
@@ -243,6 +245,7 @@ export default function App() {
   const serviceExecutions =
     executions.data?.filter((item) => item.service_id === serviceId) || [];
   const isWebService = !!service && isHttpLikeService(service.name, service.scripts);
+  const isDnsService = !!service && isDnsLikeService(service.name);
   const webScheme = service?.tls || /https|ssl/i.test(service?.name || "") ? "https" : "http";
   const webPort = service && !(["http:80", "https:443"].includes(
     `${webScheme}:${service.port}`)) ? `:${service.port}` : "";
@@ -786,6 +789,16 @@ export default function App() {
       id: "http-vhost-fuzz",
       preview: `ffuf -u ${scheme}://${target.ip}:${service.port}/` +
         ` -H "Host: FUZZ.${domain}" -w ${wordlist} -mc all -t 40`,
+      target_level: false,
+      variables: {domain, wordlist},
+    });
+  };
+  const runDnsSubdomainEnum = (domain: string, wordlist: string) => {
+    if (!target || !domain.trim() || !wordlist.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "dns-subdomain-enum",
+      preview: `gobuster dns -d ${domain} -w ${wordlist} -q -i`,
       target_level: false,
       variables: {domain, wordlist},
     });
@@ -1373,6 +1386,13 @@ export default function App() {
             serviceExecutions={serviceExecutions} onSpider={spiderSmbShare}
             onViewFile={viewSmbFile}
             onLog={(line) => setOutput((value) => `${value}\n${line}\n`)} />
+          {isDnsService && (
+            <DnsSubdomainPanel target={target}
+              runState={runStates["dns-subdomain-enum"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runDnsSubdomainEnum}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
           {isWebService && (
             <FuzzingPanel target={target} service={service}
               runState={runStates["http-directory-fuzz"]}

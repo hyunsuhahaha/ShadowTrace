@@ -57,13 +57,17 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
     category: "Service Enumeration 도구",
     keywords: ["gobuster", "gobuster dir", "dirbuster", "dirsearch", "feroxbuster", "디렉토리 브루트포스", "디렉터리 퍼징", "파일 탐색"] },
   { id: "enumeration/vhost-fuzz", route: "enumeration", anchorId: "vhost-heading",
-    label: "가상 호스트 퍼징 (ffuf)", detail: "웹 서비스 선택 후 페이지 하단에 표시 · gobuster vhost/dns 대체",
+    label: "가상 호스트 퍼징 (ffuf)", detail: "웹 서비스 선택 후 페이지 하단에 표시",
     category: "Service Enumeration 도구",
-    keywords: ["gobuster dns", "gobuster vhost", "vhost", "virtual host", "서브도메인", "subdomain", "ffuf"] },
+    keywords: ["gobuster vhost", "vhost", "virtual host", "ffuf"] },
   { id: "enumeration/param-fuzz", route: "enumeration", anchorId: "param-fuzz-heading",
     label: "GET 파라미터 퍼징 (ffuf)", detail: "웹 서비스 선택 후 페이지 하단에 표시",
     category: "Service Enumeration 도구",
     keywords: ["param fuzz", "파라미터 퍼징", "ffuf", "gobuster fuzz"] },
+  { id: "enumeration/dns-subdomain", route: "enumeration", anchorId: "dns-subdomain-heading",
+    label: "서브도메인 브루트포스 (gobuster dns)", detail: "DNS 서비스 선택 후 페이지 하단에 표시 · gobuster dns 대체",
+    category: "Service Enumeration 도구",
+    keywords: ["gobuster dns", "dns bruteforce", "dns enum", "서브도메인", "subdomain", "dns 브루트포스"] },
 ];
 
 export const commandPaletteIndex: CommandPaletteEntry[] = [

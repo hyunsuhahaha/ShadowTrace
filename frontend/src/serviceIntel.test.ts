@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  isDnsLikeService,
   isHttpLikeService,
   keepSelectedService,
   missingServiceFacts,
   parseFeroxbusterResults,
   parseFfufVhostResults,
+  parseGobusterDnsResults,
   parseKerbruteResults,
   parseNetexecSprayHits,
   parseSecretsdumpHashes,
@@ -39,6 +41,14 @@ describe("isHttpLikeService", () => {
     expect(isHttpLikeService("nagios-nsca", scripts)).toBe(false);
     expect(isHttpLikeService("nagios-nsca")).toBe(false);
     expect(isHttpLikeService("nagios-nsca", "not json")).toBe(false);
+  });
+});
+
+describe("isDnsLikeService", () => {
+  it("matches nmap's domain/dns service names case-insensitively", () => {
+    expect(isDnsLikeService("domain")).toBe(true);
+    expect(isDnsLikeService("DNS")).toBe(true);
+    expect(isDnsLikeService("http")).toBe(false);
   });
 });
 
@@ -251,6 +261,22 @@ Host script results:
 
   it("returns no vhost results from output with no matches", () => {
     expect(parseFfufVhostResults(":: Progress: [0/5000] ::\n")).toEqual([]);
+  });
+
+  it("extracts subdomains and resolved IPs from a gobuster dns -i run", () => {
+    const output = [
+      "Found: admin.corp.local [10.10.11.5]",
+      "Found: vpn.corp.local",
+      "Progress: 4995 / 5000 (99.90%)",
+    ].join("\n");
+    expect(parseGobusterDnsResults(output)).toEqual([
+      { name: "admin.corp.local", ip: "10.10.11.5" },
+      { name: "vpn.corp.local", ip: undefined },
+    ]);
+  });
+
+  it("returns no dns results from output with no matches", () => {
+    expect(parseGobusterDnsResults("Progress: 0 / 5000 (0.00%)\n")).toEqual([]);
   });
 
   it("extracts only [+] hit lines from a netexec spray run", () => {

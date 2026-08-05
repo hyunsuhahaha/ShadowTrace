@@ -47,6 +47,7 @@ dns:
   match: {services: [domain, dns], ports: [53]}
   commands:
     - {id: dns-info, name: DNS 서비스 정보 확인, description: DNS 버전 단서와 재귀 질의 허용 여부를 확인합니다., command: "nmap -Pn -p{port} --script dns-nsid,dns-recursion {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
+    - {id: dns-subdomain-enum, name: "서브도메인 브루트포스 (gobuster dns)", description: "워드리스트로 실제 하위 도메인이 존재하는지 이 DNS 서버에 직접 질의합니다. 시스템에 설정된 DNS 리졸버를 사용하므로 먼저 VPN 패널에서 이 대상을 DNS로 지정하세요.", command: "gobuster dns -d {domain} -w {wordlist} -q -i", execution_mode: captured, risk: low, tool: gobuster, sudo: false, output: text, policy: allowed, match: {services: [], ports: []}}
 http:
   display_name: HTTP
   match: {services: [http, https, http-proxy, ssl/http], ports: [80, 443, 8080, 8443]}

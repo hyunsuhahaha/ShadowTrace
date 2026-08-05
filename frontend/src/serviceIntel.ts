@@ -127,6 +127,20 @@ export function parseFfufVhostResults(output = ""): VhostResult[] {
   return results;
 }
 
+export type DnsSubdomainResult = { name: string; ip?: string };
+
+// gobuster dns -i prints "Found: sub.example.com [1.2.3.4]" (or without the
+// bracketed IP when a record resolves to something -i doesn't summarize).
+export function parseGobusterDnsResults(output = ""): DnsSubdomainResult[] {
+  const results: DnsSubdomainResult[] = [];
+  const pattern = /^Found:\s*(\S+?)(?:\s*\[(.+?)\])?\s*$/;
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(pattern);
+    if (match) results.push({ name: match[1], ip: match[2] });
+  }
+  return results;
+}
+
 // kerbrute userenum prints "[+] VALID USERNAME:\t user@REALM" to stdout for
 // every account that answers Kerberos pre-auth; everything else is log noise.
 export function parseKerbruteResults(output = ""): string[] {
@@ -271,6 +285,12 @@ const HTTP_SERVICE_NAMES = ["http", "https", "http-proxy", "ssl/http"];
 export function isHttpLikeService(name: string, scripts = ""): boolean {
   if (HTTP_SERVICE_NAMES.includes(name.toLowerCase())) return true;
   return parseScriptObservations(scripts).some((item) => item.id.startsWith("http-"));
+}
+
+const DNS_SERVICE_NAMES = ["domain", "dns"];
+
+export function isDnsLikeService(name: string): boolean {
+  return DNS_SERVICE_NAMES.includes(name.toLowerCase());
 }
 
 export function missingServiceFacts(service: ServiceIntelInput) {

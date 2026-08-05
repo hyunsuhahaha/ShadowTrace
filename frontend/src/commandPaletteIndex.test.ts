@@ -15,9 +15,15 @@ it("finds the directory-fuzzing panel by its gobuster alias even though the app 
   expect(results.map((entry) => entry.id)).toContain("enumeration/dir-fuzz");
 });
 
-it("finds the vhost-fuzzing panel by gobuster's dns/vhost mode name", () => {
-  const results = searchCommandPalette("gobuster dns");
+it("finds the vhost-fuzzing panel by gobuster's vhost mode name", () => {
+  const results = searchCommandPalette("gobuster vhost");
   expect(results.map((entry) => entry.id)).toContain("enumeration/vhost-fuzz");
+});
+
+it("finds the real DNS subdomain brute-forcer by gobuster's dns mode name", () => {
+  const results = searchCommandPalette("gobuster dns");
+  expect(results.map((entry) => entry.id)).toContain("enumeration/dns-subdomain");
+  expect(results.map((entry) => entry.id)).not.toContain("enumeration/vhost-fuzz");
 });
 
 it("finds the SQLi reference tab by its English security term, not just its Korean label", () => {
