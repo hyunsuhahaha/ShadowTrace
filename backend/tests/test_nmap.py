@@ -58,6 +58,33 @@ def test_every_service_exposes_an_explicit_product_version_probe():
     })
     assert "--version-all" in argv
 
+def test_service_version_probe_is_bounded_by_a_host_timeout():
+    # -sV's fallback probes can hang for minutes against services (e.g. MySQL)
+    # that silently swallow probes they don't recognize instead of resetting
+    # the connection, which used to leave this step "running" indefinitely.
+    _, _, argv = catalog.render("service-version", {
+        "host": "10.10.10.23", "port": "3306", "output_dir": "/tmp/output",
+    })
+    assert "--host-timeout" in argv
+    assert argv[argv.index("--host-timeout") + 1] == "120s"
+    _, _, udp_argv = catalog.render("service-version-udp", {
+        "host": "10.10.10.23", "port": "161", "output_dir": "/tmp/output",
+    })
+    assert "--host-timeout" in udp_argv
+
+def test_mysql_info_is_suggested_for_mysql_and_renders_fast_without_sv():
+    # mysql-info reads the server's own unsolicited greeting packet instead of
+    # nmap's generic -sV probes, so it stays reliable where service-version
+    # can hang (see test_service_version_probe_is_bounded_by_a_host_timeout).
+    commands = {item["id"] for item in catalog.commands_for("mysql", 3306)}
+    assert "mysql-info" in commands
+    item, command, argv = catalog.render("mysql-info", {
+        "host": "10.129.231.230", "port": "3306",
+    })
+    assert item["tool"] == "nmap"
+    assert argv == ["nmap", "-Pn", "-p3306", "--script=mysql-info", "10.129.231.230"]
+    assert command == "nmap -Pn -p3306 --script=mysql-info 10.129.231.230"
+
 def test_target_identity_probe_and_observation_persistence():
     _, _, hostname_argv = catalog.render("target-hostname-identity", {
         "host": "10.10.10.23",
