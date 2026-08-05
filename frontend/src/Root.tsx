@@ -16,15 +16,16 @@ const PostExploitationWorkspace=lazy(()=>import("./PostExploitationWorkspace"));
 const HashCrackingWorkspace=lazy(()=>import("./HashCrackingWorkspace"));
 
 const route=()=>{
-  const value=location.hash.replace("#","")||"scans";
-  return value==="dashboard"?"scans":value;
+  const raw=location.hash.replace("#","")||"scans";
+  const[page,...rest]=raw.split("/");
+  return{page:page==="dashboard"?"scans":page,subroute:rest.join("/")||undefined};
 };
 
 export default function Root(){
-  const[page,setPage]=useState(route());
+  const[{page,subroute},setRoute]=useState(route());
   const[projectRevision,setProjectRevision]=useState(0);
   useEffect(()=>{
-    const change=()=>setPage(route());
+    const change=()=>setRoute(route());
     addEventListener("hashchange",change);
     return()=>removeEventListener("hashchange",change);
   },[]);
@@ -36,7 +37,7 @@ export default function Root(){
   let content;
   switch(page){
     case"enumeration":content=<><a className="backToScans" href="#">← Scan Center</a><Enumeration/></>;break;
-    case"web":content=<WebWorkspace/>;break;
+    case"web":content=<WebWorkspace initialTab={subroute}/>;break;
     case"evidence":content=<EvidenceWorkspace/>;break;
     case"directory":content=<DirectoryWorkspace/>;break;
     case"sessions":content=<SessionWorkspace/>;break;

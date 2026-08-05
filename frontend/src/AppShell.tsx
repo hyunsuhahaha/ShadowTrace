@@ -6,6 +6,7 @@ import {
 import { Badge, Button, ErrorState, LoadingState } from "./ui";
 import VpnControl from "./VpnControl";
 import MetasploitLock from "./MetasploitLock";
+import CommandPalette from "./CommandPalette";
 import "./layout-controls.css";
 
 type Project = { id: number; name: string; metasploit_target_id?: number | null };
@@ -67,6 +68,7 @@ export default function AppShell({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const sidebarResize = useRef({x: 0, width: 264});
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-sidebar-width"));
@@ -96,6 +98,16 @@ export default function AppShell({
       setActiveTargetId((event as CustomEvent<number>).detail);
     addEventListener("oscp-target-change", change);
     return () => removeEventListener("oscp-target-change", change);
+  }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    addEventListener("keydown", onKeyDown);
+    return () => removeEventListener("keydown", onKeyDown);
   }, []);
   const project =
     projects.data?.find((item) => item.id === activeProjectId) || projects.data?.[0];
@@ -280,6 +292,14 @@ export default function AppShell({
             <span>현재 작업</span>
             <strong>{pageNames[route] || "Scan Center"}</strong>
           </div>
+          <Button
+            type="button"
+            variant="quiet"
+            className="paletteTrigger"
+            onClick={() => setPaletteOpen(true)}
+          >
+            검색<kbd>Ctrl K</kbd>
+          </Button>
           <MetasploitLock project={project} targets={targets.data} targetId={target?.id}
             onSetLock={(id) => void setMetasploitLock(id)} />
           <VpnControl />
@@ -291,6 +311,7 @@ export default function AppShell({
           )}
           {children}
         </div>
+        {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
         {deleteOpen && project && (
           <div className="modal" role="presentation">
             <div

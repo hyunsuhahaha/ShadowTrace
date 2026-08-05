@@ -87,7 +87,12 @@ const empty = (target?: Target): Partial<SavedRequest> => ({
   follow_redirects: false,
 });
 
-export default function WebWorkspace() {
+const workspaceTabs = ["request", "intruder", "sqli", "lfi", "log4shell", "proxy", "results"] as const;
+type WorkspaceTab = typeof workspaceTabs[number];
+const isWorkspaceTab = (value?: string): value is WorkspaceTab =>
+  (workspaceTabs as readonly string[]).includes(value || "");
+
+export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
   const qc = useQueryClient();
   const [targetId, setTargetId] = useState<number>(),
     [requestId, setRequestId] = useState<number>(),
@@ -102,12 +107,19 @@ export default function WebWorkspace() {
     [variables, setVariables] = useState("{}"),
     [repeat, setRepeat] = useState(1),
     [confirmed, setConfirmed] = useState(false),
-    [workspaceTab, setWorkspaceTab] =
-      useState<"request" | "intruder" | "sqli" | "lfi" | "log4shell" | "proxy" | "results">(
-        "request"),
+    [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(
+      () => (isWorkspaceTab(initialTab) ? initialTab : "request")),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [curlInput, setCurlInput] = useState(""),
     [error, setError] = useState("");
+  useEffect(() => {
+    if (isWorkspaceTab(initialTab) && initialTab !== workspaceTab) setWorkspaceTab(initialTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+  useEffect(() => {
+    const want = `web/${workspaceTab}`;
+    if (location.hash.replace("#", "") !== want) location.hash = want;
+  }, [workspaceTab]);
   const sendToIntruder = (payloads: string[]) => {
     setIntruderSeed({ token: Date.now(), values: payloads });
     setWorkspaceTab("intruder");
