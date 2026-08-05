@@ -3,6 +3,7 @@ import {
   defaultFuzzExtensions,
   isDnsLikeService,
   isHttpLikeService,
+  isWinrmHttpApi,
   keepSelectedService,
   missingServiceFacts,
   parseFeroxbusterResults,
@@ -42,6 +43,22 @@ describe("isHttpLikeService", () => {
     expect(isHttpLikeService("nagios-nsca", scripts)).toBe(false);
     expect(isHttpLikeService("nagios-nsca")).toBe(false);
     expect(isHttpLikeService("nagios-nsca", "not json")).toBe(false);
+  });
+});
+
+describe("isWinrmHttpApi", () => {
+  it("catches nmap's generic http misclassification via port and product (HTB-style WinRM on 5985)", () => {
+    expect(isWinrmHttpApi("http", 5985, "Microsoft HTTPAPI httpd 2.0")).toBe(true);
+    expect(isWinrmHttpApi("http", 5986, "Microsoft HTTPAPI httpd 2.0")).toBe(true);
+  });
+
+  it("still matches when nmap names it correctly", () => {
+    expect(isWinrmHttpApi("wsman", 5985, "")).toBe(true);
+    expect(isWinrmHttpApi("WSMANS", 5986, "")).toBe(true);
+  });
+
+  it("stays false for an unrelated http service on an unrelated port", () => {
+    expect(isWinrmHttpApi("http", 80, "Apache httpd 2.4.52")).toBe(false);
   });
 });
 

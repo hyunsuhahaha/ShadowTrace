@@ -287,6 +287,21 @@ export function isHttpLikeService(name: string, scripts = ""): boolean {
   return parseScriptObservations(scripts).some((item) => item.id.startsWith("http-"));
 }
 
+const WINRM_SERVICE_NAMES = ["wsman", "wsmans", "winrm"];
+const WINRM_PORTS = [5985, 5986, 47001];
+
+// WinRM's listener runs on top of HTTP.sys, so nmap's -sV guess frequently
+// names it "http" with product "Microsoft HTTPAPI httpd" instead of "wsman" —
+// that misclassification hides it from every WinRM-aware panel (netexec
+// credential check, evil-winrm launch) while the generic "open site" link
+// still shows, pointing at an endpoint that only ever answers WS-Management
+// SOAP requests and 404s on a plain browser GET.
+export function isWinrmHttpApi(name: string, port: number, product = ""): boolean {
+  if (WINRM_SERVICE_NAMES.includes(name.toLowerCase())) return true;
+  if (WINRM_PORTS.includes(port)) return true;
+  return /microsoft httpapi|windows remote management/i.test(product);
+}
+
 const DNS_SERVICE_NAMES = ["domain", "dns"];
 
 export function isDnsLikeService(name: string): boolean {

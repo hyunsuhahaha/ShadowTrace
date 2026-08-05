@@ -53,6 +53,7 @@ import LiveOutputPanel from "./LiveOutputPanel";
 import {
   isDnsLikeService,
   isHttpLikeService,
+  isWinrmHttpApi,
   keepSelectedService,
   parseSmbEnumSharesAccess,
   parseSmbShares,
@@ -244,7 +245,10 @@ export default function App() {
     : null;
   const serviceExecutions =
     executions.data?.filter((item) => item.service_id === serviceId) || [];
-  const isWebService = !!service && isHttpLikeService(service.name, service.scripts);
+  const isWinrm = !!service
+    && isWinrmHttpApi(service.name, service.port, service.product);
+  const isWebService = !!service && !isWinrm
+    && isHttpLikeService(service.name, service.scripts);
   const isDnsService = !!service && isDnsLikeService(service.name);
   const webScheme = service?.tls || /https|ssl/i.test(service?.name || "") ? "https" : "http";
   const webPort = service && !(["http:80", "https:443"].includes(
@@ -1162,7 +1166,7 @@ export default function App() {
   const netexecProtocol: NetexecProtocol | undefined =
     ["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) ? "smb"
     : serviceNameLower === "ssh" ? "ssh"
-    : ["wsman", "wsmans", "winrm"].includes(serviceNameLower) ? "winrm"
+    : isWinrm ? "winrm"
     : serviceNameLower === "ms-wbt-server" ? "rdp"
     : serviceNameLower === "ms-sql-s" ? "mssql"
     : ["ldap", "ldaps"].includes(serviceNameLower) ? "ldap"
@@ -1313,6 +1317,9 @@ export default function App() {
                   }));
                   location.hash="web";
                 }}>Web Testing에서 열기</button>
+              </div>}
+              {isWinrm&&<div className="webServiceActions webServiceActions--hostname">
+                <span>WinRM(HTTP.sys) 리스너 · 브라우저로 열람 불가 · 아래 NetExec 자격증명 확인으로 진행하세요</span>
               </div>}
               <div className="risk">수동 확인 필요</div>
             </div>
