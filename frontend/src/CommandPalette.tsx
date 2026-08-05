@@ -54,6 +54,13 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const activate = (entry: CommandPaletteEntry) => {
     rememberRecent(entry.id);
     location.hash = entry.subroute ? `${entry.route}/${entry.subroute}` : entry.route;
+    if (entry.anchorId) {
+      const anchorId = entry.anchorId;
+      window.setTimeout(
+        () => document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        300,
+      );
+    }
     onClose();
   };
 

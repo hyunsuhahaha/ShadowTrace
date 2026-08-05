@@ -62,6 +62,24 @@ it("closes on Escape without navigating", () => {
   expect(location.hash).toBe("");
 });
 
+it("navigates to Enumeration and scrolls to the matching panel when the entry has an anchor", async () => {
+  vi.useFakeTimers();
+  const anchor = document.createElement("div");
+  anchor.id = "fuzz-heading";
+  anchor.scrollIntoView = vi.fn();
+  document.body.appendChild(anchor);
+  render(<CommandPalette onClose={() => {}} />);
+
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster" } });
+  fireEvent.click(screen.getByText("디렉터리·파일 퍼징 (feroxbuster)"));
+  vi.runAllTimers();
+
+  expect(location.hash).toBe("#enumeration");
+  expect(anchor.scrollIntoView).toHaveBeenCalledOnce();
+  anchor.remove();
+  vi.useRealTimers();
+});
+
 it("selects and activates a result with ArrowDown + Enter", () => {
   const onClose = vi.fn();
   render(<CommandPalette onClose={onClose} />);

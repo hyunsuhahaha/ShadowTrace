@@ -1,13 +1,23 @@
 import { expect, it } from "vitest";
 import { commandPaletteIndex, searchCommandPalette } from "./commandPaletteIndex";
 
-it("has a unique id and a valid route/subroute pair for every entry", () => {
+it("has a unique id and a valid route for every entry", () => {
   const ids = commandPaletteIndex.map((entry) => entry.id);
   expect(new Set(ids).size).toBe(ids.length);
   commandPaletteIndex.forEach((entry) => {
     expect(entry.route).toBeTruthy();
-    expect(entry.id).toBe(entry.subroute ? `${entry.route}/${entry.subroute}` : entry.route);
+    if (entry.subroute) expect(entry.id).toBe(`${entry.route}/${entry.subroute}`);
   });
+});
+
+it("finds the directory-fuzzing panel by its gobuster alias even though the app uses feroxbuster", () => {
+  const results = searchCommandPalette("gobuster");
+  expect(results.map((entry) => entry.id)).toContain("enumeration/dir-fuzz");
+});
+
+it("finds the vhost-fuzzing panel by gobuster's dns/vhost mode name", () => {
+  const results = searchCommandPalette("gobuster dns");
+  expect(results.map((entry) => entry.id)).toContain("enumeration/vhost-fuzz");
 });
 
 it("finds the SQLi reference tab by its English security term, not just its Korean label", () => {
