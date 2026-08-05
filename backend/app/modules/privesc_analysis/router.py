@@ -8,7 +8,8 @@ from ...database import get_db
 from ...models import Evidence, Project, Target
 from ...time import utcnow
 from ..scan_center.service import _safe
-from .schemas import LinpeasIn
+from .gtfobins import match_gtfobins
+from .schemas import LinpeasIn, SuidScanIn
 
 router = APIRouter(tags=["Privesc Analysis"])
 
@@ -80,3 +81,33 @@ def analyze_linpeas(target_id: int, body: LinpeasIn, db: Session = Depends(get_d
     )
     db.add(evidence); db.commit(); db.refresh(evidence)
     return {**result, "evidence_id": evidence.id}
+
+
+@router.post("/api/targets/{target_id}/suid-scan")
+def analyze_suid(target_id: int, body: SuidScanIn, db: Session = Depends(get_db)):
+    """Matches `find / -perm -4000 -type f`-style output against a curated
+    set of GTFOBins SUID entries -- a static reference lookup, not a live
+    exploit: it only tells the user which binaries are worth reading up on
+    and where."""
+    target = need(db, Target, target_id)
+    project = need(db, Project, target.project_id)
+    matches = match_gtfobins(body.output)
+
+    target_dir = (WORKSPACE_DIR / "projects" / _safe(project.name) /
+                  "targets" / _safe(target.ip) / "privesc-analysis")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    output_path = target_dir / f"{utcnow():%Y%m%d%H%M%S}_suid-scan.txt"
+    output_path.write_text(body.output, encoding="utf-8")
+    content = body.output.encode()
+    evidence = Evidence(
+        project_id=project.id, target_id=target.id,
+        title=f"SUID scan · {target.hostname or target.ip}",
+        description=f"GTFOBins과 일치하는 SUID 바이너리 {len(matches)}개",
+        kind="suid_scan", source_type="suid_scan",
+        file_path=str(output_path), original_name=output_path.name,
+        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
+        hostname=target.hostname or target.ip, sensitivity="sensitive",
+        include_report=False,
+    )
+    db.add(evidence); db.commit(); db.refresh(evidence)
+    return {"matches": matches, "evidence_id": evidence.id}

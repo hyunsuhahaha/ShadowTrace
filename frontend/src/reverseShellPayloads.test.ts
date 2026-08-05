@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReverseShellPayload } from "./reverseShellPayloads";
+import { buildReverseShellPayload, buildWebshellFile } from "./reverseShellPayloads";
 
 describe("buildReverseShellPayload", () => {
   it("builds the standard bash /dev/tcp one-liner", () => {
@@ -19,5 +19,24 @@ describe("buildReverseShellPayload", () => {
       expect(payload).toContain("10.10.14.5");
       expect(payload).toContain("9001");
     }
+  });
+});
+
+describe("buildWebshellFile", () => {
+  it("substitutes lhost/lport into every file kind and keeps valid syntax markers", () => {
+    for (const kind of ["php", "aspx", "jsp"] as const) {
+      const file = buildWebshellFile(kind, "10.10.14.5", "1234");
+      expect(file).toContain("10.10.14.5");
+      expect(file).toContain("1234");
+    }
+    expect(buildWebshellFile("php", "10.10.14.5", "1234")).toMatch(/^<\?php/);
+    expect(buildWebshellFile("aspx", "10.10.14.5", "1234"))
+      .toContain('<%@ Page Language="C#"');
+    expect(buildWebshellFile("jsp", "10.10.14.5", "1234")).toContain("<%@ page");
+  });
+
+  it("escapes quotes in a hostile lhost so the generated script stays syntactically valid", () => {
+    expect(buildWebshellFile("php", "'; system('id'); //", "1234"))
+      .toContain("$ip = '\\'; system(\\'id\\'); //';");
   });
 });

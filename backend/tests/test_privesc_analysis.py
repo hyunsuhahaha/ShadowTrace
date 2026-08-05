@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Evidence, Project, Target
 from app.modules.privesc_analysis import router
-from app.modules.privesc_analysis.schemas import LinpeasIn
+from app.modules.privesc_analysis.gtfobins import match_gtfobins
+from app.modules.privesc_analysis.schemas import LinpeasIn, SuidScanIn
 
 
 def database():
@@ -81,3 +82,46 @@ def test_analyze_linpeas_endpoint_saves_evidence_and_returns_counts(tmp_path, mo
     assert evidence.target_id == target.id
     assert Path(evidence.file_path).read_text(encoding="utf-8") == LINPEAS_SAMPLE
     assert "critical 2" in evidence.description
+
+
+FIND_SUID_SAMPLE = (
+    "find: '/proc/12345/task/12345/fd': Permission denied\n"
+    "/usr/bin/find\n"
+    "/usr/bin/passwd\n"
+    "/usr/bin/bugtracker\n"
+    "/usr/lib/openssh/ssh-keysign\n"
+    "\n"
+)
+
+
+def test_match_gtfobins_matches_known_suid_binaries_by_basename():
+    matches = match_gtfobins(FIND_SUID_SAMPLE)
+    binaries = {item["binary"] for item in matches}
+    assert binaries == {"find"}
+    assert matches[0]["path"] == "/usr/bin/find"
+    assert matches[0]["command"] == "find . -exec /bin/sh -p \\; -quit"
+    assert matches[0]["reference"] == "https://gtfobins.github.io/gtfobins/find/#suid"
+    # passwd, bugtracker (a custom binary, not GTFOBins) and ssh-keysign
+    # aren't known SUID GTFOBins entries, and the stderr "Permission
+    # denied" line isn't a path at all
+    assert "passwd" not in binaries and "bugtracker" not in binaries
+
+
+def test_match_gtfobins_deduplicates_repeated_paths():
+    matches = match_gtfobins("/usr/bin/find\n/usr/bin/find\n")
+    assert len(matches) == 1
+
+
+def test_analyze_suid_endpoint_saves_evidence_and_returns_matches(tmp_path, monkeypatch):
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, target = make_target(db)
+    response = router.analyze_suid(target.id, SuidScanIn(output=FIND_SUID_SAMPLE), db)
+    assert [item["binary"] for item in response["matches"]] == ["find"]
+    assert response["evidence_id"]
+
+    evidence = db.get(Evidence, response["evidence_id"])
+    assert evidence.kind == "suid_scan"
+    assert evidence.sensitivity == "sensitive"
+    assert evidence.target_id == target.id
+    assert Path(evidence.file_path).read_text(encoding="utf-8") == FIND_SUID_SAMPLE
