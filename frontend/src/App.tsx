@@ -1277,14 +1277,21 @@ export default function App() {
                   (item: any) => item.id === "target-hostname-redirect");
                 const hostnameState = ["target-hostname-redirect",
                   "target-hostname-ntlm", "target-hostname-identity"]
-                  .map((id) => runStates[id]).find(Boolean);
+                  .map((id) => runStates[id]).filter((item): item is RunState => !!item)
+                  .sort((a, b) => b.startedAt - a.startedAt)[0];
                 const hostnameBusy = !!hostnameState
                   && ["starting", "running"].includes(hostnameState.status);
+                const hostnameResult = !hostnameState || hostnameBusy ? null
+                  : hostnameState.status === "completed" ? "값 미확인 · 다른 명령으로 재시도"
+                  : hostnameState.status === "no_response" ? "응답 없음 · 재시도"
+                  : "확인 실패 · 재시도";
                 return <div className="webServiceActions webServiceActions--hostname">
-                  <span>Hostname 미확인 · IP로 접속됩니다</span>
+                  <span>Hostname 미확인 · IP로 접속됩니다{hostnameResult ? ` · ${hostnameResult}` : ""}</span>
                   <button disabled={hostnameBusy || !hostnameCommand}
                     onClick={() => hostnameCommand && reviewCommand(hostnameCommand)}>
-                    {hostnameBusy ? "확인 중…" : "Hostname 자동 확인"}
+                    {hostnameBusy
+                      ? <><span className="buttonSpinner" aria-hidden="true" />확인 중…</>
+                      : "Hostname 자동 확인"}
                   </button>
                   <input placeholder="예: unika.htb (다른 경로로 확인한 값 직접 입력)"
                     value={hostnameDraft}
