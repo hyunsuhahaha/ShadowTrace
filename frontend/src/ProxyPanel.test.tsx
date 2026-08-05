@@ -120,6 +120,54 @@ it("lists captured requests and wires the open/Intruder actions", async () => {
   expect(onSendToIntruder).toHaveBeenCalledWith(capturedRequest);
 });
 
+it("shows a prominent badge when a capture's response is a detected cloud storage backend", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/web/proxy/status") return response(runningStatus);
+    if (url.startsWith("/api/web/proxy/captures")) return response([{
+      ...capturedRequest, has_response: true,
+      cloud_fingerprint: {
+        provider: "aws-s3", error_code: "AccessDenied",
+        meaning: "리소스는 존재하지만 익명 접근 권한이 없습니다.",
+        next_step: "알고 있는 파일 경로로 직접 접근을 시도하세요.",
+      },
+    }]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("캡처된 요청 · 1개");
+  expect(screen.getByText(/aws-s3/)).toBeTruthy();
+  expect(screen.getByText(/AccessDenied/)).toBeTruthy();
+});
+
+it("shows a quiet marker when a capture got a response but it wasn't cloud storage", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/web/proxy/status") return response(runningStatus);
+    if (url.startsWith("/api/web/proxy/captures")) return response([{
+      ...capturedRequest, has_response: true, cloud_fingerprint: null,
+    }]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("캡처된 요청 · 1개");
+  expect(screen.getByText("확인됨 · 클라우드 스토리지 아님")).toBeTruthy();
+});
+
+it("shows a waiting marker when a capture has no response yet", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/web/proxy/status") return response(runningStatus);
+    if (url.startsWith("/api/web/proxy/captures")) return response([{
+      ...capturedRequest, has_response: false, cloud_fingerprint: null,
+    }]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("캡처된 요청 · 1개");
+  expect(screen.getByText("응답 대기 중")).toBeTruthy();
+});
+
 it("surfaces the last mitmdump stderr lines when present", async () => {
   const fetcher = vi.fn((url: string) => {
     if (url === "/api/web/proxy/status")

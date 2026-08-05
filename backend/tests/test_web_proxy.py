@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import sys
 from sqlalchemy import create_engine
@@ -86,6 +87,75 @@ def test_captures_lists_only_proxy_tagged_requests():
 
     assert len(result) == 1
     assert json.loads(result[0].tags) == ["proxy-capture"]
+
+
+def test_captures_flags_a_detected_cloud_storage_response():
+    db = database()
+    project, target = seed(db)
+    capture(payload(project, target,
+        url="http://s3.the-three.htb/",
+        response_headers={"Server": "AmazonS3", "x-amz-request-id": "ABC123"},
+        response_body=base64.b64encode(
+            b"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>",
+        ).decode(),
+    ), db)
+
+    result = captures(target.id, db)
+
+    assert result[0].has_response is True
+    assert result[0].cloud_fingerprint["provider"] == "aws-s3"
+    assert result[0].cloud_fingerprint["error_code"] == "AccessDenied"
+
+
+def test_captures_hides_the_fingerprint_when_nothing_is_detected():
+    db = database()
+    project, target = seed(db)
+    capture(payload(project, target,
+        response_headers={"Content-Type": "text/html"},
+        response_body=base64.b64encode(b"<html>ordinary page</html>").decode(),
+    ), db)
+
+    result = captures(target.id, db)
+
+    assert result[0].has_response is True
+    assert result[0].cloud_fingerprint is None
+
+
+def test_captures_marks_no_response_yet_when_the_request_has_no_exchange():
+    db = database()
+    project, target = seed(db)
+    db.add(HttpRequest(project_id=project.id, target_id=target.id,
+                       name="Still loading", folder="Proxy Capture",
+                       tags=json.dumps(["proxy-capture"]),
+                       method="GET", url="http://s3.the-three.htb/"))
+    db.commit()
+
+    result = captures(target.id, db)
+
+    assert result[0].has_response is False
+    assert result[0].cloud_fingerprint is None
+
+
+def test_captures_fingerprints_the_latest_exchange_not_the_first():
+    db = database()
+    project, target = seed(db)
+    # Same URL captured twice (e.g. re-visited in the browser) reuses one
+    # HttpRequest row with two exchanges — the row should reflect the most
+    # recent response, not whichever came first.
+    capture(payload(project, target,
+        response_headers={"Content-Type": "text/html"},
+        response_body=base64.b64encode(b"<html>ordinary page</html>").decode(),
+    ), db)
+    capture(payload(project, target,
+        response_headers={"Server": "AmazonS3", "x-amz-request-id": "XYZ789"},
+        response_body=base64.b64encode(
+            b"<Error><Code>AccessDenied</Code></Error>").decode(),
+    ), db)
+
+    result = captures(target.id, db)
+
+    assert len(result) == 1
+    assert result[0].cloud_fingerprint["provider"] == "aws-s3"
 
 
 def test_ca_cert_download_404s_before_the_proxy_has_ever_started(tmp_path, monkeypatch):

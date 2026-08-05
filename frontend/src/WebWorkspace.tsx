@@ -8,6 +8,14 @@ import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
 
 type Target = { id: number; project_id: number; name: string; ip: string };
+// null: no response captured yet, or one came back but nothing was
+// detected (an ordinary page) — either way there's nothing to flag.
+export type CloudFingerprint = {
+  provider: string;
+  error_code: string | null;
+  meaning: string | null;
+  next_step: string | null;
+} | null;
 export type SavedRequest = {
   id: number;
   project_id: number;
@@ -27,6 +35,8 @@ export type SavedRequest = {
   proxy: string;
   timeout: number;
   follow_redirects: boolean;
+  cloud_fingerprint?: CloudFingerprint;
+  has_response?: boolean;
 };
 type Exchange = {
   id: number;
@@ -38,6 +48,7 @@ type Exchange = {
   sha256: string;
   error: string;
   created_at: string;
+  cloud_fingerprint?: CloudFingerprint;
 };
 export type WebLaunchContext = {targetId: number; serviceId: number; url: string};
 export const parseWebLaunchContext = (raw: string | null): WebLaunchContext | undefined => {
@@ -548,6 +559,15 @@ export default function WebWorkspace() {
               <span>
                 {x.duration_ms} ms · {x.size} bytes
               </span>
+              {x.cloud_fingerprint && (
+                <em className="cloudFingerprint" title={
+                  [x.cloud_fingerprint.meaning, x.cloud_fingerprint.next_step]
+                    .filter(Boolean).join(" ")
+                }>
+                  ☁️ {x.cloud_fingerprint.provider}
+                  {x.cloud_fingerprint.error_code ? ` · ${x.cloud_fingerprint.error_code}` : ""}
+                </em>
+              )}
               <small>{new Date(x.created_at).toLocaleString()}</small>
             </button>
           ))}

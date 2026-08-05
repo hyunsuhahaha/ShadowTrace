@@ -1,4 +1,5 @@
 import asyncio
+import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
@@ -6,8 +7,8 @@ from app.models import HttpExchange, HttpRequest, Project, Target
 import pytest
 from fastapi import HTTPException
 from app.modules.web_testing.router import (
-    payload_combinations, require_private_destination, review_exchange,
-    send_once, substitute,
+    cloud_fingerprint_for_exchange, payload_combinations, public_exchange,
+    require_private_destination, review_exchange, send_once, substitute,
 )
 from app.schemas import ExchangeReviewIn, IntruderRunIn
 
@@ -62,6 +63,48 @@ def test_review_exchange_persists_and_defaults_to_pending():
     assert updated["review_status"] == "confirmed"
     db.expire_all()
     assert db.get(HttpExchange, exchange.id).review_status == "confirmed"
+
+
+def test_cloud_fingerprint_is_none_when_the_request_never_got_a_response():
+    exchange = HttpExchange(request_id=1, request_snapshot="GET /", status_code=None)
+    assert cloud_fingerprint_for_exchange(exchange) is None
+
+
+def test_cloud_fingerprint_classifies_a_stored_exchange():
+    exchange = HttpExchange(
+        request_id=1, request_snapshot="GET /", status_code=403,
+        response_headers=json.dumps({"Server": "AmazonS3", "x-amz-request-id": "R1"}),
+        response_body=b"<Error><Code>AccessDenied</Code></Error>",
+    )
+    result = cloud_fingerprint_for_exchange(exchange)
+    assert result["provider"] == "aws-s3"
+    assert result["meaning"] is not None
+
+
+def test_public_exchange_carries_the_same_fingerprint_used_by_review():
+    # review_exchange() returns public_exchange(row), so this is the same
+    # code path a client hits after PATCHing a review status — it should
+    # reflect the response, not just echo back stored review fields.
+    db = database()
+    project = Project(name="Web Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    request = HttpRequest(
+        project_id=project.id, target_id=target.id, name="Request",
+        method="GET", url="http://10.10.10.10/")
+    db.add(request); db.flush()
+    exchange = HttpExchange(
+        request_id=request.id, request_snapshot="GET /", status_code=403,
+        response_headers=json.dumps({"Server": "AmazonS3", "x-amz-request-id": "R1"}),
+        response_body=b"<Error><Code>AccessDenied</Code></Error>")
+    db.add(exchange); db.commit()
+
+    assert public_exchange(exchange)["cloud_fingerprint"]["provider"] == "aws-s3"
+
+    updated = review_exchange(
+        exchange.id, ExchangeReviewIn(review_status="confirmed"), db)
+    assert updated["cloud_fingerprint"]["provider"] == "aws-s3"
 
 
 def test_destination_policy_rejects_public_and_dns_names():

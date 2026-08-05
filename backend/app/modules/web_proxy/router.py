@@ -7,9 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import HttpExchange, HttpRequest, Project, Target
-from ...schemas import HttpExchangeOut, HttpRequestOut, ProxyCaptureIn, ProxyStartIn
+from ...schemas import (
+    HttpExchangeOut, HttpRequestOut, ProxyCaptureIn, ProxyCaptureOut, ProxyStartIn,
+)
 from ...time import utcnow
-from ..web_testing.router import need, persist_exchange_body, public_exchange
+from ..web_testing.router import (
+    cloud_fingerprint_for_exchange, need, persist_exchange_body, public_exchange,
+)
 from .manager import CONFDIR, manager
 
 router = APIRouter(prefix="/api/web/proxy", tags=["Web Proxy"])
@@ -45,11 +49,36 @@ def download_ca_cert():
                         media_type="application/x-x509-ca-cert")
 
 
-@router.get("/captures", response_model=list[HttpRequestOut])
+@router.get("/captures", response_model=list[ProxyCaptureOut])
 def captures(target_id: int, db: Session = Depends(get_db)):
     rows = db.scalars(select(HttpRequest).where(
         HttpRequest.target_id == target_id).order_by(HttpRequest.id.desc())).all()
-    return [row for row in rows if CAPTURE_TAG in json.loads(row.tags or "[]")]
+    captured = [row for row in rows if CAPTURE_TAG in json.loads(row.tags or "[]")]
+
+    # One query for every captured request's exchanges rather than one
+    # query per row, then keep the latest (highest id) per request in
+    # Python — the per-target capture count here is small (a pentest/CTF
+    # session, not production traffic), so this stays simple.
+    request_ids = [row.id for row in captured]
+    latest_exchange: dict[int, HttpExchange] = {}
+    if request_ids:
+        for exchange in db.scalars(select(HttpExchange).where(
+                HttpExchange.request_id.in_(request_ids))).all():
+            current = latest_exchange.get(exchange.request_id)
+            if current is None or exchange.id > current.id:
+                latest_exchange[exchange.request_id] = exchange
+
+    results = []
+    for row in captured:
+        exchange = latest_exchange.get(row.id)
+        fingerprint = cloud_fingerprint_for_exchange(exchange) if exchange else None
+        if fingerprint and fingerprint.get("provider") == "unknown":
+            fingerprint = None
+        results.append(ProxyCaptureOut(
+            **HttpRequestOut.model_validate(row).model_dump(),
+            cloud_fingerprint=fingerprint, has_response=exchange is not None,
+        ))
+    return results
 
 
 @router.post("/capture", response_model=HttpExchangeOut, status_code=201)

@@ -163,6 +163,16 @@ class HttpRequestOut(ORM):
     tls_verify: bool; proxy: str; timeout: int; follow_redirects: bool
     created_at: datetime; updated_at: datetime
 
+class ProxyCaptureOut(HttpRequestOut):
+    # Cloud-storage fingerprint of this request's latest captured response,
+    # so the proxy capture list can flag it without opening the request.
+    # None means either no response has come back yet (has_response=False)
+    # or one has, but nothing was detected (has_response=True) — the two
+    # are visually distinct in the UI so a quiet row doesn't read as a
+    # stuck capture.
+    cloud_fingerprint: dict | None = None
+    has_response: bool = False
+
 class HttpSendIn(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict)
     repeat: int = Field(default=1, ge=1, le=20)
@@ -196,6 +206,7 @@ class HttpExchangeOut(ORM):
     duration_ms: int; size: int; request_snapshot: str
     response_headers: str; response_cookies: str; body_path: str
     sha256: str; error: str; review_status: str; created_at: datetime
+    cloud_fingerprint: dict | None = None
 
 class ExchangeReviewIn(BaseModel):
     review_status: Literal["pending", "confirmed", "dismissed"]

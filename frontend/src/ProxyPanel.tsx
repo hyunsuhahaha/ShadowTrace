@@ -107,6 +107,20 @@ export default function ProxyPanel({ projectId, targetId, onOpenRequest, onSendT
         {captured.data?.map((request) => (
           <div className="proxyCaptureRow" key={request.id}>
             <code>{request.method} {request.url}</code>
+            {request.cloud_fingerprint ? (
+              <em className="cloudFingerprint" title={
+                [request.cloud_fingerprint.meaning, request.cloud_fingerprint.next_step]
+                  .filter(Boolean).join(" ")
+              }>
+                ☁️ {request.cloud_fingerprint.provider}
+                {request.cloud_fingerprint.error_code
+                  ? ` · ${request.cloud_fingerprint.error_code}` : ""}
+              </em>
+            ) : request.has_response ? (
+              <em className="cloudFingerprintQuiet">확인됨 · 클라우드 스토리지 아님</em>
+            ) : (
+              <em className="cloudFingerprintPending">응답 대기 중</em>
+            )}
             <div className="proxyCaptureActions">
               <button onClick={() => onOpenRequest(request)}>Request로 열기</button>
               <button onClick={() => onSendToIntruder(request)}>Intruder로</button>

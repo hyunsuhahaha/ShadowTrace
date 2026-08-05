@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
+from ...cloud_storage_probe import classify_provider
 from ...database import get_db
 from ...models import HttpExchange, HttpRequest, Project, Service, Target
 from ...schemas import (
@@ -27,6 +28,7 @@ from ..scan_center.service import _safe
 router = APIRouter(prefix="/api/web", tags=["Web Testing"])
 MAX_RESPONSE = 10 * 1024 * 1024
 MAX_INTRUDER_REQUESTS = 100
+MAX_FINGERPRINT_BODY = 65536
 intruder_runs: dict[str, dict] = {}
 
 
@@ -37,11 +39,25 @@ def need(db: Session, model, ident: int):
     return row
 
 
+def cloud_fingerprint_for_exchange(exchange: HttpExchange) -> dict | None:
+    # No status_code means the request errored out before a response came
+    # back (DNS failure, connection refused, etc.) — nothing to classify.
+    if exchange.status_code is None:
+        return None
+    headers = json.loads(exchange.response_headers or "{}")
+    body = (exchange.response_body or b"")[:MAX_FINGERPRINT_BODY].decode(
+        "utf-8", "replace")
+    return classify_provider(headers, body)
+
+
 def public_exchange(row: HttpExchange) -> dict:
-    return {key: getattr(row, key) for key in (
-        "id", "request_id", "status_code", "duration_ms", "size",
-        "request_snapshot", "response_headers", "response_cookies",
-        "body_path", "sha256", "error", "review_status", "created_at")}
+    return {
+        **{key: getattr(row, key) for key in (
+            "id", "request_id", "status_code", "duration_ms", "size",
+            "request_snapshot", "response_headers", "response_cookies",
+            "body_path", "sha256", "error", "review_status", "created_at")},
+        "cloud_fingerprint": cloud_fingerprint_for_exchange(row),
+    }
 
 
 @router.get("/requests", response_model=list[HttpRequestOut])
