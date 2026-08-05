@@ -9,7 +9,11 @@ afterEach(cleanup);
 const target = { ip: "10.10.10.5" };
 const service = { port: 80, name: "http" };
 
-it("starts a fuzz run with the currently selected wordlist and no extensions by default", () => {
+it("defaults extensions to a php-biased set so login.php-style hits aren't missed", () => {
+  // Reported live on HTB Crocodile: a plain wordlist scan only ever
+  // requests bare "/login" and never "/login.php" unless -x is set, and
+  // the server 404s the bare path while 200ing the real one — this used
+  // to require the operator to remember to type an extension in first.
   const onFuzz = vi.fn();
   render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
     evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
@@ -19,7 +23,30 @@ it("starts a fuzz run with the currently selected wordlist and no extensions by 
   });
   fireEvent.click(screen.getByText("퍼징 시작"));
 
-  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/big.txt", "");
+  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/big.txt", "php,html,txt");
+});
+
+it("defaults extensions to an aspx-biased set for a Windows target", () => {
+  const onFuzz = vi.fn();
+  render(<FuzzingPanel target={{ ip: "10.10.10.5", os_guess: "Windows Server 2019" }}
+    service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
+
+  fireEvent.click(screen.getByText("퍼징 시작"));
+
+  expect(onFuzz).toHaveBeenCalledWith(
+    "/usr/share/wordlists/dirb/common.txt", "aspx,asp,txt,html");
+});
+
+it("still lets the operator clear extensions back out entirely", () => {
+  const onFuzz = vi.fn();
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("확장자"), { target: { value: "" } });
+  fireEvent.click(screen.getByText("퍼징 시작"));
+
+  expect(onFuzz).toHaveBeenCalledWith("/usr/share/wordlists/dirb/common.txt", "");
 });
 
 it("passes trimmed extensions through when the user fills in gobuster/feroxbuster's -x field", () => {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { parseFeroxbusterResults } from "./serviceIntel";
+import { defaultFuzzExtensions, parseFeroxbusterResults } from "./serviceIntel";
 
 export type FuzzExecution = {
   id: number; template_id: string; status: string;
@@ -17,7 +17,7 @@ export type FuzzRunState = {
 export default function FuzzingPanel({
   target, service, runState, serviceExecutions, evidenceMsg, onFuzz, onCaptureEvidence,
 }: {
-  target?: { ip: string };
+  target?: { ip: string; os_guess?: string };
   service?: { port: number; name: string };
   runState?: FuzzRunState;
   serviceExecutions: FuzzExecution[];
@@ -28,7 +28,7 @@ export default function FuzzingPanel({
   ) => void;
 }) {
   const [wordlist, setWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
-  const [extensions, setExtensions] = useState("");
+  const [extensions, setExtensions] = useState(() => defaultFuzzExtensions(target?.os_guess));
   const [filter, setFilter] = useState("");
   const [excludeStatus, setExcludeStatus] = useState("");
   const [excludeExt, setExcludeExt] = useState("");

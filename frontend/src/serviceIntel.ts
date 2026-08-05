@@ -293,6 +293,17 @@ export function isDnsLikeService(name: string): boolean {
   return DNS_SERVICE_NAMES.includes(name.toLowerCase());
 }
 
+// A directory fuzz with no -x only ever requests bare wordlist entries, so
+// "login" never becomes "login.php" unless the operator remembers to type
+// an extension in first — this is the default that request should have had
+// all along, not something to rediscover per-target. IIS/.NET boxes serve
+// .aspx by default; everything else defaults to the much more common LAMP
+// stack. Always editable/clearable in the UI, this just picks the starting
+// point.
+export function defaultFuzzExtensions(osGuess = ""): string {
+  return /windows/i.test(osGuess) ? "aspx,asp,txt,html" : "php,html,txt";
+}
+
 export function missingServiceFacts(service: ServiceIntelInput) {
   return [
     !service.product && "제품",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultFuzzExtensions,
   isDnsLikeService,
   isHttpLikeService,
   keepSelectedService,
@@ -49,6 +50,18 @@ describe("isDnsLikeService", () => {
     expect(isDnsLikeService("domain")).toBe(true);
     expect(isDnsLikeService("DNS")).toBe(true);
     expect(isDnsLikeService("http")).toBe(false);
+  });
+});
+
+describe("defaultFuzzExtensions", () => {
+  it("defaults to the common LAMP-stack extensions when the OS is unknown or not Windows", () => {
+    expect(defaultFuzzExtensions("")).toBe("php,html,txt");
+    expect(defaultFuzzExtensions("Linux 4.15 - 5.19")).toBe("php,html,txt");
+  });
+
+  it("switches to the IIS/.NET extensions when nmap guesses Windows", () => {
+    expect(defaultFuzzExtensions("Windows Server 2019")).toBe("aspx,asp,txt,html");
+    expect(defaultFuzzExtensions("Microsoft Windows 10 1809 - 21H2")).toBe("aspx,asp,txt,html");
   });
 });
 
