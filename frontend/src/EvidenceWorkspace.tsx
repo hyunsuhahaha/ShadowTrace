@@ -10,6 +10,9 @@ type Evidence = {
   original_name: string;
   sha256: string;
   size: number;
+  username: string;
+  hostname: string;
+  privilege: string;
   sensitivity: string;
   include_report: boolean;
   tags: string;
@@ -17,6 +20,16 @@ type Evidence = {
   duplicate_of?: number;
   acquired_at: string;
 };
+const KINDS = [
+  { id: "auto", label: "자동 감지" },
+  { id: "screenshot", label: "스크린샷" },
+  { id: "flag", label: "Flag (user.txt / root.txt)" },
+  { id: "command_output", label: "명령어 출력" },
+  { id: "http", label: "HTTP" },
+  { id: "nmap", label: "Nmap" },
+  { id: "attachment", label: "첨부파일" },
+  { id: "markdown", label: "마크다운" },
+];
 type Research = { id: number; title: string; target_id: number };
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + path, init);
@@ -29,6 +42,7 @@ export default function EvidenceWorkspace() {
     [researchId, setResearchId] = useState<number>(),
     [selected, setSelected] = useState<number[]>([]),
     [active, setActive] = useState<Evidence>(),
+    [uploadKind, setUploadKind] = useState("auto"),
     [error, setError] = useState("");
   const targets = useQuery({
     queryKey: ["allTargets"],
@@ -61,7 +75,9 @@ export default function EvidenceWorkspace() {
     data.append("title", file.name);
     data.append(
       "kind",
-      file.type.startsWith("image/") ? "screenshot" : "attachment",
+      uploadKind !== "auto"
+        ? uploadKind
+        : file.type.startsWith("image/") ? "screenshot" : "attachment",
     );
     data.append("file", file);
     const r = await fetch("/api/evidence/upload", {
@@ -80,9 +96,9 @@ export default function EvidenceWorkspace() {
       title: active.title,
       description: active.description,
       service_id: null,
-      username: "",
-      hostname: "",
-      privilege: "",
+      username: active.username,
+      hostname: active.hostname,
+      privilege: active.privilege,
       sensitivity: active.sensitivity,
       include_report: active.include_report,
       tags: JSON.parse(active.tags || "[]"),
@@ -152,6 +168,12 @@ export default function EvidenceWorkspace() {
       </nav>
       <main className="evidenceLayout">
         <section className="evidenceList">
+          <label>
+            업로드 분류
+            <select value={uploadKind} onChange={(e) => setUploadKind(e.target.value)}>
+              {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+            </select>
+          </label>
           <label
             className="dropZone"
             onDragOver={(e) => e.preventDefault()}
@@ -191,7 +213,7 @@ export default function EvidenceWorkspace() {
               <button onClick={() => setActive(item)}>
                 <b>{item.title}</b>
                 <span>
-                  {item.kind} · {item.size} bytes
+                  {item.kind}{item.username ? ` · ${item.username}${item.hostname ? `@${item.hostname}` : ""}` : ""} · {item.size} bytes
                 </span>
                 <code>{item.sha256}</code>
                 {item.duplicate_of && (
@@ -230,6 +252,35 @@ export default function EvidenceWorkspace() {
                   value={active.description}
                   onChange={(e) =>
                     setActive({ ...active, description: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                획득한 사용자명
+                <input
+                  value={active.username}
+                  placeholder="예: postgres"
+                  onChange={(e) =>
+                    setActive({ ...active, username: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                호스트명
+                <input
+                  value={active.hostname}
+                  onChange={(e) =>
+                    setActive({ ...active, hostname: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                권한 레벨
+                <input
+                  value={active.privilege}
+                  placeholder="예: low-priv, root, Administrator"
+                  onChange={(e) =>
+                    setActive({ ...active, privilege: e.target.value })
                   }
                 />
               </label>
