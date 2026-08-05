@@ -17,6 +17,7 @@ import {
   parseSmbShares,
   parseScriptObservations,
   rankInvestigationCommands,
+  reconcileServiceNav,
   remainingInvestigationCommands,
   summarizeExecutionResult,
 } from "./serviceIntel";
@@ -129,6 +130,30 @@ describe("service investigation summary", () => {
     const services = [{id: 1}, {id: 2}, {id: 3}];
     expect(keepSelectedService(3, services)).toBe(3);
     expect(keepSelectedService(9, services)).toBe(1);
+  });
+
+  describe("reconcileServiceNav", () => {
+    it("does nothing when there is no pending navigation", () => {
+      expect(reconcileServiceNav(undefined, 1, [{id: 5}])).toEqual({action: "none"});
+    });
+
+    it("stays pending until the target the palette asked for is actually the active one", () => {
+      const nav = {targetId: 2, serviceId: 5};
+      expect(reconcileServiceNav(nav, 1, [{id: 5}])).toEqual({action: "pending"});
+    });
+
+    it("stays pending once the target matches but that target's services haven't loaded yet", () => {
+      const nav = {targetId: 1, serviceId: 5};
+      expect(reconcileServiceNav(nav, 1, undefined)).toEqual({action: "pending"});
+      expect(reconcileServiceNav(nav, 1, [{id: 9}])).toEqual({action: "pending"});
+    });
+
+    it("applies once the right target's services include the requested service", () => {
+      const nav = {targetId: 1, serviceId: 5, anchorId: "dns-subdomain-heading"};
+      expect(reconcileServiceNav(nav, 1, [{id: 5}])).toEqual({
+        action: "apply", serviceId: 5, anchorId: "dns-subdomain-heading",
+      });
+    });
   });
 
   it("does not present an empty or wrong-port SMB run as a finding", () => {

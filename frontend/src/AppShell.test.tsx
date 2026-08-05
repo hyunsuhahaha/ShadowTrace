@@ -26,6 +26,8 @@ it("updates the shell when the active project changes", async () => {
       {id: 10, project_id: 1, name: "alpha-host", ip: "10.0.0.1"},
       {id: 20, project_id: 2, name: "bravo-host", ip: "10.0.0.2"},
     ]);
+    if (url.endsWith("/api/projects/1/services") || url.endsWith("/api/projects/2/services"))
+      return response([]);
     if (url.endsWith("/api/vpn/status")) return response({
       connected: false, tun0: "", operation: null,
     });
@@ -59,4 +61,44 @@ it("updates the shell when the active project changes", async () => {
   const separator = screen.getByRole("separator", {name: "전체 메뉴 너비 조절"});
   fireEvent.wheel(separator, {deltaY: -100});
   expect(localStorage.getItem("oscp-sidebar-width")).toBe("280");
+});
+
+it("feeds the command palette every service in the active project, not just the one on screen", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/projects")) return response([{id: 1, name: "Alpha"}]);
+    if (url.endsWith("/api/targets")) return response([
+      {id: 10, project_id: 1, name: "web-box", ip: "10.0.0.1"},
+      {id: 11, project_id: 1, name: "dc01", ip: "10.0.0.2"},
+    ]);
+    if (url.endsWith("/api/projects/1/services")) return response([
+      {id: 100, target_id: 10, port: 80, protocol: "tcp", name: "http", product: "", scripts: ""},
+      {id: 101, target_id: 11, port: 53, protocol: "tcp", name: "domain", product: "", scripts: ""},
+    ]);
+    if (url.endsWith("/api/vpn/status")) return response({
+      connected: false, tun0: "", operation: null,
+    });
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  localStorage.setItem("oscp-workspace-project", "1");
+  const client = new QueryClient({
+    defaultOptions: {queries: {retry: false, staleTime: Infinity}},
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <AppShell route="enumeration"><div /></AppShell>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Alpha");
+
+  fireEvent.click(screen.getByRole("button", {name: /검색/}));
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), {
+    target: {value: "gobuster dns"},
+  });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+
+  // dc01 is the only project target with a DNS-shaped service — the palette
+  // should offer to jump there instead of just failing on the currently
+  // selected (unrelated) target.
+  await waitFor(() => expect(screen.getByText("dc01 · 10.0.0.2")).toBeTruthy());
 });

@@ -1,8 +1,31 @@
+import {isDnsLikeService, isHttpLikeService, isWinrmHttpApi} from "./serviceIntel";
+
+export type ServiceKind = "http" | "dns";
+
+// Narrow shapes (not the full Service/Target from enumerationModel) so the
+// palette only depends on what it actually needs to match and display a
+// cross-target service picker.
+export type ServiceSummary = {
+  id: number; target_id: number; port: number; protocol: string;
+  name: string; product: string; scripts: string;
+};
+export type TargetSummary = {id: number; name: string; ip: string};
+
+export function matchesServiceKind(service: ServiceSummary, kind: ServiceKind): boolean {
+  if (kind === "dns") return isDnsLikeService(service.name);
+  return isHttpLikeService(service.name, service.scripts)
+    && !isWinrmHttpApi(service.name, service.port, service.product);
+}
+
 export type CommandPaletteEntry = {
   id: string;
   route: string;
   subroute?: string;
   anchorId?: string;
+  // Which of the current target's services this anchor only renders under —
+  // lets the palette offer every matching service across the project when
+  // the currently selected one isn't it, instead of just failing silently.
+  serviceKind?: ServiceKind;
   label: string;
   detail: string;
   category: string;
@@ -53,18 +76,22 @@ const webToolEntries: CommandPaletteEntry[] = [
 
 const enumerationToolEntries: CommandPaletteEntry[] = [
   { id: "enumeration/dir-fuzz", route: "enumeration", anchorId: "fuzz-heading",
+    serviceKind: "http",
     label: "디렉터리·파일 퍼징 (feroxbuster)", detail: "웹 서비스 선택 후 페이지 하단에 표시 · gobuster dir 대체",
     category: "Service Enumeration 도구",
     keywords: ["gobuster", "gobuster dir", "dirbuster", "dirsearch", "feroxbuster", "디렉토리 브루트포스", "디렉터리 퍼징", "파일 탐색"] },
   { id: "enumeration/vhost-fuzz", route: "enumeration", anchorId: "vhost-heading",
+    serviceKind: "http",
     label: "가상 호스트 퍼징 (ffuf)", detail: "웹 서비스 선택 후 페이지 하단에 표시",
     category: "Service Enumeration 도구",
     keywords: ["gobuster vhost", "vhost", "virtual host", "ffuf"] },
   { id: "enumeration/param-fuzz", route: "enumeration", anchorId: "param-fuzz-heading",
+    serviceKind: "http",
     label: "GET 파라미터 퍼징 (ffuf)", detail: "웹 서비스 선택 후 페이지 하단에 표시",
     category: "Service Enumeration 도구",
     keywords: ["param fuzz", "파라미터 퍼징", "ffuf", "gobuster fuzz"] },
   { id: "enumeration/dns-subdomain", route: "enumeration", anchorId: "dns-subdomain-heading",
+    serviceKind: "dns",
     label: "서브도메인 브루트포스 (gobuster dns)", detail: "DNS 서비스 선택 후 페이지 하단에 표시 · gobuster dns 대체",
     category: "Service Enumeration 도구",
     keywords: ["gobuster dns", "dns bruteforce", "dns enum", "서브도메인", "subdomain", "dns 브루트포스"] },

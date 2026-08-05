@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { commandPaletteIndex, searchCommandPalette } from "./commandPaletteIndex";
+import { commandPaletteIndex, matchesServiceKind, searchCommandPalette } from "./commandPaletteIndex";
+
+const service = (overrides: Partial<Parameters<typeof matchesServiceKind>[0]> = {}) => ({
+  id: 1, target_id: 1, port: 80, protocol: "tcp", name: "http", product: "", scripts: "",
+  ...overrides,
+});
 
 it("has a unique id and a valid route for every entry", () => {
   const ids = commandPaletteIndex.map((entry) => entry.id);
@@ -52,4 +57,27 @@ it("returns nothing for an empty or whitespace-only query", () => {
 
 it("returns nothing for a query that matches no entry", () => {
   expect(searchCommandPalette("xyzzyquux")).toEqual([]);
+});
+
+it("every anchored (service-scoped) entry declares a serviceKind", () => {
+  commandPaletteIndex.filter((entry) => entry.anchorId).forEach((entry) => {
+    expect(entry.serviceKind, entry.id).toBeTruthy();
+  });
+});
+
+it("matchesServiceKind treats plain http/https services as http, not dns", () => {
+  expect(matchesServiceKind(service({ name: "http" }), "http")).toBe(true);
+  expect(matchesServiceKind(service({ name: "https" }), "http")).toBe(true);
+  expect(matchesServiceKind(service({ name: "http" }), "dns")).toBe(false);
+});
+
+it("matchesServiceKind excludes WinRM's HTTPAPI false-positive from http", () => {
+  expect(matchesServiceKind(
+    service({ name: "http", port: 5985, product: "Microsoft HTTPAPI httpd 2.0" }), "http",
+  )).toBe(false);
+});
+
+it("matchesServiceKind treats domain/dns services as dns", () => {
+  expect(matchesServiceKind(service({ name: "domain" }), "dns")).toBe(true);
+  expect(matchesServiceKind(service({ name: "domain" }), "http")).toBe(false);
 });

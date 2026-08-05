@@ -10,6 +10,7 @@ from app.main import (
     update_service,
 )
 from app.models import Base, Project, RunbookInstance, ScanJob, Service, Target
+from app.modules.core.router import project_services
 from app.modules.runbooks.support import ApplyIn, PublishIn, StepIn, TemplateIn
 from app.modules.runbooks.workflow_router import (
     apply, create_template, instances, publish,
@@ -79,6 +80,50 @@ def test_reviewed_service_identity_is_persisted(tmp_path):
     saved = db.get(Service, service.id)
     assert saved
     assert (saved.product, saved.version) == ("Linux telnetd", "0.17")
+    db.close()
+
+
+def test_project_services_spans_every_target_in_the_project(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Multi-target", description="")
+    db.add(project)
+    db.flush()
+    other_project = Project(name="Unrelated", description="")
+    db.add(other_project)
+    db.flush()
+    web_target = Target(project_id=project.id, name="Web box", ip="198.51.100.30")
+    dc_target = Target(project_id=project.id, name="DC", ip="198.51.100.31")
+    other_target = Target(project_id=other_project.id, name="Other", ip="198.51.100.32")
+    db.add_all([web_target, dc_target, other_target])
+    db.flush()
+    db.add_all([
+        Service(target_id=web_target.id, port=80, protocol="tcp", state="open",
+                name="http", product="", version="", extra_info="", scripts="{}",
+                notes="", tags="[]"),
+        Service(target_id=dc_target.id, port=53, protocol="tcp", state="open",
+                name="domain", product="", version="", extra_info="", scripts="{}",
+                notes="", tags="[]"),
+        Service(target_id=other_target.id, port=22, protocol="tcp", state="open",
+                name="ssh", product="", version="", extra_info="", scripts="{}",
+                notes="", tags="[]"),
+    ])
+    db.commit()
+
+    result = project_services(project.id, db)
+
+    assert {(row.target_id, row.port) for row in result} == {
+        (web_target.id, 80), (dc_target.id, 53),
+    }
+    db.close()
+
+
+def test_project_services_is_empty_for_a_project_with_no_targets(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Empty", description="")
+    db.add(project)
+    db.commit()
+
+    assert project_services(project.id, db) == []
     db.close()
 
 

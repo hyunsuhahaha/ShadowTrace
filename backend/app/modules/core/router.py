@@ -224,6 +224,20 @@ def services(ident: int, db: Session = Depends(get_db)):
     return db.scalars(select(Service).where(Service.target_id == ident)).all()
 
 
+@router.get("/api/projects/{ident}/services", response_model=list[ServiceOut])
+def project_services(ident: int, db: Session = Depends(get_db)):
+    """All services across every target in a project, for cross-target tool
+    lookups (e.g. the command palette pointing a search to whichever port
+    actually has a matching service, not just the currently selected one)."""
+    need(db, Project, ident)
+    target_ids = db.scalars(
+        select(Target.id).where(Target.project_id == ident)).all()
+    if not target_ids:
+        return []
+    return db.scalars(
+        select(Service).where(Service.target_id.in_(target_ids))).all()
+
+
 @router.patch("/api/services/{ident}", response_model=ServiceOut)
 def update_service(
     ident: int, body: ServiceUpdate, db: Session = Depends(get_db)

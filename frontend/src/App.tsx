@@ -57,6 +57,7 @@ import {
   keepSelectedService,
   parseSmbEnumSharesAccess,
   parseSmbShares,
+  reconcileServiceNav,
   summarizeExecutionResult,
 } from "./serviceIntel";
 import {
@@ -69,6 +70,17 @@ import {
 } from "./enumerationModel";
 import {api} from "./api";
 import {useEnumerationQueries} from "./useEnumerationQueries";
+import {consumePendingServiceNav, type PendingServiceNav} from "./pendingServiceNav";
+
+const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
+  const anchor = document.getElementById(anchorId);
+  if (anchor) {
+    anchor.scrollIntoView({behavior: "smooth", block: "start"});
+    return;
+  }
+  if (attemptsLeft > 0)
+    window.setTimeout(() => scrollToAnchorSoon(anchorId, attemptsLeft - 1), 150);
+};
 
 export default function App() {
   const qc = useQueryClient();
@@ -76,6 +88,11 @@ export default function App() {
   // is its own asyncio task/subprocess), so the UI tracks as many
   // concurrently-running commands as the user starts, one slot per command.
   const activeEventSourcesRef = useRef<Record<string, EventSource>>({});
+  // A command-palette pick can name a target/service this page didn't
+  // start on (see pendingServiceNav.ts) — set while that handoff is being
+  // applied so the "default to the project's first target/service"
+  // effects below don't stomp it before it lands.
+  const pendingNavRef = useRef<PendingServiceNav>();
   const focusedRunIdRef = useRef<string>();
   const workRef = useRef<HTMLElement>(null);
   const credentialAuditRef = useRef<HTMLElement>(null);
@@ -179,6 +196,7 @@ export default function App() {
     }
   }, [projects.data]);
   useEffect(() => {
+    if (pendingNavRef.current) return;
     setTargetId(targets.data?.[0]?.id);
   }, [projectId, targets.data]);
   useEffect(() => {
@@ -199,7 +217,39 @@ export default function App() {
     setHostnameDraft("");
   }, [targetId]);
   useEffect(() => {
+    const result = reconcileServiceNav(pendingNavRef.current, targetId, services.data);
+    if (result.action === "apply") {
+      setServiceId(result.serviceId);
+      if (result.anchorId) scrollToAnchorSoon(result.anchorId);
+      pendingNavRef.current = undefined;
+      return;
+    }
+    if (result.action === "pending") return;
     setServiceId((current) => keepSelectedService(current, services.data));
+  }, [targetId, services.data]);
+  const applyServiceNav = (nav: PendingServiceNav) => {
+    pendingNavRef.current = nav;
+    setTargetId(nav.targetId);
+    const result = reconcileServiceNav(nav, targetId, services.data);
+    if (result.action === "apply") {
+      setServiceId(result.serviceId);
+      if (result.anchorId) scrollToAnchorSoon(result.anchorId);
+      pendingNavRef.current = undefined;
+    }
+  };
+  useEffect(() => {
+    const nav = consumePendingServiceNav();
+    if (nav) applyServiceNav(nav);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    const onServiceNav = () => {
+      const nav = consumePendingServiceNav();
+      if (nav) applyServiceNav(nav);
+    };
+    addEventListener("oscp-service-nav", onServiceNav);
+    return () => removeEventListener("oscp-service-nav", onServiceNav);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, services.data]);
   useEffect(() => {
     setExecutionView("list");

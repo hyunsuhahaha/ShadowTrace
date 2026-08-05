@@ -11,5 +11,7 @@
 .commandPaletteGroup button small{color:var(--muted);font-size:.68rem}
 .commandPaletteGroup button.isActive,.commandPaletteGroup button:hover{background:#17201d;color:var(--green-strong)}
 .commandPaletteGroup button.isActive small,.commandPaletteGroup button:hover small{color:#91aa9a}
+.commandPaletteBack{margin:.3rem .5rem .6rem;border:0;background:transparent;color:var(--muted);font-size:.72rem;cursor:pointer;align-self:flex-start;padding:.2rem .3rem}
+.commandPaletteBack:hover{color:var(--text)}
 .paletteTrigger{display:flex;align-items:center;gap:.4rem;color:var(--muted)}
 .paletteTrigger kbd{border:1px solid var(--line-strong);border-radius:4px;padding:.05rem .35rem;font:600 .62rem ui-monospace,monospace;color:#8a9794}

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { commandPaletteIndex, searchCommandPalette, type CommandPaletteEntry } from "./commandPaletteIndex";
+import {
+  commandPaletteIndex, matchesServiceKind, searchCommandPalette,
+  type CommandPaletteEntry, type ServiceSummary, type TargetSummary,
+} from "./commandPaletteIndex";
+import { setPendingServiceNav } from "./pendingServiceNav";
 import "./command-palette.css";
+
+type ServiceOption = { service: ServiceSummary; target?: TargetSummary };
 
 const recentKey = "oscp-command-palette-recent";
 const maxRecent = 5;
@@ -19,10 +25,19 @@ const rememberRecent = (id: string) => {
   localStorage.setItem(recentKey, JSON.stringify(next));
 };
 
-export default function CommandPalette({ onClose }: { onClose: () => void }) {
+export default function CommandPalette({
+  onClose, services = [], targets = [],
+}: {
+  onClose: () => void;
+  services?: ServiceSummary[];
+  targets?: TargetSummary[];
+}) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [missingAnchor, setMissingAnchor] = useState<string>();
+  const [servicePicker, setServicePicker] = useState<
+    { entry: CommandPaletteEntry; options: ServiceOption[] }
+  >();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,6 +47,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     setSelected(0);
     setMissingAnchor(undefined);
+    setServicePicker(undefined);
   }, [query]);
 
   const groups = useMemo(() => {
@@ -67,20 +83,43 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         if (anchor) {
           anchor.scrollIntoView({ behavior: "smooth", block: "start" });
           onClose();
-        } else {
-          setMissingAnchor(entry.label);
+          return;
         }
+        const kind = entry.serviceKind;
+        const options: ServiceOption[] = kind
+          ? services
+              .filter((service) => matchesServiceKind(service, kind))
+              .map((service) => ({
+                service,
+                target: targets.find((target) => target.id === service.target_id),
+              }))
+          : [];
+        if (options.length) setServicePicker({ entry, options });
+        else setMissingAnchor(entry.label);
       }, 300);
       return;
     }
     onClose();
   };
 
+  const chooseService = (entry: CommandPaletteEntry, option: ServiceOption) => {
+    if (!option.target) return;
+    setPendingServiceNav({
+      targetId: option.target.id, serviceId: option.service.id, anchorId: entry.anchorId,
+    });
+    location.hash = entry.route;
+    dispatchEvent(new CustomEvent("oscp-service-nav"));
+    setServicePicker(undefined);
+    onClose();
+  };
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
+      if (servicePicker) { setServicePicker(undefined); return; }
       onClose();
       return;
     }
+    if (servicePicker) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelected((index) => Math.min(index + 1, flat.length - 1));
@@ -116,40 +155,73 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
           placeholder="도구나 화면 검색… (예: sql injection, repeater, 백업)"
           aria-label="빠른 이동 검색"
         />
-        {missingAnchor && (
-          <p className="commandPaletteMissing" role="alert">
-            '{missingAnchor}'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.
-          </p>
-        )}
-        <div className="commandPaletteResults" role="listbox">
-          {!flat.length && (
-            <p className="commandPaletteEmpty">
-              {query.trim() ? "일치하는 항목이 없습니다." : "최근 사용한 항목이 여기 표시됩니다."}
+        {servicePicker ? (
+          <div className="commandPaletteServicePicker">
+            <p className="commandPaletteMissing">
+              현재 대상에는 없지만 '{servicePicker.entry.label}'을(를) 쓸 수 있는 서비스가 프로젝트에
+              있습니다 · 이동할 서비스를 선택하세요
             </p>
-          )}
-          {groups.map(([category, entries]) => (
-            <div key={category} className="commandPaletteGroup">
-              <h3>{category}</h3>
-              {entries.map((entry) => {
-                const index = flat.indexOf(entry);
-                return (
+            <div className="commandPaletteResults" role="listbox">
+              <div className="commandPaletteGroup">
+                {servicePicker.options.map(({ service, target }) => (
                   <button
-                    key={entry.id}
+                    key={service.id}
                     type="button"
                     role="option"
-                    aria-selected={index === selected}
-                    className={index === selected ? "isActive" : ""}
-                    onMouseEnter={() => setSelected(index)}
-                    onClick={() => activate(entry)}
+                    onClick={() => chooseService(servicePicker.entry, { service, target })}
                   >
-                    <strong>{entry.label}</strong>
-                    <small>{entry.detail}</small>
+                    <strong>{target ? `${target.name} · ${target.ip}` : `Target #${service.target_id}`}</strong>
+                    <small>{service.port}/{service.protocol} · {service.product || service.name}</small>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+            <button
+              type="button"
+              className="commandPaletteBack"
+              onClick={() => setServicePicker(undefined)}
+            >
+              ← 검색으로 돌아가기
+            </button>
+          </div>
+        ) : (
+          <>
+            {missingAnchor && (
+              <p className="commandPaletteMissing" role="alert">
+                '{missingAnchor}'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.
+              </p>
+            )}
+            <div className="commandPaletteResults" role="listbox">
+              {!flat.length && (
+                <p className="commandPaletteEmpty">
+                  {query.trim() ? "일치하는 항목이 없습니다." : "최근 사용한 항목이 여기 표시됩니다."}
+                </p>
+              )}
+              {groups.map(([category, entries]) => (
+                <div key={category} className="commandPaletteGroup">
+                  <h3>{category}</h3>
+                  {entries.map((entry) => {
+                    const index = flat.indexOf(entry);
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        role="option"
+                        aria-selected={index === selected}
+                        className={index === selected ? "isActive" : ""}
+                        onMouseEnter={() => setSelected(index)}
+                        onClick={() => activate(entry)}
+                      >
+                        <strong>{entry.label}</strong>
+                        <small>{entry.detail}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

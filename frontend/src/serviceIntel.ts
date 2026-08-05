@@ -195,6 +195,30 @@ export function keepSelectedService<T extends {id: number}>(
     : services?.[0]?.id;
 }
 
+export type ServiceNavRequest = {targetId: number; serviceId: number; anchorId?: string};
+export type ServiceNavResult =
+  | {action: "none"}
+  | {action: "pending"}
+  | {action: "apply"; serviceId: number; anchorId?: string};
+
+// A command palette pick can name a target this page didn't start on, and
+// switching target is asynchronous (the services list for it has to load
+// before the requested service can actually be selected) — this is the
+// pure decision the target/service-selection effect makes on every tick
+// while that handoff is in flight, kept separate from the effect itself so
+// the three-way branch (wrong target yet / right target but not loaded yet
+// / ready) is unit-testable without mounting the page.
+export function reconcileServiceNav(
+  nav: ServiceNavRequest | undefined,
+  targetId: number | undefined,
+  services: {id: number}[] | undefined,
+): ServiceNavResult {
+  if (!nav) return {action: "none"};
+  if (nav.targetId !== targetId) return {action: "pending"};
+  if (!services?.some((service) => service.id === nav.serviceId)) return {action: "pending"};
+  return {action: "apply", serviceId: nav.serviceId, anchorId: nav.anchorId};
+}
+
 export function summarizeExecutionResult(
   templateId: string,
   status: string,

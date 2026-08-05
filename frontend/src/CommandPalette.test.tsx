@@ -2,11 +2,13 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import CommandPalette from "./CommandPalette";
+import { consumePendingServiceNav } from "./pendingServiceNav";
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
   location.hash = "";
+  consumePendingServiceNav();
 });
 
 it("shows a hint instead of results when nothing has been used yet", () => {
@@ -94,6 +96,68 @@ it("stays open and explains why when the target has no matching service for an a
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByRole("alert").textContent).toBe(
     "'서브도메인 브루트포스 (gobuster dns)'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.");
+  vi.useRealTimers();
+});
+
+it("offers a cross-target service picker when the project has a matching service elsewhere", () => {
+  vi.useFakeTimers();
+  const onClose = vi.fn();
+  const services = [
+    { id: 11, target_id: 2, port: 53, protocol: "tcp", name: "domain", product: "", scripts: "" },
+  ];
+  const targets = [{ id: 2, name: "DC01", ip: "10.10.10.5" }];
+  render(<CommandPalette onClose={onClose} services={services} targets={targets} />);
+
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster dns" } });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+  act(() => { vi.runAllTimers(); });
+
+  // Still open with a picker instead of the dead-end "no matching service" text.
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText("DC01 · 10.10.10.5")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("DC01 · 10.10.10.5"));
+
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(location.hash).toBe("#enumeration");
+  expect(consumePendingServiceNav()).toEqual({
+    targetId: 2, serviceId: 11, anchorId: "dns-subdomain-heading",
+  });
+  vi.useRealTimers();
+});
+
+it("falls back to the plain no-match message when nothing in the project matches either", () => {
+  vi.useFakeTimers();
+  const onClose = vi.fn();
+  render(<CommandPalette onClose={onClose} services={[]} targets={[]} />);
+
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster dns" } });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+  act(() => { vi.runAllTimers(); });
+
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toBe(
+    "'서브도메인 브루트포스 (gobuster dns)'은(는) 지금 이 대상에 해당 서비스가 없어서 표시되지 않습니다.");
+  vi.useRealTimers();
+});
+
+it("lets the picker back out to the search results without navigating", () => {
+  vi.useFakeTimers();
+  const onClose = vi.fn();
+  const services = [
+    { id: 11, target_id: 2, port: 53, protocol: "tcp", name: "domain", product: "", scripts: "" },
+  ];
+  const targets = [{ id: 2, name: "DC01", ip: "10.10.10.5" }];
+  render(<CommandPalette onClose={onClose} services={services} targets={targets} />);
+
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster dns" } });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+  act(() => { vi.runAllTimers(); });
+  fireEvent.click(screen.getByText("← 검색으로 돌아가기"));
+
+  expect(screen.getByText("서브도메인 브루트포스 (gobuster dns)")).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
   vi.useRealTimers();
 });
 

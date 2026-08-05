@@ -11,6 +11,10 @@ import "./layout-controls.css";
 
 type Project = { id: number; name: string; metasploit_target_id?: number | null };
 type Target = { id: number; project_id: number; name: string; ip: string };
+type Service = {
+  id: number; target_id: number; port: number; protocol: string;
+  name: string; product: string; scripts: string;
+};
 
 const sidebarMin = 184;
 const sidebarMax = 420;
@@ -114,9 +118,16 @@ export default function AppShell({
   const target =
     targets.data?.find((item) => item.id === activeTargetId && item.project_id === project?.id) ||
     targets.data?.find((item) => item.project_id === project?.id);
-  const projectTargetCount = targets.data?.filter(
-    (item) => item.project_id === project?.id,
-  ).length || 0;
+  const projectTargets = targets.data?.filter((item) => item.project_id === project?.id) || [];
+  const projectTargetCount = projectTargets.length;
+  // Fetched project-wide (not just the currently selected target) so the
+  // command palette can point a tool search at whichever port actually has
+  // a matching service, instead of only ever looking at what's on screen.
+  const projectServices = useQuery({
+    queryKey: ["projectServices", project?.id],
+    queryFn: () => get<Service[]>(`/projects/${project?.id}/services`),
+    enabled: !!project?.id,
+  });
   const selectProject = (id: number) => {
     localStorage.setItem("oscp-workspace-project", String(id));
     setActiveProjectId(id);
@@ -311,7 +322,13 @@ export default function AppShell({
           )}
           {children}
         </div>
-        {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+        {paletteOpen && (
+          <CommandPalette
+            onClose={() => setPaletteOpen(false)}
+            services={projectServices.data}
+            targets={projectTargets}
+          />
+        )}
         {deleteOpen && project && (
           <div className="modal" role="presentation">
             <div
