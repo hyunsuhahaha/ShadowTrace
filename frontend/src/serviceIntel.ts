@@ -31,6 +31,35 @@ export function parseSmbShares(output = ""): SmbShare[] {
   return shares;
 }
 
+export type SmbShareAccess = {anonymous: string; currentUser: string};
+
+// Parses nmap's `smb-enum-shares` NSE script output, which — unlike a plain
+// `smbclient -L` listing — actually probes and reports each share's real
+// access level instead of just its name/type/comment. Each share gets its
+// own indented block under a "\\host\Share:" header; nmap prefixes every
+// line of script output with "|" (and the block's last line with "|_"),
+// so that prefix is stripped before the key: value lines are matched.
+export function parseSmbEnumSharesAccess(output = ""): Record<string, SmbShareAccess> {
+  const result: Record<string, SmbShareAccess> = {};
+  let current = "";
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.replace(/^\|_?/, "");
+    const header = line.match(/^\s*\\\\[^\\]+\\(.+?):\s*$/);
+    if (header) { current = header[1]; continue; }
+    if (!current) continue;
+    const anonymous = line.match(/^\s*Anonymous access:\s*(.+?)\s*$/i);
+    if (anonymous) {
+      result[current] = {...result[current], anonymous: anonymous[1], currentUser: result[current]?.currentUser ?? ""};
+      continue;
+    }
+    const currentUser = line.match(/^\s*Current user access:\s*(.+?)\s*$/i);
+    if (currentUser) {
+      result[current] = {...result[current], currentUser: currentUser[1], anonymous: result[current]?.anonymous ?? ""};
+    }
+  }
+  return result;
+}
+
 export type SmbFile = {path: string; size: string};
 
 // Parses `smbclient -c 'recurse ON;ls'` output: a root-level block, then one

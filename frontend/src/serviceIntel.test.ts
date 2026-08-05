@@ -7,6 +7,7 @@ import {
   parseKerbruteResults,
   parseNetexecSprayHits,
   parseSecretsdumpHashes,
+  parseSmbEnumSharesAccess,
   parseSmbFiles,
   parseSmbShares,
   parseScriptObservations,
@@ -109,6 +110,44 @@ describe("service investigation summary", () => {
       tone: "success",
       title: "SMB 공유 목록을 가져왔습니다",
     });
+  });
+
+  it("extracts per-share anonymous/current-user access from nmap smb-enum-shares", () => {
+    const output = `
+Host script results:
+| smb-enum-shares:
+|   account_used: guest
+|   \\\\10.10.10.10\\ADMIN$:
+|     Type: STYPE_DISKTREE_HIDDEN
+|     Comment: Remote Admin
+|     Users: 0
+|     Max Users: <unlimited>
+|     Path: C:\\Windows
+|     Anonymous access: <none>
+|     Current user access: <none>
+|   \\\\10.10.10.10\\backups:
+|     Type: STYPE_DISKTREE
+|     Comment:
+|     Users: 1
+|     Max Users: <unlimited>
+|     Path: C:\\backups
+|     Anonymous access: READ
+|     Current user access: READ/WRITE
+|   \\\\10.10.10.10\\IPC$:
+|     Type: STYPE_IPC_HIDDEN
+|     Comment: Remote IPC
+|_    Anonymous access: READ
+    `;
+    expect(parseSmbEnumSharesAccess(output)).toEqual({
+      "ADMIN$": {anonymous: "<none>", currentUser: "<none>"},
+      "backups": {anonymous: "READ", currentUser: "READ/WRITE"},
+      "IPC$": {anonymous: "READ", currentUser: ""},
+    });
+  });
+
+  it("returns an empty map when smb-enum-shares hasn't been run", () => {
+    expect(parseSmbEnumSharesAccess("")).toEqual({});
+    expect(parseSmbEnumSharesAccess("some unrelated nmap output\n")).toEqual({});
   });
 
   it("flattens recursive smbclient listings into file paths, skipping dirs", () => {

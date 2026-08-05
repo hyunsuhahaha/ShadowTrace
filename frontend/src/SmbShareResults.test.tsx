@@ -104,6 +104,45 @@ it("disables non-disk shares and prefers the live spider run over history", () =
   expect((screen.getByText("재귀 목록") as HTMLButtonElement).disabled).toBe(true);
 });
 
+it("shows a hint instead of an access column when no nmap scan has run yet", () => {
+  render(<SmbShareResults shares={shares} serviceExecutions={[]}
+    onSpider={vi.fn()} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(screen.getByText(/접근 가능 여부와 무관/)).toBeTruthy();
+  expect(screen.queryByText("접근 권한 (nmap)")).toBeNull();
+});
+
+it("renders an access badge per share once nmap smb-enum-shares data is available", () => {
+  const twoShares = [
+    { name: "backups", type: "Disk", comment: "" },
+    { name: "ADMIN$", type: "Disk", comment: "Remote Admin" },
+  ];
+  render(<SmbShareResults shares={twoShares} serviceExecutions={[]}
+    shareAccess={{
+      backups: { anonymous: "READ", currentUser: "READ/WRITE" },
+      "ADMIN$": { anonymous: "<none>", currentUser: "<none>" },
+    }}
+    onSpider={vi.fn()} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(screen.queryByText(/접근 가능 여부와 무관/)).toBeNull();
+  expect(screen.getByText("접근 권한 (nmap)")).toBeTruthy();
+  expect(screen.getByText("익명: READ")).toBeTruthy();
+  expect(screen.getByText("익명: <none>")).toBeTruthy();
+});
+
+it("matches share access case-insensitively and flags shares nmap didn't report", () => {
+  const twoShares = [
+    { name: "Backups", type: "Disk", comment: "" },
+    { name: "PRINT$", type: "Printer", comment: "" },
+  ];
+  render(<SmbShareResults shares={twoShares} serviceExecutions={[]}
+    shareAccess={{ backups: { anonymous: "READ", currentUser: "" } }}
+    onSpider={vi.fn()} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(screen.getByText("익명: READ")).toBeTruthy();
+  expect(screen.getByText("확인 안 됨")).toBeTruthy();
+});
+
 it("scrolls the results into view when a new share list appears", async () => {
   const scrollIntoView = vi.fn();
   const original = HTMLElement.prototype.scrollIntoView;

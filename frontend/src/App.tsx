@@ -51,6 +51,7 @@ import PrivescSessionPanel from "./PrivescSessionPanel";
 import LiveOutputPanel from "./LiveOutputPanel";
 import {
   keepSelectedService,
+  parseSmbEnumSharesAccess,
   parseSmbShares,
   summarizeExecutionResult,
 } from "./serviceIntel";
@@ -1138,6 +1139,13 @@ export default function App() {
     ? executionDetail?.stdout || ""
     : runStates["smb-enum"]?.stdout || latestSmbEnum?.stdout || "";
   const smbShares = parseSmbShares(smbOutput);
+  const latestSmbEnumShares = serviceExecutions
+    .filter((item) => item.template_id === "smb-enum-shares-nmap" && item.status === "completed")
+    .sort((a, b) => b.id - a.id)[0];
+  const smbEnumSharesOutput = selectedExecution?.template_id === "smb-enum-shares-nmap"
+    ? executionDetail?.stdout || ""
+    : runStates["smb-enum-shares-nmap"]?.stdout || latestSmbEnumShares?.stdout || "";
+  const smbShareAccess = parseSmbEnumSharesAccess(smbEnumSharesOutput);
   return (
     <div className="app">
       <EnumerationScope
@@ -1359,7 +1367,7 @@ export default function App() {
           {!!service && <RecycleBinDecoder />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={`smb-share-${serviceId}`} targetId={targetId} serviceId={serviceId}
-            shares={smbShares} activeShare={lastSpiderShare}
+            shares={smbShares} shareAccess={smbShareAccess} activeShare={lastSpiderShare}
             runState={runStates["smb-share-spider"]}
             serviceExecutions={serviceExecutions} onSpider={spiderSmbShare}
             onViewFile={viewSmbFile}

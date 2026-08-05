@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { parseSmbFiles, type SmbShare } from "./serviceIntel";
+import { parseSmbFiles, type SmbShare, type SmbShareAccess } from "./serviceIntel";
+
+// nmap smb-enum-shares reports "<none>" (no access), "READ", "READ/WRITE" —
+// anything containing READ actually got in, so this doesn't need to
+// enumerate every exact string nmap might print.
+function accessTone(access: string): "open" | "closed" {
+  return /read/i.test(access) ? "open" : "closed";
+}
 
 // Local api helper mirrors App.tsx's until a shared client lands (roadmap P0).
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -23,12 +30,13 @@ export type SmbSpiderExecution = {
 // touches run(), so it — and its busy/error state — lives entirely here,
 // mirroring useCredentialStore's self-contained save()/remove().
 export default function SmbShareResults({
-  targetId, serviceId, shares, activeShare, runState, serviceExecutions,
+  targetId, serviceId, shares, shareAccess, activeShare, runState, serviceExecutions,
   onSpider, onViewFile, onLog,
 }: {
   targetId?: number;
   serviceId?: number;
   shares: SmbShare[];
+  shareAccess?: Record<string, SmbShareAccess>;
   activeShare?: string;
   runState?: SmbSpiderRunState;
   serviceExecutions: SmbSpiderExecution[];
@@ -89,6 +97,8 @@ export default function SmbShareResults({
   };
 
   if (!shares.length) return null;
+  const hasAccessData = !!shareAccess && Object.keys(shareAccess).length > 0;
+
   return (
     <section ref={resultsRef} className="smbShareResults"
       aria-labelledby="smb-shares-title">
@@ -99,18 +109,42 @@ export default function SmbShareResults({
         </div>
         <small>Disk 공유는 아래에서 바로 접속할 수 있습니다.</small>
       </header>
-      <div className="smbShareTable" role="table" aria-label="SMB 공유 목록">
+      {!hasAccessData && (
+        <p className="smbAccessHint">
+          설명 칸은 서버가 붙인 이름표일 뿐 접근 가능 여부와 무관합니다. 실제 열려있는지
+          확인하려면 <b>SMB 공유별 접근 권한 확인 (nmap)</b> 명령을 실행하거나, 아래에서
+          공유별로 직접 접속/재귀 목록을 눌러보세요.
+        </p>
+      )}
+      <div className={`smbShareTable${hasAccessData ? " smbShareTable--withAccess" : ""}`}
+        role="table" aria-label="SMB 공유 목록">
         <div role="row" className="smbShareHead">
           <span role="columnheader">공유 이름</span>
           <span role="columnheader">형식</span>
           <span role="columnheader">설명</span>
-          <span role="columnheader">작업</span>
+          {hasAccessData && (
+            <span role="columnheader" className="smbAccessCell">접근 권한 (nmap)</span>
+          )}
+          <span role="columnheader" className="smbActionHead">작업</span>
         </div>
-        {shares.map((share) => (
+        {shares.map((share) => {
+          const access = shareAccess?.[share.name]
+            ?? Object.entries(shareAccess ?? {}).find(
+              ([name]) => name.toLowerCase() === share.name.toLowerCase())?.[1];
+          return (
           <div role="row" key={`${share.name}-${share.type}`}>
             <b role="cell">{share.name}</b>
             <span role="cell">{share.type}</span>
             <span role="cell">{share.comment || "—"}</span>
+            {hasAccessData && (
+              <span role="cell" className="smbAccessCell">
+                {access ? (
+                  <span className={`smbAccessBadge smbAccessBadge--${accessTone(access.anonymous)}`}>
+                    익명: {access.anonymous}
+                  </span>
+                ) : "확인 안 됨"}
+              </span>
+            )}
             <span role="cell" className="smbShareAction">
               <button
                 disabled={share.type.toLowerCase() !== "disk"
@@ -128,7 +162,8 @@ export default function SmbShareResults({
               </button>
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
       {connectError && (
         <p className="smbConnectError" role="alert">{connectError}</p>
