@@ -207,6 +207,29 @@ def test_mysql_client_opens_with_the_discovered_username_and_always_prompts_for_
     assert command == "mysql -h 10.10.10.23 -P 3306 -u root -p"
     assert argv[-1] == "-p"
 
+def test_mssql_client_templates_are_offered_and_never_carry_a_password():
+    # Same rationale as the mysql-client test above: neither variant takes a
+    # {password} token, so impacket-mssqlclient always falls back to its own
+    # interactive getpass prompt instead of a password ever reaching argv.
+    commands = {item["id"] for item in catalog.commands_for("ms-sql-s", 1433)}
+    assert {"mssql-client-windows-auth", "mssql-client-sql-auth"} <= commands
+
+    item, command, argv = catalog.render(
+        "mssql-client-windows-auth",
+        {"host": "10.10.10.60", "port": "1433", "username": "ARCHETYPE/sql_svc"},
+        execution_mode="interactive",
+    )
+    assert item["id"] == "mssql-client-windows-auth"
+    assert command == "impacket-mssqlclient ARCHETYPE/sql_svc@10.10.10.60 -windows-auth -port 1433"
+    assert argv == ["impacket-mssqlclient", "ARCHETYPE/sql_svc@10.10.10.60",
+                     "-windows-auth", "-port", "1433"]
+
+    _, sql_auth_command, _ = catalog.render(
+        "mssql-client-sql-auth", {"host": "10.10.10.60", "port": "1433", "username": "sa"},
+        execution_mode="interactive",
+    )
+    assert sql_auth_command == "impacket-mssqlclient sa@10.10.10.60 -port 1433"
+
 def test_kerbrute_userenum_is_hidden_from_the_generic_list_but_renders_with_extra_variables():
     # domain/wordlist aren't nmap-derived, so — like http-directory-fuzz — this
     # command must stay out of commands_for()'s auto-populated list and only be
