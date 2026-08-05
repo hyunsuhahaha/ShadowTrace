@@ -50,6 +50,7 @@ import NetexecOutcome, {type NetexecProtocol} from "./NetexecOutcome";
 import PrivescSessionPanel from "./PrivescSessionPanel";
 import LiveOutputPanel from "./LiveOutputPanel";
 import {
+  isHttpLikeService,
   keepSelectedService,
   parseSmbEnumSharesAccess,
   parseSmbShares,
@@ -241,7 +242,7 @@ export default function App() {
     : null;
   const serviceExecutions =
     executions.data?.filter((item) => item.service_id === serviceId) || [];
-  const isWebService = !!service && /https?|ssl\/http/i.test(service.name);
+  const isWebService = !!service && isHttpLikeService(service.name, service.scripts);
   const webScheme = service?.tls || /https|ssl/i.test(service?.name || "") ? "https" : "http";
   const webPort = service && !(["http:80", "https:443"].includes(
     `${webScheme}:${service.port}`)) ? `:${service.port}` : "";
@@ -1372,28 +1373,28 @@ export default function App() {
             serviceExecutions={serviceExecutions} onSpider={spiderSmbShare}
             onViewFile={viewSmbFile}
             onLog={(line) => setOutput((value) => `${value}\n${line}\n`)} />
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <FuzzingPanel target={target} service={service}
               runState={runStates["http-directory-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runDirectoryFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <VhostFuzzPanel target={target}
               runState={runStates["http-vhost-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runVhostFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <ParamFuzzPanel target={target}
               runState={runStates["http-param-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runParamFuzz}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <S3BucketPanel target={target}
               bucketRunState={runStates["s3-bucket-list"]}
               objectRunState={runStates["s3-object-list"]}
@@ -1404,7 +1405,7 @@ export default function App() {
               onUploadWebshell={runS3WebshellUpload}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <CloudEnumPanel target={target}
               runState={runStates["cloud-enum-bucket-discovery"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
@@ -1476,10 +1477,10 @@ export default function App() {
           {["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) && (
             <VncPasswordDecoder />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <RoundcubeDesDecoder />
           )}
-          {["http", "https", "http-proxy", "ssl/http"].includes(serviceNameLower) && (
+          {isWebService && (
             <GiteaHashFormatter />
           )}
           {!!netexecProtocol && (

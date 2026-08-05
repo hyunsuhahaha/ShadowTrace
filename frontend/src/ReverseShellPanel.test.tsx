@@ -49,9 +49,11 @@ it("shows the -enc checkbox only for the PowerShell kind and encodes the payload
   fireEvent.click(screen.getByLabelText(/-enc\(Base64\)/));
   const rendered = screen.getByText(/^powershell -nop -enc /).textContent || "";
   expect(rendered).not.toContain('"');
-  const decoded = Buffer.from(
-    rendered.replace("powershell -nop -enc ", ""), "base64",
-  ).toString("utf16le");
+  const binary = atob(rendered.replace("powershell -nop -enc ", ""));
+  let decoded = "";
+  for (let i = 0; i < binary.length; i += 2) {
+    decoded += String.fromCharCode(binary.charCodeAt(i) | (binary.charCodeAt(i + 1) << 8));
+  }
   expect(decoded).toContain("10.10.14.5");
   expect(decoded).toContain("4444");
 });

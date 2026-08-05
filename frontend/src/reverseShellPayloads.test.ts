@@ -33,12 +33,24 @@ describe("toPowerShellEncodedCommand", () => {
   });
 });
 
+// The inverse of toPowerShellEncodedCommand, using only browser-native
+// atob (no Node's Buffer) to match how this decoding would actually be
+// verified: by hand, or with PowerShell's own
+// [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String(...)).
+function decodeBase64Utf16le(base64: string): string {
+  const binary = atob(base64);
+  let result = "";
+  for (let i = 0; i < binary.length; i += 2) {
+    result += String.fromCharCode(binary.charCodeAt(i) | (binary.charCodeAt(i + 1) << 8));
+  }
+  return result;
+}
+
 describe("buildPowerShellEncodedPayload", () => {
   it("produces a quote-free powershell -enc command containing the encoded LHOST/LPORT script", () => {
     const payload = buildPowerShellEncodedPayload("10.10.14.5", "4444");
     expect(payload).toMatch(/^powershell -nop -enc [A-Za-z0-9+/]+=*$/);
-    const encoded = payload.replace("powershell -nop -enc ", "");
-    const decoded = Buffer.from(encoded, "base64").toString("utf16le");
+    const decoded = decodeBase64Utf16le(payload.replace("powershell -nop -enc ", ""));
     expect(decoded).toContain("10.10.14.5");
     expect(decoded).toContain("4444");
     expect(decoded).not.toContain('"');

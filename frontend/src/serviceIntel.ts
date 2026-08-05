@@ -260,6 +260,19 @@ export function parseScriptObservations(value: string): ScriptObservation[] {
   }
 }
 
+const HTTP_SERVICE_NAMES = ["http", "https", "http-proxy", "ssl/http"];
+
+// nmap's -sV service-name guess can be wrong on uncommon ports (e.g. HTB
+// "Unified"'s UniFi controller on 8443 gets fingerprinted as
+// "nagios-nsca"), which used to hide every HTTP-only panel (directory
+// fuzzing, the "open site" link, …) even though the http-* NSE scripts it
+// ran alongside that guess plainly found a real HTTP(S) response. Trust
+// those script IDs over the possibly-wrong name.
+export function isHttpLikeService(name: string, scripts = ""): boolean {
+  if (HTTP_SERVICE_NAMES.includes(name.toLowerCase())) return true;
+  return parseScriptObservations(scripts).some((item) => item.id.startsWith("http-"));
+}
+
 export function missingServiceFacts(service: ServiceIntelInput) {
   return [
     !service.product && "제품",

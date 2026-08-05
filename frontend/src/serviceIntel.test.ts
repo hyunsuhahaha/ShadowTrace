@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isHttpLikeService,
   keepSelectedService,
   missingServiceFacts,
   parseFeroxbusterResults,
@@ -15,6 +16,31 @@ import {
   remainingInvestigationCommands,
   summarizeExecutionResult,
 } from "./serviceIntel";
+
+describe("isHttpLikeService", () => {
+  it("trusts the plain service name for the usual http/https/ssl-http cases", () => {
+    expect(isHttpLikeService("http")).toBe(true);
+    expect(isHttpLikeService("HTTPS")).toBe(true);
+    expect(isHttpLikeService("ssl/http")).toBe(true);
+    expect(isHttpLikeService("ssh")).toBe(false);
+  });
+
+  it("falls back to http-* script IDs when nmap misnames the service (HTB Unified's 8443)", () => {
+    const scripts = JSON.stringify([
+      { id: "ssl-cert", output: "Subject: commonName=UniFi/..." },
+      { id: "http-title", output: "UniFi Network" },
+      { id: "ssl-date", output: "TLS randomness does not represent time" },
+    ]);
+    expect(isHttpLikeService("nagios-nsca", scripts)).toBe(true);
+  });
+
+  it("stays false when neither the name nor any script suggests HTTP", () => {
+    const scripts = JSON.stringify([{ id: "ssl-cert", output: "..." }]);
+    expect(isHttpLikeService("nagios-nsca", scripts)).toBe(false);
+    expect(isHttpLikeService("nagios-nsca")).toBe(false);
+    expect(isHttpLikeService("nagios-nsca", "not json")).toBe(false);
+  });
+});
 
 describe("service investigation summary", () => {
   it("keeps scan observations and names unconfirmed facts", () => {
