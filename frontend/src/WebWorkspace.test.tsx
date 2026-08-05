@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import WebWorkspace from "./WebWorkspace";
+import { shodanFaviconHash } from "./murmurHash";
 
 const target = { id: 1, project_id: 1, name: "10.10.10.10", ip: "10.10.10.10" };
 const savedRequest = {
@@ -136,6 +137,43 @@ it("opens a captured request into Intruder from the Proxy tab", async () => {
 
   expect(screen.getByRole("tab", { name: "Intruder" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.queryByText("먼저 저장된 요청이 필요합니다.")).toBeNull();
+});
+
+it("shows response headers and a Shodan favicon-hash link after sending a request", async () => {
+  const bodyBytes = new TextEncoder().encode("FAKE-ICO-BYTES");
+  const exchange = {
+    id: 42, status_code: 200, duration_ms: 12, size: bodyBytes.length,
+    response_headers: JSON.stringify({
+      Server: "Apache-Coyote/1.1", "Content-Type": "image/x-icon",
+    }),
+    response_cookies: "{}", sha256: "abc", error: "", created_at: "2024-01-01T00:00:00Z",
+  };
+  const fetcher = vi.fn((url: string, init?: RequestInit) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([savedRequest]);
+    if (url === "/api/web/requests/5/exchanges") return response([]);
+    if (url === "/api/web/requests/5/send" && init?.method === "POST")
+      return response([exchange]);
+    if (url === "/api/web/exchanges/42/body")
+      return Promise.resolve(new Response(bodyBytes));
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("Login test");
+  fireEvent.click(screen.getByText("Login test"));
+  fireEvent.click(screen.getByLabelText("허가된 요청"));
+  fireEvent.click(screen.getByText("전송"));
+
+  await screen.findByText(/Server: Apache-Coyote\/1\.1/);
+  expect(screen.getByText(/Content-Type: image\/x-icon/)).toBeTruthy();
+
+  const expectedHash = shodanFaviconHash(bodyBytes);
+  await screen.findByText(String(expectedHash));
+  const link = screen.getByText("Shodan에서 같은 해시 검색 ↗").closest("a");
+  expect(link?.getAttribute("href")).toBe(
+    `https://www.shodan.io/search?query=http.favicon.hash%3A${expectedHash}`,
+  );
 });
 
 it("shows an error and leaves the draft alone for text that isn't a curl command", async () => {

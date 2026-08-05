@@ -4,6 +4,7 @@ import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
 import LfiPayloadReference from "./LfiPayloadReference";
 import Log4ShellPayloadReference from "./Log4ShellPayloadReference";
+import { shodanFaviconHash } from "./murmurHash";
 import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
@@ -95,6 +96,8 @@ export default function WebWorkspace() {
       "Send a user-authored request to inspect the response.",
     ),
     [exchangeId, setExchangeId] = useState<number>(),
+    [responseHeaders, setResponseHeaders] = useState<Record<string, string>>({}),
+    [faviconHash, setFaviconHash] = useState<number>(),
     [compareId, setCompareId] = useState<number>(),
     [variables, setVariables] = useState("{}"),
     [repeat, setRepeat] = useState(1),
@@ -241,14 +244,21 @@ export default function WebWorkspace() {
   };
   const openExchange = async (exchange: Exchange) => {
     setExchangeId(exchange.id);
+    try {
+      setResponseHeaders(JSON.parse(exchange.response_headers || "{}"));
+    } catch {
+      setResponseHeaders({});
+    }
     if (exchange.error) {
       setResponse(`[오류] ${exchange.error}`);
+      setFaviconHash(undefined);
       return;
     }
     const body = await fetch(`/api/web/exchanges/${exchange.id}/body`).then(
       (r) => r.arrayBuffer(),
     );
     setResponse(new TextDecoder().decode(body));
+    setFaviconHash(shodanFaviconHash(new Uint8Array(body)));
   };
   const field = (key: keyof SavedRequest, value: any) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -515,6 +525,29 @@ export default function WebWorkspace() {
             </label>
           </div>
           </>}
+          {exchangeId && !!Object.keys(responseHeaders).length && (
+            <div className="responsePanel">
+              <div><b>응답 헤더</b></div>
+              <pre className="responseHeaderList">
+                {Object.entries(responseHeaders).map(([key, value]) => `${key}: ${value}`)
+                  .join("\n")}
+              </pre>
+            </div>
+          )}
+          {exchangeId && faviconHash !== undefined && (
+            <div className="responsePanel">
+              <div><b>파비콘 해시 (Shodan/censys 방식)</b></div>
+              <p>
+                이 응답이 <code>/favicon.ico</code>일 때만 의미 있습니다. 값:{" "}
+                <code>{faviconHash}</code>
+                {" · "}
+                <a href={`https://www.shodan.io/search?query=http.favicon.hash%3A${faviconHash}`}
+                  target="_blank" rel="noreferrer">
+                  Shodan에서 같은 해시 검색 ↗
+                </a>
+              </p>
+            </div>
+          )}
           <div className="responsePanel">
             <div>
               <b>응답 Body</b>
