@@ -63,6 +63,45 @@ it("parses feroxbuster json output from the live run and filters by path", () =>
   expect(screen.queryByText("/backup.zip")).toBeNull();
 });
 
+it("excludes results by status code, e.g. hiding 404 noise", () => {
+  const stdout = [
+    JSON.stringify({ type: "response", path: "/admin", status: 200,
+      content_length: 42, word_count: 3, line_count: 1 }),
+    JSON.stringify({ type: "response", path: "/nope", status: 404,
+      content_length: 10, word_count: 2, line_count: 1 }),
+  ].join("\n");
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz", status: "running", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("/nope")).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText("제외할 Status"), { target: { value: "404,403" } });
+
+  expect(screen.getByText("/admin")).toBeTruthy();
+  expect(screen.queryByText("/nope")).toBeNull();
+});
+
+it("excludes results by file extension, e.g. hiding static-asset noise", () => {
+  const stdout = [
+    JSON.stringify({ type: "response", path: "/index.php", status: 200,
+      content_length: 42, word_count: 3, line_count: 1 }),
+    JSON.stringify({ type: "response", path: "/assets/logo.png", status: 200,
+      content_length: 900, word_count: 0, line_count: 0 }),
+    JSON.stringify({ type: "response", path: "/assets/main.js", status: 200,
+      content_length: 500, word_count: 0, line_count: 0 }),
+  ].join("\n");
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz", status: "running", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("제외할 확장자"), { target: { value: ".png, js" } });
+
+  expect(screen.getByText("/index.php")).toBeTruthy();
+  expect(screen.queryByText("/assets/logo.png")).toBeNull();
+  expect(screen.queryByText("/assets/main.js")).toBeNull();
+});
+
 it("captures the active execution as evidence, preferring the live run over history", () => {
   const onCaptureEvidence = vi.fn();
   const stdout = JSON.stringify({ type: "response", path: "/x", status: 200,

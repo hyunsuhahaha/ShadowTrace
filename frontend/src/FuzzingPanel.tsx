@@ -30,6 +30,8 @@ export default function FuzzingPanel({
   const [wordlist, setWordlist] = useState("/usr/share/wordlists/dirb/common.txt");
   const [extensions, setExtensions] = useState("");
   const [filter, setFilter] = useState("");
+  const [excludeStatus, setExcludeStatus] = useState("");
+  const [excludeExt, setExcludeExt] = useState("");
   const fuzzTemplateIds = ["http-directory-fuzz", "http-directory-fuzz-ext"];
   const fuzzRunState = runState && fuzzTemplateIds.includes(runState.templateId) ? runState : undefined;
   const latestFuzz = serviceExecutions
@@ -37,8 +39,18 @@ export default function FuzzingPanel({
     .sort((a, b) => b.id - a.id)[0];
   const output = fuzzRunState?.stdout || latestFuzz?.stdout || "";
   const results = parseFeroxbusterResults(output);
-  const visible = results.filter((item) => !filter
-    || `${item.path} ${item.status}`.toLowerCase().includes(filter.toLowerCase()));
+  const excludedStatuses = new Set(
+    excludeStatus.split(",").map((code) => code.trim()).filter(Boolean));
+  const excludedExtensions = new Set(
+    excludeExt.split(",").map((ext) => ext.trim().replace(/^\./, "").toLowerCase()).filter(Boolean));
+  const visible = results.filter((item) => {
+    if (filter && !`${item.path} ${item.status}`.toLowerCase().includes(filter.toLowerCase()))
+      return false;
+    if (excludedStatuses.has(String(item.status))) return false;
+    const ext = item.path.match(/\.([a-zA-Z0-9]+)$/)?.[1].toLowerCase();
+    if (ext && excludedExtensions.has(ext)) return false;
+    return true;
+  });
   const busy = !!fuzzRunState && ["starting", "running"].includes(fuzzRunState.status);
   const scheme = service?.name.toLowerCase().includes("ssl") ? "https" : "http";
   const activeExecution = fuzzRunState?.id
@@ -65,9 +77,13 @@ export default function FuzzingPanel({
       </div>
       {!!results.length && (
         <div className="intruderResults">
-          <header><div><b>발견된 경로</b><span>{visible.length}개 표시</span></div>
+          <header><div><b>발견된 경로</b><span>{visible.length}/{results.length}개 표시</span></div>
             <input aria-label="결과 필터" value={filter} placeholder="경로, Status 필터"
               onChange={(e) => setFilter(e.target.value)} />
+            <input aria-label="제외할 Status" value={excludeStatus} placeholder="제외 Status (예: 404,403)"
+              onChange={(e) => setExcludeStatus(e.target.value)} />
+            <input aria-label="제외할 확장자" value={excludeExt} placeholder="제외 확장자 (예: png,jpg,css,js)"
+              onChange={(e) => setExcludeExt(e.target.value)} />
             {activeExecution && (
               <button onClick={() => onCaptureEvidence(
                 activeExecution, `디렉터리 퍼징 · ${target?.ip}:${service?.port}`,
