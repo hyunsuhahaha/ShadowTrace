@@ -89,6 +89,8 @@ export default function HashCrackingWorkspace() {
   const [ruleId, setRuleId] = useState<string>("");
   const [mask, setMask] = useState("");
   const [jobId, setJobId] = useState<number>();
+  const [zipUploading, setZipUploading] = useState(false);
+  const [zipError, setZipError] = useState("");
   const [error, setError] = useState("");
   const [output, setOutput] = useState("작업을 만들고 실행하면 실시간 출력이 표시됩니다.\n");
   const [promoteFor, setPromoteFor] = useState<Cracked>();
@@ -198,6 +200,24 @@ export default function HashCrackingWorkspace() {
     }
   };
 
+  const uploadZip = async (file: File) => {
+    setZipError(""); setZipUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch("/api/hash-cracking/zip2john", { method: "POST", body: form });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || r.statusText);
+      setHashes(data.hashes);
+      setHashModeId(data.hash_mode_id);
+      setHashModeAuto(true);
+    } catch (reason) {
+      setZipError(String(reason));
+    } finally {
+      setZipUploading(false);
+    }
+  };
+
   const createAndStart = async () => {
     if (!projectId || !targetId || !hashModeId || !hashes.trim()
       || !wordlistReady || !wordlist2Ready || !maskReady) return;
@@ -295,6 +315,17 @@ export default function HashCrackingWorkspace() {
             </select>
           </label>
           {selectedMode && <code className="crackExample">{selectedMode.example}</code>}
+          <label>
+            zip 파일에서 해시 추출 (zip2john)
+            <input type="file" accept=".zip" disabled={zipUploading}
+              onChange={(e) => {
+                const picked = e.target.files?.[0];
+                e.target.value = "";
+                if (picked) uploadZip(picked);
+              }} />
+          </label>
+          {zipUploading && <small>zip2john 실행 중…</small>}
+          {zipError && <ErrorState message={zipError} />}
           <label>
             해시 (한 줄에 하나씩 붙여넣기)
             <textarea rows={6} value={hashes} onChange={(e) => onHashesChange(e.target.value)}

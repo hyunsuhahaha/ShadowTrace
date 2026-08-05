@@ -3,8 +3,10 @@ import asyncio
 import json
 import re
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +24,16 @@ router = APIRouter(prefix="/api/hash-cracking", tags=["Hash Cracking"])
 # allowed), never through a shell — but it still must not be able to look
 # like another CLI flag (e.g. "--session=evil") to hashcat's own parser.
 MASK_PATTERN = re.compile(r"^(?!-)[\x21-\x7e]{1,64}$")
+# zip2john doesn't need the whole archive in memory to build the hash, but
+# we buffer the full upload before writing it out (same tradeoff the LSASS
+# dump decoder makes), so this caps memory use rather than being a format
+# limit.
+ZIP_MAX_BYTES = 300 * 1024 * 1024
+# zip2john's own delimiters are asterisks, not colons, so the hash body
+# never contains a bare ':' — matching between the $pkzip$/$zip2$ markers
+# lets us pull the hash out of its "name:hash:::archive:entry" wrapper line
+# without having to parse that wrapper.
+ZIP_HASH_PATTERN = re.compile(r"\$(zip2|pkzip)\$.*?\$/\1\$")
 
 
 def need(db: Session, model, ident: int):
@@ -45,6 +57,40 @@ def get_catalog():
         "wordlists": catalog.wordlists(),
         "rules": catalog.rules(),
         "hashcat_installed": bool(shutil.which("hashcat")),
+    }
+
+
+@router.post("/zip2john")
+async def zip2john(file: UploadFile = File(...)):
+    """Runs zip2john against an uploaded password-protected zip so the hash
+    can flow straight into the job form below instead of requiring a
+    separate terminal. Covers both legacy ZipCrypto ($pkzip$, the common
+    `zip -e` case) and WinZip AES ($zip2$) archives — whichever zip2john
+    emits decides which catalog hash mode gets pre-selected."""
+    binary = shutil.which("zip2john")
+    if not binary:
+        raise HTTPException(409, "zip2john is not installed (part of the 'john' package)")
+    content = await file.read(ZIP_MAX_BYTES + 1)
+    if len(content) > ZIP_MAX_BYTES:
+        raise HTTPException(413, f"Zip exceeds the {ZIP_MAX_BYTES // (1024 * 1024)}MB limit")
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = Path(tmp) / "upload.zip"
+        zip_path.write_bytes(content)
+        try:
+            completed = subprocess.run([binary, str(zip_path)], capture_output=True,
+                                       text=True, timeout=60, check=False)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(504, "zip2john timed out after 60 seconds")
+    hash_lines = list(dict.fromkeys(m.group(0) for m in ZIP_HASH_PATTERN.finditer(completed.stdout)))
+    if not hash_lines:
+        detail = "zip2john extracted no crackable hash from this archive"
+        if completed.stderr.strip():
+            detail += f": {completed.stderr.strip()[:500]}"
+        raise HTTPException(422, detail)
+    hash_mode_id = "winzip" if hash_lines[0].startswith("$zip2$") else "pkzip"
+    return {
+        "hashes": "\n".join(hash_lines), "hash_mode_id": hash_mode_id,
+        "stderr": completed.stderr[:5_000],
     }
 
 

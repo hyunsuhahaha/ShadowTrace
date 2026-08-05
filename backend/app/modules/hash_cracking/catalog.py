@@ -34,6 +34,22 @@ HASH_MODES = [
      "example": "$2y$05$saltsaltsaltsaltsaltsu.hash...", "detect": r"^\$2[abxy]\$"},
     {"id": "winzip", "name": "WinZip (AES)", "mode": "13600",
      "example": "$zip2$*0*...", "detect": r"^\$zip2\$"},
+    # Legacy ZipCrypto (`zip -e`) is what most OSCP loot zips actually use,
+    # unlike WinZip AES above. hashcat's PKZIP family splits into five
+    # submodes by compression/entry-count that a $pkzip$ hash string alone
+    # doesn't unambiguously reveal, so only the most common submode
+    # (compressed entries) auto-detects; the rest are manual-only picks in
+    # the dropdown, same spirit as the "detect is best-effort" note above.
+    {"id": "pkzip", "name": "PKZIP/ZipCrypto (구형, 압축됨)", "mode": "17200",
+     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"^\$pkzip\$"},
+    {"id": "pkzip_uncompressed", "name": "PKZIP/ZipCrypto (구형, 비압축·stored)", "mode": "17210",
+     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"(?!)"},
+    {"id": "pkzip_multi_compressed", "name": "PKZIP/ZipCrypto (다중 파일, 압축됨)", "mode": "17220",
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
+    {"id": "pkzip_multi_mixed", "name": "PKZIP/ZipCrypto (다중 파일, 혼합)", "mode": "17225",
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
+    {"id": "pkzip_multi_checksum", "name": "PKZIP/ZipCrypto (다중 파일, 체크섬만)", "mode": "17230",
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
     {"id": "sevenzip", "name": "7-Zip", "mode": "11600",
      "example": "$7z$2$19$0$salt$8$iv$...", "detect": r"^\$7z\$"},
     {"id": "rar5", "name": "RAR5", "mode": "13000",

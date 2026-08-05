@@ -1,8 +1,11 @@
+import asyncio
 import json
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -58,7 +61,9 @@ def test_catalog_covers_the_common_oscp_hash_families():
     ids = {item["id"] for item in catalog.HASH_MODES}
     assert ids == {
         "ntlm", "netntlmv2", "kerberoast", "asreproast", "linux_sha512crypt",
-        "linux_md5crypt", "bcrypt", "winzip", "sevenzip", "rar5", "wpa",
+        "linux_md5crypt", "bcrypt", "winzip", "pkzip", "pkzip_uncompressed",
+        "pkzip_multi_compressed", "pkzip_multi_mixed", "pkzip_multi_checksum",
+        "sevenzip", "rar5", "wpa",
         "ms_office_2007", "ms_office_2010", "ms_office_2013", "keepass", "sha256_salt_pass",
         "werkzeug_pbkdf2", "pbkdf2_sha256_generic", "ike_psk", "sha256", "md5",
     }
@@ -80,6 +85,7 @@ def test_catalog_covers_the_common_oscp_hash_families():
     ("$7z$2$19$0$salt", "sevenzip"),
     ("$rar5$16$salt$15$iv$8$checksum", "rar5"),
     ("$keepass$*2*60000*0*abcdef", "keepass"),
+    ("$pkzip$1*1*2*0*1a4*54c*8664e6d1*0*42*8*1a4*a15b*fdea72d8*$/pkzip$", "pkzip"),
     ("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8:mysalt123", "sha256_salt_pass"),
     ("$office$*2007*20*128*16*salt*hash*verifier", "ms_office_2007"),
     ("$office$*2010*100000*128*16*salt*hash*verifier", "ms_office_2010"),
@@ -295,3 +301,80 @@ def test_promote_creates_credential_linked_to_job(wordlist, tmp_path, monkeypatc
     assert credential.source_kind == "hash_crack"
     assert credential.target_id == target.id
     assert f"Hash crack #{job.id}" in credential.source_detail
+
+
+def upload(content: bytes, filename: str = "backup.zip") -> UploadFile:
+    spooled = tempfile.SpooledTemporaryFile()
+    spooled.write(content)
+    spooled.seek(0)
+    return UploadFile(filename=filename, file=spooled)
+
+
+def test_zip2john_reports_not_installed_without_the_binary(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: None)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.zip2john(upload(b"PK\x03\x04fake zip")))
+    assert exc.value.status_code == 409
+
+
+def test_zip2john_extracts_a_pkzip_hash_and_selects_the_pkzip_mode(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+    stdout = ("upload.zip:$pkzip$1*1*2*0*1a4*54c*8664e6d1*0*42*8*1a4*a15b*"
+              "fdea72d8524a084d7276df6db4a3f8a*$/pkzip$:::upload.zip:test.txt:upload.zip\n")
+
+    def fake_run(argv, **kwargs):
+        assert argv[0] == "/usr/bin/zip2john"
+        return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = asyncio.run(router.zip2john(upload(b"fake zip bytes")))
+    assert result["hash_mode_id"] == "pkzip"
+    assert result["hashes"] == (
+        "$pkzip$1*1*2*0*1a4*54c*8664e6d1*0*42*8*1a4*a15b*fdea72d8524a084d7276df6db4a3f8a*$/pkzip$")
+
+
+def test_zip2john_extracts_a_winzip_hash_and_selects_the_winzip_mode(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+    stdout = "upload.zip:$zip2$*0*3*0*salt*verify*10*data*hmac*$/zip2$:::upload.zip:secret.docx:upload.zip\n"
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = asyncio.run(router.zip2john(upload(b"fake zip bytes")))
+    assert result["hash_mode_id"] == "winzip"
+    assert result["hashes"].startswith("$zip2$")
+
+
+def test_zip2john_raises_422_when_no_hash_is_found(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout="", stderr="upload.zip is not encrypted!\n", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.zip2john(upload(b"fake zip bytes")))
+    assert exc.value.status_code == 422
+    assert "not encrypted" in str(exc.value.detail)
+
+
+def test_zip2john_rejects_uploads_over_the_size_limit(monkeypatch):
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+    monkeypatch.setattr(router, "ZIP_MAX_BYTES", 10)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.zip2john(upload(b"x" * 20)))
+    assert exc.value.status_code == 413
+
+
+def test_zip2john_times_out(monkeypatch):
+    import subprocess as subprocess_module
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+
+    def timeout(*args, **kwargs):
+        raise subprocess_module.TimeoutExpired(cmd="zip2john", timeout=60)
+    monkeypatch.setattr(router.subprocess, "run", timeout)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(router.zip2john(upload(b"fake zip bytes")))
+    assert exc.value.status_code == 504
