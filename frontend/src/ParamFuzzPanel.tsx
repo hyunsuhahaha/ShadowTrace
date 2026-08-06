@@ -34,6 +34,7 @@ export default function ParamFuzzPanel({
     .sort((a, b) => b.id - a.id)[0];
   const output = fuzzRunState?.stdout || latestFuzz?.stdout || "";
   const results = parseFfufVhostResults(output);
+  const hasCompletedRun = fuzzRunState?.status === "completed" || !!latestFuzz;
   const busy = !!fuzzRunState && ["starting", "running"].includes(fuzzRunState.status);
   const activeExecution = fuzzRunState?.id
     ? { id: fuzzRunState.id, stdout: fuzzRunState.stdout, stderr: fuzzRunState.stderr }
@@ -56,6 +57,11 @@ export default function ParamFuzzPanel({
           {busy ? "탐색 중…" : "퍼징 시작"}
         </button>
       </div>
+      {!busy && !results.length && hasCompletedRun && (
+        <p className="netexecEvidenceMsg">
+          반응한 파라미터가 없습니다. 경로나 워드리스트를 확인하세요.
+        </p>
+      )}
       {!!results.length && (
         <div className="intruderResults">
           <header><div><b>반응한 파라미터</b><span>{results.length}개</span></div>

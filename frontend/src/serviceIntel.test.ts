@@ -179,6 +179,24 @@ describe("service investigation summary", () => {
     ).tone).toBe("success");
   });
 
+  it("summarizes GET-parameter fuzzing by parsed match count, not just exit code", () => {
+    expect(summarizeExecutionResult(
+      "http-param-fuzz", "completed", "no matches\n", "", "ffuf ...",
+    )).toMatchObject({tone: "warning", title: "반응한 파라미터가 없습니다"});
+    expect(summarizeExecutionResult(
+      "http-param-fuzz", "completed",
+      "page [Status: 200, Size: 8821, Words: 900, Lines: 210]\n" +
+        "id [Status: 200, Size: 8821, Words: 900, Lines: 210]\n",
+      "", "ffuf -mc all ...",
+    )).toMatchObject({tone: "success", title: "2개 파라미터가 응답했습니다"});
+    expect(summarizeExecutionResult(
+      "http-param-fuzz", "completed",
+      "page [Status: 200, Size: 8821, Words: 900, Lines: 210]\n" +
+        "debug [Status: 200, Size: 9120, Words: 905, Lines: 212]\n",
+      "", "ffuf -mc all ...",
+    ).detail).toContain("실제 파라미터일 가능성");
+  });
+
   it("turns smbclient output into connectable share rows", () => {
     const output = `
       Sharename       Type      Comment

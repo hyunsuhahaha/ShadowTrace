@@ -147,7 +147,16 @@ export default function App() {
     () => localStorage.getItem("oscp-service-workspace-collapsed") === "true",
   );
   const [confirm, setConfirm] = useState<any>();
-  const [runWithSudo, setRunWithSudo] = useState(true);
+  const [runWithSudo, setRunWithSudoState] = useState(true);
+  // run() reads runWithSudoRef (not the state var) so direct-run helpers that
+  // call setRunWithSudo(false) immediately before run(...) in the same tick
+  // don't leak a stale sudo choice from a previously reviewed command — state
+  // updates don't flush until the next render, but the ref is synchronous.
+  const runWithSudoRef = useRef(runWithSudo);
+  const setRunWithSudo = (value: boolean) => {
+    runWithSudoRef.current = value;
+    setRunWithSudoState(value);
+  };
   const [outputFilename, setOutputFilename] = useState("");
   // Most recently derived (extracted-column) file path, offered as a
   // one-click wordlist fill for AS-REP roasting / Kerbrute panels.
@@ -466,7 +475,7 @@ export default function App() {
             service_id: c.target_level ? null : serviceId,
             template_id: c.id,
             variables,
-            run_as_root: runWithSudo,
+            run_as_root: runWithSudoRef.current,
           }),
         });
         await api<any>(`/interactive-sessions/${session.id}/desktop`, {
@@ -504,7 +513,7 @@ export default function App() {
           service_id: c.target_level ? null : serviceId,
           template_id: c.id,
           variables: c.variables || {},
-          run_as_root: runWithSudo,
+          run_as_root: runWithSudoRef.current,
           output_filename: requestedFilename,
         }),
       });

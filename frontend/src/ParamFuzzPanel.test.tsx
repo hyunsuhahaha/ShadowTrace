@@ -37,3 +37,13 @@ it("parses parameters that produced a distinct response and offers evidence capt
   fireEvent.click(screen.getByText("Evidence로 저장"));
   expect(onCaptureEvidence).toHaveBeenCalledOnce();
 });
+
+it("tells the user when a completed run produced no matching parameters", () => {
+  render(<ParamFuzzPanel target={target} evidenceMsg=""
+    serviceExecutions={[{
+      id: 5, template_id: "http-param-fuzz", status: "completed", stdout: "no matches\n",
+    }]}
+    onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("반응한 파라미터가 없습니다. 경로나 워드리스트를 확인하세요.")).toBeTruthy();
+});

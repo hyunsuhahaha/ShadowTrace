@@ -279,6 +279,23 @@ export function summarizeExecutionResult(
       detail: "Null 세션 제한 여부와 RPC 오류 출력을 확인하세요.",
     };
   }
+  if (templateId === "http-param-fuzz") {
+    const results = parseFfufVhostResults(stdout);
+    if (!results.length)
+      return {
+        tone: "warning",
+        title: "반응한 파라미터가 없습니다",
+        detail: "-mc all 옵션이라 매치 0건은 필터링이 아니라 대상이 요청 자체에 응답하지 않았다는 뜻입니다. 경로와 워드리스트를 확인하세요.",
+      };
+    const sizes = new Set(results.map((item) => item.size));
+    return {
+      tone: "success",
+      title: `${results.length}개 파라미터가 응답했습니다`,
+      detail: sizes.size === 1
+        ? "모든 응답 크기가 동일합니다 — -mc all은 모든 상태 코드를 매치로 처리하므로 이 목록이 곧 실제 파라미터는 아닙니다. 서비스 화면의 결과 표에서 크기(Size)가 다른 행을 찾아보세요."
+        : "서비스 화면의 결과 표에서 크기(Size)가 다른 행이 실제 파라미터일 가능성이 높습니다.",
+    };
+  }
   return {
     tone: "success",
     title: "명령 실행이 완료됐습니다",
