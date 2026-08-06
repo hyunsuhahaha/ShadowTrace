@@ -82,6 +82,8 @@ export default function S3BucketPanel({
           {objectList.busy ? "조회 중…" : "버킷 파일 목록 조회"}
         </button>
         <button disabled={upload.busy || !bucket.trim()}
+          title="이 웹쉘로 직접 proof.txt/local.txt를 읽지 마세요 — 웹쉘은 명령 하나씩 실행하는
+방식이라 인터랙티브 셸이 아닙니다. 리버스셸 등으로 업그레이드한 뒤 그 셸에서 캡처하세요."
           onClick={() => onUploadWebshell(bucket.trim())}>
           {upload.busy ? "업로드 중…" : "PHP 웹쉘 업로드"}
         </button>
@@ -107,6 +109,12 @@ export default function S3BucketPanel({
               )}>Evidence로 저장</button>
             )}
           </header>
+          <div className="netexecPwned">
+            <b>⚠ proof.txt/local.txt 캡처용으로 쓰지 마세요</b>
+            <span>웹쉘은 요청 한 번에 명령 하나만 실행하는 방식이라 인터랙티브 셸이 아닙니다.
+              이 웹쉘로 얻은 접근은 리버스셸 등 진짜 인터랙티브 셸로 업그레이드한 뒤, 그 셸
+              안에서 cat/type으로 캡처하세요.</span>
+          </div>
           <pre>{upload.output}</pre>
         </div>
       )}

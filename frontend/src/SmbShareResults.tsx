@@ -171,11 +171,18 @@ export default function SmbShareResults({
       {!!files.length && (
         <div className="smbFileList">
           <b>{activeShare} 재귀 목록 · 파일 {files.length}개</b>
+          <p className="smbAccessHint">
+            "원문 보기"는 SMB 프로토콜로 파일을 직접 읽어옵니다 — 셸을 거치지 않으므로
+            proof.txt/local.txt는 여기서 읽지 말고, 위 "접속" 버튼으로 연 데스크톱 터미널에서
+            cat/type으로 캡처하세요.
+          </p>
           {files.map((file) => (
             <div key={file.path} className="smbFileRow">
               <code>{file.path}</code>
               <span>{file.size}B</span>
-              <button onClick={() => onViewFile(file.path)}>원문 보기</button>
+              <button
+                title="SMB 프로토콜로 직접 읽습니다 — proof.txt/local.txt는 여기서 읽지 마세요."
+                onClick={() => onViewFile(file.path)}>원문 보기</button>
             </div>
           ))}
         </div>
