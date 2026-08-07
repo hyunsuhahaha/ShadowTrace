@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
@@ -111,11 +111,45 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
       () => (isWorkspaceTab(initialTab) ? initialTab : "request")),
     [intruderSeed, setIntruderSeed] = useState<{ token: number; values: string[] }>(),
     [curlInput, setCurlInput] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [lhost, setLhost] = useState<string>();
+  const urlInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (isWorkspaceTab(initialTab) && initialTab !== workspaceTab) setWorkspaceTab(initialTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab]);
+  // Same {LHOST} auto-detection as the LFI payload reference tab, but
+  // inserted right where the URL is being typed — going to a separate tab
+  // to copy a UNC payload and back to paste it was the actual complaint.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch("/api/vpn/status");
+        if (!r.ok || cancelled) return;
+        const data = await r.json();
+        const match = /(\d{1,3}\.){3}\d{1,3}/.exec(data.tun0 || "");
+        if (match && !cancelled) setLhost(match[0]);
+      } catch {
+        // VPN status is a convenience lookup, not required for the page to work.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const insertUncPath = () => {
+    if (!lhost) return;
+    const snippet = `\\\\${lhost}\\test`;
+    const input = urlInputRef.current;
+    const current = draft.url || "";
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? current.length;
+    field("url", current.slice(0, start) + snippet + current.slice(end));
+    requestAnimationFrame(() => {
+      const cursor = start + snippet.length;
+      input?.focus();
+      input?.setSelectionRange(cursor, cursor);
+    });
+  };
   useEffect(() => {
     const want = `web/${workspaceTab}`;
     if (location.hash.replace("#", "") !== want) location.hash = want;
@@ -423,9 +457,17 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
               )}
             </select>
             <input
+              ref={urlInputRef}
+              aria-label="URL"
               value={draft.url || ""}
               onChange={(e) => field("url", e.target.value)}
             />
+            <button type="button" disabled={!lhost} title={lhost
+              ? `현재 커서 위치에 \\\\${lhost}\\test 삽입`
+              : "tun0 IP를 아직 못 찾았습니다 — VPN 연결을 확인하세요"}
+              onClick={insertUncPath}>
+              {lhost ? `Responder IP 삽입 (${lhost})` : "Responder IP 삽입"}
+            </button>
             <button disabled={!confirmed} onClick={send}>전송</button>
           </div>
           <div className="requestMeta">

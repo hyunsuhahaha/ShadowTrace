@@ -191,3 +191,41 @@ it("shows an error and leaves the draft alone for text that isn't a curl command
 
   expect(screen.getByText(/유효한 curl 명령어가 아닙니다/)).toBeTruthy();
 });
+
+it("inserts a UNC path built from the detected tun0 IP at the URL cursor position", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    if (url === "/api/vpn/status")
+      return response({ connected: true, tun0: "tun0 UNKNOWN 10.10.16.178/23" });
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  const button = await screen.findByText("Responder IP 삽입 (10.10.16.178)") as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
+  const urlInput = screen.getByLabelText("URL") as HTMLInputElement;
+  fireEvent.change(urlInput, { target: { value: "http://unika.htb/index.php?page=" } });
+  urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
+
+  fireEvent.click(button);
+
+  expect((screen.getByDisplayValue(/index\.php\?page=/) as HTMLInputElement).value)
+    .toBe("http://unika.htb/index.php?page=\\\\10.10.16.178\\test");
+});
+
+it("disables the UNC-insert button until a tun0 IP is detected", async () => {
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    if (url === "/api/vpn/status")
+      return response({ connected: false, tun0: "" });
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  const button = screen.getByText("Responder IP 삽입") as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+});
