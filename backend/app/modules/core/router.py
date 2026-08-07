@@ -304,6 +304,15 @@ async def import_nmap(
     return {"scan_id": job.id, "hosts": 1, "services": count}
 
 
+@router.get("/api/tool-catalog")
+def tool_catalog():
+    """Every command template grouped by category, regardless of what a
+    target's Nmap results matched — for the Tools page, where a user goes
+    when a service was missed or misclassified (unusual port, WinRM read as
+    plain HTTP, etc.) and the per-service panels never appeared."""
+    return {"groups": catalog.list_all()}
+
+
 @router.get("/api/services/{ident}/commands")
 def commands(ident: int, db: Session = Depends(get_db)):
     service = need(db, Service, ident)

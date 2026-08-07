@@ -32,6 +32,7 @@ const pages = [
       { route: "runbooks", step: "", label: "Runbooks", detail: "방법론과 수행 진행률" },
       { route: "post-exploitation", step: "", label: "Post-Exploitation", detail: "자격 증명 헌팅" },
       { route: "hash-cracking", step: "", label: "Hash Cracking", detail: "탈취한 해시 크래킹" },
+      { route: "tools", step: "", label: "Tools", detail: "미탐지·오분류 서비스의 전체 명령 탐색" },
     ],
   },
   {

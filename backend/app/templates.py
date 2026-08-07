@@ -4,6 +4,11 @@ import re, shlex, yaml
 ALLOWED = {"host","port","protocol","scheme","username","password","domain","wordlist",
            "output_dir","project_dir","target_dir","repo_dir","lhost","lport","share","path",
            "nthash","domain_sid","spn","groups","target_username","keyword","extensions"}
+# host/port/scheme/protocol come from the selected target+service; the
+# *_dir tokens come from the project layout. Everything else in ALLOWED is
+# something only the person running the command can supply.
+SYSTEM_PROVIDED = {"host", "port", "protocol", "scheme",
+                    "output_dir", "project_dir", "target_dir", "repo_dir"}
 TOKEN = re.compile(r"\{([a-z_]+)\}")
 
 class Catalog:
@@ -44,6 +49,30 @@ class Catalog:
         if identity and all(item["id"] != identity_id for item in result):
             result.insert(0, identity)
         return result
+    def list_all(self):
+        """Every command grouped by category, independent of what a target's
+        Nmap results matched — for browsing/running a tool the auto-matcher
+        missed (an unusual port, a misclassified service)."""
+        groups = []
+        for key, group in self.groups.items():
+            commands = []
+            for command in group.get("commands", []):
+                needed = set(TOKEN.findall(command["command"]))
+                commands.append({
+                    "id": command["id"], "name": command["name"],
+                    "description": command["description"], "risk": command["risk"],
+                    "tool": command["tool"], "execution_mode": command["execution_mode"],
+                    "command": command["command"],
+                    "needs_service": bool(needed & {"port", "scheme", "protocol"}),
+                    "variables": sorted(needed & (ALLOWED - SYSTEM_PROVIDED)),
+                })
+            if commands:
+                groups.append({
+                    "key": key, "display_name": group.get("display_name", key),
+                    "commands": commands,
+                })
+        return groups
+
     def render(self, template_id: str, variables: dict[str, str],
                execution_mode: str = "captured"):
         item = self.items.get(template_id)
