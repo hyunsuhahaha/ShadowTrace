@@ -1,6 +1,6 @@
 import {isDnsLikeService, isHttpLikeService, isWinrmHttpApi} from "./serviceIntel";
 
-export type ServiceKind = "http" | "dns";
+export type ServiceKind = "http" | "dns" | "any";
 
 // Narrow shapes (not the full Service/Target from enumerationModel) so the
 // palette only depends on what it actually needs to match and display a
@@ -12,6 +12,7 @@ export type ServiceSummary = {
 export type TargetSummary = {id: number; name: string; ip: string};
 
 export function matchesServiceKind(service: ServiceSummary, kind: ServiceKind): boolean {
+  if (kind === "any") return true;
   if (kind === "dns") return isDnsLikeService(service.name);
   return isHttpLikeService(service.name, service.scripts)
     && !isWinrmHttpApi(service.name, service.port, service.product);
@@ -47,6 +48,8 @@ const navEntries: CommandPaletteEntry[] = [
     keywords: ["postex", "post exploitation", "자격 증명", "credential hunting"] },
   { id: "hash-cracking", route: "hash-cracking", label: "Hash Cracking", detail: "탈취한 해시 크래킹", category: "Discover",
     keywords: ["hashcat", "john the ripper", "해시 크랙", "크랙"] },
+  { id: "tools", route: "tools", label: "Tools", detail: "미탐지·오분류 서비스의 전체 명령 탐색", category: "Discover",
+    keywords: ["tools", "catalog", "카탈로그", "전체 명령", "미탐지", "오분류", "111개"] },
   { id: "evidence", route: "evidence", label: "Evidence", detail: "증거 저장과 분류", category: "Document",
     keywords: ["evidence", "screenshot", "증거", "스크린샷"] },
   { id: "reports", route: "reports", label: "Reports", detail: "누락 확인과 보고서 작성", category: "Document",
@@ -95,6 +98,16 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
     label: "서브도메인 브루트포스 (gobuster dns)", detail: "DNS 서비스 선택 후 페이지 하단에 표시 · gobuster dns 대체",
     category: "Service Enumeration 도구",
     keywords: ["gobuster dns", "dns bruteforce", "dns enum", "서브도메인", "subdomain", "dns 브루트포스"] },
+  { id: "enumeration/link-extract", route: "enumeration", anchorId: "link-extract-heading",
+    serviceKind: "http",
+    label: "페이지 링크 추출", detail: "웹 서비스 선택 후 페이지 하단에 표시",
+    category: "Service Enumeration 도구",
+    keywords: ["link extract", "href", "링크 추출", "크롤링"] },
+  { id: "enumeration/responder", route: "enumeration", anchorId: "responder-heading",
+    serviceKind: "any",
+    label: "Responder 리스너", detail: "서비스 선택 후 페이지 하단에 표시 · 데스크톱 터미널에서 실행",
+    category: "Service Enumeration 도구",
+    keywords: ["responder", "llmnr", "nbt-ns", "poisoning", "ntlm", "리스너", "포이즈닝"] },
 ];
 
 export const commandPaletteIndex: CommandPaletteEntry[] = [
