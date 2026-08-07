@@ -731,6 +731,30 @@ export default function App() {
       variables: {username: credStore.username, password: credStore.password},
     });
   };
+  // Responder needs to keep running while the tester works in other tabs
+  // (Web Testing, to trigger the auth coercion) without losing its view on
+  // every SPA navigation, so unlike the manual-shell panels next to this
+  // one it launches in a real Kali desktop terminal window instead of the
+  // in-page xterm panel.
+  const startResponderDesktop = async (interfaceName: string) => {
+    if (!targetId || !interfaceName.trim()) return;
+    try {
+      const session = await api<any>("/interactive-sessions", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          target_id: targetId, template_id: "responder-listener",
+          variables: {interface: interfaceName.trim()}, run_as_root: true,
+        }),
+      });
+      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
+      setOutput((value) =>
+        `${value}\n$ sudo responder -I ${interfaceName.trim()}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setOutput((value) => `${value}\n[Responder 실행 실패] ${message}\n`);
+    }
+  };
   const openManualShell = async (command: string) => {
     if (!targetId || !serviceId) return;
     const session = await api<any>("/interactive-sessions/manual", {
@@ -1519,7 +1543,7 @@ export default function App() {
           {!!service && <ChiselPivotPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <ResponderPanel
-            onStartListener={(command) => void openManualShell(command)} />}
+            onStartListener={(interfaceName) => void startResponderDesktop(interfaceName)} />}
           {!!service && <DpapiDecoderPanel />}
           {!!service && <PuttyKeyConverter />}
           {!!service && <PypykatzLsassPanel />}

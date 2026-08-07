@@ -17,6 +17,13 @@ const catalog = {
       command: "feroxbuster -u {scheme}://{host}:{port}/ -w {wordlist} --json --silent -n",
       needs_service: true, variables: ["wordlist"],
     }],
+  }, {
+    key: "ftp", display_name: "FTP", commands: [{
+      id: "ftp-client", name: "FTP 수동 접속",
+      description: "자동 로그인 없이 대화형 FTP 클라이언트를 엽니다.", risk: "low",
+      tool: "ftp", execution_mode: "interactive", command: "ftp {host} {port}",
+      needs_service: true, variables: [],
+    }],
   }],
 };
 
@@ -131,6 +138,42 @@ it("runs the selected command against the chosen service after review confirmati
     expect(body.template_id).toBe("http-directory-fuzz");
     expect(body.variables).toEqual({ wordlist: "/usr/share/wordlists/dirb/common.txt" });
   });
+});
+
+it("launches an interactive-mode command in a desktop terminal instead of streaming it inline", async () => {
+  const fetcher = baseFetcher((url, init) => {
+    if (url.endsWith("/api/interactive-sessions") && init?.method === "POST") {
+      return new Response(JSON.stringify({
+        id: 12, target_id: 2, service_id: 5, template_id: "ftp-client",
+        command: "ftp 10.10.10.60 21", cwd: ".", status: "ready", pid: null,
+      }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/api/interactive-sessions/12/desktop") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 12, status: "launched" }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher);
+  await screen.findByText("FTP");
+  fireEvent.click(screen.getByText("FTP 수동 접속"));
+  await screen.findByText("80/tcp · http");
+  fireEvent.change(screen.getByLabelText("서비스 (있으면 선택 · 없으면 아래 직접 입력)"), {
+    target: { value: "5" },
+  });
+  await waitFor(() => expect((screen.getByText("실행 내용 검토") as HTMLButtonElement).disabled)
+    .toBe(false));
+  fireEvent.click(screen.getByText("실행 내용 검토"));
+  fireEvent.click(await screen.findByText("명령 실행"));
+
+  await screen.findByText(/Kali 데스크톱 터미널에서 실행했습니다/);
+  expect(fetcher.mock.calls.some(([callUrl, callInit]) =>
+    String(callUrl).endsWith("/api/interactive-sessions") && callInit?.method === "POST")).toBe(true);
+  expect(fetcher.mock.calls.some(([callUrl, callInit]) =>
+    String(callUrl).endsWith("/api/interactive-sessions/12/desktop")
+    && callInit?.method === "POST")).toBe(true);
+  expect(fetcher.mock.calls.some(([callUrl, callInit]) =>
+    String(callUrl).endsWith("/api/executions") && callInit?.method === "POST")).toBe(false);
 });
 
 it("filters the catalog by search text", async () => {

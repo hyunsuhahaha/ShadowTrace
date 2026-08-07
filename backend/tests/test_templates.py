@@ -24,6 +24,15 @@ def test_list_all_omits_system_provided_tokens_from_the_user_input_list():
     assert enum["needs_service"] is True
 
 
+def test_list_all_flags_responder_as_needing_only_an_interface_not_a_service():
+    groups = catalog.list_all()
+    listeners = next(group for group in groups if group["key"] == "listeners")
+    responder = next(c for c in listeners["commands"] if c["id"] == "responder-listener")
+    assert responder["variables"] == ["interface"]
+    assert responder["needs_service"] is False
+    assert responder["execution_mode"] == "interactive"
+
+
 def test_list_all_skips_groups_with_no_commands():
     groups = catalog.list_all()
     assert all(group["commands"] for group in groups)

@@ -6,6 +6,11 @@ target_identity:
     - {id: target-hostname-ntlm, name: Hostname 확인 (NTLM 정보 노출), description: 인증 없이 NTLM negotiate만 보내 WinRM·IIS 등에서 노출되는 NetBIOS·DNS 컴퓨터명을 확인합니다. 실제 웹 vhost 이름과 다를 수 있어 참고 정보로만 표시되고 자동 저장되지 않습니다., command: "{repo_dir}/.venv/bin/python -m app.ntlm_probe --host {host}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
     - {id: target-hostname-identity, name: Hostname 확인 (역방향 DNS), description: 역방향 DNS 조회로 대상이 공개하는 Hostname을 확인하고 Target에 자동 저장합니다. 대상 DNS 서버에 리버스 존이 설정돼 있어야 동작합니다., command: "nmap -sn -R -oX {output_dir}/target-hostname-identity.xml {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: target-os-identity, name: 운영체제·호스트명 식별, description: Nmap OS 탐지와 역방향 호스트명 조회를 실행하고 관찰된 운영체제와 호스트명을 Target에 자동 저장합니다. OS 탐지는 권한이 필요합니다., command: "nmap -O --osscan-guess -oX {output_dir}/target-os-identity.xml {host}", execution_mode: captured, risk: medium, tool: nmap, sudo: true, output: text, policy: allowed}
+listeners:
+  display_name: 공격자 측 리스너
+  match: {services: [], ports: []}
+  commands:
+    - {id: responder-listener, name: Responder 리스너, description: "LLMNR/NBT-NS/mDNS poisoning으로 인증 시도를 가로챕니다. 별도의 강제 인증 유도(UNC 경로 LFI, PetitPotam 등)와 함께 써야 하며, 잡힌 NTLMv2 해시는 세션 로그에서 직접 확인하세요.", command: "responder -I {interface}", execution_mode: interactive, risk: medium, tool: responder, sudo: true, output: pty-log, policy: allowed}
 ftp:
   display_name: FTP
   match: {services: [ftp], ports: [21]}

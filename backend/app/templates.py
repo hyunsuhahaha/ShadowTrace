@@ -3,7 +3,8 @@ import re, shlex, yaml
 
 ALLOWED = {"host","port","protocol","scheme","username","password","domain","wordlist",
            "output_dir","project_dir","target_dir","repo_dir","lhost","lport","share","path",
-           "nthash","domain_sid","spn","groups","target_username","keyword","extensions"}
+           "nthash","domain_sid","spn","groups","target_username","keyword","extensions",
+           "interface"}
 # host/port/scheme/protocol come from the selected target+service; the
 # *_dir tokens come from the project layout. Everything else in ALLOWED is
 # something only the person running the command can supply.

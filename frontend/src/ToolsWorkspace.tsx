@@ -25,6 +25,7 @@ const VARIABLE_LABELS: Record<string, string> = {
   extensions: "확장자 (쉼표 구분)", lhost: "리버스 리스너 IP (LHOST)",
   lport: "리버스 리스너 포트 (LPORT)", nthash: "NT 해시", domain_sid: "도메인 SID",
   spn: "SPN", groups: "그룹 (쉼표 구분)", target_username: "대상 사용자명",
+  interface: "네트워크 인터페이스 (예: tun0)",
 };
 
 const get = async <T,>(path: string): Promise<T> => {
@@ -162,6 +163,18 @@ export default function ToolsWorkspace() {
       if (!serviceId && selected.needs_service) {
         variables.port = manualPort.trim();
         variables.scheme = manualScheme.trim();
+      }
+      if (selected.execution_mode === "interactive") {
+        // A shell/client session isn't something to stream inline here —
+        // it opens in a real desktop terminal, same as Responder, so the
+        // review-and-run flow just confirms it launched.
+        const session = await post<{ id: number }>("/interactive-sessions", {
+          target_id: targetId, service_id: serviceId || null, template_id: selected.id,
+          variables, run_as_root: runWithSudo,
+        });
+        await post(`/interactive-sessions/${session.id}/desktop`, {});
+        setOutput((v) => `${v}\n$ ${preview}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+        return;
       }
       const execution = await post<Execution>("/executions", {
         target_id: targetId, service_id: serviceId || null, template_id: selected.id,
