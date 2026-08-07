@@ -14,6 +14,21 @@ const KIND_LABEL: Record<string, string> = {
 };
 const KIND_ORDER = ["page", "absolute", "asset", "anchor"];
 
+// Every other request UI in this app (Request tab, cURL import) takes a
+// full URL pasted straight from the browser, so a bare full URL here would
+// otherwise silently glue onto {host}:{port} and produce a malformed URL
+// that curl rejects with no visible error — just an empty result list.
+const toPath = (value: string): string => {
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    return `${url.pathname}${url.search}` || "/";
+  } catch {
+    return trimmed;
+  }
+};
+
 // One fetch of one path — no recursion, no auto-follow. Extends past <a> to
 // also cover <script src>/<img src>/<form action>, since those answer the
 // same "what does this page point to" question. Deciding whether to look at
@@ -66,9 +81,10 @@ export default function LinkExtractPanel({
       </p>
       <div className="netexecCredForm netexecCredForm--save">
         <input value={path} onChange={(e) => setPath(e.target.value)}
-          placeholder="경로 (예: / 또는 /index.php?page=french.html)" aria-label="경로" />
+          placeholder="경로 또는 전체 URL (예: / 또는 http://unika.htb/index.php?page=french.html)"
+          aria-label="경로" />
         <button disabled={busy || !path.trim()}
-          onClick={() => onFuzz(path.trim())}>
+          onClick={() => { const normalized = toPath(path); setPath(normalized); onFuzz(normalized); }}>
           {busy ? "추출 중…" : "링크 추출"}
         </button>
       </div>

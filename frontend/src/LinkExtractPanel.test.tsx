@@ -46,6 +46,32 @@ it("lists discovered links, resolves a relative one to an absolute URL, and offe
   expect(onCaptureEvidence).toHaveBeenCalledOnce();
 });
 
+it("normalizes a pasted full URL down to its path before extracting", () => {
+  const onFuzz = vi.fn();
+  render(<LinkExtractPanel target={target} service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} onOpenInRequest={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("경로"), {
+    target: { value: "http://unika.htb/index.php?page=french.html" },
+  });
+  fireEvent.click(screen.getByText("링크 추출"));
+
+  expect(onFuzz).toHaveBeenCalledWith("/index.php?page=french.html");
+  expect((screen.getByLabelText("경로") as HTMLInputElement).value)
+    .toBe("/index.php?page=french.html");
+});
+
+it("normalizes a pasted bare-origin URL to the root path", () => {
+  const onFuzz = vi.fn();
+  render(<LinkExtractPanel target={target} service={service} serviceExecutions={[]}
+    evidenceMsg="" onFuzz={onFuzz} onCaptureEvidence={vi.fn()} onOpenInRequest={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("경로"), { target: { value: "http://unika.htb/" } });
+  fireEvent.click(screen.getByText("링크 추출"));
+
+  expect(onFuzz).toHaveBeenCalledWith("/");
+});
+
 it("tells the user when a completed run produced no links", () => {
   render(<LinkExtractPanel target={target} service={service} evidenceMsg=""
     serviceExecutions={[{
