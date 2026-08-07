@@ -59,9 +59,18 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
                   "targets" / safe_part(target.ip))
     output_dir = target_dir / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Sites that route by vhost (nearly all named HTTP hosts) refuse or
+    # redirect requests addressed by bare IP, so HTTP-family commands need
+    # the confirmed hostname once one exists — everything else (SMB, LDAP,
+    # RDP...) keeps hitting the IP directly since a hostname mismatch there
+    # is far less likely to change the response.
+    template = catalog.items.get(body.template_id)
+    use_hostname = (
+        target.hostname and template and template.get("service_key") == "http"
+    )
     variables = {
         **body.variables,
-        "host": target.ip,
+        "host": target.hostname if use_hostname else target.ip,
         "target_dir": str(target_dir),
         "project_dir": str(target_dir.parents[1]),
         "output_dir": str(output_dir),

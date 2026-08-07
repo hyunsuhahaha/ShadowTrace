@@ -14,6 +14,7 @@ import FuzzingPanel from "./FuzzingPanel";
 import VhostFuzzPanel from "./VhostFuzzPanel";
 import DnsSubdomainPanel from "./DnsSubdomainPanel";
 import ParamFuzzPanel from "./ParamFuzzPanel";
+import LinkExtractPanel from "./LinkExtractPanel";
 import S3BucketPanel from "./S3BucketPanel";
 import CloudEnumPanel from "./CloudEnumPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
@@ -921,6 +922,24 @@ export default function App() {
       variables: {path, wordlist},
     });
   };
+  const runLinkExtract = (path: string) => {
+    if (!target || !service || !path.trim()) return;
+    setRunWithSudo(false);
+    const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
+    void run({
+      id: "http-link-extract",
+      preview: `bash -c "curl -s -k ${scheme}://${target.ip}:${service.port}${path}` +
+        ` | grep -ohE '(href|src|action)=\\"[^\\"#]*\\"' | sed -E 's/^[a-z]+=\\"//;s/\\"$//' | sort -u"`,
+      target_level: false,
+      variables: {path},
+    });
+  };
+  const openLinkInRequest = (url: string) => {
+    localStorage.setItem("oscp-web-launch", JSON.stringify({
+      targetId: target?.id, serviceId: service?.id, url,
+    }));
+    location.hash = "web";
+  };
   const runS3BucketList = () => {
     if (!target || !service) return;
     setRunWithSudo(false);
@@ -1538,6 +1557,13 @@ export default function App() {
               runState={runStates["http-param-fuzz"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runParamFuzz}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {isWebService && (
+            <LinkExtractPanel target={target} service={service}
+              runState={runStates["http-link-extract"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runLinkExtract} onOpenInRequest={openLinkInRequest}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {isWebService && (

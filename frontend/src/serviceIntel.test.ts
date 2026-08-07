@@ -10,6 +10,7 @@ import {
   parseFfufVhostResults,
   parseGobusterDnsResults,
   parseKerbruteResults,
+  parseLinkExtractResults,
   parseNetexecSprayHits,
   parseSecretsdumpHashes,
   parseSmbEnumSharesAccess,
@@ -334,6 +335,27 @@ Host script results:
 
   it("returns no vhost results from output with no matches", () => {
     expect(parseFfufVhostResults(":: Progress: [0/5000] ::\n")).toEqual([]);
+  });
+
+  it("classifies extracted links by page, asset, absolute URL, and anchor", () => {
+    const output = [
+      "/index.php?page=french.html",
+      "css/style.css",
+      "https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js",
+      "#contact-section",
+      "/index.php?page=french.html",
+      "",
+    ].join("\n");
+    expect(parseLinkExtractResults(output)).toEqual([
+      { url: "/index.php?page=french.html", kind: "page" },
+      { url: "css/style.css", kind: "asset" },
+      { url: "https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js", kind: "absolute" },
+      { url: "#contact-section", kind: "anchor" },
+    ]);
+  });
+
+  it("returns no link results from empty output", () => {
+    expect(parseLinkExtractResults("")).toEqual([]);
   });
 
   it("extracts subdomains and resolved IPs from a gobuster dns -i run", () => {

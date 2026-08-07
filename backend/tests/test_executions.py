@@ -8,14 +8,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
-from app.models import Execution, Project, Target
-from app.schemas import ExecutionDeriveIn
+from app.models import Execution, Project, Service, Target
+from app.schemas import ExecutionDeriveIn, ExecutionIn
 from fastapi import HTTPException
 
 import app.executor as executor_module
 import app.modules.executions.router as executions_router
 from app.modules.executions.router import (
-    _output_path, delete_execution, derive_output, execution_output_file,
+    _output_path, delete_execution, derive_output, execute, execution_output_file,
 )
 
 
@@ -170,6 +170,67 @@ def test_delete_execution_blocks_a_still_running_command():
         delete_execution(execution.id, db=db)
     assert exc.value.status_code == 409
     assert db.get(Execution, execution.id) is not None
+
+
+def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
+        tmp_path, monkeypatch):
+    # Vhost-routed sites often refuse or redirect bare-IP requests, so HTTP
+    # commands should address the confirmed hostname once one exists. Other
+    # protocols (SMB here) keep hitting the IP — a hostname mismatch is far
+    # less likely to change their response, and DNS may not even be set up
+    # for them.
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    async def noop(*args, **kwargs):
+        pass
+    monkeypatch.setattr(executions_router, "run_execution", noop)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10", hostname="unika.htb")
+    db.add(target); db.flush()
+    http_service = Service(
+        target_id=target.id, port=80, protocol="tcp", state="open", name="http",
+        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
+    smb_service = Service(
+        target_id=target.id, port=445, protocol="tcp", state="open", name="microsoft-ds",
+        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
+    db.add(http_service); db.add(smb_service); db.commit()
+
+    http_row = asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=http_service.id, template_id="http-headers",
+        variables={}, run_as_root=False), db=db))
+    assert "unika.htb" in http_row.command
+    assert "10.10.10.10" not in http_row.command
+
+    smb_row = asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=smb_service.id, template_id="smb-enum",
+        variables={}, run_as_root=False), db=db))
+    assert "10.10.10.10" in smb_row.command
+    assert "unika.htb" not in smb_row.command
+
+
+def test_execute_falls_back_to_ip_for_http_templates_without_a_confirmed_hostname(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    async def noop(*args, **kwargs):
+        pass
+    monkeypatch.setattr(executions_router, "run_execution", noop)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    http_service = Service(
+        target_id=target.id, port=80, protocol="tcp", state="open", name="http",
+        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
+    db.add(http_service); db.commit()
+
+    row = asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=http_service.id, template_id="http-headers",
+        variables={}, run_as_root=False), db=db))
+    assert "10.10.10.10" in row.command
 
 
 def test_run_execution_survives_a_long_stretch_without_a_newline(tmp_path, monkeypatch):

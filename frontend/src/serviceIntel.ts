@@ -127,6 +127,30 @@ export function parseFfufVhostResults(output = ""): VhostResult[] {
   return results;
 }
 
+export type LinkExtractResult = { url: string; kind: "page" | "asset" | "absolute" | "anchor" };
+
+const LINK_ASSET_EXTENSIONS =
+  /\.(css|m?js|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|webp|mp4|json)(\?|#|$)/i;
+
+// The command behind this fetches exactly one path, so parsing is just
+// classifying whatever href/src/action strings it printed — this never
+// resolves or follows a link itself (single fetch, no recursion).
+export function parseLinkExtractResults(output = ""): LinkExtractResult[] {
+  const seen = new Set<string>();
+  const results: LinkExtractResult[] = [];
+  for (const raw of output.split(/\r?\n/)) {
+    const url = raw.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const kind: LinkExtractResult["kind"] = url.startsWith("#") ? "anchor"
+      : /^https?:\/\//i.test(url) ? "absolute"
+      : LINK_ASSET_EXTENSIONS.test(url) ? "asset"
+      : "page";
+    results.push({ url, kind });
+  }
+  return results;
+}
+
 export type DnsSubdomainResult = { name: string; ip?: string };
 
 // gobuster dns -i prints "Found: sub.example.com [1.2.3.4]" (or without the
