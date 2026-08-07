@@ -90,3 +90,25 @@ def list_synced_hosts():
     lines = HOSTS_PATH.read_text(encoding="utf-8").splitlines() if HOSTS_PATH.is_file() else []
     _, entries, _ = _split_block(lines)
     return {"entries": entries}
+
+
+def remove_entries(hostnames: list[str]) -> dict[str, str]:
+    """Drop hostnames from the app-managed block, e.g. once no target
+    references them anymore (project deleted, target deleted, or hostname
+    corrected)."""
+    lines = HOSTS_PATH.read_text(encoding="utf-8").splitlines() if HOSTS_PATH.is_file() else []
+    before, entries, after = _split_block(lines)
+    changed = False
+    for hostname in hostnames:
+        key = hostname.strip().lower().rstrip(".")
+        if key in entries:
+            del entries[key]
+            changed = True
+    if changed:
+        _write_hosts(before, entries, after)
+    return entries
+
+
+@router.delete("/sync")
+def remove_host(hostname: str):
+    return {"entries": remove_entries([hostname])}

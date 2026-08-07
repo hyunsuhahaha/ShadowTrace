@@ -22,11 +22,30 @@ from ...schemas import (
 )
 from ...templates import catalog
 from ...time import utcnow
+from ..hosts import remove_entries as remove_host_entries
 from ..scan_center.service import import_xml as import_scan_xml
 from .support import need, safe_part
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
+
+
+def _release_hostnames(db: Session, hostnames: set[str]) -> None:
+    """Remove hostnames from /etc/hosts unless another target still claims
+    one (a rare same-hostname reuse across projects). Best-effort: a write
+    failure here must never roll back the DB delete that already committed."""
+    stale = {h for h in hostnames if h}
+    if not stale:
+        return
+    still_used = set(db.scalars(
+        select(Target.hostname).where(Target.hostname.in_(stale))))
+    to_remove = stale - still_used
+    if not to_remove:
+        return
+    try:
+        remove_host_entries(list(to_remove))
+    except HTTPException:
+        pass
 
 
 @router.get("/api/product/capabilities")
@@ -101,6 +120,10 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
         tables["findings"].c.project_id == ident)))
     evidence_ids = list(db.scalars(select(tables["evidence"].c.id).where(
         tables["evidence"].c.project_id == ident)))
+    freed_hostnames = set(db.scalars(select(tables["targets"].c.hostname).where(
+        tables["targets"].c.id.in_(target_ids),
+        tables["targets"].c.hostname != "",
+    ))) if target_ids else set()
 
     active = db.scalar(select(tables["scan_jobs"].c.id).where(
         tables["scan_jobs"].c.project_id == ident,
@@ -150,6 +173,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     remove("targets", "id", target_ids)
     db.delete(project)
     db.commit()
+    _release_hostnames(db, freed_hostnames)
 
 
 @router.get("/api/targets", response_model=list[TargetOut])
@@ -206,16 +230,23 @@ def set_target_hostname(ident: int, body: TargetHostnameIn, db: Session = Depend
     (SMB/LDAP enumeration, the HTB machine page, etc.) without touching the
     rest of the target's fields the way a full PUT would."""
     row = need(db, Target, ident)
+    old_hostname = row.hostname.strip()
     row.hostname = body.hostname.strip()
     row.updated_at = utcnow()
     db.commit()
+    if old_hostname and old_hostname != row.hostname:
+        _release_hostnames(db, {old_hostname})
     return row
 
 
 @router.delete("/api/targets/{ident}", status_code=204)
 def delete_target(ident: int, db: Session = Depends(get_db)):
-    db.delete(need(db, Target, ident))
+    row = need(db, Target, ident)
+    hostname = row.hostname.strip()
+    db.delete(row)
     db.commit()
+    if hostname:
+        _release_hostnames(db, {hostname})
 
 
 @router.get("/api/targets/{ident}/services", response_model=list[ServiceOut])

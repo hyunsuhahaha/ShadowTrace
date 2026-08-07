@@ -10,12 +10,21 @@ from app.main import (
     update_service,
 )
 from app.models import Base, Project, RunbookInstance, ScanJob, Service, Target
-from app.modules.core.router import project_services
+from app.modules import hosts
+from app.modules.core.router import delete_target, project_services, set_target_hostname
 from app.modules.runbooks.support import ApplyIn, PublishIn, StepIn, TemplateIn
 from app.modules.runbooks.workflow_router import (
     apply, create_template, instances, publish,
 )
-from app.schemas import ServiceUpdate, TargetEnsureIn
+from app.schemas import ServiceUpdate, TargetEnsureIn, TargetHostnameIn
+
+
+@pytest.fixture(autouse=True)
+def isolated_hosts_file(tmp_path, monkeypatch):
+    path = tmp_path / "hosts"
+    path.write_text("127.0.0.1\tlocalhost\n")
+    monkeypatch.setattr(hosts, "HOSTS_PATH", path)
+    return path
 
 
 def test_anonymous_ftp_command_logs_in_without_password_prompt():
@@ -172,3 +181,66 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
     assert replacement_target.id == target_id
     assert instances(target_id=replacement_target.id, db=db) == []
     db.close()
+
+
+def test_delete_project_releases_its_targets_hostnames(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Disposable", description="")
+    db.add(project); db.flush()
+    target = Target(
+        project_id=project.id, name="Host", ip="10.129.1.1", hostname="box.htb")
+    db.add(target); db.commit()
+    hosts.sync_host(hosts.HostsSync(ip="10.129.1.1", hostname="box.htb"))
+
+    delete_project(project.id, db)
+
+    assert "box.htb" not in hosts.list_synced_hosts()["entries"]
+
+
+def test_delete_project_keeps_hostname_still_used_by_another_project(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Disposable", description="")
+    db.add(project); db.flush()
+    target = Target(
+        project_id=project.id, name="Host", ip="10.129.1.1", hostname="box.htb")
+    db.add(target)
+    other_project = Project(name="Kept", description="")
+    db.add(other_project); db.flush()
+    other_target = Target(
+        project_id=other_project.id, name="Host", ip="10.129.1.1",
+        hostname="box.htb")
+    db.add(other_target); db.commit()
+    hosts.sync_host(hosts.HostsSync(ip="10.129.1.1", hostname="box.htb"))
+
+    delete_project(project.id, db)
+
+    assert "box.htb" in hosts.list_synced_hosts()["entries"]
+
+
+def test_delete_target_releases_its_hostname(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="P", description="")
+    db.add(project); db.flush()
+    target = Target(
+        project_id=project.id, name="Host", ip="10.129.1.1", hostname="box.htb")
+    db.add(target); db.commit()
+    hosts.sync_host(hosts.HostsSync(ip="10.129.1.1", hostname="box.htb"))
+
+    delete_target(target.id, db)
+
+    assert "box.htb" not in hosts.list_synced_hosts()["entries"]
+
+
+def test_set_target_hostname_releases_the_previous_hostname(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="P", description="")
+    db.add(project); db.flush()
+    target = Target(
+        project_id=project.id, name="Host", ip="10.129.1.1", hostname="old.htb")
+    db.add(target); db.commit()
+    hosts.sync_host(hosts.HostsSync(ip="10.129.1.1", hostname="old.htb"))
+
+    set_target_hostname(target.id, TargetHostnameIn(hostname="new.htb"), db)
+
+    entries = hosts.list_synced_hosts()["entries"]
+    assert "old.htb" not in entries
