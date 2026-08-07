@@ -55,6 +55,19 @@ def create_interactive_session(
         and not re.fullmatch(r"[^/\\\x00]{1,80}", body.variables.get("share", ""))
     ):
         raise HTTPException(400, "Invalid SMB share name")
+    # Responder binds one interface's LLMNR/NBT-NS/SMB/etc ports exclusively,
+    # so a second instance doesn't run alongside the first -- it just fails
+    # to bind most of the same ports the first one already holds. Checking
+    # the real process (not this app's own session bookkeeping, which never
+    # learns a desktop-launched terminal closed) catches that before a
+    # second window opens and immediately errors out.
+    if body.template_id == "responder-listener":
+        running = subprocess.run(
+            ["pgrep", "-f", "Responder.py"], capture_output=True, text=True)
+        if running.returncode == 0:
+            raise HTTPException(
+                409, "Responder가 이미 실행 중입니다 (PID "
+                f"{running.stdout.split()[0]}). 기존 터미널 창을 사용하세요.")
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
     target_dir.mkdir(parents=True, exist_ok=True)
