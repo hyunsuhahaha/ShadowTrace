@@ -337,6 +337,21 @@ export default function App() {
       setHostnameSaving(false);
     }
   };
+  const clearHostname = async () => {
+    if (!target) return;
+    setHostnameSaving(true);
+    try {
+      await api(`/targets/${target.id}/hostname`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({hostname: ""}),
+      });
+      await qc.invalidateQueries({queryKey: ["targets", projectId]});
+      setHostnameDraft("");
+    } finally {
+      setHostnameSaving(false);
+    }
+  };
   const selectedExecution = serviceExecutions.find(
     (item) => item.id === selectedExecutionId,
   );
@@ -1335,7 +1350,8 @@ export default function App() {
               <h1>{service?.name?.toUpperCase() || "서비스 선택"}</h1>
             </div>
             <div className="serviceHeadActions">
-              {isWebService&&!target?.hostname&&(() => {
+              {isWebService&&(() => {
+                const applied = target?.hostname || "";
                 const hostnameCommand = targetCommands.data?.find(
                   (item: any) => item.id === "target-hostname-redirect");
                 const hostnameState = ["target-hostname-redirect",
@@ -1349,14 +1365,18 @@ export default function App() {
                   : hostnameState.status === "no_response" ? "응답 없음 · 재시도"
                   : "확인 실패 · 재시도";
                 return <div className="webServiceActions webServiceActions--hostname">
-                  <span>Hostname 미확인 · IP로 접속됩니다{hostnameResult ? ` · ${hostnameResult}` : ""}</span>
+                  <span>{applied
+                    ? `Hostname 적용됨: ${applied}`
+                    : `Hostname 미확인 · IP로 접속됩니다${hostnameResult ? ` · ${hostnameResult}` : ""}`}</span>
                   <button disabled={hostnameBusy || !hostnameCommand}
                     onClick={() => hostnameCommand && reviewCommand(hostnameCommand)}>
                     {hostnameBusy
                       ? <><span className="buttonSpinner" aria-hidden="true" />확인 중…</>
-                      : "Hostname 자동 확인"}
+                      : applied ? "다시 확인" : "Hostname 자동 확인"}
                   </button>
-                  <input placeholder="예: unika.htb (다른 경로로 확인한 값 직접 입력)"
+                  <input placeholder={applied
+                    ? "다른 값으로 변경 (예: unika.htb)"
+                    : "예: unika.htb (다른 경로로 확인한 값 직접 입력)"}
                     value={hostnameDraft}
                     onChange={(event) => setHostnameDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -1364,8 +1384,12 @@ export default function App() {
                     }} />
                   <button disabled={hostnameSaving || !hostnameDraft.trim()}
                     onClick={() => void saveHostname()}>
-                    {hostnameSaving ? "저장 중…" : "직접 입력"}
+                    {hostnameSaving ? "저장 중…" : applied ? "변경" : "직접 입력"}
                   </button>
+                  {applied && <button disabled={hostnameSaving}
+                    onClick={() => void clearHostname()}>
+                    {hostnameSaving ? "저장 중…" : "제거"}
+                  </button>}
                 </div>;
               })()}
               {isWebService&&webUrl&&<div className="webServiceActions">
