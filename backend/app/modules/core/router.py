@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -185,9 +186,12 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
         remove(table_name, "target_id", target_ids)
     remove("services", "id", service_ids)
     remove("targets", "id", target_ids)
+    project_name = project.name
     db.delete(project)
     db.commit()
     _release_hostnames(db, freed_hostnames)
+    project_dir = WORKSPACE_DIR / "projects" / safe_part(project_name)
+    shutil.rmtree(project_dir, ignore_errors=True)
 
 
 @router.get("/api/targets", response_model=list[TargetOut])

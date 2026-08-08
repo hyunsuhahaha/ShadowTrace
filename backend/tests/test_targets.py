@@ -11,6 +11,7 @@ from app.main import (
 )
 from app.models import Base, Project, RunbookInstance, ScanJob, Service, Target
 from app.modules import hosts
+from app.modules.core import router as core_router
 from app.modules.core.router import delete_target, project_services, set_target_hostname
 from app.modules.runbooks.support import ApplyIn, PublishIn, StepIn, TemplateIn
 from app.modules.runbooks.workflow_router import (
@@ -181,6 +182,22 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
     assert replacement_target.id == target_id
     assert instances(target_id=replacement_target.id, db=db) == []
     db.close()
+
+
+def test_delete_project_removes_its_workspace_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(core_router, "WORKSPACE_DIR", tmp_path)
+    db = database(tmp_path)
+    project = Project(name="Disposable", description="")
+    db.add(project)
+    db.commit()
+    project_dir = tmp_path / "projects" / "Disposable"
+    scan_dir = project_dir / "targets" / "198.51.100.20" / "scans" / "1"
+    scan_dir.mkdir(parents=True)
+    (scan_dir / "nmap.xml").write_text("<nmaprun/>")
+
+    delete_project(project.id, db)
+
+    assert not project_dir.exists()
 
 
 def test_delete_project_releases_its_targets_hostnames(tmp_path):
