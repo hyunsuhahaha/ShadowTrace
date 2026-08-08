@@ -157,6 +157,7 @@ snmp:
   commands:
     - {id: snmp-info, name: SNMP 상세 정보 확인, description: 사용자가 검토한 옵션으로 Nmap SNMP 정보 스크립트를 실행합니다., command: "nmap -Pn -sU -p{port} --script snmp-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: true, output: text, policy: allowed}
     - {id: snmp-community-audit, name: SNMP Community 문자열 제한 점검, description: Nmap 기본 Community 목록 중 12개를 최대 2분 동안 점검합니다. 지연·동시성 제한은 지원되지 않습니다., command: "nmap -Pn -sU -p{port} --script snmp-brute --script-args unpwdb.passlimit=12,unpwdb.timelimit=2m,snmp.retries=1,snmp.timeout=2s {host}", execution_mode: captured, risk: high, tool: nmap, sudo: true, output: text, policy: allowed}
+    - {id: snmp-oid-tree, name: OID 트리 조회, description: "MIB 트리 전체를 한 번에 나열합니다(파일이 아니라 구조만 표시하며, 실제 값은 SNMP 상세 정보 확인으로 따로 조회하세요). password 칸에 community 문자열을 입력하세요(기본값 public).", command: "bash {repo_dir}/backend/scripts/snmp_tree.sh {host} {port} {password}", execution_mode: captured, risk: low, tool: snmp, sudo: false, output: text, policy: allowed}
 mail:
   display_name: IMAP and POP3
   match: {services: [imap, imaps, pop3, pop3s], ports: [110, 143, 993, 995]}

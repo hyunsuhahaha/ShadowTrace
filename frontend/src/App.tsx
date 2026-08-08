@@ -631,6 +631,13 @@ export default function App() {
             autoRunRsyncTree(modules[0]);
           }
         }
+        if (c.id === "snmp-info" && /snmp-info:/i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoSnmpTreeFiredRef.current !== key) {
+            autoSnmpTreeFiredRef.current = key;
+            autoRunSnmpTree();
+          }
+        }
         if (c.id === "mysql-credential-probe") {
           const found = parseMysqlProbeSuccess(result.stdout || "");
           const key = `${targetId}-${found?.username || ""}-${found?.password || ""}`;
@@ -877,6 +884,17 @@ export default function App() {
       preview: `rsync_tree.sh ${target.ip} ${service.port} ${moduleName}`,
       target_level: false,
       variables: {path: moduleName},
+    });
+  };
+  const autoSnmpTreeFiredRef = useRef<string>();
+  const autoRunSnmpTree = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "snmp-oid-tree",
+      preview: `snmp_tree --host ${target.ip} --port ${service.port} --community public`,
+      target_level: false,
+      variables: {password: "public"},
     });
   };
   const autoMssqlTreeFiredRef = useRef<string>();

@@ -43,6 +43,17 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_snmp_oid_tree_renders_with_the_community_string():
+    item, command, argv = catalog.render("snmp-oid-tree", {
+        "host": "10.10.10.10", "port": "161", "password": "public",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/snmp_tree.sh",
+        "10.10.10.10", "161", "public",
+    ]
+
+
 def test_postgres_db_tree_renders_with_credentials():
     item, command, argv = catalog.render("postgres-db-tree", {
         "host": "10.10.10.10", "port": "5432", "username": "postgres", "password": "",
