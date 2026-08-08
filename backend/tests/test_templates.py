@@ -41,3 +41,17 @@ def test_list_all_skips_groups_with_no_commands():
 def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     body = tool_catalog()
     assert body["groups"] == catalog.list_all()
+
+
+def test_nfs_export_tree_renders_the_mount_script_with_the_chosen_export_path():
+    # showmount -e only lists the exports themselves; this mounts one
+    # read-only and walks it for the actual folder/file structure.
+    item, command, argv = catalog.render("nfs-export-tree", {
+        "host": "10.10.10.10", "path": "/srv/nfs/share",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/nfs_tree.sh",
+        "10.10.10.10", "/srv/nfs/share",
+    ]
+    assert item["risk"] == "medium"

@@ -31,6 +31,17 @@ export function parseSmbShares(output = ""): SmbShare[] {
   return shares;
 }
 
+// `showmount -e <host>` output: a "Export list for <host>:" header line,
+// then one "<path>  <allowed clients>" line per export.
+export function parseNfsExports(output = ""): string[] {
+  const paths: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^(\/\S*)\s+\S+/);
+    if (match) paths.push(match[1]);
+  }
+  return paths;
+}
+
 export type SmbShareAccess = {anonymous: string; currentUser: string};
 
 // Parses nmap's `smb-enum-shares` NSE script output, which — unlike a plain

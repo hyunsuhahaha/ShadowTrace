@@ -12,6 +12,7 @@ import {
   parseKerbruteResults,
   parseLinkExtractResults,
   parseNetexecSprayHits,
+  parseNfsExports,
   parseSecretsdumpHashes,
   parseSmbEnumSharesAccess,
   parseSmbFiles,
@@ -220,6 +221,18 @@ describe("service investigation summary", () => {
       tone: "success",
       title: "SMB 공유 목록을 가져왔습니다",
     });
+  });
+
+  it("pulls export paths out of showmount -e output", () => {
+    const output =
+      "Export list for 10.10.10.10:\n" +
+      "/srv/nfs/share *\n" +
+      "/home/user/backup 192.168.1.0/24\n";
+    expect(parseNfsExports(output)).toEqual(["/srv/nfs/share", "/home/user/backup"]);
+  });
+
+  it("returns no exports for an empty showmount result", () => {
+    expect(parseNfsExports("Export list for 10.10.10.10:\n")).toEqual([]);
   });
 
   it("extracts per-share anonymous/current-user access from nmap smb-enum-shares", () => {

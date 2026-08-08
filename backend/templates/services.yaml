@@ -98,6 +98,7 @@ nfs:
   match: {services: [nfs, rpcbind], ports: [111, 2049]}
   commands:
     - {id: nfs-showmount, name: NFS 내보내기 목록, description: 대상이 공개한 NFS 경로를 열람합니다., command: "showmount -e {host}", execution_mode: captured, risk: low, tool: showmount, sudo: false, output: text, policy: allowed}
+    - {id: nfs-export-tree, name: 내보낸 경로의 폴더·파일 트리 조회, description: 지정한 NFS export를 읽기 전용으로 임시 마운트해 전체 폴더·파일 구조를 나열한 뒤 즉시 마운트 해제합니다., command: "bash {repo_dir}/backend/scripts/nfs_tree.sh {host} {path}", execution_mode: captured, risk: medium, tool: mount.nfs, sudo: false, output: text, policy: allowed}
 ldap:
   display_name: LDAP and Kerberos
   match: {services: [ldap, ldaps, kerberos-sec], ports: [88, 389, 636]}

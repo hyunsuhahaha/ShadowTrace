@@ -36,6 +36,16 @@ it("renders a completed ftp-directory-tree run as an expandable tree instead of 
   expect(screen.queryByText("nmap")).toBeNull();
 });
 
+it("renders a completed nfs-export-tree run as an expandable tree too", () => {
+  render(<LiveOutputPanel
+    run={{templateId: "nfs-export-tree", name: "NFS", status: "completed",
+      startedAt: 0, lastEventAt: 0}}
+    elapsed={2} outcome={null}
+    output={"D|backups\nF|backups/dump.sql\n"} />);
+
+  expect(screen.getByText("backups").closest("details")).toBeTruthy();
+});
+
 it("still shows raw text for a still-running ftp-directory-tree, not a partial tree", () => {
   render(<LiveOutputPanel
     run={{templateId: "ftp-directory-tree", name: "FTP", status: "running",

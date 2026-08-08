@@ -56,6 +56,7 @@ import {
   isHttpLikeService,
   isWinrmHttpApi,
   keepSelectedService,
+  parseNfsExports,
   parseSmbEnumSharesAccess,
   parseSmbShares,
   reconcileServiceNav,
@@ -606,6 +607,18 @@ export default function App() {
             `${value}\n[성공한 FTP 터미널을 열지 못했습니다] ${message}\n`
           );
         }
+        if (c.id === "nfs-showmount") {
+          // showmount only lists the exports themselves, not what's inside
+          // them -- auto-mount the first one to actually see the tree.
+          // ponytail: same single-slot-executor limit as SMB's auto-spider,
+          // so only the first export is fetched automatically.
+          const exports = parseNfsExports(result.stdout || "");
+          const key = `${targetId}-${exports[0] || ""}`;
+          if (exports.length && autoNfsTreeFiredRef.current !== key) {
+            autoNfsTreeFiredRef.current = key;
+            autoRunNfsTree(exports[0]);
+          }
+        }
         if (isFocused())
           setOutput(
             (x) =>
@@ -741,6 +754,17 @@ export default function App() {
         (username ? ` --username ${username} --password ***` : " (anonymous)"),
       target_level: false,
       variables: {username, password},
+    });
+  };
+  const autoNfsTreeFiredRef = useRef<string>();
+  const autoRunNfsTree = (path: string) => {
+    if (!target) return;
+    setRunWithSudo(false);
+    void run({
+      id: "nfs-export-tree",
+      preview: `nfs_tree.sh ${target.ip} ${path}`,
+      target_level: true,
+      variables: {path},
     });
   };
   // Responder needs to keep running while the tester works in other tabs
