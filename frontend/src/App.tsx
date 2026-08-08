@@ -56,6 +56,7 @@ import {
   isHttpLikeService,
   isWinrmHttpApi,
   keepSelectedService,
+  parseMysqlProbeSuccess,
   parseNfsExports,
   parseRsyncModules,
   parseSmbEnumSharesAccess,
@@ -630,6 +631,14 @@ export default function App() {
             autoRunRsyncTree(modules[0]);
           }
         }
+        if (c.id === "mysql-credential-probe") {
+          const found = parseMysqlProbeSuccess(result.stdout || "");
+          const key = `${targetId}-${found?.username || ""}-${found?.password || ""}`;
+          if (found && autoMysqlTreeFiredRef.current !== key) {
+            autoMysqlTreeFiredRef.current = key;
+            autoRunMysqlTree(found.username, found.password);
+          }
+        }
         if (c.id === "redis-unauthenticated-info" && /redis_version/i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoRedisTreeFiredRef.current !== key) {
@@ -820,6 +829,18 @@ export default function App() {
       preview: `webdav_tree --host ${target.ip} --port ${service.port} (anonymous)`,
       target_level: false,
       variables: {username: "", password: ""},
+    });
+  };
+  const autoMysqlTreeFiredRef = useRef<string>();
+  const autoRunMysqlTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "mysql-db-tree",
+      preview: `mysql_db_tree --host ${target.ip} --port ${service.port}` +
+        ` --username ${username} --password ***`,
+      target_level: false,
+      variables: {username, password},
     });
   };
   const autoRedisTreeFiredRef = useRef<string>();

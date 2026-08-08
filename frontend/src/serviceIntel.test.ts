@@ -11,6 +11,7 @@ import {
   parseGobusterDnsResults,
   parseKerbruteResults,
   parseLinkExtractResults,
+  parseMysqlProbeSuccess,
   parseNetexecSprayHits,
   parseNfsExports,
   parseRsyncModules,
@@ -234,6 +235,20 @@ describe("service investigation summary", () => {
 
   it("returns no exports for an empty showmount result", () => {
     expect(parseNfsExports("Export list for 10.10.10.10:\n")).toEqual([]);
+  });
+
+  it("extracts the winning username/password from a mysql credential probe", () => {
+    const output = "[-] FAILED root:<empty>\n[+] SUCCESS root:hunter2\nCURRENT_USER()\troot@localhost\n";
+    expect(parseMysqlProbeSuccess(output)).toEqual({username: "root", password: "hunter2"});
+  });
+
+  it("treats <empty> as a blank password in a mysql credential probe result", () => {
+    expect(parseMysqlProbeSuccess("[+] SUCCESS root:<empty>\n"))
+      .toEqual({username: "root", password: ""});
+  });
+
+  it("returns null when no mysql credential probe attempt succeeded", () => {
+    expect(parseMysqlProbeSuccess("[-] FAILED root:<empty>\n[-] FAILED admin:admin\n")).toBeNull();
   });
 
   it("pulls module names out of nmap's rsync-list-modules output", () => {

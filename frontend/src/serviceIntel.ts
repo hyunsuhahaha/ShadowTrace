@@ -42,6 +42,15 @@ export function parseNfsExports(output = ""): string[] {
   return paths;
 }
 
+// mysql_credential_probe.sh prints "[+] SUCCESS user:password" (or
+// "user:<empty>" for a blank password) on the line it found a working
+// login on, then stops.
+export function parseMysqlProbeSuccess(output = ""): {username: string; password: string} | null {
+  const match = output.match(/^\[\+\] SUCCESS (\S+):(.*)$/m);
+  if (!match) return null;
+  return {username: match[1], password: match[2] === "<empty>" ? "" : match[2]};
+}
+
 // nmap's rsync-list-modules NSE output: one "  <name>  <comment>" line per
 // module under the "| rsync-list-modules:" header.
 export function parseRsyncModules(output = ""): string[] {

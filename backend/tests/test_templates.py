@@ -43,6 +43,17 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_mysql_db_tree_renders_with_credentials():
+    item, command, argv = catalog.render("mysql-db-tree", {
+        "host": "10.10.10.10", "port": "3306", "username": "root", "password": "",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/mysql_db_tree.sh",
+        "10.10.10.10", "3306", "root", "",
+    ]
+
+
 def test_redis_key_tree_renders_with_an_optional_password():
     item, command, argv = catalog.render("redis-key-tree", {
         "host": "10.10.10.10", "port": "6379", "password": "",
