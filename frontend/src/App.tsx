@@ -1181,7 +1181,11 @@ export default function App() {
         credentialId = created.id;
         await qc.invalidateQueries({queryKey: ["credentials", projectId]});
       }
-      const commandId = protocol === "winrm" ? "windows_file_tree" : "linux_file_tree";
+      // windows_file_tree (wmiexec) goes over SMB/445 regardless of which
+      // port the caller used to authenticate -- a target with only WinRM
+      // reachable (verified live: 445 timed out, 5985 worked) needs the
+      // WinRM-native command instead, or this silently fails every time.
+      const commandId = protocol === "winrm" ? "windows_file_tree_winrm" : "linux_file_tree";
       const prepared = await api<{run: {id: number}; approval_token: string}>(
         "/post-exploitation/prepare", {
           method: "POST", headers: {"Content-Type": "application/json"},
