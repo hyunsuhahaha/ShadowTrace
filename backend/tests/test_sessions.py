@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
 from app.database import Base
-from app.models import Project, Service, Target
+from app.models import InteractiveSession, Project, Service, Target
 from app.schemas import InteractiveSessionIn, ManualTerminalIn
 from types import SimpleNamespace
 
 import app.modules.sessions.router as sessions_router
 from app.modules.sessions.router import (
     create_interactive_session, create_manual_terminal, responder_captures,
+    launch_interactive_session_in_desktop,
 )
 
 
@@ -183,3 +184,46 @@ def test_manual_terminal_rejects_an_uninstalled_command(tmp_path, monkeypatch):
         create_manual_terminal(ManualTerminalIn(
             target_id=box.id, service_id=service.id, command="totally-not-a-tool -x"), db=db)
     assert exc.value.status_code == 409
+
+
+def test_desktop_launch_passes_the_shell_and_command_as_separate_argv_items(
+        tmp_path, monkeypatch):
+    # qterminal's -e does not re-parse a single joined string through a
+    # shell: a command containing its own quoting (like a shlex-quoted
+    # username, e.g. evil-winrm -u 'administrator') breaks apart into
+    # garbage when squashed into one argv item, and the shell exits
+    # instantly instead of running anything. Reproduced live against a
+    # real qterminal/X session -- the fix is passing the shell, its
+    # flags, and the command as distinct argv entries.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=5985, protocol="tcp", state="open",
+                       name="http", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    row = InteractiveSession(
+        target_id=box.id, service_id=service.id, template_id="manual-shell",
+        command="evil-winrm -i 10.10.10.60 -u 'administrator'",
+        cwd=str(tmp_path), status="ready",
+    )
+    db.add(row); db.commit()
+    monkeypatch.setattr(sessions_router.shutil, "which", lambda _: "/usr/bin/qterminal")
+    captured = {}
+
+    def fake_popen(argv, **kwargs):
+        captured["argv"] = argv
+        return SimpleNamespace(pid=4242)
+
+    monkeypatch.setattr(sessions_router.subprocess, "Popen", fake_popen)
+
+    launch_interactive_session_in_desktop(row.id, db=db)
+
+    argv = captured["argv"]
+    assert argv[-4] == "-e"
+    assert argv[-2] == "-lic"
+    inner_command = argv[-1]
+    assert "evil-winrm -i 10.10.10.60 -u 'administrator'; exec" in inner_command
+    # the command itself must be its own argv item, never squashed together
+    # with the shell/flags into one pre-quoted string
+    assert not any("-lic" in item and "evil-winrm" in item for item in argv[:-1])
+

@@ -191,16 +191,18 @@ def launch_interactive_session_in_desktop(
         target = need(db, Target, row.target_id)
         service = need(db, Service, row.service_id)
         command = shlex.join(anonymous_ftp_command(target.ip, service.port))
-    shell_command = shlex.join([
-        owner.pw_shell or "/usr/bin/zsh",
-        "-lic",
-        f"{command}; exec {owner.pw_shell or '/usr/bin/zsh'} -l",
-    ])
+    shell = owner.pw_shell or "/usr/bin/zsh"
+    inner_command = f"{command}; exec {shell} -l"
     try:
         process = subprocess.Popen(
             [
+                # qterminal's -e does not re-parse a single joined string
+                # through a shell -- it needs the shell, its flags, and the
+                # command as separate argv items, or any command containing
+                # its own quoting (e.g. a shlex-quoted username) breaks
+                # apart into garbage and the shell exits immediately.
                 "/usr/sbin/runuser", "-u", owner.pw_name, "--", *desktop_env,
-                terminal, "-w", row.cwd, "-e", shell_command,
+                terminal, "-w", row.cwd, "-e", shell, "-lic", inner_command,
             ],
             start_new_session=True,
             close_fds=True,
