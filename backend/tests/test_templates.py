@@ -43,6 +43,18 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_imap_mailbox_tree_renders_with_credentials():
+    item, command, argv = catalog.render("imap-mailbox-tree", {
+        "host": "10.10.10.10", "port": "993", "username": "bob", "password": "hunter2",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "/opt/oscp-workspace/.venv/bin/python", "-m", "app.imap_tree",
+        "--host", "10.10.10.10", "--port", "993",
+        "--username", "bob", "--password", "hunter2",
+    ]
+
+
 def test_rsync_module_tree_renders_the_list_script_with_the_chosen_module():
     item, command, argv = catalog.render("rsync-module-tree", {
         "host": "10.10.10.10", "port": "873", "path": "backup",

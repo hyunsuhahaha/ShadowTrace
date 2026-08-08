@@ -155,6 +155,7 @@ mail:
   match: {services: [imap, imaps, pop3, pop3s], ports: [110, 143, 993, 995]}
   commands:
     - {id: imap-default-audit, name: IMAP 기본 자격증명 제한 점검, description: IMAP에 사용자 8개와 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script imap-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed, match: {services: [imap, imaps], ports: [143, 993]}}
+    - {id: imap-mailbox-tree, name: 메일함 폴더 트리 조회, description: 로그인한 계정의 전체 메일함(폴더) 구조를 나열합니다., command: "{repo_dir}/.venv/bin/python -m app.imap_tree --host {host} --port {port} --username {username} --password {password}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed, match: {services: [imap, imaps], ports: [143, 993]}}
     - {id: pop3-default-audit, name: POP3 기본 자격증명 제한 점검, description: POP3에 사용자 8개와 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script pop3-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed, match: {services: [pop3, pop3s], ports: [110, 995]}}
 vnc:
   display_name: VNC

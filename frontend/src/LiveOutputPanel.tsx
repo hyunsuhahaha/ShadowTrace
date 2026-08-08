@@ -8,7 +8,7 @@ import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
 // expandable tree here rather than a raw dump.
 const treeTemplateIds = new Set([
   "ftp-directory-tree", "nfs-export-tree", "http-webdav-tree", "git-dump-tree",
-  "rsync-module-tree",
+  "rsync-module-tree", "imap-mailbox-tree",
 ]);
 
 export default function LiveOutputPanel({run, elapsed, outcome, output}: {

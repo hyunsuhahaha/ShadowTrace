@@ -782,6 +782,17 @@ export default function App() {
       variables: {username, password},
     });
   };
+  const autoRunImapTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "imap-mailbox-tree",
+      preview: `imap_tree --host ${target.ip} --port ${service.port}` +
+        ` --username ${username} --password ***`,
+      target_level: false,
+      variables: {username, password},
+    });
+  };
   const autoNfsTreeFiredRef = useRef<string>();
   const autoRunNfsTree = (path: string) => {
     if (!target) return;
@@ -1524,6 +1535,22 @@ export default function App() {
     const timer = setTimeout(() => {
       autoFtpTreeFiredRef.current = key;
       autoRunFtpTree(credStore.username, credStore.password);
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceNameLower, targetId, credStore.username, credStore.password]);
+  const autoImapTreeFiredRef = useRef<string>();
+  useEffect(() => {
+    if (!["imap", "imaps"].includes(serviceNameLower) || !credStore.username.trim()
+      || !credStore.password.trim()) return;
+    const key = `${targetId}-${credStore.username}-${credStore.password}`;
+    if (autoImapTreeFiredRef.current === key) return;
+    // Same reasoning as FTP above: IMAP has no separate credential-check
+    // step to hang an auto-trigger off of, so this run doubles as that
+    // check too, debounced so it doesn't fire mid-typing.
+    const timer = setTimeout(() => {
+      autoImapTreeFiredRef.current = key;
+      autoRunImapTree(credStore.username, credStore.password);
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
