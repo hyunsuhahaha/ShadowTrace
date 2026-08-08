@@ -63,6 +63,27 @@ export default function SmbShareResults({
     }));
   }, [shareKey]);
 
+  const autoSpideredRef = useRef<string>();
+  useEffect(() => {
+    // ponytail: onSpider runs through a single-slot executor (one
+    // "smb-share-spider" run at a time), so auto-firing every accessible
+    // disk share at once would just have them overwrite each other. Firing
+    // the first one automatically covers the common case (one loot share);
+    // additional shares still use the manual "재귀 목록" button. Upgrade to
+    // a real queue if multi-share auto-spidering turns out to matter.
+    if (!shareKey || autoSpideredRef.current === shareKey) return;
+    const target = shares.find((share) => {
+      if (share.type.toLowerCase() !== "disk") return false;
+      const access = shareAccess?.[share.name]
+        ?? Object.entries(shareAccess ?? {}).find(
+          ([name]) => name.toLowerCase() === share.name.toLowerCase())?.[1];
+      return !access || accessTone(access.anonymous) === "open";
+    });
+    if (!target) return;
+    autoSpideredRef.current = shareKey;
+    onSpider(target.name);
+  }, [shareKey, shareAccess, shares, onSpider]);
+
   const connect = async (share: string) => {
     if (!targetId || !serviceId) return;
     setConnectError("");

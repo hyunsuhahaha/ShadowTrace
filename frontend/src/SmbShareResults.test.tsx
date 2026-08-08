@@ -78,6 +78,38 @@ it("triggers a recursive listing via onSpider without touching the network", () 
   expect(onSpider).toHaveBeenCalledWith("WorkShares");
 });
 
+it("auto-fires a recursive listing for a disk share with no clicks needed", () => {
+  const onSpider = vi.fn();
+  render(<SmbShareResults shares={shares} serviceExecutions={[]}
+    onSpider={onSpider} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(onSpider).toHaveBeenCalledWith("WorkShares");
+  expect(onSpider).toHaveBeenCalledTimes(1);
+});
+
+it("does not auto-fire a listing for a share nmap already reported as closed", () => {
+  const onSpider = vi.fn();
+  render(<SmbShareResults shares={shares} serviceExecutions={[]}
+    shareAccess={{ WorkShares: { anonymous: "<none>", currentUser: "" } }}
+    onSpider={onSpider} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(onSpider).not.toHaveBeenCalled();
+});
+
+it("auto-fires only the first accessible disk share, not every one", () => {
+  const onSpider = vi.fn();
+  const manyShares = [
+    { name: "PRINT$", type: "Printer", comment: "" },
+    { name: "WorkShares", type: "Disk", comment: "" },
+    { name: "Backups", type: "Disk", comment: "" },
+  ];
+  render(<SmbShareResults shares={manyShares} serviceExecutions={[]}
+    onSpider={onSpider} onViewFile={vi.fn()} onLog={vi.fn()} />);
+
+  expect(onSpider).toHaveBeenCalledTimes(1);
+  expect(onSpider).toHaveBeenCalledWith("WorkShares");
+});
+
 it("parses the active spider run's recursive listing and views a file", () => {
   const stdout =
     "  .                                   D        0  Mon Mar 29 04:22:01 2021\n" +
