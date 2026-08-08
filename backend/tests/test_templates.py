@@ -43,6 +43,25 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_docker_api_tree_renders_without_credentials():
+    item, command, argv = catalog.render("docker-api-tree", {
+        "host": "10.10.10.10", "port": "2375", "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "/opt/oscp-workspace/.venv/bin/python", "-m", "app.docker_tree",
+        "--host", "10.10.10.10", "--port", "2375",
+    ]
+
+
+def test_docker_api_detect_always_uses_plain_http():
+    # 2376/tcp requires a client cert (TLS), so it's never the
+    # unauthenticated-misconfig case this check is for.
+    item, command, argv = catalog.render("docker-api-detect", {
+        "host": "10.10.10.10", "port": "2375",
+    })
+    assert argv == ["curl", "-s", "http://10.10.10.10:2375/version"]
+
+
 def test_mongodb_db_tree_renders_without_credentials():
     item, command, argv = catalog.render("mongodb-db-tree", {
         "host": "10.10.10.10", "port": "27017", "repo_dir": "/opt/oscp-workspace",

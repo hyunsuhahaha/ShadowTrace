@@ -190,6 +190,12 @@ rsync:
     - {id: rsync-modules, name: Rsync 공개 모듈 확인, description: 인증 없이 노출된 Rsync 모듈 목록을 확인합니다., command: "nmap -Pn -p{port} --script rsync-list-modules {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: rsync-default-audit, name: Rsync 기본 자격증명 제한 점검, description: Rsync 인증에 사용자 8개와 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script rsync-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: rsync-module-tree, name: 모듈 내 폴더·파일 트리 조회, description: 지정한 Rsync 모듈 내부 전체 폴더·파일 구조를 재귀적으로 나열합니다., command: "bash {repo_dir}/backend/scripts/rsync_tree.sh {host} {port} {path}", execution_mode: captured, risk: low, tool: rsync, sudo: false, output: text, policy: allowed}
+docker:
+  display_name: Docker API
+  match: {services: [docker], ports: [2375, 2376]}
+  commands:
+    - {id: docker-api-detect, name: Docker API 인증 없이 접근 가능 여부 확인, description: "TLS 없이 노출된 Docker 데몬 API(2375/tcp)가 인증 없이 응답하는지 확인합니다. 2376/tcp(TLS 필수)는 클라이언트 인증서가 있어야 하는 게 정상이라 이 확인 대상이 아닙니다.", command: "curl -s http://{host}:{port}/version", execution_mode: captured, risk: low, tool: curl, sudo: false, output: text, policy: allowed}
+    - {id: docker-api-tree, name: 컨테이너·이미지 트리 조회, description: 인증 없이 볼 수 있는 모든 컨테이너와 이미지를 나열합니다., command: "{repo_dir}/.venv/bin/python -m app.docker_tree --host {host} --port {port}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
 ike:
   display_name: IKE/IPsec
   match: {services: [isakmp], ports: [500]}

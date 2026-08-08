@@ -631,6 +631,13 @@ export default function App() {
             autoRunRsyncTree(modules[0]);
           }
         }
+        if (c.id === "docker-api-detect" && /"ApiVersion"/i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoDockerTreeFiredRef.current !== key) {
+            autoDockerTreeFiredRef.current = key;
+            autoRunDockerTree();
+          }
+        }
         if (c.id === "mongodb-info" && /mongodb-info:/i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoMongoTreeFiredRef.current !== key) {
@@ -926,6 +933,17 @@ export default function App() {
         ` --username ${username} --password ***`,
       target_level: false,
       variables: {username, password},
+    });
+  };
+  const autoDockerTreeFiredRef = useRef<string>();
+  const autoRunDockerTree = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "docker-api-tree",
+      preview: `docker_tree --host ${target.ip} --port ${service.port} (no auth)`,
+      target_level: false,
+      variables: {},
     });
   };
   const autoMongoTreeFiredRef = useRef<string>();
