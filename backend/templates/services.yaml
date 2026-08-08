@@ -18,6 +18,7 @@ ftp:
     - {id: ftp-anon, name: FTP anonymous 자격증명 대입, description: FTP 프로토콜 데이터셋의 anonymous 계정을 한 번 대입하고 성공 즉시 종료합니다. 디렉터리 내용은 나열하지 않습니다., command: "nmap -Pn -p{port} --script ftp-anon --script-args ftp-anon.maxlist=0 {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: ftp-syst, name: FTP 시스템 정보 확인, description: FTP 서버가 공개하는 시스템 정보를 조회합니다., command: "nmap -Pn -p{port} --script ftp-syst {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: ftp-client, name: FTP 수동 접속, description: 자동 로그인 없이 대화형 FTP 클라이언트를 엽니다., command: "ftp {host} {port}", execution_mode: interactive, risk: low, tool: ftp, sudo: false, output: pty-log, policy: allowed}
+    - {id: ftp-directory-tree, name: 폴더·파일 트리 조회, description: "FTP 서버의 전체 디렉터리·파일 구조를 재귀적으로 나열합니다. username/password를 비워두면 anonymous로 접속합니다.", command: "{repo_dir}/.venv/bin/python -m app.ftp_tree --host {host} --port {port} --username {username} --password {password}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
 ssh:
   display_name: SSH
   match: {services: [ssh], ports: [22]}

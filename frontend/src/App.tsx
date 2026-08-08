@@ -392,6 +392,7 @@ export default function App() {
     setOutput((value) =>
       `${value}\n[Kali QTerminal에서 anonymous FTP 로그인 세션을 열었습니다.]\n`
     );
+    autoRunFtpTree("", "");
   };
   const openMysqlTerminal = async (username: string) => {
     if (!targetId || !serviceId) return;
@@ -731,6 +732,17 @@ export default function App() {
       variables: {username: credStore.username, password: credStore.password},
     });
   };
+  const autoRunFtpTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ftp-directory-tree",
+      preview: `ftp_tree --host ${target.ip} --port ${service.port}` +
+        (username ? ` --username ${username} --password ***` : " (anonymous)"),
+      target_level: false,
+      variables: {username, password},
+    });
+  };
   // Responder needs to keep running while the tester works in other tabs
   // (Web Testing, to trigger the auth coercion) without losing its view on
   // every SPA navigation, so unlike the manual-shell panels next to this
@@ -888,6 +900,7 @@ export default function App() {
   const [autoFileTreeRunId, setAutoFileTreeRunId] = useState<number>();
   const [autoFileTree, setAutoFileTree] = useState<{status: string; output: string}>();
   const autoFileTreeFiredRef = useRef<string>();
+  const autoFtpTreeFiredRef = useRef<string>();
   // The review-modal skip below is a deliberate exception carved out only
   // for these two read-only listing commands, hardcoded here -- there is no
   // server-side "skip review" flag (execute() already runs anything its
@@ -1409,6 +1422,22 @@ export default function App() {
       )
     : null;
   const serviceNameLower = (service?.name || "").toLowerCase();
+  useEffect(() => {
+    if (serviceNameLower !== "ftp" || !credStore.username.trim()
+      || !credStore.password.trim()) return;
+    const key = `${targetId}-${credStore.username}-${credStore.password}`;
+    if (autoFtpTreeFiredRef.current === key) return;
+    // Debounced: there's no separate "check this credential" step for FTP
+    // like NetExec gives WinRM/SSH, so this doubles as the check -- firing
+    // on every keystroke while the user is still typing the password would
+    // spam login attempts, hence the short wait for typing to settle.
+    const timer = setTimeout(() => {
+      autoFtpTreeFiredRef.current = key;
+      autoRunFtpTree(credStore.username, credStore.password);
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceNameLower, targetId, credStore.username, credStore.password]);
   const netexecProtocol: NetexecProtocol | undefined =
     ["microsoft-ds", "netbios-ssn", "smb"].includes(serviceNameLower) ? "smb"
     : serviceNameLower === "ssh" ? "ssh"

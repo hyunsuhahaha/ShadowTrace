@@ -1,6 +1,12 @@
 import type {RunState} from "./enumerationModel";
 import type {ExecutionSummary} from "./serviceIntel";
 import {statusCopy as statusLabel} from "./ui";
+import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
+
+// Commands whose captured output is D|/F|-tagged tree lines (see
+// backend/app/ftp_tree.py) instead of plain text -- rendered as an
+// expandable tree here rather than a raw dump.
+const treeTemplateIds = new Set(["ftp-directory-tree"]);
 
 export default function LiveOutputPanel({run, elapsed, outcome, output}: {
   run?: RunState; elapsed: number; outcome: ExecutionSummary | null; output: string;
@@ -25,6 +31,10 @@ export default function LiveOutputPanel({run, elapsed, outcome, output}: {
         <span>{outcome.detail}</span>
       </div>
     )}
-    <pre>{output}</pre>
+    {run && treeTemplateIds.has(run.templateId) && run.status === "completed" ? (
+      <FileTreeView node={buildFileTree(parseTaggedTreeLines(output), "/")} />
+    ) : (
+      <pre>{output}</pre>
+    )}
   </div>;
 }
