@@ -885,6 +885,72 @@ export default function App() {
       setEvidenceMsg(`저장 실패: ${reason instanceof Error ? reason.message : reason}`);
     }
   };
+  const [autoFileTreeRunId, setAutoFileTreeRunId] = useState<number>();
+  const [autoFileTree, setAutoFileTree] = useState<{status: string; output: string}>();
+  const autoFileTreeFiredRef = useRef<string>();
+  // The review-modal skip below is a deliberate exception carved out only
+  // for these two read-only listing commands, hardcoded here -- there is no
+  // server-side "skip review" flag (execute() already runs anything its
+  // caller prepared+approved, for every command), so this function is the
+  // one and only place that bypasses the modal, and it never takes a
+  // command_id as input.
+  const autoRunFileTree = async (
+    protocol: "ssh" | "winrm", username: string, password: string, domain: string,
+  ) => {
+    if (!projectId || !targetId || !username.trim()) return;
+    try {
+      let credentialId = credStore.saved.data?.find((c) =>
+        c.target_id === targetId && c.username === username && c.secret === password)?.id;
+      if (!credentialId) {
+        const created = await api<{id: number}>("/runbooks/credentials", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            project_id: projectId, target_id: targetId, username, domain,
+            secret: password, secret_kind: "password", source_kind: "netexec_check",
+            source_detail: `NetExec ${protocol} 자격증명 확인 성공`,
+          }),
+        });
+        credentialId = created.id;
+        await qc.invalidateQueries({queryKey: ["credentials", projectId]});
+      }
+      const commandId = protocol === "winrm" ? "windows_file_tree" : "linux_file_tree";
+      const prepared = await api<{run: {id: number}; approval_token: string}>(
+        "/post-exploitation/prepare", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            target_id: targetId, credential_id: credentialId, command_id: commandId,
+            request_key: crypto.randomUUID(),
+          }),
+        });
+      await api(`/post-exploitation/${prepared.run.id}/execute`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({approval_token: prepared.approval_token}),
+      });
+      setAutoFileTree({status: "running", output: ""});
+      setAutoFileTreeRunId(prepared.run.id);
+    } catch {
+      // Best-effort background recon, not a user-initiated action -- a
+      // failure here (no post_exploitation module installed, target
+      // unreachable, etc.) shouldn't surface as an error banner.
+    }
+  };
+  useEffect(() => {
+    if (!autoFileTreeRunId) return;
+    const events = new EventSource(`/api/post-exploitation/${autoFileTreeRunId}/events`);
+    events.onmessage = (e) => {
+      const item = JSON.parse(e.data);
+      if (item.stream === "snapshot") setAutoFileTree((v) => ({...v!, output: item.data}));
+      if (item.stream === "stdout")
+        setAutoFileTree((v) => ({...v!, output: (v?.output || "") + item.data}));
+      if (item.stream === "status") {
+        setAutoFileTree((v) => ({...v!, status: item.status}));
+        if (["completed", "failed", "timed_out", "cancelled"].includes(item.status))
+          events.close();
+      }
+    };
+    events.onerror = () => events.close();
+    return () => events.close();
+  }, [autoFileTreeRunId]);
   const viewSmbFile = (path: string) => {
     if (!target || !service || !lastSpiderShare) return;
     setRunWithSudo(false);
@@ -1358,6 +1424,18 @@ export default function App() {
   } as const)[netexecProtocol];
   const netexecCredentialResult = netexecCredCommandId
     ? runStates[netexecCredCommandId] : undefined;
+  useEffect(() => {
+    if (netexecProtocol !== "ssh" && netexecProtocol !== "winrm") return;
+    const success = netexecCredentialResult?.status === "completed"
+      && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
+    if (!success || !targetId) return;
+    const key = `${targetId}-${netexecProtocol}-${credStore.username}`;
+    if (autoFileTreeFiredRef.current === key) return;
+    autoFileTreeFiredRef.current = key;
+    void autoRunFileTree(
+      netexecProtocol, credStore.username, credStore.password, credStore.domain);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [netexecProtocol, netexecCredentialResult, targetId, credStore.username]);
   const latestSmbEnum = serviceExecutions
     .filter((item) => item.template_id === "smb-enum" && item.status === "completed")
     .sort((a, b) => b.id - a.id)[0];
@@ -1758,7 +1836,7 @@ export default function App() {
               <NetexecOutcome protocol={netexecProtocol}
                 result={netexecCredentialResult} username={credStore.username}
                 domain={credStore.domain} target={target} service={service}
-                evidenceMsg={evidenceMsg} actions={{
+                evidenceMsg={evidenceMsg} fileTree={autoFileTree} actions={{
                   openPsexec: () => void openPsexecShell(),
                   openLateral: (kind) => void openLateralShell(kind),
                   openSsh: () => void openSshShell(),

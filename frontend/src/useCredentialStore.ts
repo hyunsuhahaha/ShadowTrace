@@ -9,7 +9,7 @@ const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
 };
 
 export type StoredCredential = {
-  id: number; username: string; domain: string;
+  id: number; target_id: number | null; username: string; domain: string;
   secret: string; has_secret: boolean; secret_hint: string;
   source_kind: string; source_detail: string;
 };

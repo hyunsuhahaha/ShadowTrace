@@ -1,7 +1,9 @@
 import type {RunState, Service, Target} from "./enumerationModel";
+import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
 
 export type NetexecProtocol = "smb" | "ssh" | "winrm" | "rdp" | "mssql" | "ldap";
 type ExecutionEvidence = {id: number; stdout?: string; stderr?: string};
+export type AutoFileTreeState = {status: string; output: string};
 type Actions = {
   openPsexec: () => void;
   openLateral: (kind: "wmiexec" | "smbexec" | "atexec") => void;
@@ -13,9 +15,10 @@ type Actions = {
 };
 
 export default function NetexecOutcome({protocol, result, username, domain, target,
-  service, evidenceMsg, actions}: {
+  service, evidenceMsg, actions, fileTree}: {
   protocol: NetexecProtocol; result?: RunState; username: string; domain: string;
   target?: Target; service?: Service; evidenceMsg: string; actions: Actions;
+  fileTree?: AutoFileTreeState;
 }) {
   const success = result?.status === "completed"
     && /^\[\+\]|pwn3d/im.test(result.stdout || "");
@@ -47,6 +50,13 @@ export default function NetexecOutcome({protocol, result, username, domain, targ
         확인한 뒤 직접 Enter를 눌러야 실행됩니다.</span>
       <button onClick={actions.openWinrm}>evil-winrm 명령 준비하기</button>
     </div>}
+    {(protocol === "ssh" || protocol === "winrm") && success && fileTree && (
+      <div className="netexecFileTree">
+        <b>폴더·파일 트리 {fileTree.status === "running" ? "(자동 조회 중…)" : ""}</b>
+        <FileTreeView node={buildFileTree(
+          parseTaggedTreeLines(fileTree.output), protocol === "winrm" ? "\\" : "/")} />
+      </div>
+    )}
     {protocol === "rdp" && success && <div className="netexecPwned">
       <b>RDP 인증 성공</b><span>xfreerdp 명령을 클립보드에 복사합니다. 직접 터미널에서
         확인 후 붙여넣어 실행해야 합니다.</span>
