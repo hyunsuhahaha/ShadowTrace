@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect, useRef, useState,
+  type CSSProperties, type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { syncSelectedProject } from "./scanCenterModel";
-import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
+import { Badge, ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import "./hash-cracking.css";
 
 type Project = { id: number; name: string };
@@ -96,6 +99,22 @@ export default function HashCrackingWorkspace() {
   const [promoteFor, setPromoteFor] = useState<Cracked>();
   const [promoteUsername, setPromoteUsername] = useState("");
   const [promoteMsg, setPromoteMsg] = useState("");
+  const [copiedPlain, setCopiedPlain] = useState<string>();
+  // history is polled every 3s, so relying on it alone left the status
+  // badge showing "작업 대기" for up to 3s after a job actually started (the
+  // live output was already streaming in via SSE the whole time) — this is
+  // the immediately-known status, reconciled with history once it catches up.
+  const [liveStatus, setLiveStatus] = useState<string>();
+  const [formWidth, setFormWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("oscp-crack-form-width"));
+    return saved >= 240 && saved <= 480 ? saved : 300;
+  });
+  const [historyWidth, setHistoryWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("oscp-crack-history-width"));
+    return saved >= 200 && saved <= 420 ? saved : 260;
+  });
+  const formResize = useRef({x: 0, width: 300});
+  const historyResize = useRef({x: 0, width: 260});
 
   const projects = useQuery({
       queryKey: ["projects"],
@@ -153,6 +172,7 @@ export default function HashCrackingWorkspace() {
   useEffect(() => {
     if (history.data?.length && !history.data.some((r) => r.id === jobId)) {
       setJobId(history.data[0].id);
+      setLiveStatus(history.data[0].status);
     }
   }, [history.data, jobId]);
   useEffect(() => {
@@ -181,6 +201,7 @@ export default function HashCrackingWorkspace() {
   }, [catalog.data]);
 
   const selected = history.data?.find((r) => r.id === jobId);
+  const displayStatus = liveStatus ?? selected?.status;
   const selectedMode = catalog.data?.hash_modes.find((m) => m.id === hashModeId);
   const selectedWordlist = catalog.data?.wordlists.find((w) => w.id === wordlistId);
   const selectedWordlist2 = catalog.data?.wordlists.find((w) => w.id === wordlist2Id);
@@ -233,6 +254,7 @@ export default function HashCrackingWorkspace() {
       });
       await post<Job>(`/hash-cracking/${created.id}/start`, {});
       setJobId(created.id);
+      setLiveStatus("running");
       setHashes(""); setLabel(""); setHashModeAuto(false);
       await qc.invalidateQueries({ queryKey: ["hashCrackingJobs", targetId] });
     } catch (reason) { setError(String(reason)); }
@@ -252,6 +274,48 @@ export default function HashCrackingWorkspace() {
       setPromoteFor(undefined); setPromoteUsername("");
     } catch (reason) { setPromoteMsg(String(reason)); }
   };
+  const copyPlain = async (plain: string) => {
+    await navigator.clipboard.writeText(plain);
+    setCopiedPlain(plain);
+    window.setTimeout(() => setCopiedPlain((current) => current === plain ? undefined : current), 1500);
+  };
+  const applyFormWidth = (width: number) => {
+    const next = Math.min(480, Math.max(240, width));
+    setFormWidth(next);
+    localStorage.setItem("oscp-crack-form-width", String(next));
+  };
+  const beginFormResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    formResize.current = {x: event.clientX, width: formWidth};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const resizeForm = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    applyFormWidth(formResize.current.width + event.clientX - formResize.current.x);
+  };
+  const finishFormResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const applyHistoryWidth = (width: number) => {
+    const next = Math.min(420, Math.max(200, width));
+    setHistoryWidth(next);
+    localStorage.setItem("oscp-crack-history-width", String(next));
+  };
+  const beginHistoryResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    historyResize.current = {x: event.clientX, width: historyWidth};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const resizeHistory = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    // Dragging left grows the history panel since the handle sits on its
+    // left edge, so the delta direction is inverted relative to the form
+    // resize handle (which sits on its right edge and grows to the right).
+    applyHistoryWidth(historyResize.current.width - (event.clientX - historyResize.current.x));
+  };
+  const finishHistoryResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   useEffect(() => {
     if (!jobId) return;
@@ -263,6 +327,7 @@ export default function HashCrackingWorkspace() {
       if (item.stream === "stdout") setOutput((v) => v + item.data);
       if (item.stream === "stderr") setOutput((v) => v + `[stderr] ${item.data}`);
       if (item.stream === "status" && terminal.includes(item.status)) {
+        setLiveStatus(item.status);
         setOutput((v) => v + (item.error
           ? `\n[${item.status}] ${item.error}\n`
           : `\n[${item.status}${item.exit_code == null ? "" : ` · exit ${item.exit_code}`}` +
@@ -298,7 +363,10 @@ export default function HashCrackingWorkspace() {
       {catalog.data && !catalog.data.hashcat_installed && (
         <div className="crackWarning">hashcat이 설치되어 있지 않습니다 (sudo apt install hashcat)</div>
       )}
-      <main className="crackLayout">
+      <main className="crackLayout" style={{
+        "--crack-form-width": `${formWidth}px`,
+        "--crack-history-width": `${historyWidth}px`,
+      } as CSSProperties}>
         <section className="crackForm">
           <label>
             라벨 (선택)
@@ -392,25 +460,50 @@ export default function HashCrackingWorkspace() {
             </label>
           )}
           {error && <ErrorState message={error} />}
+          {displayStatus && (
+            <div className="crackStatusBanner" role="status">
+              <Badge status={displayStatus} />
+              {selected && <small>작업 #{selected.id}</small>}
+              {displayStatus === "running" && selected && (
+                <button type="button" className="crackStatusBanner__cancel"
+                  onClick={() => cancelJob(selected.id)}>중단</button>
+              )}
+            </div>
+          )}
           <button type="button"
             disabled={!targetId || !hashModeId || !hashes.trim() || !wordlistReady
               || !wordlist2Ready || !maskReady || !catalog.data?.hashcat_installed}
             onClick={createAndStart}>
             크랙 시작
           </button>
+          <div className="layoutResizeHandle crackFormResizeHandle"
+            role="separator" aria-label="입력 폼 너비 조절" aria-orientation="vertical"
+            aria-valuemin={240} aria-valuemax={480} aria-valuenow={formWidth}
+            title="드래그하거나 마우스 휠·방향키로 너비 조절" tabIndex={0}
+            onPointerDown={beginFormResize} onPointerMove={resizeForm}
+            onPointerUp={finishFormResize} onPointerCancel={finishFormResize}
+            onWheel={(event) => { event.preventDefault();
+              applyFormWidth(formWidth + (event.deltaY < 0 ? 16 : -16)); }}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              if (event.key === "Home") applyFormWidth(240);
+              else if (event.key === "End") applyFormWidth(480);
+              else applyFormWidth(formWidth + (event.key === "ArrowRight" ? 16 : -16));
+            }} />
         </section>
         <section className="crackMain">
           <div className="terminal crackTerminal">
-            <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : ""}>
+            <div className={displayStatus ? `terminalStatus terminalStatus--${displayStatus}` : ""}>
               <span aria-hidden="true" />
               <b>실시간 출력</b>
               <small>
-                {selected
-                  ? `작업 #${selected.id} · ${statusLabel[selected.status] || selected.status}`
+                {displayStatus
+                  ? `작업 #${jobId} · ${statusLabel[displayStatus] || displayStatus}`
                   : "작업 대기"}
               </small>
-              {selected?.status === "running" && (
-                <button type="button" onClick={() => cancelJob(selected.id)}>중단</button>
+              {displayStatus === "running" && jobId && (
+                <button type="button" onClick={() => cancelJob(jobId)}>중단</button>
               )}
             </div>
             <pre>{output}</pre>
@@ -420,11 +513,19 @@ export default function HashCrackingWorkspace() {
               <b>크랙된 자격 증명 {outputQuery.data?.cracked.length ?? selected.cracked_count}건</b>
               {outputQuery.data?.cracked.map((item, index) => (
                 <div key={index} className="crackResultRow">
-                  <code title={item.hash}>{item.hash.slice(0, 40)}{item.hash.length > 40 ? "…" : ""}</code>
-                  <b>{item.plain}</b>
-                  <button type="button" onClick={() => { setPromoteFor(item); setPromoteUsername(""); }}>
-                    Credential로 저장
-                  </button>
+                  <div className="crackResultPlain">
+                    <b>{item.plain}</b>
+                    <code title={item.hash}>{item.hash.slice(0, 40)}{item.hash.length > 40 ? "…" : ""}</code>
+                  </div>
+                  <div className="crackResultActions">
+                    <button type="button" onClick={() => void copyPlain(item.plain)}>
+                      {copiedPlain === item.plain ? "복사됨" : "복사"}
+                    </button>
+                    <button type="button"
+                      onClick={() => { setPromoteFor(item); setPromoteUsername(""); }}>
+                      Credential로 저장
+                    </button>
+                  </div>
                 </div>
               ))}
               {!outputQuery.data?.cracked.length && <p className="empty">크랙된 항목이 없습니다.</p>}
@@ -449,6 +550,21 @@ export default function HashCrackingWorkspace() {
           )}
         </section>
         <aside className="crackHistory">
+          <div className="layoutResizeHandle crackHistoryResizeHandle"
+            role="separator" aria-label="작업 이력 너비 조절" aria-orientation="vertical"
+            aria-valuemin={200} aria-valuemax={420} aria-valuenow={historyWidth}
+            title="드래그하거나 마우스 휠·방향키로 너비 조절" tabIndex={0}
+            onPointerDown={beginHistoryResize} onPointerMove={resizeHistory}
+            onPointerUp={finishHistoryResize} onPointerCancel={finishHistoryResize}
+            onWheel={(event) => { event.preventDefault();
+              applyHistoryWidth(historyWidth + (event.deltaY < 0 ? 16 : -16)); }}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              if (event.key === "Home") applyHistoryWidth(200);
+              else if (event.key === "End") applyHistoryWidth(420);
+              else applyHistoryWidth(historyWidth + (event.key === "ArrowLeft" ? 16 : -16));
+            }} />
           <div className="panelTitle"><span>작업 이력</span></div>
           {history.isLoading && <LoadingState label="이력을 불러오는 중" />}
           {!history.isLoading && !history.data?.length && (
@@ -457,7 +573,7 @@ export default function HashCrackingWorkspace() {
           {history.data?.map((r) => (
             <div key={r.id} role="button" tabIndex={0}
               className={`crackRow ${r.id === jobId ? "active" : ""}`}
-              onClick={() => setJobId(r.id)}>
+              onClick={() => { setJobId(r.id); setLiveStatus(r.status); }}>
               <span><b>#{r.id} · {r.hash_type_name}</b>
                 <em>{statusLabel[r.status] || r.status}</em></span>
               <small>{r.hash_count}개 해시 · {new Date(r.created_at).toLocaleString()}</small>

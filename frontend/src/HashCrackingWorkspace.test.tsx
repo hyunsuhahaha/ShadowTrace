@@ -151,3 +151,76 @@ it("omits the wordlist and sends the mask when starting a brute-force job", asyn
   expect(created.mask).toBe("?u?l?l?l?d?d?d");
   expect(created.wordlist_id).toBeUndefined();
 });
+
+it("shows the job as running immediately after starting, without waiting for the next history poll", async () => {
+  // history is polled every 3s and always returns [] here (matching the
+  // real gap right after a job is created: the invalidated query hasn't
+  // refetched yet), so this only passes if the status comes from the
+  // create/start response itself rather than from `history.data`.
+  const fetcher = baseFetcher((url, init) => {
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9, status: "running" }),
+        { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/output")) {
+      return new Response(JSON.stringify({ stdout: "", stderr: "", cracked: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher);
+  await screen.findByLabelText("공격 모드");
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0" },
+  });
+
+  fireEvent.click(screen.getByText("크랙 시작"));
+
+  expect(await screen.findByText("실행 중")).toBeTruthy();
+});
+
+it("puts the cracked password front and center, with the hash as secondary detail and a copy button", async () => {
+  const fetcher = baseFetcher((url) => {
+    if (url.includes("/hash-cracking?target_id=")) {
+      return new Response(JSON.stringify([{
+        id: 4, project_id: 1, target_id: 2, label: "", hash_mode_id: "netntlmv2",
+        hash_mode: "5600", hash_type_name: "NetNTLMv2", attack_mode: "0",
+        wordlist_id: "rockyou", wordlist2_id: "", rule_id: "", mask: "", hash_count: 1,
+        command_display: "", status: "completed", exit_code: 0, cracked_count: 1,
+        cancelled: false, error: "", evidence_id: null, created_at: "2026-08-08T04:28:08Z",
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/4/output")) {
+      return new Response(JSON.stringify({ stdout: "", stderr: "", cracked: [
+        { hash: "Administrator::RESPONDER:99e51ab52f70937d:aaa:bbb", plain: "badminton" },
+      ] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  mount(fetcher);
+
+  const plain = await screen.findByText("badminton");
+  expect(plain.tagName).toBe("B");
+  expect(screen.getByText(/Administrator::RESPONDER/).tagName).toBe("CODE");
+
+  fireEvent.click(screen.getByText("복사"));
+  await waitFor(() => expect(screen.getByText("복사됨")).toBeTruthy());
+  expect((navigator.clipboard.writeText as ReturnType<typeof vi.fn>))
+    .toHaveBeenCalledWith("badminton");
+});
+
+it("persists the form panel width when resized with the scroll wheel", async () => {
+  mount(baseFetcher(() => undefined));
+  const handle = await screen.findByLabelText("입력 폼 너비 조절");
+  expect(handle.getAttribute("aria-valuenow")).toBe("300");
+
+  fireEvent.wheel(handle, { deltaY: -100 });
+
+  expect(handle.getAttribute("aria-valuenow")).toBe("316");
+  expect(localStorage.getItem("oscp-crack-form-width")).toBe("316");
+});
