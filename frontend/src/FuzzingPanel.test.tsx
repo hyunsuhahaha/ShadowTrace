@@ -129,6 +129,30 @@ it("excludes results by file extension, e.g. hiding static-asset noise", () => {
   expect(screen.queryByText("/assets/main.js")).toBeNull();
 });
 
+it("opens a discovered path against the confirmed hostname instead of the bare IP", () => {
+  // A vhost-routed site redirects or refuses bare-IP requests, so an "열기"
+  // link built from target.ip alone lands on the wrong (or a stub) page
+  // even though the fuzz itself found something real.
+  const stdout = JSON.stringify({ type: "response", path: "/admin", status: 200,
+    content_length: 1, word_count: 1, line_count: 1 });
+  render(<FuzzingPanel target={{ ip: "10.10.10.5", hostname: "unika.htb" }} service={service}
+    serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz", status: "running", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("열기").getAttribute("href")).toBe("http://unika.htb:80/admin");
+});
+
+it("falls back to the bare IP when no hostname is confirmed yet", () => {
+  const stdout = JSON.stringify({ type: "response", path: "/admin", status: 200,
+    content_length: 1, word_count: 1, line_count: 1 });
+  render(<FuzzingPanel target={target} service={service} serviceExecutions={[]}
+    runState={{ templateId: "http-directory-fuzz", status: "running", stdout }}
+    evidenceMsg="" onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} />);
+
+  expect(screen.getByText("열기").getAttribute("href")).toBe("http://10.10.10.5:80/admin");
+});
+
 it("captures the active execution as evidence, preferring the live run over history", () => {
   const onCaptureEvidence = vi.fn();
   const stdout = JSON.stringify({ type: "response", path: "/x", status: 200,

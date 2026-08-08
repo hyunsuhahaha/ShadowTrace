@@ -897,7 +897,7 @@ export default function App() {
     if (!target || !service || !wordlist.trim()) return;
     setRunWithSudo(false);
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
-    const base = `feroxbuster -u ${scheme}://${target.ip}:${service.port}/ -w ${wordlist}`;
+    const base = `feroxbuster -u ${scheme}://${target.hostname || target.ip}:${service.port}/ -w ${wordlist}`;
     void run(extensions
       ? {
           id: "http-directory-fuzz-ext",
@@ -918,7 +918,7 @@ export default function App() {
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "http-vhost-fuzz",
-      preview: `ffuf -u ${scheme}://${target.ip}:${service.port}/` +
+      preview: `ffuf -u ${scheme}://${target.hostname || target.ip}:${service.port}/` +
         ` -H "Host: FUZZ.${domain}" -w ${wordlist} -mc all -t 40`,
       target_level: false,
       variables: {domain, wordlist},
@@ -940,7 +940,7 @@ export default function App() {
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "http-param-fuzz",
-      preview: `ffuf -u ${scheme}://${target.ip}:${service.port}${path}?FUZZ=test` +
+      preview: `ffuf -u ${scheme}://${target.hostname || target.ip}:${service.port}${path}?FUZZ=test` +
         ` -w ${wordlist} -mc all -t 40`,
       target_level: false,
       variables: {path, wordlist},
@@ -952,7 +952,7 @@ export default function App() {
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "http-link-extract",
-      preview: `bash -c "curl -s -k ${scheme}://${target.ip}:${service.port}${path}` +
+      preview: `bash -c "curl -s -k ${scheme}://${target.hostname || target.ip}:${service.port}${path}` +
         ` | grep -ohE '(href|src|action)=\\"[^\\"#]*\\"' | sed -E 's/^[a-z]+=\\"//;s/\\"$//' | sort -u"`,
       target_level: false,
       variables: {path},
@@ -970,7 +970,7 @@ export default function App() {
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "s3-bucket-list",
-      preview: `aws --endpoint-url=${scheme}://${target.ip}:${service.port} s3 ls`,
+      preview: `aws --endpoint-url=${scheme}://${target.hostname || target.ip}:${service.port} s3 ls`,
       target_level: false,
       variables: {},
     });
@@ -981,7 +981,8 @@ export default function App() {
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
     void run({
       id: "s3-object-list",
-      preview: `aws --endpoint-url=${scheme}://${target.ip}:${service.port} s3 ls s3://${bucket}`,
+      preview: `aws --endpoint-url=${scheme}://${target.hostname || target.ip}:${service.port}` +
+        ` s3 ls s3://${bucket}`,
       target_level: false,
       variables: {path: bucket},
     });
@@ -993,7 +994,7 @@ export default function App() {
     void run({
       id: "s3-webshell-upload",
       preview: `bash backend/scripts/s3_webshell_upload.sh ` +
-        `${scheme}://${target.ip}:${service.port} ${bucket} <output_dir>`,
+        `${scheme}://${target.hostname || target.ip}:${service.port} ${bucket} <output_dir>`,
       target_level: false,
       variables: {path: bucket},
     });

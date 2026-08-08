@@ -38,7 +38,7 @@ export default function LinkExtractPanel({
   target, service, runState, serviceExecutions, evidenceMsg, onFuzz, onCaptureEvidence,
   onOpenInRequest,
 }: {
-  target?: { ip: string };
+  target?: { ip: string; hostname?: string };
   service?: { port: number; name: string };
   runState?: LinkExtractRunState;
   serviceExecutions: LinkExtractExecution[];
@@ -65,7 +65,8 @@ export default function LinkExtractPanel({
       ? { id: latestFuzz.id, stdout: latestFuzz.stdout, stderr: latestFuzz.stderr }
       : undefined;
   const scheme = service?.name.toLowerCase().includes("ssl") ? "https" : "http";
-  const base = target && service ? `${scheme}://${target.ip}:${service.port}${path}` : "";
+  const base = target && service
+    ? `${scheme}://${target.hostname || target.ip}:${service.port}${path}` : "";
   const resolve = (value: string) => {
     try { return new URL(value, base).toString(); } catch { return value; }
   };

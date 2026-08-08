@@ -17,7 +17,7 @@ export type FuzzRunState = {
 export default function FuzzingPanel({
   target, service, runState, serviceExecutions, evidenceMsg, onFuzz, onCaptureEvidence,
 }: {
-  target?: { ip: string; os_guess?: string };
+  target?: { ip: string; hostname?: string; os_guess?: string };
   service?: { port: number; name: string };
   runState?: FuzzRunState;
   serviceExecutions: FuzzExecution[];
@@ -99,7 +99,7 @@ export default function FuzzingPanel({
                 <td>{item.status}</td>
                 <td>{item.length}</td>
                 <td>{item.words}/{item.lines}</td>
-                <td><a href={`${scheme}://${target?.ip}:${service?.port}${item.path}`}
+                <td><a href={`${scheme}://${target?.hostname || target?.ip}:${service?.port}${item.path}`}
                   target="_blank" rel="noreferrer">열기</a></td>
               </tr>
             ))}</tbody>

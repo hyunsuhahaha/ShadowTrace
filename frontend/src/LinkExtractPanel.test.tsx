@@ -46,6 +46,24 @@ it("lists discovered links, resolves a relative one to an absolute URL, and offe
   expect(onCaptureEvidence).toHaveBeenCalledOnce();
 });
 
+it("resolves a relative link against the confirmed hostname instead of the bare IP", () => {
+  // A vhost-routed site redirects or refuses bare-IP requests, so a
+  // "Request 탭에 채우기" URL built from the IP alone would fill the
+  // Request tab with a request that never reaches the real page.
+  const onOpenInRequest = vi.fn();
+  render(<LinkExtractPanel target={{ ip: "10.10.11.80", hostname: "unika.htb" }}
+    service={service} evidenceMsg=""
+    serviceExecutions={[{
+      id: 7, template_id: "http-link-extract", status: "completed",
+      stdout: "/index.php?page=german.html\n",
+    }]}
+    onFuzz={vi.fn()} onCaptureEvidence={vi.fn()} onOpenInRequest={onOpenInRequest} />);
+
+  fireEvent.click(screen.getByText("Request 탭에 채우기"));
+
+  expect(onOpenInRequest).toHaveBeenCalledWith("http://unika.htb/index.php?page=german.html");
+});
+
 it("normalizes a pasted full URL down to its path before extracting", () => {
   const onFuzz = vi.fn();
   render(<LinkExtractPanel target={target} service={service} serviceExecutions={[]}
