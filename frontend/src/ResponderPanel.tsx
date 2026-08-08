@@ -17,7 +17,7 @@ export default function ResponderPanel({
 }: {
   targetId?: number;
   onStartListener: (interfaceName: string) => void;
-  onSendHashToCracking: (hash: string) => void;
+  onSendHashToCracking: (capture: ResponderCapture) => void;
   onSaveCredential: (capture: ResponderCapture) => void;
   evidenceMsg: string;
 }) {
@@ -79,7 +79,7 @@ export default function ResponderPanel({
                   <td>{new Date(capture.captured_at).toLocaleString()}</td>
                   <td>
                     {!capture.cleartext && <button type="button"
-                      onClick={() => onSendHashToCracking(capture.value)}>
+                      onClick={() => onSendHashToCracking(capture)}>
                       Hash Cracking으로
                     </button>}
                     <button type="button" onClick={() => onSaveCredential(capture)}>

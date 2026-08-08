@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
 from app.models import Credential, Evidence, HashCrackJob, Project, Target
-from app.modules.hash_cracking import catalog, router
+from app.modules.hash_cracking import catalog, manager as manager_module, router
 from app.modules.hash_cracking.manager import parse_cracked
 from app.modules.hash_cracking.schemas import JobIn, PromoteIn
 
@@ -378,3 +379,37 @@ def test_zip2john_times_out(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(router.zip2john(upload(b"fake zip bytes")))
     assert exc.value.status_code == 504
+
+
+def test_hashcat_runs_with_rusticl_enabled_for_the_cpu_opencl_fallback(tmp_path, monkeypatch):
+    # Mesa's rusticl OpenCL platform (the CPU fallback used on a GPU-less
+    # box, e.g. most VMs) enumerates zero devices unless this env var is
+    # set, which hashcat treats as "no compatible platform found" and
+    # exits immediately without cracking anything.
+    engine = create_engine(f"sqlite:///{tmp_path / 'jobs.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+        db.add(target); db.flush()
+        job = HashCrackJob(
+            project_id=project.id, target_id=target.id, hash_mode_id="netntlmv2",
+            hash_mode="5600", hash_type_name="NetNTLMv2", attack_mode="0",
+            hash_count=1, status="running")
+        db.add(job); db.commit()
+        job_id = job.id
+
+    folder = tmp_path / "job"
+    script = tmp_path / "print_env.py"
+    script.write_text("import os\nprint(os.environ.get('RUSTICL_ENABLE', ''))\n",
+                      encoding="utf-8")
+
+    async def run():
+        manager_module.manager.cancel_events[job_id] = asyncio.Event()
+        await manager_module.manager._run(job_id, [sys.executable, str(script)], folder)
+    asyncio.run(run())
+
+    assert (folder / "stdout.txt").read_text(encoding="utf-8").strip() == "llvmpipe"

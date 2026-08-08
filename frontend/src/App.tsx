@@ -817,10 +817,11 @@ export default function App() {
     localStorage.setItem("oscp-workspace-hash-mode", mode);
     location.hash = "hash-cracking";
   };
-  const sendHashToCracking = (hash: string) => {
+  const sendHashToCracking = (hash: string, label?: string) => {
     if (!targetId) return;
     localStorage.setItem("oscp-workspace-hash-target", String(targetId));
     localStorage.setItem("oscp-workspace-hash-value", hash);
+    if (label) localStorage.setItem("oscp-workspace-hash-label", label);
     location.hash = "hash-cracking";
   };
   const saveResponderCredential = async (capture: {
@@ -1569,7 +1570,8 @@ export default function App() {
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <ResponderPanel targetId={targetId} evidenceMsg={evidenceMsg}
             onStartListener={(interfaceName) => void startResponderDesktop(interfaceName)}
-            onSendHashToCracking={sendHashToCracking}
+            onSendHashToCracking={(capture) => sendHashToCracking(capture.value,
+              `Responder · ${capture.username} · ${target?.ip || ""}`)}
             onSaveCredential={(capture) => void saveResponderCredential(capture)} />}
           {!!service && <DpapiDecoderPanel />}
           {!!service && <PuttyKeyConverter />}
@@ -1741,7 +1743,7 @@ export default function App() {
             onToggleServer={() => void togglePrivescServer()}
             onSendCommand={(command) => void sendPrivescCommand(command)}
             onClose={() => setPsexecSession(undefined)}
-            onSendHashToCracking={sendHashToCracking}
+            onSendHashToCracking={(hash) => sendHashToCracking(hash, "PTY 세션 로그 캡처")}
             targetId={targetId} />
           <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
             outcome={currentOutcome} output={output} />

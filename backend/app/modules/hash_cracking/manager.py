@@ -64,9 +64,14 @@ class HashCrackManager:
         cancelled = False
         cancel_event = self.cancel_events[job_id]
         try:
+            # Mesa's rusticl OpenCL platform (the CPU fallback on a GPU-less
+            # box — a VM, most often) enumerates zero devices unless this is
+            # set; a real GPU backend (CUDA/HIP/a genuine OpenCL ICD) is
+            # unaffected either way, so it's safe to always set.
+            env = {**os.environ, "RUSTICL_ENABLE": "llvmpipe"}
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=folder, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, start_new_session=True)
+                stderr=asyncio.subprocess.PIPE, start_new_session=True, env=env)
             self.processes[job_id] = process
 
             async def pump(stream, path: Path, kind: str):

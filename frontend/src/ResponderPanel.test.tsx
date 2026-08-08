@@ -78,7 +78,11 @@ it("sends a captured hash to Hash Cracking and saves it to the Credential Store"
   fireEvent.click(within(row).getByText("Hash Cracking으로"));
   fireEvent.click(within(row).getByText("Credential Store에 저장"));
 
-  expect(onSendHashToCracking).toHaveBeenCalledWith("Administrator::RESPONDER:aaa:bbb:ccc");
+  expect(onSendHashToCracking).toHaveBeenCalledWith({
+    label: "SMB-NTLMv2-SSP-10.129.95.234", username: "Administrator",
+    value: "Administrator::RESPONDER:aaa:bbb:ccc", cleartext: false,
+    captured_at: "2026-08-08T02:56:55.077317+00:00",
+  });
   expect(onSaveCredential).toHaveBeenCalledWith({
     label: "SMB-NTLMv2-SSP-10.129.95.234", username: "Administrator",
     value: "Administrator::RESPONDER:aaa:bbb:ccc", cleartext: false,
