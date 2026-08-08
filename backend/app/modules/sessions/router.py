@@ -3,6 +3,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket
@@ -229,3 +230,65 @@ def interactive_session_log(ident: int, db: Session = Depends(get_db)):
     if not path.is_file():
         raise HTTPException(410, "Session log is not available")
     return FileResponse(path, filename=path.name, media_type="text/plain")
+
+
+RESPONDER_LOGS_DIR = Path("/usr/share/responder/logs")
+
+
+def _parse_responder_log(path: Path) -> list[dict]:
+    """Each line Responder wrote is either `user:password` (a file whose
+    name contains ClearText) or a hashcat/John-format `user::domain:...`
+    hash string. Responder only ever writes the first capture of a given
+    (module, type, client, user) combo to this file — later repeats of the
+    same account print to the terminal (with -v) but never touch the file
+    — so every line here is a genuinely distinct captured credential."""
+    label = path.stem
+    is_cleartext = "ClearText" in label
+    try:
+        lines = [line.strip() for line in
+                 path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    except OSError:
+        return []
+    captured_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    entries = []
+    for line in lines:
+        if is_cleartext:
+            username, _, value = line.partition(":")
+        else:
+            parts = line.split(":")
+            username = parts[0]
+            value = line
+        if not username:
+            continue
+        entries.append({
+            "label": label, "username": username, "value": value,
+            "cleartext": is_cleartext, "captured_at": captured_at,
+        })
+    return entries
+
+
+@router.get("/api/targets/{ident}/responder-captures")
+def responder_captures(ident: int, db: Session = Depends(get_db)):
+    """Surface what Responder has already captured for this target directly
+    in the app — the log files it writes to are the one authoritative,
+    de-duplicated record, so this doesn't depend on catching the right
+    moment in a separate desktop terminal or on Responder's own dedup
+    deciding whether to print anything at all."""
+    target = need(db, Target, ident)
+    seen: set[tuple[str, str]] = set()
+    results = []
+    if RESPONDER_LOGS_DIR.is_dir():
+        for path in sorted(RESPONDER_LOGS_DIR.glob(f"*-{target.ip}.txt")):
+            # CaptureMultipleHashFromSameHost (on by default in this repo's
+            # Responder.conf) appends every repeat authentication attempt,
+            # not just the first — cracking any one of an account's hashes
+            # yields the same password, so only the earliest (file order)
+            # capture per account is worth surfacing here.
+            for entry in _parse_responder_log(path):
+                key = (entry["label"], entry["username"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(entry)
+    results.sort(key=lambda item: item["captured_at"], reverse=True)
+    return results

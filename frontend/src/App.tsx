@@ -823,6 +823,30 @@ export default function App() {
     localStorage.setItem("oscp-workspace-hash-value", hash);
     location.hash = "hash-cracking";
   };
+  const saveResponderCredential = async (capture: {
+    label: string; username: string; value: string; cleartext: boolean;
+  }) => {
+    if (!projectId || !targetId) return;
+    setEvidenceMsg("");
+    try {
+      await api("/runbooks/credentials", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          project_id: projectId, target_id: targetId,
+          username: capture.username, secret: capture.value,
+          secret_kind: capture.cleartext ? "password" : "hash",
+          secret_hint: capture.cleartext ? "Responder 평문 캡처" : "Responder NTLMv2-SSP 캡처",
+          source_kind: "responder", source_detail: capture.label,
+          service_names: [],
+        }),
+      });
+      await qc.invalidateQueries({queryKey: ["credentials", projectId]});
+      setEvidenceMsg(`${capture.username} 자격증명을 Credential Store에 저장함`);
+    } catch (reason) {
+      setEvidenceMsg(`저장 실패: ${reason instanceof Error ? reason.message : reason}`);
+    }
+  };
   const viewSmbFile = (path: string) => {
     if (!target || !service || !lastSpiderShare) return;
     setRunWithSudo(false);
@@ -1543,8 +1567,10 @@ export default function App() {
             onStartListener={(port) => void openListenerShell(port)} />}
           {!!service && <ChiselPivotPanel
             onStartListener={(command) => void openManualShell(command)} />}
-          {!!service && <ResponderPanel
-            onStartListener={(interfaceName) => void startResponderDesktop(interfaceName)} />}
+          {!!service && <ResponderPanel targetId={targetId} evidenceMsg={evidenceMsg}
+            onStartListener={(interfaceName) => void startResponderDesktop(interfaceName)}
+            onSendHashToCracking={sendHashToCracking}
+            onSaveCredential={(capture) => void saveResponderCredential(capture)} />}
           {!!service && <DpapiDecoderPanel />}
           {!!service && <PuttyKeyConverter />}
           {!!service && <PypykatzLsassPanel />}

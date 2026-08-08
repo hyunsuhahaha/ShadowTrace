@@ -9,7 +9,7 @@ from app.schemas import InteractiveSessionIn
 from types import SimpleNamespace
 
 import app.modules.sessions.router as sessions_router
-from app.modules.sessions.router import create_interactive_session
+from app.modules.sessions.router import create_interactive_session, responder_captures
 
 
 def database():
@@ -77,3 +77,46 @@ def test_the_running_process_check_only_applies_to_responder(tmp_path, monkeypat
 
     assert row.template_id == "ftp-client"
     assert called["count"] == 0
+
+
+def test_responder_captures_reads_this_targets_log_and_dedupes_repeat_hashes(
+        tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    monkeypatch.setattr(sessions_router, "RESPONDER_LOGS_DIR", logs_dir)
+    (logs_dir / "SMB-NTLMv2-SSP-10.129.95.234.txt").write_text(
+        "Administrator::RESPONDER:aaa:bbb:ccc\n"
+        "Administrator::RESPONDER:ddd:eee:fff\n",  # CaptureMultipleHashFromSameHost repeat
+        encoding="utf-8")
+    (logs_dir / "FTP-Cleartext-ClearText-10.129.95.234.txt").write_text(
+        "bob:hunter2\n", encoding="utf-8")
+    (logs_dir / "SMB-NTLMv2-SSP-10.129.1.1.txt").write_text(
+        "svc::OTHERBOX:aaa:bbb:ccc\n", encoding="utf-8")  # a different target — must not appear
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    box = Target(project_id=project.id, name="Box", ip="10.129.95.234")
+    db.add(box); db.commit()
+
+    results = responder_captures(box.id, db)
+
+    assert len(results) == 2
+    smb = next(r for r in results if r["label"] == "SMB-NTLMv2-SSP-10.129.95.234")
+    assert smb["username"] == "Administrator"
+    assert smb["cleartext"] is False
+    assert smb["value"] == "Administrator::RESPONDER:aaa:bbb:ccc"
+    ftp = next(r for r in results if r["cleartext"] is True)
+    assert ftp["username"] == "bob"
+    assert ftp["value"] == "hunter2"
+
+
+def test_responder_captures_is_empty_when_nothing_was_captured_for_this_target(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(sessions_router, "RESPONDER_LOGS_DIR", tmp_path / "missing")
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    box = Target(project_id=project.id, name="Box", ip="10.129.95.234")
+    db.add(box); db.commit()
+
+    assert responder_captures(box.id, db) == []
