@@ -244,3 +244,17 @@ def test_set_target_hostname_releases_the_previous_hostname(tmp_path):
 
     entries = hosts.list_synced_hosts()["entries"]
     assert "old.htb" not in entries
+
+
+def test_set_target_hostname_accepts_a_pasted_url(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="P", description="")
+    db.add(project); db.flush()
+    target = Target(
+        project_id=project.id, name="Host", ip="10.129.1.1", hostname="")
+    db.add(target); db.commit()
+
+    updated = set_target_hostname(
+        target.id, TargetHostnameIn(hostname="http://unika.htb/"), db)
+
+    assert updated.hostname == "unika.htb"

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete as sql_delete, select
@@ -28,6 +29,19 @@ from .support import need, safe_part
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
+
+
+def _normalize_hostname(value: str) -> str:
+    """Accept either a bare hostname or a pasted URL and reduce it to just
+    the host part, so a manually-entered 'http://foo.htb/' ends up stored
+    the same way the auto-detected flow would ('foo.htb'), not as a literal
+    URL that later gets its own scheme prefixed a second time."""
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    if "://" not in candidate:
+        candidate = f"//{candidate}"
+    return urlsplit(candidate).hostname or ""
 
 
 def _release_hostnames(db: Session, hostnames: set[str]) -> None:
@@ -231,7 +245,7 @@ def set_target_hostname(ident: int, body: TargetHostnameIn, db: Session = Depend
     rest of the target's fields the way a full PUT would."""
     row = need(db, Target, ident)
     old_hostname = row.hostname.strip()
-    row.hostname = body.hostname.strip()
+    row.hostname = _normalize_hostname(body.hostname)
     row.updated_at = utcnow()
     db.commit()
     if old_hostname and old_hostname != row.hostname:
