@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, IPvAnyAddress, field_validator
@@ -136,6 +137,17 @@ class InteractiveSessionOut(ORM):
 class ManualTerminalIn(BaseModel):
     target_id: int
     service_id: int
+    # Only for commands with no secret in argv — a caller that needs -p/-H
+    # style credentials belongs on the embedded-panel path instead, which
+    # types them into the PTY rather than storing them in a process's argv
+    # or this row's command column.
+    command: str = Field(default="", max_length=500)
+    @field_validator("command")
+    @classmethod
+    def no_inline_secrets(cls, v: str) -> str:
+        if re.search(r"(^|\s)(-p|--password|-H|--hash)(\s|=|$)", v, re.IGNORECASE):
+            raise ValueError("Commands with an inline password/hash flag are not allowed here")
+        return v
 
 class HttpRequestIn(BaseModel):
     project_id: int

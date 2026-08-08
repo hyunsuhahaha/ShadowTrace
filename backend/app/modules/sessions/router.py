@@ -125,9 +125,12 @@ def create_manual_terminal(
     shell = "/bin/bash"
     if not Path(shell).is_file():
         raise HTTPException(409, "Local Bash shell is unavailable")
+    command = body.command.strip() or f"{shell} --noprofile --norc"
+    if not shutil.which(command.split()[0]):
+        raise HTTPException(409, f"Tool not installed: {command.split()[0]}")
     row = InteractiveSession(
         target_id=target.id, service_id=service.id,
-        template_id="manual-shell", command=f"{shell} --noprofile --norc",
+        template_id="manual-shell", command=command,
         cwd=str(target_dir), status="ready",
     )
     db.add(row)

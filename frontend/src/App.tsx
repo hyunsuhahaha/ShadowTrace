@@ -764,6 +764,28 @@ export default function App() {
     });
     setPsexecSession({id: session.id, command});
   };
+  // Same "keeps running across tab switches" reasoning as Responder — but
+  // unlike openManualShell (which types a secret into an already-connected
+  // PTY, never touching the backend), a desktop-launched terminal runs
+  // whatever command it's given directly, so this is only safe for a
+  // command with no -p/-H/password baked in. The backend rejects one
+  // anyway, but the real safeguard is: never build a command with a secret
+  // in it and hand it to this function.
+  const openDesktopShell = async (command: string) => {
+    if (!targetId || !serviceId) return;
+    try {
+      const session = await api<any>("/interactive-sessions/manual", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({target_id: targetId, service_id: serviceId, command}),
+      });
+      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
+      setOutput((value) => `${value}\n$ ${command}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setOutput((value) => `${value}\n[실행 실패] ${message}\n`);
+    }
+  };
   const openPsexecShell = async () => {
     if (!target) return;
     const auth = impacketAuthArgs(
@@ -788,12 +810,18 @@ export default function App() {
   };
   const openEvilWinrmShell = async () => {
     if (!target || !credStore.username.trim()) return;
-    const secretFlag = isNtlmHash(credStore.password)
-      ? `-H ${shellQuote(credStore.password.trim())}`
-      : `-p ${shellQuote(credStore.password)}`;
-    await openManualShell(
-      `evil-winrm -i ${target.ip} -u ${shellQuote(credStore.username)} ${secretFlag}`,
-    );
+    const base = `evil-winrm -i ${target.ip} -u ${shellQuote(credStore.username)}`;
+    if (isNtlmHash(credStore.password)) {
+      // evil-winrm only prompts interactively for a plaintext password —
+      // hash auth has to go in as -H, so this stays on the embedded panel
+      // (types into an already-connected PTY, never touches the backend).
+      await openManualShell(`${base} -H ${shellQuote(credStore.password.trim())}`);
+      return;
+    }
+    // Omitting -p makes evil-winrm prompt "Enter Password:" itself once the
+    // terminal opens, so the password never has to be passed to the
+    // backend or appear in a process's argv at all.
+    await openDesktopShell(base);
   };
   const copyXfreerdpCommand = async () => {
     if (!target || !credStore.username.trim()) return;
