@@ -167,7 +167,14 @@ def ingest_xml(db: Session, job: ScanJob, target: Target, project: Project,
                 if key == "cpe" and value == "[]":
                     continue
                 setattr(current, key, value)
-        else:
+        elif item["state"] == "open":
+            # Nmap emits a <port> element for every scanned port, not just
+            # ones that answered — a targeted scan (-p 80,443) against a
+            # port nothing is listening on still shows up here as
+            # state="closed"/"filtered". ServiceObservation keeps every
+            # state for scan-history/diffing, but Service drives the
+            # Service Enumeration list, so a never-open port has no
+            # business creating a row a user would read as "found this".
             db.add(Service(target_id=target.id, **values))
     target.hostname = host["hostname"] or target.hostname
     target.os_guess = host["os_guess"] or target.os_guess

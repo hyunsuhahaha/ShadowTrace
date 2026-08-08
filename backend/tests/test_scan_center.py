@@ -441,6 +441,33 @@ def test_import_auto_captures_evidence_and_positive_nse_candidate(tmp_path, monk
     assert db.query(Finding).count() == 1
 
 
+def test_import_does_not_surface_a_service_for_a_scanned_but_closed_port(
+        tmp_path, monkeypatch):
+    # Nmap emits a <port> element for every port it scanned, not just ones
+    # that answered -- a targeted `-p 80,443` scan against a host with
+    # nothing on 443 still yields a <port portid="443"> element, just with
+    # state="closed". That must not show up in Service Enumeration as if
+    # the port were actually found open.
+    import app.modules.scan_center.service as service
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Closed Port Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.50")
+    db.add(target); db.commit()
+    xml = b"""<nmaprun><host><address addr="10.10.10.50"/><ports>
+      <port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port>
+      <port protocol="tcp" portid="443"><state state="closed"/><service name="https"/></port>
+    </ports></host></nmaprun>"""
+
+    job = import_xml(db, target, project, xml, "targeted.xml")
+
+    services = db.query(Service).filter_by(target_id=target.id).all()
+    assert {s.port for s in services} == {80}
+    observations = db.query(ServiceObservation).filter_by(scan_job_id=job.id).all()
+    assert {o.port for o in observations} == {80, 443}
+
+
 def test_negative_nse_result_does_not_create_candidate(tmp_path, monkeypatch):
     import app.modules.scan_center.service as service
     monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path)
