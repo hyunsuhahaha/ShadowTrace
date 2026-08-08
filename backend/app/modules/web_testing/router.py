@@ -6,6 +6,7 @@ import asyncio
 import base64
 import ipaddress
 import re
+import socket
 from itertools import product
 from urllib.parse import quote, urlparse
 from pathlib import Path
@@ -138,8 +139,18 @@ def require_private_destination(url: str) -> None:
     try:
         address = ipaddress.ip_address(hostname)
     except (ValueError, TypeError):
-        raise HTTPException(
-            403, "DNS 재바인딩 방지를 위해 localhost 또는 사설 IP 주소를 직접 입력하세요.")
+        # Not a literal IP — a vhost-routed target (this app's own hostname
+        # tracking + /etc/hosts sync exists for exactly this) is a normal,
+        # already-verified hostname pointing at a private lab target, not
+        # something to block outright. Resolve it (checking /etc/hosts
+        # first, same as the outbound request httpx is about to make) and
+        # gate on the address it actually resolves to instead.
+        try:
+            address = ipaddress.ip_address(socket.gethostbyname(hostname))
+        except (OSError, ValueError, TypeError):
+            raise HTTPException(
+                403, "DNS 재바인딩 방지를 위해 localhost, 사설 IP, 또는 사설 IP로 확인되는 "
+                     "hostname만 허용합니다.")
     if not (address.is_private or address.is_loopback):
         raise HTTPException(403, "기본 안전 정책은 localhost와 사설 IP 대상만 허용합니다.")
 
@@ -204,7 +215,15 @@ async def send_once(db: Session, row: HttpRequest,
     exchange = HttpExchange(request_id=row.id, request_snapshot=snapshot)
     started = time.perf_counter()
     try:
-        kwargs = {"params": query, "headers": headers, "cookies": cookies}
+        # httpx's params= *replaces* whatever query string is already in
+        # url, it doesn't merge with it — passing params={} (the default,
+        # empty Query JSON field) silently wiped out a query string the
+        # user typed directly into the URL bar, which is how everyone
+        # actually uses this field. Only pass params when the Query JSON
+        # panel is genuinely holding something to add.
+        kwargs = {"headers": headers, "cookies": cookies}
+        if query:
+            kwargs["params"] = query
         if row.body_mode == "json" and body:
             kwargs["json"] = json.loads(body)
         elif row.body_mode == "form" and body:

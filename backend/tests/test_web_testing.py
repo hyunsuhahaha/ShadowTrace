@@ -116,6 +116,22 @@ def test_destination_policy_rejects_public_and_dns_names():
         require_private_destination("https://8.8.8.8/")
 
 
+def test_destination_policy_allows_a_vhost_hostname_that_resolves_privately(monkeypatch):
+    # This app's own hostname-confirmation feature exists so a vhost-routed
+    # target (pinned to a private IP via /etc/hosts) can be addressed by
+    # name instead of bare IP — rejecting every non-literal-IP hostname
+    # outright would defeat that for exactly the requests it's meant for.
+    import app.modules.web_testing.router as router
+    monkeypatch.setattr(router.socket, "gethostbyname",
+        lambda name: "10.129.95.234" if name == "unika.htb" else (_ for _ in ()).throw(
+            router.socket.gaierror("unknown host")))
+
+    require_private_destination("http://unika.htb/index.php?page=test")
+
+    with pytest.raises(HTTPException):
+        require_private_destination("http://not-in-hosts.example/")
+
+
 def test_user_authored_request_preserves_raw_response(tmp_path, monkeypatch):
     import app.modules.web_testing.router as router
 
@@ -157,3 +173,49 @@ def test_user_authored_request_preserves_raw_response(tmp_path, monkeypatch):
     assert exchange.sha256
     assert "Bearer secret" not in exchange.request_snapshot
     assert '"session": "••••••"' in exchange.request_snapshot
+
+
+def test_a_query_string_typed_directly_into_the_url_survives_an_empty_query_json_panel(
+        tmp_path, monkeypatch):
+    # httpx's params= replaces the URL's own query string outright rather
+    # than merging with it, so passing params={} (an empty/untouched Query
+    # JSON panel — the normal case when someone just types the whole URL,
+    # query string included, into the URL field) used to silently strip it
+    # before the request ever left the box.
+    import app.modules.web_testing.router as router
+
+    class Response:
+        status_code = 200
+        content = b"ok"
+        headers = {}
+        cookies = {}
+
+    sent_urls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def request(self, method, url, **kwargs):
+            sent_urls.append(url)
+            assert "params" not in kwargs
+            return Response()
+
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(router.httpx, "AsyncClient", Client)
+    db = database()
+    project = Project(name="Web Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    request = HttpRequest(
+        project_id=project.id, target_id=target.id, name="Typed query string",
+        method="GET", url="http://10.10.10.10/index.php?page=\\\\10.10.10.5\\test")
+    db.add(request); db.commit()
+
+    asyncio.run(send_once(db, request, {}))
+
+    assert sent_urls == ["http://10.10.10.10/index.php?page=\\\\10.10.10.5\\test"]
