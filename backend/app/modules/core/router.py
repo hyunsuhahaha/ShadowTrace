@@ -146,6 +146,12 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     ))
     if active:
         raise HTTPException(409, "실행 중인 스캔을 중단한 뒤 프로젝트를 삭제하세요.")
+    active_crack = db.scalar(select(tables["hash_crack_jobs"].c.id).where(
+        tables["hash_crack_jobs"].c.project_id == ident,
+        tables["hash_crack_jobs"].c.status.in_(["prepared", "running"]),
+    ))
+    if active_crack:
+        raise HTTPException(409, "실행 중인 해시 크랙 작업을 중단한 뒤 프로젝트를 삭제하세요.")
 
     def remove(table_name: str, column: str, values: list[int]):
         if values:
@@ -178,7 +184,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
         tables["directory_relations"].c.project_id == ident))
     for table_name in [
         "evidence", "exploit_research", "http_requests", "directory_objects",
-        "tunnels", "reports", "scan_jobs", "remote_executions",
+        "tunnels", "reports", "scan_jobs", "remote_executions", "hash_crack_jobs",
     ]:
         db.execute(sql_delete(tables[table_name]).where(
             tables[table_name].c.project_id == ident))

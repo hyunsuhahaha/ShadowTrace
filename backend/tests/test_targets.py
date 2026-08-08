@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -9,7 +10,9 @@ from app.main import (
     ensure_target,
     update_service,
 )
-from app.models import Base, Project, RunbookInstance, ScanJob, Service, Target
+from app.models import (
+    Base, HashCrackJob, Project, RunbookInstance, ScanJob, Service, Target,
+)
 from app.modules import hosts
 from app.modules.core import router as core_router
 from app.modules.core.router import delete_target, project_services, set_target_hostname
@@ -155,6 +158,10 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
         project_id=project.id, target_id=target.id, source="import",
         status="completed", command="fixture", error="", alias="", tags="[]",
     ))
+    db.add(HashCrackJob(
+        project_id=project.id, target_id=target.id, hash_mode_id="1000",
+        hash_mode="-m 1000", status="completed",
+    ))
     db.commit()
     template = create_template(TemplateIn(
         name="Disposable FTP", service_names=["telnet"]), db)
@@ -173,6 +180,8 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
     assert db.get(RunbookInstance, runbook["id"]) is None
     assert db.scalars(select(ScanJob).where(
         ScanJob.project_id == project_id)).all() == []
+    assert db.scalars(select(HashCrackJob).where(
+        HashCrackJob.project_id == project_id)).all() == []
 
     replacement = Project(name="Replacement", description="")
     db.add(replacement); db.flush()
@@ -182,6 +191,24 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
     assert replacement_target.id == target_id
     assert instances(target_id=replacement_target.id, db=db) == []
     db.close()
+
+
+def test_delete_project_refuses_while_a_hash_crack_job_is_running(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Disposable", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Host", ip="198.51.100.22")
+    db.add(target); db.flush()
+    db.add(HashCrackJob(
+        project_id=project.id, target_id=target.id, hash_mode_id="1000",
+        hash_mode="-m 1000", status="running",
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        delete_project(project.id, db)
+    assert exc.value.status_code == 409
+    assert db.get(Project, project.id) is not None
 
 
 def test_delete_project_removes_its_workspace_directory(tmp_path, monkeypatch):
