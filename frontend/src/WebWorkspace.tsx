@@ -9,7 +9,7 @@ import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
 import { EmptyState, ErrorState, LoadingState } from "./ui";
 
-type Target = { id: number; project_id: number; name: string; ip: string };
+type Target = { id: number; project_id: number; name: string; ip: string; hostname?: string };
 // null: no response captured yet, or one came back but nothing was
 // detected (an ordinary page) — either way there's nothing to flag.
 export type CloudFingerprint = {
@@ -75,7 +75,11 @@ const empty = (target?: Target): Partial<SavedRequest> => ({
   folder: "",
   tags: "[]",
   method: "GET",
-  url: target ? `http://${target.ip}/` : "http://127.0.0.1/",
+  // A vhost-routed site (very common — this is the same box the earlier
+  // hostname-confirmation UI exists for) ignores or redirects bare-IP
+  // requests, so a "new request" that isn't even reaching the app the
+  // tester means to test is a bad default once a hostname is known.
+  url: target ? `http://${target.hostname || target.ip}/` : "http://127.0.0.1/",
   query: "{}",
   headers: "{}",
   cookies: "{}",

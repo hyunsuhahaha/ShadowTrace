@@ -240,6 +240,21 @@ it("replaces an existing page= value outright instead of appending to it", async
     .toBe("http://unika.htb/index.php?page=\\\\10.10.16.178\\test");
 });
 
+it("defaults a new request's URL to the confirmed hostname instead of the bare IP", async () => {
+  const withHostname = { ...target, hostname: "unika.htb" };
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([withHostname]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    if (url === "/api/vpn/status") return response({ connected: false, tun0: "" });
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  await waitFor(() => expect((screen.getByLabelText("URL") as HTMLInputElement).value)
+    .toBe("http://unika.htb/"));
+});
+
 it("disables the UNC-insert button until a tun0 IP is detected", async () => {
   const fetcher = vi.fn((url: string) => {
     if (url === "/api/targets") return response([target]);
