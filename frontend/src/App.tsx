@@ -879,6 +879,30 @@ export default function App() {
       variables: {path: moduleName},
     });
   };
+  const autoMssqlTreeFiredRef = useRef<string>();
+  const autoRunMssqlTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "mssql-db-tree",
+      preview: `mssql_db_tree --host ${target.ip} --port ${service.port}` +
+        ` --username ${username} --password ***`,
+      target_level: false,
+      variables: {username, password, domain: credStore.domain},
+    });
+  };
+  const autoPostgresTreeFiredRef = useRef<string>();
+  const autoRunPostgresTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "postgres-db-tree",
+      preview: `postgres_db_tree --host ${target.ip} --port ${service.port}` +
+        ` --username ${username} --password ***`,
+      target_level: false,
+      variables: {username, password},
+    });
+  };
   const autoLdapTreeFiredRef = useRef<string>();
   const autoRunLdapTree = (username: string, password: string) => {
     if (!target || !service) return;
@@ -1615,6 +1639,21 @@ export default function App() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceNameLower, targetId, credStore.username, credStore.password]);
+  useEffect(() => {
+    if (serviceNameLower !== "postgresql" || !credStore.username.trim()
+      || !credStore.password.trim()) return;
+    const key = `${targetId}-${credStore.username}-${credStore.password}`;
+    if (autoPostgresTreeFiredRef.current === key) return;
+    // Same reasoning as FTP/IMAP: no separate credential-check step exists
+    // for PostgreSQL (unlike MySQL's dedicated probe script), so this run
+    // doubles as that check too, debounced so it doesn't fire mid-typing.
+    const timer = setTimeout(() => {
+      autoPostgresTreeFiredRef.current = key;
+      autoRunPostgresTree(credStore.username, credStore.password);
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceNameLower, targetId, credStore.username, credStore.password]);
   const autoImapTreeFiredRef = useRef<string>();
   useEffect(() => {
     if (!["imap", "imaps"].includes(serviceNameLower) || !credStore.username.trim()
@@ -1667,6 +1706,17 @@ export default function App() {
     if (autoLdapTreeFiredRef.current === key) return;
     autoLdapTreeFiredRef.current = key;
     autoRunLdapTree(credStore.username, credStore.password);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [netexecProtocol, netexecCredentialResult, targetId, credStore.username]);
+  useEffect(() => {
+    if (netexecProtocol !== "mssql") return;
+    const success = netexecCredentialResult?.status === "completed"
+      && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
+    if (!success || !targetId) return;
+    const key = `${targetId}-mssql-${credStore.username}`;
+    if (autoMssqlTreeFiredRef.current === key) return;
+    autoMssqlTreeFiredRef.current = key;
+    autoRunMssqlTree(credStore.username, credStore.password);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netexecProtocol, netexecCredentialResult, targetId, credStore.username]);
   const latestSmbEnum = serviceExecutions

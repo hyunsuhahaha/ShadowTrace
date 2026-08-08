@@ -43,6 +43,28 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_postgres_db_tree_renders_with_credentials():
+    item, command, argv = catalog.render("postgres-db-tree", {
+        "host": "10.10.10.10", "port": "5432", "username": "postgres", "password": "",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/postgres_db_tree.sh",
+        "10.10.10.10", "5432", "postgres", "",
+    ]
+
+
+def test_mssql_db_tree_renders_with_credentials_and_domain():
+    item, command, argv = catalog.render("mssql-db-tree", {
+        "host": "10.10.10.10", "port": "1433", "username": "sa", "password": "secret",
+        "domain": "", "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/mssql_db_tree.sh",
+        "10.10.10.10", "1433", "sa", "secret", "",
+    ]
+
+
 def test_ldap_dit_tree_renders_with_optional_credentials():
     item, command, argv = catalog.render("ldap-dit-tree", {
         "host": "10.10.10.10", "port": "389", "username": "", "password": "",
