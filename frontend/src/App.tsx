@@ -630,6 +630,13 @@ export default function App() {
             autoRunRsyncTree(modules[0]);
           }
         }
+        if (c.id === "redis-unauthenticated-info" && /redis_version/i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoRedisTreeFiredRef.current !== key) {
+            autoRedisTreeFiredRef.current = key;
+            autoRunRedisTree();
+          }
+        }
         if (c.id === "http-webdav-detect" && /PROPFIND/i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoWebdavTreeFiredRef.current !== key) {
@@ -813,6 +820,17 @@ export default function App() {
       preview: `webdav_tree --host ${target.ip} --port ${service.port} (anonymous)`,
       target_level: false,
       variables: {username: "", password: ""},
+    });
+  };
+  const autoRedisTreeFiredRef = useRef<string>();
+  const autoRunRedisTree = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "redis-key-tree",
+      preview: `redis_tree.sh ${target.ip} ${service.port} (no auth)`,
+      target_level: false,
+      variables: {password: ""},
     });
   };
   const autoRsyncTreeFiredRef = useRef<string>();

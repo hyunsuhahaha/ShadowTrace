@@ -43,6 +43,17 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_redis_key_tree_renders_with_an_optional_password():
+    item, command, argv = catalog.render("redis-key-tree", {
+        "host": "10.10.10.10", "port": "6379", "password": "",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/redis_tree.sh",
+        "10.10.10.10", "6379", "",
+    ]
+
+
 def test_imap_mailbox_tree_renders_with_credentials():
     item, command, argv = catalog.render("imap-mailbox-tree", {
         "host": "10.10.10.10", "port": "993", "username": "bob", "password": "hunter2",
