@@ -149,6 +149,12 @@ class ManualTerminalIn(BaseModel):
             raise ValueError("Commands with an inline password/hash flag are not allowed here")
         return v
 
+class DesktopLaunchIn(BaseModel):
+    # Handed to the spawned command's own interactive password prompt
+    # through a named pipe (see type_relay.exp) -- never written to this
+    # row, a process's argv, or an environment variable.
+    type_after: str = Field(default="", max_length=200)
+
 class HttpRequestIn(BaseModel):
     project_id: int
     target_id: int

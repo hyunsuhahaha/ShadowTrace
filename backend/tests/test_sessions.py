@@ -1,5 +1,5 @@
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from app.database import Base
 from app.models import InteractiveSession, Project, Service, Target
-from app.schemas import InteractiveSessionIn, ManualTerminalIn
+from app.schemas import DesktopLaunchIn, InteractiveSessionIn, ManualTerminalIn
 from types import SimpleNamespace
 
 import app.modules.sessions.router as sessions_router
@@ -216,7 +216,7 @@ def test_desktop_launch_passes_the_shell_and_command_as_separate_argv_items(
 
     monkeypatch.setattr(sessions_router.subprocess, "Popen", fake_popen)
 
-    launch_interactive_session_in_desktop(row.id, db=db)
+    launch_interactive_session_in_desktop(row.id, BackgroundTasks(), db=db)
 
     argv = captured["argv"]
     assert argv[-4] == "-e"
@@ -226,4 +226,67 @@ def test_desktop_launch_passes_the_shell_and_command_as_separate_argv_items(
     # the command itself must be its own argv item, never squashed together
     # with the shell/flags into one pre-quoted string
     assert not any("-lic" in item and "evil-winrm" in item for item in argv[:-1])
+
+
+def test_desktop_launch_wraps_the_command_in_expect_when_a_secret_needs_typing(
+        tmp_path, monkeypatch):
+    # evil-winrm's own getpass() refuses a plain piped/redirected stdin
+    # (Errno::ENOTTY, reproduced live), so the secret has to reach it
+    # through a program that gives it a real pty -- expect's spawn does
+    # that. The secret itself must never end up in this argv.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=5985, protocol="tcp", state="open",
+                       name="http", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    row = InteractiveSession(
+        target_id=box.id, service_id=service.id, template_id="manual-shell",
+        command="evil-winrm -i 10.10.10.60 -u 'administrator'",
+        cwd=str(tmp_path), status="ready",
+    )
+    db.add(row); db.commit()
+    monkeypatch.setattr(sessions_router.shutil, "which", lambda name:
+        "/usr/bin/qterminal" if name == "qterminal" else "/usr/bin/expect")
+    monkeypatch.setattr(sessions_router.os, "mkfifo", lambda *a, **k: None)
+    monkeypatch.setattr(sessions_router.os, "chown", lambda *a, **k: None)
+    monkeypatch.setattr(sessions_router, "_deliver_secret_to_fifo", lambda *a: None)
+    captured = {}
+
+    def fake_popen(argv, **kwargs):
+        captured["argv"] = argv
+        return SimpleNamespace(pid=4242)
+
+    monkeypatch.setattr(sessions_router.subprocess, "Popen", fake_popen)
+
+    launch_interactive_session_in_desktop(
+        row.id, BackgroundTasks(), body=DesktopLaunchIn(type_after="hunter2"), db=db)
+
+    inner_command = captured["argv"][-1]
+    assert "expect" in inner_command
+    assert str(sessions_router.TYPE_RELAY_SCRIPT) in inner_command
+    assert "/bin/sh" in inner_command and "-c" in inner_command
+    assert "hunter2" not in inner_command
+
+
+def test_desktop_launch_requires_expect_when_a_secret_needs_typing(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=5985, protocol="tcp", state="open",
+                       name="http", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    row = InteractiveSession(
+        target_id=box.id, service_id=service.id, template_id="manual-shell",
+        command="evil-winrm -i 10.10.10.60 -u 'administrator'",
+        cwd=str(tmp_path), status="ready",
+    )
+    db.add(row); db.commit()
+    monkeypatch.setattr(sessions_router.shutil, "which", lambda name:
+        "/usr/bin/qterminal" if name == "qterminal" else None)
+
+    with pytest.raises(HTTPException) as exc:
+        launch_interactive_session_in_desktop(
+            row.id, BackgroundTasks(), body=DesktopLaunchIn(type_after="hunter2"), db=db)
+    assert exc.value.status_code == 409
 

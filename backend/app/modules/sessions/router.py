@@ -1,12 +1,15 @@
+import os
 import pwd
 import re
 import shlex
 import shutil
 import subprocess
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +19,7 @@ from ...database import SessionLocal, get_db
 from ...models import InteractiveSession, Project, Service, Target
 from ...pty_manager import pty_manager
 from ...schemas import (
+    DesktopLaunchIn,
     InteractiveSessionIn,
     InteractiveSessionOut,
     ManualTerminalIn,
@@ -26,6 +30,7 @@ from ..core.support import need, safe_part
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
+TYPE_RELAY_SCRIPT = Path(__file__).resolve().parent / "type_relay.exp"
 
 
 @router.get("/api/interactive-sessions", response_model=list[InteractiveSessionOut])
@@ -159,13 +164,37 @@ def anonymous_ftp_command(host: str, port: int) -> list[str]:
     ]
 
 
+def _deliver_secret_to_fifo(fifo_path: Path, secret: str) -> None:
+    # type_relay.exp only opens this fifo for reading once it has already
+    # matched the spawned program's password prompt, so this blocks (via a
+    # bounded poll, since a plain blocking open() here has no timeout of its
+    # own) until that happens -- or gives up if it never does, e.g. the
+    # prompt text didn't match within the script's own timeout.
+    fd = None
+    deadline = time.monotonic() + 12
+    try:
+        while fd is None and time.monotonic() < deadline:
+            try:
+                fd = os.open(fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+            except OSError:
+                time.sleep(0.2)
+        if fd is not None:
+            os.write(fd, f"{secret}\n".encode())
+    finally:
+        if fd is not None:
+            os.close(fd)
+        fifo_path.unlink(missing_ok=True)
+
+
 @router.post(
     "/api/interactive-sessions/{ident}/desktop",
     response_model=InteractiveSessionOut,
 )
 def launch_interactive_session_in_desktop(
     ident: int,
+    background_tasks: BackgroundTasks,
     ftp_anonymous: bool = False,
+    body: DesktopLaunchIn = DesktopLaunchIn(),
     db: Session = Depends(get_db),
 ):
     row = need(db, InteractiveSession, ident)
@@ -174,6 +203,8 @@ def launch_interactive_session_in_desktop(
     terminal = shutil.which("qterminal") or shutil.which("x-terminal-emulator")
     if not terminal:
         raise HTTPException(409, "Kali desktop terminal is not installed")
+    if body.type_after and not shutil.which("expect"):
+        raise HTTPException(409, "expect가 설치되어 있지 않습니다 (비밀번호 자동 입력에 필요)")
     owner = pwd.getpwuid(CONFIG_DIR.stat().st_uid)
     desktop_env = [
         "/usr/bin/env",
@@ -192,6 +223,19 @@ def launch_interactive_session_in_desktop(
         service = need(db, Service, row.service_id)
         command = shlex.join(anonymous_ftp_command(target.ip, service.port))
     shell = owner.pw_shell or "/usr/bin/zsh"
+    fifo_path: Path | None = None
+    if body.type_after:
+        fifo_path = Path(f"/tmp/.oscp-wr-{uuid.uuid4().hex}")
+        os.mkfifo(fifo_path, 0o600)
+        os.chown(fifo_path, owner.pw_uid, owner.pw_gid)
+        # expect gives the spawned command a real pty (via /bin/sh -c, so
+        # the already shell-quoted `command` string is re-parsed the same
+        # way it always was), which is what makes this work for prompts
+        # that refuse a plain piped/redirected stdin -- the secret itself
+        # only ever passes through the fifo above, never this argv.
+        command = shlex.join([
+            "expect", str(TYPE_RELAY_SCRIPT), str(fifo_path), "/bin/sh", "-c", command,
+        ])
     inner_command = f"{command}; exec {shell} -l"
     try:
         process = subprocess.Popen(
@@ -208,11 +252,15 @@ def launch_interactive_session_in_desktop(
             close_fds=True,
         )
     except OSError as exc:
+        if fifo_path:
+            fifo_path.unlink(missing_ok=True)
         row.status = "failed"
         row.error = str(exc)
         row.ended_at = utcnow()
         db.commit()
         raise HTTPException(500, "데스크톱 터미널을 열지 못했습니다.") from exc
+    if fifo_path:
+        background_tasks.add_task(_deliver_secret_to_fifo, fifo_path, body.type_after)
     row.status = "launched"
     row.pid = process.pid
     row.started_at = utcnow()

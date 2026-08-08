@@ -1,0 +1,25 @@
+#!/usr/bin/env expect
+# Bridges a secret into a spawned program's own password prompt without it
+# ever touching this process's argv, environment, or disk: the caller opens
+# [lindex $argv 0] (a named pipe) for writing only after this script has
+# already opened it for reading, so the bytes never persist anywhere and
+# never appear in `ps`. spawn gives the child a real pty, which is why this
+# works for prompts (like evil-winrm's) that refuse to run under a plain
+# redirected/piped stdin.
+set fifo_path [lindex $argv 0]
+set spawn_argv [lrange $argv 1 end]
+set timeout 15
+log_user 1
+spawn {*}$spawn_argv
+expect {
+    "Password" {
+        set fh [open $fifo_path r]
+        set secret [gets $fh]
+        close $fh
+        send -- "$secret\r"
+    }
+    timeout {
+        puts "\n(type_relay) 비밀번호 프롬프트를 찾지 못해 자동 입력을 건너뜁니다."
+    }
+}
+interact

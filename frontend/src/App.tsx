@@ -771,7 +771,7 @@ export default function App() {
   // command with no -p/-H/password baked in. The backend rejects one
   // anyway, but the real safeguard is: never build a command with a secret
   // in it and hand it to this function.
-  const openDesktopShell = async (command: string) => {
+  const openDesktopShell = async (command: string, typeAfter?: string) => {
     if (!targetId || !serviceId) return;
     try {
       const session = await api<any>("/interactive-sessions/manual", {
@@ -779,7 +779,15 @@ export default function App() {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({target_id: targetId, service_id: serviceId, command}),
       });
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
+      // typeAfter never reaches the session row above — it's only sent to
+      // this one-shot desktop-launch call, which hands it to the spawned
+      // command's own password prompt through a named pipe on the backend,
+      // never this command string or a process's argv.
+      await api<any>(`/interactive-sessions/${session.id}/desktop`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({type_after: typeAfter ?? ""}),
+      });
       setOutput((value) => `${value}\n$ ${command}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
@@ -819,9 +827,10 @@ export default function App() {
       return;
     }
     // Omitting -p makes evil-winrm prompt "Enter Password:" itself once the
-    // terminal opens, so the password never has to be passed to the
-    // backend or appear in a process's argv at all.
-    await openDesktopShell(base);
+    // terminal opens; the password is handed to that prompt via a named
+    // pipe (see backend/app/modules/sessions/type_relay.exp) rather than
+    // being baked into this command, so it never appears in argv/the DB.
+    await openDesktopShell(base, credStore.password);
   };
   const copyXfreerdpCommand = async () => {
     if (!target || !credStore.username.trim()) return;
