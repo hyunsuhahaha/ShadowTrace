@@ -183,11 +183,13 @@ export default function AppShell({
       }
       localStorage.removeItem("oscp-workspace-project");
       setActiveProjectId(0);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["allTargets"] }),
-        queryClient.invalidateQueries({ queryKey: ["targets"] }),
-      ]);
+      // Deleting a project cascades to nearly every resource table on the
+      // backend (scans, web requests, credentials, findings, ...), and a
+      // recreated project/target can be assigned the same SQLite row id as
+      // the one just removed — so every cached query, not just the project
+      // and target lists, has to be dropped or a workspace tab left mounted
+      // through the delete will keep showing the deleted project's data.
+      await queryClient.invalidateQueries();
       setDeleteOpen(false);
       location.hash = "scans";
     } catch (reason) {
@@ -342,8 +344,8 @@ export default function AppShell({
               <h2 id="delete-project-title">프로젝트 삭제</h2>
               <p id="delete-project-description">
                 <b>{project.name}</b>과 연결된 Target {projectTargetCount}개,
-                스캔, 서비스 기록, Evidence, 보고서가 데이터베이스에서 삭제됩니다.
-                파일 산출물은 자동으로 삭제하지 않습니다.
+                스캔, 서비스 기록, Evidence, 보고서가 데이터베이스와
+                워크스페이스 디렉터리에서 함께 삭제됩니다.
               </p>
               {deleteError && <p className="webError" role="alert">{deleteError}</p>}
               <footer>

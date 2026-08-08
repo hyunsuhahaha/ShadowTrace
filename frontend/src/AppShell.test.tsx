@@ -102,3 +102,40 @@ it("feeds the command palette every service in the active project, not just the 
   // selected (unrelated) target.
   await waitFor(() => expect(screen.getByText("dc01 · 10.0.0.2")).toBeTruthy());
 });
+
+it("drops every cached query, not just projects/targets, when a project is deleted", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "DELETE" && url === "/api/projects/1")
+      return Promise.resolve(new Response(null, {status: 204}));
+    if (url.endsWith("/api/projects")) return response([{id: 1, name: "Alpha"}]);
+    if (url.endsWith("/api/targets")) return response([
+      {id: 10, project_id: 1, name: "alpha-host", ip: "10.0.0.1"},
+    ]);
+    if (url.endsWith("/api/projects/1/services")) return response([]);
+    if (url.endsWith("/api/vpn/status")) return response({
+      connected: false, tun0: "", operation: null,
+    });
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  localStorage.setItem("oscp-workspace-project", "1");
+  const client = new QueryClient({
+    defaultOptions: {queries: {retry: false, staleTime: Infinity}},
+  });
+  // Stands in for a workspace tab's cache (e.g. Web Testing's saved
+  // requests) that AppShell's delete flow never knew about by name.
+  client.setQueryData(["webRequests", 10], [{id: 1, url: "http://stale.example"}]);
+  render(
+    <QueryClientProvider client={client}>
+      <AppShell route="web"><div /></AppShell>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Alpha");
+
+  fireEvent.click(screen.getByRole("button", {name: "프로젝트 삭제"}));
+  fireEvent.click(screen.getByRole("button", {name: "삭제"}));
+
+  await waitFor(() => expect(
+    client.getQueryState(["webRequests", 10])?.isInvalidated,
+  ).toBe(true));
+});
