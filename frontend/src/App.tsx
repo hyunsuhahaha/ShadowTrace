@@ -619,6 +619,21 @@ export default function App() {
             autoRunNfsTree(exports[0]);
           }
         }
+        if (c.id === "http-webdav-detect" && /PROPFIND/i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoWebdavTreeFiredRef.current !== key) {
+            autoWebdavTreeFiredRef.current = key;
+            autoRunWebdavTree();
+          }
+        }
+        if (c.id === "git-head-check" && /ref:\s*refs\/heads\//i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoGitDumpFiredRef.current !== key) {
+            autoGitDumpFiredRef.current = key;
+            autoRunGitDump();
+          }
+        }
+        if (c.id === "git-dumper-clone") autoRunGitDumpTree();
         if (isFocused())
           setOutput(
             (x) =>
@@ -765,6 +780,35 @@ export default function App() {
       preview: `nfs_tree.sh ${target.ip} ${path}`,
       target_level: true,
       variables: {path},
+    });
+  };
+  const autoWebdavTreeFiredRef = useRef<string>();
+  const autoRunWebdavTree = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "http-webdav-tree",
+      preview: `webdav_tree --host ${target.ip} --port ${service.port} (anonymous)`,
+      target_level: false,
+      variables: {username: "", password: ""},
+    });
+  };
+  const autoGitDumpFiredRef = useRef<string>();
+  const autoRunGitDump = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "git-dumper-clone",
+      preview: `git-dumper ${target.ip}:${service.port}/.git/`,
+      target_level: false,
+      variables: {},
+    });
+  };
+  const autoRunGitDumpTree = () => {
+    setRunWithSudo(false);
+    void run({
+      id: "git-dump-tree", preview: "find git-dump -printf ...",
+      target_level: true, variables: {},
     });
   };
   // Responder needs to keep running while the tester works in other tabs

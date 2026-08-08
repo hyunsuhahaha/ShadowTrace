@@ -46,6 +46,26 @@ it("renders a completed nfs-export-tree run as an expandable tree too", () => {
   expect(screen.getByText("backups").closest("details")).toBeTruthy();
 });
 
+it("renders a completed http-webdav-tree run as an expandable tree", () => {
+  render(<LiveOutputPanel
+    run={{templateId: "http-webdav-tree", name: "WebDAV", status: "completed",
+      startedAt: 0, lastEventAt: 0}}
+    elapsed={2} outcome={null}
+    output={"D|uploads\nF|uploads/shell.aspx\n"} />);
+
+  expect(screen.getByText("uploads").closest("details")).toBeTruthy();
+});
+
+it("renders a completed git-dump-tree run as an expandable tree", () => {
+  render(<LiveOutputPanel
+    run={{templateId: "git-dump-tree", name: "Git dump", status: "completed",
+      startedAt: 0, lastEventAt: 0}}
+    elapsed={2} outcome={null}
+    output={"D|src\nF|src/config.php\nF|.env\n"} />);
+
+  expect(screen.getByText("src").closest("details")).toBeTruthy();
+});
+
 it("still shows raw text for a still-running ftp-directory-tree, not a partial tree", () => {
   render(<LiveOutputPanel
     run={{templateId: "ftp-directory-tree", name: "FTP", status: "running",

@@ -6,7 +6,9 @@ import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
 // Commands whose captured output is D|/F|-tagged tree lines (see
 // backend/app/ftp_tree.py) instead of plain text -- rendered as an
 // expandable tree here rather than a raw dump.
-const treeTemplateIds = new Set(["ftp-directory-tree", "nfs-export-tree"]);
+const treeTemplateIds = new Set([
+  "ftp-directory-tree", "nfs-export-tree", "http-webdav-tree", "git-dump-tree",
+]);
 
 export default function LiveOutputPanel({run, elapsed, outcome, output}: {
   run?: RunState; elapsed: number; outcome: ExecutionSummary | null; output: string;
