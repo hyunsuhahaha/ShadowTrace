@@ -43,6 +43,17 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_rsync_module_tree_renders_the_list_script_with_the_chosen_module():
+    item, command, argv = catalog.render("rsync-module-tree", {
+        "host": "10.10.10.10", "port": "873", "path": "backup",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "bash", "/opt/oscp-workspace/backend/scripts/rsync_tree.sh",
+        "10.10.10.10", "873", "backup",
+    ]
+
+
 def test_nfs_export_tree_renders_the_mount_script_with_the_chosen_export_path():
     # showmount -e only lists the exports themselves; this mounts one
     # read-only and walks it for the actual folder/file structure.

@@ -42,6 +42,17 @@ export function parseNfsExports(output = ""): string[] {
   return paths;
 }
 
+// nmap's rsync-list-modules NSE output: one "  <name>  <comment>" line per
+// module under the "| rsync-list-modules:" header.
+export function parseRsyncModules(output = ""): string[] {
+  const modules: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^\|[_ ]\s*(\S+)\s{2,}/);
+    if (match) modules.push(match[1]);
+  }
+  return modules;
+}
+
 export type SmbShareAccess = {anonymous: string; currentUser: string};
 
 // Parses nmap's `smb-enum-shares` NSE script output, which — unlike a plain

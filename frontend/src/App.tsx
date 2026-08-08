@@ -57,6 +57,7 @@ import {
   isWinrmHttpApi,
   keepSelectedService,
   parseNfsExports,
+  parseRsyncModules,
   parseSmbEnumSharesAccess,
   parseSmbShares,
   reconcileServiceNav,
@@ -619,6 +620,16 @@ export default function App() {
             autoRunNfsTree(exports[0]);
           }
         }
+        if (c.id === "rsync-modules") {
+          // ponytail: same single-slot-executor limit as SMB/NFS -- only
+          // the first module discovered is auto-listed.
+          const modules = parseRsyncModules(result.stdout || "");
+          const key = `${targetId}-${modules[0] || ""}`;
+          if (modules.length && autoRsyncTreeFiredRef.current !== key) {
+            autoRsyncTreeFiredRef.current = key;
+            autoRunRsyncTree(modules[0]);
+          }
+        }
         if (c.id === "http-webdav-detect" && /PROPFIND/i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoWebdavTreeFiredRef.current !== key) {
@@ -791,6 +802,17 @@ export default function App() {
       preview: `webdav_tree --host ${target.ip} --port ${service.port} (anonymous)`,
       target_level: false,
       variables: {username: "", password: ""},
+    });
+  };
+  const autoRsyncTreeFiredRef = useRef<string>();
+  const autoRunRsyncTree = (moduleName: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "rsync-module-tree",
+      preview: `rsync_tree.sh ${target.ip} ${service.port} ${moduleName}`,
+      target_level: false,
+      variables: {path: moduleName},
     });
   };
   const autoGitDumpFiredRef = useRef<string>();

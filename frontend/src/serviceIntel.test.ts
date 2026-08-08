@@ -13,6 +13,7 @@ import {
   parseLinkExtractResults,
   parseNetexecSprayHits,
   parseNfsExports,
+  parseRsyncModules,
   parseSecretsdumpHashes,
   parseSmbEnumSharesAccess,
   parseSmbFiles,
@@ -233,6 +234,16 @@ describe("service investigation summary", () => {
 
   it("returns no exports for an empty showmount result", () => {
     expect(parseNfsExports("Export list for 10.10.10.10:\n")).toEqual([]);
+  });
+
+  it("pulls module names out of nmap's rsync-list-modules output", () => {
+    const output =
+      "PORT    STATE SERVICE\n" +
+      "873/tcp open  rsync\n" +
+      "| rsync-list-modules: \n" +
+      "|   module1         \tTest module\n" +
+      "|_  backup          \tBackup share\n";
+    expect(parseRsyncModules(output)).toEqual(["module1", "backup"]);
   });
 
   it("extracts per-share anonymous/current-user access from nmap smb-enum-shares", () => {
