@@ -653,6 +653,13 @@ export default function App() {
             autoRunWebdavTree();
           }
         }
+        if (c.id === "ldap-anonymous-users" && /^\[\+\]/im.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}-anon`;
+          if (autoLdapTreeFiredRef.current !== key) {
+            autoLdapTreeFiredRef.current = key;
+            autoRunLdapTree("", "");
+          }
+        }
         if (c.id === "svn-wcdb-check" && /^HTTP\/[\d.]+ 200/im.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoSvnDumpFiredRef.current !== key) {
@@ -870,6 +877,18 @@ export default function App() {
       preview: `rsync_tree.sh ${target.ip} ${service.port} ${moduleName}`,
       target_level: false,
       variables: {path: moduleName},
+    });
+  };
+  const autoLdapTreeFiredRef = useRef<string>();
+  const autoRunLdapTree = (username: string, password: string) => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "ldap-dit-tree",
+      preview: `ldap_tree --host ${target.ip} --port ${service.port}` +
+        (username ? ` --username ${username} --password ***` : " (anonymous)"),
+      target_level: false,
+      variables: {username, password},
     });
   };
   const autoSvnDumpFiredRef = useRef<string>();
@@ -1637,6 +1656,17 @@ export default function App() {
     autoFileTreeFiredRef.current = key;
     void autoRunFileTree(
       netexecProtocol, credStore.username, credStore.password, credStore.domain);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [netexecProtocol, netexecCredentialResult, targetId, credStore.username]);
+  useEffect(() => {
+    if (netexecProtocol !== "ldap") return;
+    const success = netexecCredentialResult?.status === "completed"
+      && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
+    if (!success || !targetId) return;
+    const key = `${targetId}-ldap-${credStore.username}`;
+    if (autoLdapTreeFiredRef.current === key) return;
+    autoLdapTreeFiredRef.current = key;
+    autoRunLdapTree(credStore.username, credStore.password);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netexecProtocol, netexecCredentialResult, targetId, credStore.username]);
   const latestSmbEnum = serviceExecutions

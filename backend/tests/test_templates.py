@@ -43,6 +43,17 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_ldap_dit_tree_renders_with_optional_credentials():
+    item, command, argv = catalog.render("ldap-dit-tree", {
+        "host": "10.10.10.10", "port": "389", "username": "", "password": "",
+        "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "/opt/oscp-workspace/.venv/bin/python", "-m", "app.ldap_tree",
+        "--host", "10.10.10.10", "--port", "389", "--username", "", "--password", "",
+    ]
+
+
 def test_svn_dump_recover_renders_with_the_repo_scoped_output_dir():
     item, command, argv = catalog.render("svn-dump-recover", {
         "host": "10.10.10.10", "port": "80", "scheme": "http",
