@@ -136,11 +136,23 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
     })();
     return () => { cancelled = true; };
   }, []);
+  // Replaces the page= value outright rather than inserting at the cursor —
+  // insert-at-cursor meant clicking twice (or clicking without re-focusing
+  // the field first) silently doubled up the payload into a URL that no
+  // longer parsed as a UNC path at all. This is idempotent: click it as
+  // many times as you want, the URL ends up the same either way.
   const insertUncPath = () => {
     if (!lhost) return;
     const snippet = `\\\\${lhost}\\test`;
-    const input = urlInputRef.current;
     const current = draft.url || "";
+    const pageParam = /([?&]page=)([^&]*)/.exec(current);
+    if (pageParam) {
+      const valueStart = pageParam.index + pageParam[1].length;
+      field("url", current.slice(0, valueStart) + snippet
+        + current.slice(valueStart + pageParam[2].length));
+      return;
+    }
+    const input = urlInputRef.current;
     const start = input?.selectionStart ?? current.length;
     const end = input?.selectionEnd ?? current.length;
     field("url", current.slice(0, start) + snippet + current.slice(end));
