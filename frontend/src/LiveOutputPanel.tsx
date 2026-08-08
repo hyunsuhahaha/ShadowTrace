@@ -9,6 +9,7 @@ import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
 const treeTemplateIds = new Set([
   "ftp-directory-tree", "nfs-export-tree", "http-webdav-tree", "git-dump-tree",
   "rsync-module-tree", "imap-mailbox-tree", "redis-key-tree", "mysql-db-tree",
+  "svn-dump-recover",
 ]);
 
 export default function LiveOutputPanel({run, elapsed, outcome, output}: {

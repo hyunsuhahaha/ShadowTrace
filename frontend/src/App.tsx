@@ -653,6 +653,13 @@ export default function App() {
             autoRunWebdavTree();
           }
         }
+        if (c.id === "svn-wcdb-check" && /^HTTP\/[\d.]+ 200/im.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoSvnDumpFiredRef.current !== key) {
+            autoSvnDumpFiredRef.current = key;
+            autoRunSvnDump();
+          }
+        }
         if (c.id === "git-head-check" && /ref:\s*refs\/heads\//i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoGitDumpFiredRef.current !== key) {
@@ -863,6 +870,17 @@ export default function App() {
       preview: `rsync_tree.sh ${target.ip} ${service.port} ${moduleName}`,
       target_level: false,
       variables: {path: moduleName},
+    });
+  };
+  const autoSvnDumpFiredRef = useRef<string>();
+  const autoRunSvnDump = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "svn-dump-recover",
+      preview: `svn_dump --url ${target.ip}:${service.port}`,
+      target_level: false,
+      variables: {},
     });
   };
   const autoGitDumpFiredRef = useRef<string>();
