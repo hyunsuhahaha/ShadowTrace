@@ -749,7 +749,7 @@ export default function App() {
       });
       await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
       setOutput((value) =>
-        `${value}\n$ sudo responder -I ${interfaceName.trim()}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+        `${value}\n$ sudo responder -I ${interfaceName.trim()} -v\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[Responder 실행 실패] ${message}\n`);

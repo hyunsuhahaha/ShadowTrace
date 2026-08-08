@@ -53,7 +53,7 @@ def test_responder_is_allowed_when_nothing_is_running(tmp_path, monkeypatch):
         variables={"interface": "tun0"}), db=db)
 
     assert row.template_id == "responder-listener"
-    assert row.command == "sudo responder -I tun0"
+    assert row.command == "sudo responder -I tun0 -v"
 
 
 def test_the_running_process_check_only_applies_to_responder(tmp_path, monkeypatch):

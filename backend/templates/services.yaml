@@ -10,7 +10,7 @@ listeners:
   display_name: 공격자 측 리스너
   match: {services: [], ports: []}
   commands:
-    - {id: responder-listener, name: Responder 리스너, description: "LLMNR/NBT-NS/mDNS poisoning으로 인증 시도를 가로챕니다. 별도의 강제 인증 유도(UNC 경로 LFI, PetitPotam 등)와 함께 써야 하며, 잡힌 NTLMv2 해시는 세션 로그에서 직접 확인하세요.", command: "responder -I {interface}", execution_mode: interactive, risk: medium, tool: responder, sudo: true, output: pty-log, policy: allowed}
+    - {id: responder-listener, name: Responder 리스너, description: "LLMNR/NBT-NS/mDNS poisoning으로 인증 시도를 가로챕니다. 별도의 강제 인증 유도(UNC 경로 LFI, PetitPotam 등)와 함께 써야 하며, -v(verbose)로 이미 캡처된 계정이 재시도돼도 Client/Username/Hash 전체가 매번 출력됩니다 — 'Skipping previously captured hash'만 뜨는 걸로 캡처 여부를 헷갈리지 않도록.", command: "responder -I {interface} -v", execution_mode: interactive, risk: medium, tool: responder, sudo: true, output: pty-log, policy: allowed}
 ftp:
   display_name: FTP
   match: {services: [ftp], ports: [21]}
