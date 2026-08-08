@@ -631,6 +631,13 @@ export default function App() {
             autoRunRsyncTree(modules[0]);
           }
         }
+        if (c.id === "mongodb-info" && /mongodb-info:/i.test(result.stdout || "")) {
+          const key = `${targetId}-${serviceId}`;
+          if (autoMongoTreeFiredRef.current !== key) {
+            autoMongoTreeFiredRef.current = key;
+            autoRunMongoTree();
+          }
+        }
         if (c.id === "snmp-info" && /snmp-info:/i.test(result.stdout || "")) {
           const key = `${targetId}-${serviceId}`;
           if (autoSnmpTreeFiredRef.current !== key) {
@@ -919,6 +926,17 @@ export default function App() {
         ` --username ${username} --password ***`,
       target_level: false,
       variables: {username, password},
+    });
+  };
+  const autoMongoTreeFiredRef = useRef<string>();
+  const autoRunMongoTree = () => {
+    if (!target || !service) return;
+    setRunWithSudo(false);
+    void run({
+      id: "mongodb-db-tree",
+      preview: `mongodb_tree --host ${target.ip} --port ${service.port} (no auth)`,
+      target_level: false,
+      variables: {},
     });
   };
   const autoLdapTreeFiredRef = useRef<string>();

@@ -43,6 +43,16 @@ def test_tool_catalog_endpoint_wraps_list_all_under_a_groups_key():
     assert body["groups"] == catalog.list_all()
 
 
+def test_mongodb_db_tree_renders_without_credentials():
+    item, command, argv = catalog.render("mongodb-db-tree", {
+        "host": "10.10.10.10", "port": "27017", "repo_dir": "/opt/oscp-workspace",
+    })
+    assert argv == [
+        "/opt/oscp-workspace/.venv/bin/python", "-m", "app.mongodb_tree",
+        "--host", "10.10.10.10", "--port", "27017",
+    ]
+
+
 def test_snmp_oid_tree_renders_with_the_community_string():
     item, command, argv = catalog.render("snmp-oid-tree", {
         "host": "10.10.10.10", "port": "161", "password": "public",
