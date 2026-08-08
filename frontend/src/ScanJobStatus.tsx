@@ -2,12 +2,13 @@ import {elapsed, type Automation, type Profile, type Scan} from "./scanCenterMod
 import {statusCopy as statusLabel} from "./ui";
 
 export default function ScanJobStatus({selected, clock, streamState, lastEventAt,
-  processAlive, selectedProfile, automation, chainedScan, openTcpPorts,
+  processAlive, selectedProfile, automation, chainedScan, openTcpPorts, vpnConnected,
   onOpenChainedScan, onUseDiscoveredPorts}: {
   selected?: Scan; clock: number;
   streamState: "idle" | "connecting" | "connected" | "disconnected";
   lastEventAt?: number; processAlive?: boolean; selectedProfile?: Profile;
   automation?: Automation; chainedScan?: Scan; openTcpPorts: number[];
+  vpnConnected?: boolean;
   onOpenChainedScan: (id: number) => void; onUseDiscoveredPorts: () => void;
 }) {
   return <>
@@ -70,6 +71,13 @@ export default function ScanJobStatus({selected, clock, streamState, lastEventAt
           lastEventAt && clock - lastEventAt > 30000 && (
             <p className="jobStatus__warning" role="alert">
               30초 이상 상태 신호가 없습니다. 백엔드 연결을 확인하거나 스캔을 취소하세요.
+            </p>
+          )}
+        {["queued", "running", "processing"].includes(selected.status) &&
+          vpnConnected === false && (
+            <p className="jobStatus__warning" role="alert">
+              VPN이 연결되어 있지 않습니다. 대상이 VPN 뒤에 있다면 스캔이 응답 없이
+              멈춰 있는 것처럼 보일 수 있습니다 — VPN 연결을 확인하세요.
             </p>
           )}
       </section>

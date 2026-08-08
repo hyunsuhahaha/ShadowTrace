@@ -257,6 +257,10 @@ export default function ScanCenter() {
     chainedScan = useMemo(
       () => scans.data?.find((s) => s.parent_scan_id === selected?.id),
       [scans.data, selected?.id],
+    ),
+    xmlArtifact = useMemo(
+      () => artifacts.data?.find((a) => a.kind === "xml"),
+      [artifacts.data],
     );
   const useDiscoveredPorts = () => {
     const detail =
@@ -456,6 +460,7 @@ export default function ScanCenter() {
             lastEventAt={lastEventAt} processAlive={processAlive}
             selectedProfile={selectedProfile} automation={automation.data}
             chainedScan={chainedScan} openTcpPorts={openTcpPorts}
+            vpnConnected={vpnStatus.data?.connected}
             onOpenChainedScan={setScanId} onUseDiscoveredPorts={useDiscoveredPorts} />
           <div className="scanStats">
             <div>
@@ -551,6 +556,11 @@ export default function ScanCenter() {
                 <button onClick={saveMetadata}>별칭 및 태그</button>
                 <a href={`/api/scans/${scanId}/export?format=csv`}>CSV</a>
                 <a href={`/api/scans/${scanId}/export?format=json`}>JSON</a>
+                {xmlArtifact && (
+                  <a href={`/api/scans/${scanId}/artifacts/${xmlArtifact.id}/download`}>
+                    XML
+                  </a>
+                )}
               </div>
               {artifacts.data?.map((a) => (
                 <a
@@ -605,6 +615,15 @@ export default function ScanCenter() {
             <p>
               <b>대상:</b> {target?.name} · {target?.ip}
             </p>
+            {vpnStatus.data && !vpnStatus.data.connected && (
+              <div className="warning" role="alert">
+                <b>VPN 미연결</b>
+                <p>
+                  대상이 VPN을 통해서만 접근 가능하다면 스캔이 출력 없이 멈춘
+                  것처럼 보일 수 있습니다.
+                </p>
+              </div>
+            )}
             <label>
               <input
                 type="checkbox"
