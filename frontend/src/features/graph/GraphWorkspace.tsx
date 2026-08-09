@@ -65,6 +65,28 @@ export default function GraphWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const [paneWidth, setPaneWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("oscp-graph-pane"));
+    return saved >= 320 ? saved : 640;
+  });
+  useEffect(() => {
+    localStorage.setItem("oscp-graph-pane", String(paneWidth));
+  }, [paneWidth]);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const onSplitDown = (e: React.PointerEvent) => {
+    dragRef.current = { startX: e.clientX, startWidth: paneWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onSplitMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const delta = dragRef.current.startX - e.clientX;  // drag left => wider pane
+    setPaneWidth(Math.max(320,
+      Math.min(window.innerWidth - 380, dragRef.current.startWidth + delta)));
+  };
+  const onSplitUp = (e: React.PointerEvent) => {
+    dragRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
 
   const createProject = useMutation({
     mutationFn: () => api<{ id: number }>("/projects", {
@@ -252,25 +274,30 @@ export default function GraphWorkspace() {
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
-        {noProject ? (
-          <OnboardingPane creating={createProject.isPending}
-            onCreate={() => createProject.mutate()} />
-        ) : selectedNode?.type === "project-root" ? (
-          <div style={S.embedPane}>
-            <Suspense fallback={<Empty text="Scan Center 불러오는 중…" />}>
-              <EmbeddedScanCenter embedded />
-            </Suspense>
-          </div>
-        ) : selectedNode?.type === "service" ? (
-          <div style={S.embedPane}>
-            <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
-              <EmbeddedEnumeration embedded />
-            </Suspense>
-          </div>
-        ) : (
-          <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
-            onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
-        )}
+        <div style={S.splitter} onPointerDown={onSplitDown}
+          onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
+        <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
+          minWidth: 0, minHeight: 0 }}>
+          {noProject ? (
+            <OnboardingPane creating={createProject.isPending}
+              onCreate={() => createProject.mutate()} />
+          ) : selectedNode?.type === "project-root" || selectedNode?.type === "host" ? (
+            <div style={S.embedPane}>
+              <Suspense fallback={<Empty text="Scan Center 불러오는 중…" />}>
+                <EmbeddedScanCenter embedded />
+              </Suspense>
+            </div>
+          ) : selectedNode?.type === "service" ? (
+            <div style={S.embedPane}>
+              <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
+                <EmbeddedEnumeration embedded />
+              </Suspense>
+            </div>
+          ) : (
+            <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
+              onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -647,10 +674,13 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 7, cursor: "pointer" },
   rowSel: { background: "rgba(106,169,255,.12)",
     boxShadow: "inset 0 0 0 1px rgba(106,169,255,.25)" },
-  inspector: { width: 280, borderLeft: "1px solid #2a2a34", background: "#16161c",
-    padding: 16, overflow: "auto", flexShrink: 0 },
-  embedPane: { flex: 1.4, minWidth: 480, borderLeft: "1px solid #2a2a34",
-    overflow: "auto", minHeight: 0, background: "#0e0e12" },
+  inspector: { flex: 1, minWidth: 0, background: "#16161c",
+    padding: 16, overflow: "auto" },
+  embedPane: { flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
+    background: "#0e0e12" },
+  splitter: { width: 6, flexShrink: 0, cursor: "col-resize", background: "#2a2a34",
+    borderLeft: "1px solid #0e0e12", borderRight: "1px solid #0e0e12",
+    touchAction: "none" },
   openBtn: { marginTop: 18, width: "100%", padding: "9px 12px", borderRadius: 8,
     border: "1px solid #6aa9ff55", background: "#6aa9ff14", color: "#6aa9ff",
     fontWeight: 600, cursor: "pointer" },
