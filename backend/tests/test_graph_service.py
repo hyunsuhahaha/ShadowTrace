@@ -276,12 +276,13 @@ def test_sync_projects_interactive_sessions_as_technique_nodes():
     db.add(svc); db.flush()
     db.add(InteractiveSession(target_id=t.id, service_id=svc.id,
                               template_id="responder", command="responder -I tun0",
-                              cwd="/tmp", status="running"))
+                              cwd="/tmp", status="launched"))
     db.flush()
     result = service.sync_from_project(db, p.id)
     assert result["created"]["techniques"] == 1
     tech = db.query(GraphNode).filter_by(type="technique").one()
     assert tech.label == "responder"
+    assert json.loads(tech.meta)["activity"]["status"] == "launched"
 
 
 def test_sync_prunes_orphaned_nodes_when_target_deleted():

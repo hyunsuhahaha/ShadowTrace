@@ -28,7 +28,7 @@ _EXECUTION_STATUS = {
 # reads them.
 _WELL_KNOWN_PORT_NAMES = {5985: "winrm", 5986: "winrm"}
 
-_ACTIVE_STATUSES = {"queued", "running", "processing"}
+_ACTIVE_STATUSES = {"queued", "running", "processing", "launched"}
 
 
 def _activity_meta(raw: str, activity: dict | None) -> str:

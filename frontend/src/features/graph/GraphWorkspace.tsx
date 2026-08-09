@@ -24,8 +24,12 @@ type GraphEdge = {
   id: string; source: string; target: string; relation: string; status: string;
 };
 type GraphOut = { root_node_id: string | null; nodes: GraphNode[]; edges: GraphEdge[] };
+type GraphRequestDraft = {
+  projectId: number; targetId: number; serviceId: number; url: string;
+};
 export type NodeActivity = {
-  kind: "scan" | "execution"; status: "queued" | "running" | "processing";
+  kind: "scan" | "execution";
+  status: "queued" | "running" | "processing" | "launched";
   label: string; startedAt?: string | null;
 };
 
@@ -63,7 +67,7 @@ export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | n
   try {
     const value = JSON.parse(node.meta).activity;
     if (!value || !["scan", "execution"].includes(value.kind)
-      || !["queued", "running", "processing"].includes(value.status)) return null;
+      || !["queued", "running", "processing", "launched"].includes(value.status)) return null;
     return { kind: value.kind, status: value.status,
       label: typeof value.label === "string" ? value.label : "TASK",
       startedAt: typeof value.startedAt === "string" ? value.startedAt : null };
@@ -91,6 +95,7 @@ export default function GraphWorkspace() {
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [webRequest, setWebRequest] = useState<GraphRequestDraft | null>(null);
   const [paneWidth, setPaneWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
     return saved >= 320 ? saved : 640;
@@ -251,7 +256,7 @@ export default function GraphWorkspace() {
     const node = nodeById.get(id);
     if (!node?.source_ref) return null;
     try {
-      if (JSON.parse(node.source_ref).kind !== "execution") return null;
+      if (!["execution", "session"].includes(JSON.parse(node.source_ref).kind)) return null;
     } catch { return null; }
     const edge = graph.data?.edges.find((item) =>
       item.target === id && item.relation === "attempted");
@@ -366,7 +371,9 @@ export default function GraphWorkspace() {
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
         <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
           minWidth: 0, minHeight: 0 }}>
-          {noProject ? (
+          {webRequest ? (
+            <GraphRequestPanel draft={webRequest} onBack={() => setWebRequest(null)} />
+          ) : noProject ? (
             <OnboardingPane creating={createProject.isPending}
               onCreate={() => createProject.mutate()} />
           ) : selectedNode?.type === "project-root" || selectedNode?.type === "host" ? (
@@ -384,6 +391,7 @@ export default function GraphWorkspace() {
           ) : (
             <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
               executionContext={executionHandoff(selected)}
+              onOpenRequest={setWebRequest}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
               onSetStatus={(id, status) => setStatus.mutate({ id, status })}
@@ -815,19 +823,22 @@ type AddForm = { type: string; label: string; relation: string; status: string }
 export function Inspector(props: {
   node?: GraphNode; link?: DeepLink; busy: boolean;
   executionContext?: { targetId: number; serviceId?: number } | null;
+  onOpenRequest?: (draft: GraphRequestDraft) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
   onAddNode: (v: AddForm & { sourceId: string }) => void;
 }) {
   const n = props.node;
   const [adding, setAdding] = useState(false);
-  const executionId = (() => {
+  const source = (() => {
     if (!n?.source_ref) return null;
     try {
       const ref = JSON.parse(n.source_ref);
-      return ref.kind === "execution" && Number.isInteger(ref.id) ? ref.id : null;
+      return Number.isInteger(ref.id) ? { kind: ref.kind as string, id: ref.id as number } : null;
     } catch { return null; }
   })();
+  const executionId = source?.kind === "execution" ? source.id : null;
+  const sessionId = source?.kind === "session" ? source.id : null;
   const executionOutput = useQuery({
     queryKey: ["executionOutput", executionId],
     enabled: executionId !== null,
@@ -836,8 +847,8 @@ export function Inspector(props: {
   });
   const targets = useQuery({
     queryKey: ["graphLinkTargets"],
-    enabled: executionId !== null && !!props.executionContext,
-    queryFn: () => api<Array<{ id: number; ip: string; hostname?: string }>>("/targets"),
+    enabled: (executionId !== null || sessionId !== null) && !!props.executionContext,
+    queryFn: () => api<Array<{ id: number; project_id: number; ip: string; hostname?: string }>>("/targets"),
   });
   const services = useQuery({
     queryKey: ["graphLinkServices", props.executionContext?.targetId],
@@ -847,6 +858,17 @@ export function Inspector(props: {
       `/targets/${props.executionContext!.targetId}/services`),
   });
   const [evidenceState, setEvidenceState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [revealedCapture, setRevealedCapture] = useState<string | null>(null);
+  const [captureMessage, setCaptureMessage] = useState("");
+  const responderCaptures = useQuery({
+    queryKey: ["responderCaptures", props.executionContext?.targetId],
+    enabled: sessionId !== null && n?.label === "responder-listener"
+      && !!props.executionContext?.targetId,
+    refetchInterval: 4000,
+    queryFn: () => api<Array<{ label: string; username: string; value: string;
+      cleartext: boolean; captured_at: string }>>(
+      `/targets/${props.executionContext!.targetId}/responder-captures`),
+  });
   const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "")
     .sort((a, b) => LINK_KIND_ORDER.indexOf(a.kind) - LINK_KIND_ORDER.indexOf(b.kind));
   const target = targets.data?.find((item) => item.id === props.executionContext?.targetId);
@@ -859,13 +881,16 @@ export function Inspector(props: {
       + `://${target.hostname || target.ip}:${service.port}/`
     : "";
   const openInRequest = (url: string) => {
-    if (!props.executionContext?.serviceId || !base) return;
+    if (!props.executionContext?.serviceId || !base || !target) return;
+    const resolved = new URL(url, base).toString();
     localStorage.setItem("oscp-web-launch", JSON.stringify({
       targetId: props.executionContext.targetId,
       serviceId: props.executionContext.serviceId,
-      url: new URL(url, base).toString(),
+      url: resolved,
     }));
-    location.hash = "#web/request";
+    props.onOpenRequest?.({ projectId: target.project_id,
+      targetId: props.executionContext.targetId,
+      serviceId: props.executionContext.serviceId, url: resolved });
   };
   const saveEvidence = async () => {
     if (executionId === null || !executionOutput.data?.stdout) return;
@@ -880,6 +905,25 @@ export function Inspector(props: {
       });
       setEvidenceState("saved");
     } catch { setEvidenceState("error"); }
+  };
+  const saveResponderCapture = async (capture: {
+    label: string; username: string; value: string; cleartext: boolean;
+  }) => {
+    if (!target || !props.executionContext) return;
+    setCaptureMessage("저장 중…");
+    try {
+      await api("/runbooks/credentials", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: target.project_id,
+          target_id: props.executionContext.targetId, username: capture.username,
+          secret: capture.value, secret_kind: capture.cleartext ? "password" : "hash",
+          secret_hint: capture.cleartext ? "Responder 평문 캡처" : "Responder NTLMv2-SSP 캡처",
+          source_kind: "responder", source_detail: capture.label, service_names: [] }),
+      });
+      setCaptureMessage(`${capture.username} 저장 완료`);
+    } catch (reason) {
+      setCaptureMessage(`저장 실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
   };
   if (!n)
     return <aside style={S.inspector}>
@@ -975,6 +1019,38 @@ export function Inspector(props: {
           )}
         </section>
       )}
+      {sessionId !== null && n.label === "responder-listener" && (
+        <section style={S.executionResults} aria-label="Responder 캡처 결과">
+          <div style={S.executionResultsHead}>
+            <div><strong>캡처된 자격증명</strong>{" "}
+              <span>{responderCaptures.data?.length || 0}개</span></div>
+            <span style={{ color: "#59f59a" }}>LIVE · 4s</span>
+          </div>
+          {captureMessage && <div style={S.resultNotice}>{captureMessage}</div>}
+          {responderCaptures.isLoading ? <div style={S.resultMessage}>Responder 로그 확인 중…</div>
+            : responderCaptures.isError ? <div style={S.resultError}>캡처 로그를 읽지 못했습니다.</div>
+            : responderCaptures.data?.length ? <div style={S.captureList}>
+              {responderCaptures.data.map((capture) => {
+                const key = `${capture.label}:${capture.username}`;
+                const shown = revealedCapture === key;
+                return <article key={key} style={S.captureCard}>
+                  <div style={S.captureHead}><b>{capture.username}</b>
+                    <span>{capture.cleartext ? "CLEARTEXT" : "NETNTLMv2"}</span></div>
+                  <div style={S.captureMeta}>{capture.label} · {new Date(capture.captured_at).toLocaleString()}</div>
+                  <code style={S.captureValue}>{shown ? capture.value : "••••••••••••••••••••••••"}</code>
+                  <div style={S.captureActions}>
+                    <button onClick={() => setRevealedCapture(shown ? null : key)}>
+                      {shown ? "숨기기" : "해시 보기"}</button>
+                    <button onClick={() => void navigator.clipboard.writeText(capture.value)}>복사</button>
+                    <button onClick={() => void saveResponderCapture(capture)}>Credential 저장</button>
+                  </div>
+                </article>;
+              })}
+            </div> : <div style={S.resultMessage}>
+              아직 이 대상에서 캡처된 자격증명이 없습니다. 새 캡처는 자동으로 표시됩니다.
+            </div>}
+        </section>
+      )}
       {props.link && (
         <button onClick={props.link.open} style={S.openBtn}>{props.link.label}</button>
       )}
@@ -991,6 +1067,121 @@ export function Inspector(props: {
       )}
     </aside>
   );
+}
+
+type GraphExchange = {
+  id: number; status_code?: number | null; duration_ms: number; size: number;
+  response_headers: string; error?: string;
+};
+
+export function GraphRequestPanel(props: {
+  draft: GraphRequestDraft; onBack: () => void;
+}) {
+  const [method, setMethod] = useState("GET");
+  const [url, setUrl] = useState(props.draft.url);
+  const [headers, setHeaders] = useState("{}");
+  const [body, setBody] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [requestId, setRequestId] = useState<number | null>(null);
+  const [exchange, setExchange] = useState<GraphExchange | null>(null);
+  const [responseBody, setResponseBody] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "sending">("idle");
+  const [error, setError] = useState("");
+
+  const requestPayload = () => ({
+    project_id: props.draft.projectId, target_id: props.draft.targetId,
+    service_id: props.draft.serviceId, name: `${method} ${new URL(url).pathname || "/"}`,
+    folder: "Graph", tags: ["graph"], method, url, query: {},
+    headers: JSON.parse(headers || "{}"), cookies: {}, body, body_mode: "raw",
+    tls_verify: true, proxy: "", timeout: 30, follow_redirects: false,
+  });
+  const save = async (): Promise<number | null> => {
+    setState("saving"); setError("");
+    try {
+      const saved = await api<{ id: number }>(
+        requestId ? `/web/requests/${requestId}` : "/web/requests",
+        { method: requestId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestPayload()) },
+      );
+      setRequestId(saved.id); setState("idle");
+      return saved.id;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setState("idle"); return null;
+    }
+  };
+  const send = async () => {
+    if (!confirmed) { setError("허가된 실습 대상을 확인해 주세요."); return; }
+    const id = requestId || await save();
+    if (!id) return;
+    setState("sending"); setError(""); setExchange(null); setResponseBody("");
+    try {
+      const rows = await api<GraphExchange[]>(`/web/requests/${id}/send`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variables: {}, repeat: 1, confirmed: true }),
+      });
+      const result = rows.at(-1) || null;
+      setExchange(result);
+      if (result && !result.error) {
+        const response = await fetch(`/api/web/exchanges/${result.id}/body`);
+        setResponseBody(await response.text());
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setState("idle"); }
+  };
+  let responseHeaders = "";
+  if (exchange?.response_headers) {
+    try { responseHeaders = JSON.stringify(JSON.parse(exchange.response_headers), null, 2); }
+    catch { responseHeaders = exchange.response_headers; }
+  }
+
+  return <section style={S.requestPanel} aria-label="Graph Web Request">
+    <div style={S.requestPanelHead}>
+      <div><small style={S.requestEyebrow}>WEB REQUEST</small>
+        <h3 style={{ margin: "4px 0 0" }}>그래프에서 요청 검사</h3></div>
+      <button style={S.requestBack} onClick={props.onBack}>← 실행 결과</button>
+    </div>
+    <div style={S.requestLine}>
+      <select value={method} onChange={(e) => setMethod(e.target.value)} style={S.requestMethod}>
+        {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+          .map((item) => <option key={item}>{item}</option>)}
+      </select>
+      <input aria-label="Request URL" value={url} onChange={(e) => setUrl(e.target.value)}
+        style={S.requestUrl} />
+      <button style={S.requestSend} disabled={state !== "idle"}
+        onClick={() => void send()}>{state === "sending" ? "전송 중" : "SEND"}</button>
+    </div>
+    <div style={S.requestGrid}>
+      <label style={S.requestField}><span>HEADERS · JSON</span>
+        <textarea value={headers} onChange={(e) => setHeaders(e.target.value)} rows={7} /></label>
+      <label style={S.requestField}><span>BODY</span>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={7} /></label>
+    </div>
+    <div style={S.requestActions}>
+      <label><input type="checkbox" checked={confirmed}
+        onChange={(e) => setConfirmed(e.target.checked)} /> 허가된 실습 대상임을 확인</label>
+      <span style={{ flex: 1 }} />
+      {requestId && <span style={S.requestSaved}>SAVED #{requestId}</span>}
+      <button style={S.resultAction} disabled={state !== "idle"}
+        onClick={() => void save()}>{state === "saving" ? "저장 중…" : "요청 저장"}</button>
+    </div>
+    {error && <div style={S.resultError}>{error}</div>}
+    <div style={S.responsePanel}>
+      <div style={S.responseHead}>
+        <span>RESPONSE</span>
+        {exchange && <b>{exchange.error ? "ERROR" : `HTTP ${exchange.status_code ?? "—"}`}
+          <small>{exchange.duration_ms}ms · {exchange.size} bytes</small></b>}
+      </div>
+      {exchange?.error ? <div style={S.resultError}>{exchange.error}</div>
+        : exchange ? <>
+          {responseHeaders && <details><summary>응답 헤더</summary>
+            <pre style={S.responsePre}>{responseHeaders}</pre></details>}
+          <pre style={S.responsePre}>{responseBody || "(빈 응답)"}</pre>
+        </> : <div style={S.requestEmpty}>요청을 전송하면 응답이 여기에 표시됩니다.</div>}
+    </div>
+  </section>;
 }
 
 function AddNodeForm(props: {
@@ -1106,6 +1297,50 @@ const S: Record<string, React.CSSProperties> = {
   linkKind: { color: "#9a9aa6", fontSize: 10, whiteSpace: "nowrap" },
   rowAction: { border: "1px solid #454552", borderRadius: 5, padding: "4px 7px",
     background: "#22222b", color: "#e7e7ee", fontSize: 9, whiteSpace: "nowrap" },
+  captureList: { display: "grid", gap: 8, padding: 10 },
+  captureCard: { padding: 11, border: "1px solid #2d493a", borderRadius: 6,
+    background: "#0b120e" },
+  captureHead: { display: "flex", justifyContent: "space-between", gap: 8,
+    color: "#dce8e1", fontSize: 11 },
+  captureMeta: { marginTop: 4, color: "#72847a", fontSize: 9 },
+  captureValue: { display: "block", marginTop: 10, padding: 9, maxHeight: 120,
+    overflow: "auto", overflowWrap: "anywhere", whiteSpace: "pre-wrap",
+    border: "1px solid #24352c", background: "#060a08", color: "#67e89b",
+    font: "9px/1.45 ui-monospace,monospace" },
+  captureActions: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  requestPanel: { flex: 1, minWidth: 0, overflow: "auto", padding: 18,
+    background: "#101317", color: "#dce8e1" },
+  requestPanelHead: { display: "flex", justifyContent: "space-between",
+    alignItems: "center", paddingBottom: 16, borderBottom: "1px solid #29332e" },
+  requestEyebrow: { color: "#59f59a", font: "9px ui-monospace,monospace",
+    letterSpacing: 2 },
+  requestBack: { border: 0, background: "transparent", color: "#8fa099",
+    cursor: "pointer", fontSize: 11 },
+  requestLine: { display: "flex", gap: 0, marginTop: 18,
+    border: "1px solid #365345", background: "#090d0b" },
+  requestMethod: { width: 92, border: 0, borderRight: "1px solid #365345",
+    background: "#132219", color: "#59f59a", padding: "11px 10px",
+    font: "600 11px ui-monospace,monospace" },
+  requestUrl: { minWidth: 0, flex: 1, border: 0, outline: 0, padding: "11px 12px",
+    background: "transparent", color: "#dce8e1", font: "11px ui-monospace,monospace" },
+  requestSend: { width: 76, border: 0, borderLeft: "1px solid #365345",
+    background: "#173824", color: "#72f7a8", cursor: "pointer",
+    font: "700 10px ui-monospace,monospace", letterSpacing: 1 },
+  requestGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+    gap: 10, marginTop: 12 },
+  requestField: { display: "grid", gap: 6, color: "#789086",
+    font: "9px ui-monospace,monospace", letterSpacing: 1 },
+  requestActions: { display: "flex", alignItems: "center", flexWrap: "wrap",
+    gap: 10, marginTop: 12, color: "#8fa099", fontSize: 10 },
+  requestSaved: { color: "#59f59a", font: "9px ui-monospace,monospace" },
+  responsePanel: { marginTop: 18, border: "1px solid #29332e", background: "#090d0b" },
+  responseHead: { display: "flex", justifyContent: "space-between", padding: "10px 12px",
+    borderBottom: "1px solid #29332e", color: "#59f59a",
+    font: "9px ui-monospace,monospace" },
+  responsePre: { maxHeight: 360, overflow: "auto", margin: 0, padding: 12,
+    color: "#bcd0c5", whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+    font: "10px/1.55 ui-monospace,monospace" },
+  requestEmpty: { padding: 32, textAlign: "center", color: "#617069", fontSize: 11 },
   embedPane: { flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
     background: "#0e0e12" },
   splitter: { width: 6, flexShrink: 0, cursor: "col-resize", background: "#2a2a34",
