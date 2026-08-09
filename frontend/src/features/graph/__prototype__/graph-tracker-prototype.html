@@ -121,6 +121,8 @@
     background: var(--accent); padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
   .hosttag { font-size: 9px; color: var(--ink-faint); border: 1px solid var(--line);
     padding: 1px 5px; border-radius: 4px; flex-shrink: 0; }
+  .objtag { font-size: 9px; font-weight: 700; color: #f5c518; border: 1px solid #f5c51855;
+    background: #f5c5180f; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
 
   .back-btn {
     position: absolute; right: 22px; bottom: 22px; background: var(--accent);
@@ -221,6 +223,9 @@ node("f_upload","finding","/uploads","in-progress",{note:"업로드 폼 존재."
 node("t_shell","technique","web shell upload","attempt-failed",{tool:"curl",note:"확장자 필터에 막힘. 우회 미완."});
 node("int24","host","10.10.11.24 (internal)","in-progress",{ip:"10.10.11.24",note:"pivot 대상. svc_backup 재사용 시도 중."});
 node("t_priv","technique","GTFOBins privesc","untried",{note:"내부 호스트 권한 상승 후보."});
+// objective markers (decision Q11): user-set goals. value = objectiveKind, "" = not a goal.
+N["cred"].objective = "foothold";   // 달성(status succeeded)
+N["t_priv"].objective = "root";     // 미달성(status untried)
 
 // edges: {s,t,rel,status, structural}
 const STRUCT = new Set(["discovered","enumerated","attempted","yielded","pivoted-to"]);
@@ -267,7 +272,8 @@ function showInspector(id) {
 
 // ---------- Legend ----------
 document.getElementById("legend").innerHTML = Object.entries(STATUS)
-  .map(([k,v]) => `<span><span class="dot" style="background:${v.c}"></span>${v.label}</span>`).join("");
+  .map(([k,v]) => `<span><span class="dot" style="background:${v.c}"></span>${v.label}</span>`).join("")
+  + `<span title="사용자 지정 목표"><span class="dot" style="background:#f5c518"></span>🎯 목표</span>`;
 
 // ================= GRAPH (Canvas force sim — Pixi stand-in) =================
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
@@ -356,6 +362,13 @@ function draw() {
       ctx.strokeStyle="rgba(106,169,255,.4)"; ctx.lineWidth=1.5; ctx.setLineDash([3,4]); ctx.stroke();
       ctx.setLineDash([]);
     }
+    // objective (Q11): target ring, filled when achieved (status succeeded)
+    if (n.objective){
+      const done = n.status==="succeeded";
+      ctx.setLineDash([]); ctx.lineWidth=2.5;
+      ctx.strokeStyle = done?"#f5c518":"rgba(245,197,24,.5)";
+      ctx.beginPath(); ctx.arc(n.x,n.y,r+6,0,Math.PI*2); ctx.stroke();
+    }
     ctx.save();
     ctx.shadowColor=isAnchor?"#6aa9ff":st.c; ctx.shadowBlur = isAnchor?34:(isHover||isSel?26:14);
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
@@ -368,7 +381,7 @@ function draw() {
     ctx.fillStyle="#0c0c10"; ctx.font=`${Math.round(r*0.95)}px sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(GLYPH[n.type], n.x, n.y+0.5);
-    if (isHover||isSel||isHost||isRoot){
+    if (isHover||isSel||isHost||isRoot||n.objective){
       ctx.textBaseline="top";
       ctx.fillStyle="#eef"; ctx.font=isAnchor?"600 13px sans-serif":"11px sans-serif";
       ctx.fillText(n.label, n.x, n.y+r+6);
@@ -378,6 +391,9 @@ function draw() {
       else if (isHost){ tag="nmap 대상 → 프로토콜"; }
       if (tag){ ctx.fillStyle=tagCol; ctx.font="700 9px sans-serif";
         ctx.fillText(tag, n.x, n.y+r+22); }
+      if (n.objective){ const done=n.status==="succeeded";
+        ctx.fillStyle=done?"#f5c518":"#b58a1a"; ctx.font="700 9px sans-serif";
+        ctx.fillText((done?"🎯 달성: ":"🎯 목표: ")+n.objective, n.x, n.y+r+(tag?34:22)); }
     }
   }
   ctx.restore();
@@ -466,6 +482,7 @@ function renderTree(node, container, depth, num){
     <span class="label">${n.label}</span>
     ${n.type==="project-root"?`<span class="roottag">ROOT</span>`:""}
     ${n.type==="host"?`<span class="hosttag">nmap 대상</span>`:""}
+    ${n.objective?`<span class="objtag">🎯 ${n.status==="succeeded"?"달성":"목표"}: ${n.objective}</span>`:""}
     ${node.blocker?`<span class="blocker">⧗ ${node.blocker}</span>`:""}
     ${sumTxt}
     <span class="status" style="background:${st.c}22;color:${st.c}">${st.label.toUpperCase()}</span>`;
@@ -545,10 +562,12 @@ const pivot = {id:"int24", edge:"pivoted-to (진행중)"};
       svg+=`<line x1="${x+boxW/2}" y1="${py}" x2="${x+boxW/2}" y2="${y-4}" stroke="#4a4a56" stroke-width="2" ${dashed} marker-end="url(#arr)"/>`;
       svg+=`<text x="${x+boxW/2+12}" y="${py+gap/2+2}" fill="#8a8a96" font-size="12">${it.edge}</text>`;
     }
-    svg+=`<rect x="${x}" y="${y}" rx="10" width="${boxW}" height="${boxH}" fill="#16161c" stroke="${st.c}" stroke-width="1.5"/>`;
+    const obj = n.objective;
+    svg+=`<rect x="${x}" y="${y}" rx="10" width="${boxW}" height="${boxH}" fill="#16161c" stroke="${obj?"#f5c518":st.c}" stroke-width="${obj?2:1.5}"/>`;
     svg+=`<circle cx="${x+18}" cy="${cy}" r="6" fill="${st.c}"/>`;
     svg+=`<text x="${x+34}" y="${cy-2}" fill="#e7e7ee" font-size="13" font-weight="600">${n.label}</text>`;
     svg+=`<text x="${x+34}" y="${cy+14}" fill="${st.c}" font-size="11">${st.label} · ${n.type}</text>`;
+    if (obj){ svg+=`<text x="${x+boxW-10}" y="${y+16}" text-anchor="end" fill="#f5c518" font-size="9" font-weight="700">🎯 OBJECTIVE</text>`; }
     y+=boxH+gap;
   });
   svg+=`</svg>`;

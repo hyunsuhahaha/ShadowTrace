@@ -49,6 +49,8 @@
 | `tags` | string[] | – | 자유 태그 (`quick-win`, `rabbit-hole` 등) |
 | `pinned` | boolean | – | 레이아웃 고정 여부 (그래프 뷰) |
 | `position` | `{x,y}` \| null | – | 수동 배치 좌표 캐시. null이면 시뮬레이션이 결정 |
+| `objective` | boolean | – | 이 노드가 **목표/마일스톤**인지. 기본 false. OSCP의 `local.txt`/`proof.txt` 캡처, DA 획득 등 |
+| `objectiveKind` | enum \| null | – | `foothold`\|`privesc`\|`flag`\|`domain-admin`\|`custom`. `objective=true`일 때만 의미 |
 | `meta` | object | – | 타입별 필드(1.3) |
 
 > **`project-root`** 은 시스템이 프로젝트당 1개 자동 생성하는 합성 노드다(사용자 생성 불가, 삭제 불가).
@@ -436,6 +438,23 @@ GraphStore (진실 소스: 우리 스키마, React 밖)
 - 리포트 재현성을 위해 override는 프로젝트에 영구 저장되고 **감사 로그**를 남긴다.
 - Outline/Graph 어디서든 "이 위치를 canonical로 지정" 액션으로 설정 가능.
 
+### 3.6 Objective(목표) 표현 — OSCP-native
+
+Pentera의 "critical asset"/root-cause 개념과 OSCP의 본질(플래그 캡처·권한 상승)을 흡수한다. 단, 목표는
+**사용자가 손으로 지정**하며 시스템이 자동 추론하지 않는다(제품 원칙 준수).
+
+- 데이터: 노드의 `objective`/`objectiveKind`(§1.2). 어떤 타입의 노드든 목표가 될 수 있다
+  (예: host="root on 10.10.11.24", credential="Domain Admin", technique="proof.txt 캡처").
+- **엔진 selector `pathsToObjectives(edges, objectiveIds)`**: `successPaths`(§3.3) 중 목표 노드에서 끝나거나
+  목표를 지나는 체인만 추려 반환. Attack Path·Graph 하이라이트의 입력.
+- 렌더링:
+  - **Graph**: 목표 노드에 타겟(크로스헤어) 링 + 🎯 표식. "목표까지 경로" 토글 시 목표에 이르는 성공 체인을 강조.
+    미달성 목표는 링만(흐리게), 달성 목표는 채워진 링.
+  - **Attack Path**: 목표에서 끝나는 체인을 헤드라인으로. 목표 박스에 `OBJECTIVE` 배지.
+  - **Outline**: 목표 행에 🎯 배지 + `objectiveKind` 라벨.
+- 상태 결합: 목표의 달성 여부는 그 노드의 `status`(예: `succeeded`=달성, `untried`/`blocked`=미달성)로 읽는다.
+  별도 "달성" 플래그를 두지 않아 단일 진실 소스를 유지한다.
+
 ---
 
 ## 4. 스코핑 & 저장 (다중 프로젝트)
@@ -618,6 +637,8 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 | Q8 | Graph=Pixi.js+d3-force+Graphology, Outline=React DOM+CSS+Motion, Attack Path=SVG | §3.0~3.4 |
 | Q9 | Attack Path 렌더러 = **SVG(+dagre)** 확정 | §3.3 |
 | Q10 | **Pixi.js 도입 승인** (Obsidian급 Graph의 필수 비용) | §3.0, §7 |
+| Q11 | **Objective/Flag 노드 도입** (`objective`/`objectiveKind`, 사용자 지정, 자동추론 안 함) | §1.2, §3.6 |
+| — | 적응형 루트(B): 단일 host면 project-root 숨김·host가 시각 루트, 2대+면 project-root 앵커 | §2.1, §3.1 |
 
 열린 질문 없음. 이 명세는 구현 착수 가능 상태다. 이후 변경은 이 표에 delta로 추가한다.
 
