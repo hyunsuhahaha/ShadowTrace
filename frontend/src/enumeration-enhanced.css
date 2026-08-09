@@ -129,6 +129,14 @@ main{grid-template-columns:235px minmax(450px,1fr) var(--notes-width,360px)}.not
    single, full-width column here. */
 .app--embedded main { display: block; height: auto; }
 .app--embedded .work { padding: 18px; overflow: visible; height: auto; }
+.app--embedded .serviceHead { display: grid; gap: 16px; }
+.app--embedded .serviceHeadActions { flex-wrap: wrap; justify-content: flex-start; }
+.app--embedded .webServiceActions { flex-wrap: wrap; }
+.app--embedded .webServiceActions--hostname { flex: 1 1 100%; }
+.app--embedded .webServiceActions--hostname input { flex: 1 1 220px; width: auto; min-width: 160px; }
+.app--embedded .webServiceActions a,
+.app--embedded .webServiceActions button,
+.app--embedded .risk { white-space: nowrap; }
 .app--embedded .cards { grid-template-columns: 1fr; }
 .app--embedded .serviceIntel__facts { grid-template-columns: 1fr; }
 .app--embedded .serviceIntel__facts dl { grid-template-columns: 1fr 1fr; }
