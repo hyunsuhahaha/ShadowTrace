@@ -778,6 +778,7 @@ class GraphNode(Base):
     objective_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
     provenance: Mapped[str] = mapped_column(Text, default="")  # JSON object or ""
     layer: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class GraphEdge(Base):

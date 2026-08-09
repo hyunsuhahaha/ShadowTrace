@@ -84,8 +84,8 @@ def test_sync_endpoint_creates_host_and_service_nodes():
     db.add(t); db.flush()
     db.add(Service(target_id=t.id, port=22, protocol="tcp", name="ssh")); db.flush()
     result = api.sync_graph(p.id, db)
-    assert result["created"] == {"hosts": 1, "services": 1,
-                                 "findings": 0, "credentials": 0}
+    assert result["created"] == {"hosts": 1, "services": 1, "findings": 0,
+                                 "credentials": 0, "techniques": 0}
     out = api.get_graph(p.id, db)
     assert any(n.type == "host" for n in out.nodes)
     assert any(n.type == "service" for n in out.nodes)

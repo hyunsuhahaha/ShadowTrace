@@ -11,8 +11,16 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...models import (Credential, Finding, GraphEdge, GraphNode,
+from ...models import (Credential, Execution, Finding, GraphEdge, GraphNode,
                        GraphProjectMeta, Project, Service, Target)
+
+# Executions are auto-nodified but their security outcome is never auto-judged
+# (product principle): a completed command is not a "success". Only technical
+# failure/interruption maps to attempt-failed; the user marks real outcomes.
+_EXECUTION_STATUS = {
+    "queued": "in-progress", "running": "in-progress", "completed": "in-progress",
+    "failed": "attempt-failed", "interrupted": "attempt-failed",
+}
 from . import engine
 from .ids import new_ulid
 
@@ -29,7 +37,7 @@ EDGE_STATUSES = NODE_STATUSES  # shared vocabulary (spec 1.5)
 ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "discovered": ({"project-root", "host"}, {"host", "service"}),
     "enumerated": ({"service", "host"}, {"finding", "credential"}),
-    "attempted": ({"finding"}, {"technique"}),
+    "attempted": ({"finding", "service", "host"}, {"technique"}),
     "yielded": ({"technique"}, {"credential", "host", "service", "finding"}),
     "pivoted-to": ({"host"}, {"host"}),
     "reused-credential": ({"credential"}, {"host", "service"}),
@@ -142,23 +150,34 @@ def _serialize_tree(item, node_by_id: dict[str, GraphNode]):
             "children": [_serialize_tree(c, node_by_id) for c in item.children]}
 
 
+def _visible(nodes: list[GraphNode], edges: list[GraphEdge]):
+    """Drop user-hidden nodes (and any edge touching them) from derived views."""
+    kept = {n.id for n in nodes if not n.hidden}
+    vnodes = [n for n in nodes if n.id in kept]
+    vedges = [e for e in edges if e.source in kept and e.target in kept]
+    return vnodes, vedges
+
+
 def get_tree(db: Session, project_id: int) -> dict:
     root = ensure_project_root(db, project_id)
     nodes, edges = _load(db, project_id)
+    vnodes, vedges = _visible(nodes, edges)
     tree = engine.build_tree(
-        [_node_data(n) for n in nodes], [_edge_data(e) for e in edges], root.id)
-    return _serialize_tree(tree, {n.id: n for n in nodes})
+        [_node_data(n) for n in vnodes], [_edge_data(e) for e in vedges], root.id)
+    return _serialize_tree(tree, {n.id: n for n in vnodes})
 
 
 def get_attack_paths(db: Session, project_id: int) -> list[list[str]]:
-    _, edges = _load(db, project_id)
-    return engine.success_paths([_edge_data(e) for e in edges])
+    nodes, edges = _load(db, project_id)
+    _, vedges = _visible(nodes, edges)
+    return engine.success_paths([_edge_data(e) for e in vedges])
 
 
 def get_attack_path_summary(db: Session, project_id: int) -> dict:
     nodes, edges = _load(db, project_id)
+    vnodes, vedges = _visible(nodes, edges)
     return engine.attack_path_summary(
-        [_node_data(n) for n in nodes], [_edge_data(e) for e in edges])
+        [_node_data(n) for n in vnodes], [_edge_data(e) for e in vedges])
 
 
 # --- projection sync: existing domain rows -> graph (spec 6.1) ---
@@ -192,13 +211,16 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     root = ensure_project_root(db, project_id)
     nodes, _ = _load(db, project_id)
     index = _index_by_source(nodes)
-    created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0}
+    created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0,
+               "techniques": 0}
+    target_ids: list[int] = []
 
     def host_for(target_id: int) -> GraphNode | None:
         return index.get(("target", target_id))
 
     for target in db.scalars(
             select(Target).where(Target.project_id == project_id)):
+        target_ids.append(target.id)
         host = host_for(target.id)
         if host is None:
             label = target.ip + (f" ({target.hostname})" if target.hostname else "")
@@ -259,5 +281,29 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         create_edge(db, project_id, parent.id, node.id, "enumerated")
         index[("credential", cred.id)] = node
         created["credentials"] += 1
+
+    # executions auto-nodify into technique nodes (attempted from service/host).
+    # Outcome is NOT auto-judged; user marks success. Clutter is managed by the
+    # per-node `hidden` flag, not by suppressing the projection.
+    if target_ids:
+        for ex in db.scalars(
+                select(Execution).where(Execution.target_id.in_(target_ids))):
+            if ("execution", ex.id) in index:
+                continue
+            parent = parent_of(ex.service_id, ex.target_id)
+            if parent is None:
+                continue
+            meta = json.dumps({"tool": ex.template_id or "", "command": ex.command or ""})
+            provenance = json.dumps({"executionRef": {"module": "executions", "id": ex.id},
+                                     "tool": ex.template_id or ""})
+            node = create_node(
+                db, project_id, "technique", label=ex.template_id or "execution",
+                status=_EXECUTION_STATUS.get(ex.status, "in-progress"),
+                source_ref=_source_ref("executions", "execution", ex.id),
+                meta=meta, provenance=provenance)
+            create_edge(db, project_id, parent.id, node.id, "attempted",
+                        status=node.status)
+            index[("execution", ex.id)] = node
+            created["techniques"] += 1
 
     return {"rootNodeId": root.id, "created": created}

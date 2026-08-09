@@ -103,7 +103,7 @@ def test_sync_projects_targets_and_services_into_graph():
     target_with_services(db, p.id)
     result = service.sync_from_project(db, p.id)
     assert result["created"] == {"hosts": 1, "services": 2,
-                                 "findings": 0, "credentials": 0}
+                                 "findings": 0, "credentials": 0, "techniques": 0}
     tree = service.get_tree(db, p.id)
     host = tree["children"][0]
     assert host["label"] == "10.10.11.23 (dc01)"
@@ -118,7 +118,7 @@ def test_sync_is_idempotent():
     service.sync_from_project(db, p.id)
     second = service.sync_from_project(db, p.id)
     assert second["created"] == {"hosts": 0, "services": 0,
-                                 "findings": 0, "credentials": 0}
+                                 "findings": 0, "credentials": 0, "techniques": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     # 1 project-root + 1 host + 2 services, no duplicates on re-sync
     assert len(nodes) == 4
@@ -141,10 +141,46 @@ def test_sync_projects_findings_and_credentials():
     db.flush()
     result = service.sync_from_project(db, p.id)
     assert result["created"] == {"hosts": 1, "services": 1,
-                                 "findings": 1, "credentials": 1}
+                                 "findings": 1, "credentials": 1, "techniques": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     cred = next(n for n in nodes if n.type == "credential")
     assert cred.label == "svc_backup"
     assert "REALSECRET" not in cred.meta  # secret never copied
     finding = next(n for n in nodes if n.type == "finding")
     assert finding.label == "Anonymous SMB"
+
+
+def test_sync_projects_executions_as_technique_nodes():
+    from app.models import Execution, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.7")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=80, protocol="tcp", name="http")
+    db.add(svc); db.flush()
+    db.add(Execution(target_id=t.id, service_id=svc.id, template_id="feroxbuster",
+                     command="feroxbuster -u http://...", cwd="/tmp",
+                     status="completed"))
+    db.flush()
+    result = service.sync_from_project(db, p.id)
+    assert result["created"]["techniques"] == 1
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.label == "feroxbuster"
+    # completed command is NOT auto-judged as success (product principle)
+    assert tech.status == "in-progress"
+
+
+def test_hidden_nodes_are_dropped_from_tree():
+    db = database()
+    p = project(db)
+    root = service.ensure_project_root(db, p.id)
+    host = service.create_node(db, p.id, "host", "10.0.0.1")
+    svc = service.create_node(db, p.id, "service", "445/smb")
+    service.create_edge(db, p.id, root.id, host.id, "discovered")
+    service.create_edge(db, p.id, host.id, svc.id, "discovered")
+    svc.hidden = True
+    db.flush()
+    tree = service.get_tree(db, p.id)
+    host_node = tree["children"][0]
+    labels = [c["label"] for c in host_node["children"] if c["kind"] == "node"]
+    assert "445/smb" not in labels

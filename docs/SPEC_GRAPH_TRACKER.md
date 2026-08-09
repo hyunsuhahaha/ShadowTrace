@@ -53,6 +53,7 @@
 | `objectiveKind` | enum \| null | – | `foothold`\|`privesc`\|`flag`\|`domain-admin`\|`custom`. `objective=true`일 때만 의미 |
 | `provenance` | object \| null | – | 이 노드를 생성/발견한 근거: `{ techniqueRef?, executionRef?, mitreId?, tool? }`. NodeZero `found_by_module` 대응(§10) |
 | `layer` | number \| null | – | 타임라인 timestep(같은 시각 노드 그룹 인덱스). null이면 `createdAt`에서 파생. timeline 렌더용 |
+| `hidden` | boolean | – | 사용자가 숨긴 클러터. 기본 false. Graph/Outline/Attack Path에서 제외되나 노드는 남아 sync가 되살리지 않음 |
 | `meta` | object | – | 타입별 필드(1.3) |
 
 > **provenance vs sourceRef vs yielded** — `sourceRef`는 기존 도메인 엔티티 역참조, `yielded` 엣지는 구조적
@@ -137,7 +138,7 @@
 |---|---|---|---|
 | `discovered` | host → service | ✔ | 스캔이 서비스를 발견 |
 | `enumerated` | (service\|host) → (finding\|credential) | ✔ | 열거로 finding/크리덴셜 도출(host-level 관찰·설정파일 크리덴셜 포함) |
-| `attempted` | finding → technique | ✔ | finding에 기법 시도 |
+| `attempted` | (finding\|service\|host) → technique | ✔ | 기법 시도(finding 대상 익스플로잇, 또는 서비스/호스트에 직접 실행) |
 | `yielded` | technique → (credential\|host\|service\|finding) | ✔ | 시도 결과 산출물(성공의 구조적 자식) |
 | `pivoted-to` | host → host | ✔ | 내부망 이동(lateral movement). 새 호스트를 pivot 호스트 아래로 중첩 |
 | `reused-credential` | credential → (host\|service) | ✘ | 크리덴셜 재사용(cross-cutting) |
@@ -606,12 +607,15 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 
 ### 6.1 기존 도메인 → 그래프 투영(sync)
 
-- nmap import/서비스 발견 시 자동으로 host/service 노드와 `discovered` 엣지를 생성(idempotent, `sourceRef`로 중복 방지).
-  이는 정찰 골격이라 자동화해도 노이즈가 아니다.
-- **Runbook/Execution은 자동 노드화하지 않는다(Q4).** 실행 기록 전부를 technique 노드로 만들면 그래프가 쓰레기통이 된다.
-  대신 **자동 제안 + 수동 승격** 모델을 쓴다: 시스템은 "이 실행을 technique 노드로 승격하시겠습니까?" 제안만 큐에 쌓고,
-  사용자가 승격한 것만 그래프에 들어온다. 제안은 `sourceRef(executions)`를 담아 원클릭 승격을 지원한다.
-- 투영은 **덮어쓰지 않고 병합**: 사용자가 그래프에서 수정한 label/notes/status는 보존, sourceRef 원천 필드만 갱신.
+- Targets/Services → host/service 노드 + `discovered`, Findings/Credentials → finding/credential 노드 +
+  `enumerated`(서비스, 없으면 호스트에 부착). 크리덴셜 비밀은 절대 복사하지 않고 `secretHint`만.
+- **Execution은 자동으로 technique 노드로 투영한다(Q4 — 재결정).** `attempted`(서비스/호스트→technique)로 부착하며
+  provenance에 `executionRef`+MITRE를 스탬프한다. **단 성공 여부는 자동 판정하지 않는다**(제품 원칙): 완료된 명령을
+  `succeeded`로 찍지 않고 중립(`in-progress`)으로 두며 기술적 실패/중단만 `attempt-failed`. 성패는 사용자가 표시한다.
+- **클러터는 억제가 아니라 per-node `hidden`으로 관리한다.** 자동 노드화로 그래프가 붐비면 사용자가 노드를 숨길 수 있고
+  (`hidden=true`), 숨긴 노드는 Graph/Outline/Attack Path에서 빠진다. 노드는 여전히 존재하므로 **sync가 되살리지 않는다**
+  (삭제와 다름). 이는 NodeZero의 "POC 그래프는 전부 저장, v3/v4는 가지치기 렌더" 패턴과 같은 접근이다.
+- 모든 투영은 `sourceRef` 기준 멱등이며 **덮어쓰지 않고 병합**: 사용자가 수정한 label/notes/status는 보존, 원천 필드만 갱신.
 
 ---
 
@@ -644,7 +648,8 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 | Q1 | 스코프 = **Project 1:1**, 다중 Target 수용 | §2.1, §4.1 |
 | Q2 | 다중 호스트는 project-root 아래. 이동=`pivoted-to`(골격), 재사용=`reused-credential`(참조) | §1.4, §2.1 |
 | Q3 | canonical override **허용** (`pinnedCanonicalEdgeId` + 감사) | §2.2, §3.5 |
-| Q4 | Runbook/Execution은 자동 노드화 안 함. **자동 제안 + 수동 승격** | §6.1 |
+| Q4 | ~~자동 제안 + 수동 승격~~ → **재결정: Execution 자동 노드화**(성공 자동판정은 안 함) | §6.1 |
+| Q15 | 클러터는 per-node `hidden`으로 관리(숨김≠삭제, sync 되살림 방지) | §1.2, §6.1 |
 | Q5 | finding `severity`는 **사용자 지정 라벨**. CVSS 자동판정 배제 | §1.3 |
 | Q6 | `attempt-failed`와 `blocked`는 **별도 status 유지** | §1.5 |
 | Q7 | **Outline=발견순 / Report=성공경로 우선** | §5.1 |

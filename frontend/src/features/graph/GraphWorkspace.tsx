@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 
@@ -10,7 +10,7 @@ import { setPendingServiceNav } from "../../pendingServiceNav";
 type NodeType = "project-root" | "host" | "service" | "finding" | "technique" | "credential";
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
-  source_ref: string;
+  source_ref: string; hidden: boolean;
 };
 type DeepLink = { label: string; open: () => void };
 type GraphEdge = {
@@ -54,8 +54,22 @@ function useActiveProjectId(): number | null {
 
 export default function GraphWorkspace() {
   const projectId = useActiveProjectId();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"graph" | "outline">("graph");
   const [selected, setSelected] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+
+  const setHidden = useMutation({
+    mutationFn: (v: { id: string; hidden: boolean }) =>
+      api(`/graph/nodes/${v.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: v.hidden }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["graph", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["graphTree", projectId] });
+    },
+  });
 
   const graph = useQuery({
     queryKey: ["graph", projectId],
@@ -122,7 +136,9 @@ export default function GraphWorkspace() {
     return <Empty text={`불러오기 실패: ${(graph.error as Error).message}`} />;
 
   const data = graph.data!;
-  const hostCount = data.nodes.filter((n) => n.type === "host").length;
+  const hostCount = data.nodes.filter((n) => n.type === "host" && !n.hidden).length;
+  const hiddenCount = data.nodes.filter((n) => n.hidden).length;
+  const selectedNode = selected ? nodeById.get(selected) : undefined;
   if (data.nodes.length <= 1)
     return <Empty text="아직 노드가 없습니다. Scan Center에서 nmap 결과를 먼저 가져오세요." />;
 
@@ -133,6 +149,14 @@ export default function GraphWorkspace() {
           <Tab on={view === "graph"} onClick={() => setView("graph")}>Graph</Tab>
           <Tab on={view === "outline"} onClick={() => setView("outline")}>Outline</Tab>
         </div>
+        {hiddenCount > 0 && (
+          <button onClick={() => setShowHidden((v) => !v)} style={{
+            ...S.hiddenChip,
+            ...(showHidden ? { background: "#6aa9ff", color: "#06131f" } : {}),
+          }}>
+            숨김 {hiddenCount}{showHidden ? " 표시중" : ""}
+          </button>
+        )}
         <div style={S.legend}>
           {Object.entries(STATUS_LABEL).map(([k, v]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -144,13 +168,13 @@ export default function GraphWorkspace() {
       </div>
       <div style={S.stage}>
         {view === "graph" ? (
-          <GraphCanvas data={data} hostCount={hostCount}
+          <GraphCanvas data={data} hostCount={hostCount} showHidden={showHidden}
             selected={selected} onSelect={setSelected} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
-        <Inspector node={selected ? nodeById.get(selected) : undefined}
-          link={selected ? deepLink(selected) : undefined} />
+        <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
+          onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
       </div>
     </div>
   );
@@ -161,10 +185,10 @@ export default function GraphWorkspace() {
 type Sim = GraphNode & { x: number; y: number; vx: number; vy: number };
 
 function GraphCanvas(props: {
-  data: GraphOut; hostCount: number;
+  data: GraphOut; hostCount: number; showHidden: boolean;
   selected: string | null; onSelect: (id: string) => void;
 }) {
-  const { data, hostCount } = props;
+  const { data, hostCount, showHidden } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // adaptive root (decision B): single host => that host is the visual anchor.
   const anchorId = hostCount <= 1
@@ -182,7 +206,8 @@ function GraphCanvas(props: {
     let panX = 0, panY = 0, panning = false, panStart = { x: 0, y: 0 };
     let dragging: Sim | null = null, hover: Sim | null = null;
 
-    const visible = (n: GraphNode) => !(hideRoot && n.type === "project-root");
+    const visible = (n: GraphNode) =>
+      !(hideRoot && n.type === "project-root") && (showHidden || !n.hidden);
     const nodes: Sim[] = data.nodes.filter(visible).map((n, i) => {
       const a = (i / data.nodes.length) * Math.PI * 2;
       return { ...n, x: 400 + Math.cos(a) * 180, y: 300 + Math.sin(a) * 140, vx: 0, vy: 0 };
@@ -245,6 +270,7 @@ function GraphCanvas(props: {
         const isAnchor = n.id === anchorId, isSel = n.id === props.selected;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
+        ctx.globalAlpha = n.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (isAnchor) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
@@ -265,15 +291,18 @@ function GraphCanvas(props: {
         ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : 1;
         ctx.strokeStyle = isSel ? "#fff" : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
+        if (n.hidden) ctx.setLineDash([2, 3]);
         ctx.stroke();
+        ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
         ctx.fillText(GLYPH[n.type], n.x, n.y + 0.5);
-        if (hover === n || isSel || isHost || isRoot) {
+        if (hover === n || isSel || isHost || isRoot || n.hidden) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
           ctx.font = isAnchor ? "600 12px sans-serif" : "11px sans-serif";
           ctx.fillText(n.label, n.x, n.y + r + 6);
         }
+        ctx.globalAlpha = 1;
       }
     };
 
@@ -318,7 +347,7 @@ function GraphCanvas(props: {
       canvas.removeEventListener("click", onClick);
       removeEventListener("mouseup", onUp);
     };
-  }, [data, anchorId, hideRoot, props.selected]);
+  }, [data, anchorId, hideRoot, showHidden, props.selected]);
 
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
@@ -389,7 +418,10 @@ function Row(props: {
 
 // ---------------- shared ----------------
 
-function Inspector(props: { node?: GraphNode; link?: DeepLink }) {
+function Inspector(props: {
+  node?: GraphNode; link?: DeepLink;
+  onToggleHidden: (id: string, hidden: boolean) => void;
+}) {
   const n = props.node;
   return (
     <aside style={S.inspector}>
@@ -399,6 +431,7 @@ function Inspector(props: { node?: GraphNode; link?: DeepLink }) {
           <div style={{ color: "#6b6b76", fontSize: 12 }}>
             {GLYPH[n.type]} {n.type}
             {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
+            {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
           </div>
           <div style={{ marginTop: 14, fontSize: 12 }}>
             <span style={{ color: "#9a9aa6" }}>상태 </span>
@@ -409,6 +442,12 @@ function Inspector(props: { node?: GraphNode; link?: DeepLink }) {
           {props.link && (
             <button onClick={props.link.open} style={S.openBtn}>
               {props.link.label}
+            </button>
+          )}
+          {n.type !== "project-root" && (
+            <button onClick={() => props.onToggleHidden(n.id, !n.hidden)}
+              style={S.hideBtn}>
+              {n.hidden ? "복원" : "그래프에서 숨기기"}
             </button>
           )}
         </>
@@ -454,4 +493,10 @@ const S: Record<string, React.CSSProperties> = {
   openBtn: { marginTop: 18, width: "100%", padding: "9px 12px", borderRadius: 8,
     border: "1px solid #6aa9ff55", background: "#6aa9ff14", color: "#6aa9ff",
     fontWeight: 600, cursor: "pointer" },
+  hideBtn: { marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8,
+    border: "1px solid #2a2a34", background: "transparent", color: "#9a9aa6",
+    fontWeight: 500, cursor: "pointer" },
+  hiddenChip: { padding: "5px 12px", borderRadius: 8, border: "1px solid #2a2a34",
+    background: "#16161c", color: "#9a9aa6", fontSize: 12, fontWeight: 600,
+    cursor: "pointer" },
 };

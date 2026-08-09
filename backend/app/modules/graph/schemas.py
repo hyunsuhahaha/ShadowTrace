@@ -23,6 +23,7 @@ class NodeOut(BaseModel):
     objective_kind: str | None
     provenance: str
     layer: int | None
+    hidden: bool
 
 
 class EdgeOut(BaseModel):
@@ -71,6 +72,7 @@ class NodePatch(BaseModel):
     objective_kind: str | None = None
     provenance: str | None = None
     layer: int | None = None
+    hidden: bool | None = None
 
 
 class EdgeIn(BaseModel):
