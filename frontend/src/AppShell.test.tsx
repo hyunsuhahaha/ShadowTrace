@@ -44,11 +44,11 @@ it("updates the shell when the active project changes", async () => {
   );
 
   await screen.findByText("Alpha");
-  fireEvent.change(screen.getByRole("combobox", {name: "현재 프로젝트"}), {
-    target: {value: "2"},
-  });
+  fireEvent.click(screen.getByRole("button", {name: /Alpha/}));
+  fireEvent.click(screen.getByRole("menuitem", {name: "Bravo"}));
 
-  await waitFor(() => expect(screen.getByText("Bravo")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByRole("button", {name: /Bravo/})).toBeTruthy());
   expect(screen.getByText("bravo-host · 10.0.0.2")).toBeTruthy();
   expect(localStorage.getItem("oscp-workspace-project")).toBe("2");
 
@@ -132,7 +132,8 @@ it("drops every cached query, not just projects/targets, when a project is delet
   );
   await screen.findByText("Alpha");
 
-  fireEvent.click(screen.getByRole("button", {name: "프로젝트 삭제"}));
+  fireEvent.click(screen.getByRole("button", {name: /Alpha/}));
+  fireEvent.click(screen.getByRole("button", {name: "Alpha 삭제"}));
   fireEvent.click(screen.getByRole("button", {name: "삭제"}));
 
   await waitFor(() => expect(

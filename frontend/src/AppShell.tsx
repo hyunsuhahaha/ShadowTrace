@@ -11,6 +11,25 @@ import "./layout-controls.css";
 
 type Project = { id: number; name: string; metasploit_target_id?: number | null };
 type Target = { id: number; project_id: number; name: string; ip: string };
+
+// Custom project-switcher dropdown (per-project delete X + add row).
+const PM: Record<string, CSSProperties> = {
+  button: { background: "transparent", border: "none", color: "#e7e7ee",
+    font: "inherit", fontSize: 16, fontWeight: 600, cursor: "pointer",
+    display: "flex", alignItems: "center", gap: 6, padding: 0 },
+  menu: { position: "absolute", top: "100%", left: 0, marginTop: 6, minWidth: 240,
+    background: "#16161c", border: "1px solid #2a2a34", borderRadius: 10, padding: 6,
+    zIndex: 50, boxShadow: "0 12px 30px rgba(0,0,0,.5)" },
+  row: { display: "flex", alignItems: "center", gap: 4 },
+  name: { flex: 1, textAlign: "left", background: "transparent", border: "none",
+    color: "#c9c9d2", font: "inherit", fontSize: 13, padding: "7px 8px",
+    borderRadius: 6, cursor: "pointer" },
+  del: { background: "transparent", border: "none", color: "#8b8b93", fontSize: 18,
+    lineHeight: 1, cursor: "pointer", padding: "2px 8px", borderRadius: 6 },
+  add: { width: "100%", textAlign: "left", background: "transparent", border: "none",
+    borderTop: "1px solid #2a2a34", marginTop: 4, color: "#6aa9ff", font: "inherit",
+    fontSize: 13, fontWeight: 600, padding: "8px", cursor: "pointer" },
+};
 type Service = {
   id: number; target_id: number; port: number; protocol: string;
   name: string; product: string; scripts: string;
@@ -71,9 +90,11 @@ export default function AppShell({
   children: ReactNode;
 }) {
   const queryClient = useQueryClient();
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const sidebarResize = useRef({x: 0, width: 264});
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -121,7 +142,6 @@ export default function AppShell({
     targets.data?.find((item) => item.id === activeTargetId && item.project_id === project?.id) ||
     targets.data?.find((item) => item.project_id === project?.id);
   const projectTargets = targets.data?.filter((item) => item.project_id === project?.id) || [];
-  const projectTargetCount = projectTargets.length;
   // Fetched project-wide (not just the currently selected target) so the
   // command palette can point a tool search at whichever port actually has
   // a matching service, instead of only ever looking at what's on screen.
@@ -134,6 +154,32 @@ export default function AppShell({
     localStorage.setItem("oscp-workspace-project", String(id));
     setActiveProjectId(id);
     dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
+  };
+  const createProject = async () => {
+    const name = prompt("새 프로젝트 이름",
+      `OSCP Practice ${Date.now().toString().slice(-4)}`);
+    if (name === null) return;               // cancelled
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreateBusy(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name: trimmed, description: "Local lab workspace"}),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || response.statusText);
+      }
+      const created = await response.json();
+      await queryClient.invalidateQueries({queryKey: ["projects"]});
+      selectProject(created.id);
+    } catch (reason) {
+      alert(String(reason).replace(/^Error:\s*/, ""));
+    } finally {
+      setCreateBusy(false);
+    }
   };
   const setMetasploitLock = async (lockTargetId: number | null) => {
     if (!project) return;
@@ -171,19 +217,22 @@ export default function AppShell({
   };
 
   const removeProject = async () => {
-    if (!project) return;
+    const victim = pendingDelete;
+    if (!victim) return;
     setDeleteBusy(true);
     setDeleteError("");
     try {
-      const response = await fetch(`/api/projects/${project.id}`, {
+      const response = await fetch(`/api/projects/${victim.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.detail || response.statusText);
       }
-      localStorage.removeItem("oscp-workspace-project");
-      setActiveProjectId(0);
+      if (victim.id === activeProjectId) {
+        localStorage.removeItem("oscp-workspace-project");
+        setActiveProjectId(0);
+      }
       // Deleting a project cascades to nearly every resource table on the
       // backend (scans, web requests, credentials, findings, ...), and a
       // recreated project/target can be assigned the same SQLite row id as
@@ -191,8 +240,7 @@ export default function AppShell({
       // and target lists, has to be dropped or a workspace tab left mounted
       // through the delete will keep showing the deleted project's data.
       await queryClient.invalidateQueries();
-      setDeleteOpen(false);
-      location.hash = "scans";
+      setPendingDelete(null);
     } catch (reason) {
       setDeleteError(String(reason).replace(/^Error:\s*/, ""));
     } finally {
@@ -273,31 +321,44 @@ export default function AppShell({
       </aside>
       <div className="appFrame">
         <header className="contextBar">
-          <label className="contextProject">
+          <div className="contextProject" style={{position: "relative"}}>
             <span>현재 프로젝트</span>
-            <select
-              aria-label="현재 프로젝트"
-              value={project?.id || ""}
-              disabled={!projects.data?.length}
-              onChange={(event) => selectProject(Number(event.target.value))}
-            >
-              {!projects.data?.length && <option value="">프로젝트 없음</option>}
-              {projects.data?.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          </label>
-          <Button
-            variant="quiet"
-            className="contextDelete"
-            disabled={!project}
-            onClick={() => {
-              setDeleteError("");
-              setDeleteOpen(true);
-            }}
-          >
-            프로젝트 삭제
-          </Button>
+            <button type="button" style={PM.button}
+              onClick={() => setMenuOpen((open) => !open)}>
+              {project?.name || "프로젝트 없음"} <span aria-hidden="true">▾</span>
+            </button>
+            {menuOpen && (
+              <>
+                <div style={{position: "fixed", inset: 0, zIndex: 40}}
+                  onClick={() => setMenuOpen(false)} />
+                <div style={PM.menu} role="menu">
+                  {projects.data?.map((item) => (
+                    <div key={item.id} style={PM.row}>
+                      <button type="button" role="menuitem"
+                        style={{...PM.name, ...(item.id === project?.id
+                          ? {color: "#e7e7ee", fontWeight: 600} : {})}}
+                        onClick={() => { selectProject(item.id); setMenuOpen(false); }}>
+                        {item.name}
+                      </button>
+                      <button type="button" aria-label={`${item.name} 삭제`} style={PM.del}
+                        onClick={() => { setDeleteError(""); setPendingDelete(item); setMenuOpen(false); }}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {!projects.data?.length && (
+                    <div style={{padding: "8px 10px", color: "#6b6b76", fontSize: 12}}>
+                      프로젝트 없음
+                    </div>
+                  )}
+                  <button type="button" style={PM.add} disabled={createBusy}
+                    onClick={() => { setMenuOpen(false); void createProject(); }}>
+                    {createBusy ? "만드는 중…" : "＋ 새 프로젝트 추가"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <i aria-hidden="true" />
           <div>
             <span>현재 Target</span>
@@ -333,7 +394,7 @@ export default function AppShell({
             targets={projectTargets}
           />
         )}
-        {deleteOpen && project && (
+        {pendingDelete && (
           <div className="modal" role="presentation">
             <div
               role="dialog"
@@ -344,7 +405,8 @@ export default function AppShell({
               <span>되돌릴 수 없는 작업</span>
               <h2 id="delete-project-title">프로젝트 삭제</h2>
               <p id="delete-project-description">
-                <b>{project.name}</b>과 연결된 Target {projectTargetCount}개,
+                <b>{pendingDelete.name}</b>과 연결된 Target{" "}
+                {targets.data?.filter((t) => t.project_id === pendingDelete.id).length ?? 0}개,
                 스캔, 서비스 기록, Evidence, 보고서가 데이터베이스와
                 워크스페이스 디렉터리에서 함께 삭제됩니다.
               </p>
@@ -352,7 +414,7 @@ export default function AppShell({
               <footer>
                 <Button
                   disabled={deleteBusy}
-                  onClick={() => setDeleteOpen(false)}
+                  onClick={() => setPendingDelete(null)}
                 >
                   취소
                 </Button>
