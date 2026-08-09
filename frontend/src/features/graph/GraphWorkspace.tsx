@@ -230,32 +230,42 @@ export default function GraphWorkspace() {
     } catch { /* ignore */ }
     return null;
   };
-  const executionHandoff = (id: string | null): { targetId: number; serviceId?: number } | null => {
+  const executionHandoff = (id: string | null): {
+    targetId: number; serviceId?: number; executionId: number;
+  } | null => {
     if (!id) return null;
     const node = nodeById.get(id);
     if (!node?.source_ref) return null;
+    let executionId: number;
     try {
-      if (JSON.parse(node.source_ref).kind !== "execution") return null;
+      const ref = JSON.parse(node.source_ref);
+      if (ref.kind !== "execution" || !Number.isInteger(ref.id)) return null;
+      executionId = ref.id;
     } catch { return null; }
     const edge = graph.data?.edges.find((item) =>
       item.target === id && item.relation === "attempted");
     if (!edge) return null;
     const service = serviceHandoff(edge.source);
-    if (service) return service;
+    if (service) return { ...service, executionId };
     const parent = nodeById.get(edge.source);
     if (!parent?.source_ref) return null;
     try {
       const ref = JSON.parse(parent.source_ref);
-      return ref.kind === "target" ? { targetId: ref.id } : null;
+      return ref.kind === "target" ? { targetId: ref.id, executionId } : null;
     } catch { return null; }
   };
 
   // Scope the embedded Enumeration workspace to the selected service node.
   const selectedType = selected ? nodeById.get(selected)?.type : undefined;
+  const selectedService = selectedType === "service"
+    ? serviceHandoff(selected) : executionHandoff(selected);
   useEffect(() => {
-    const h = serviceHandoff(selected);
-    if (h) {
-      setPendingServiceNav(h);
+    if (selectedService?.serviceId) {
+      setPendingServiceNav({
+        targetId: selectedService.targetId,
+        serviceId: selectedService.serviceId,
+        executionId: "executionId" in selectedService ? selectedService.executionId : undefined,
+      });
       dispatchEvent(new CustomEvent("oscp-service-nav"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -359,7 +369,8 @@ export default function GraphWorkspace() {
                 <EmbeddedScanCenter embedded />
               </Suspense>
             </div>
-          ) : selectedNode?.type === "service" ? (
+          ) : selectedNode?.type === "service"
+            || (selectedNode?.type === "technique" && !!selectedService?.serviceId) ? (
             <div style={S.embedPane}>
               <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
                 <EmbeddedEnumeration embedded />
