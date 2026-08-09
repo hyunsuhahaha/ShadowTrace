@@ -620,3 +620,44 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 | Q10 | **Pixi.js 도입 승인** (Obsidian급 Graph의 필수 비용) | §3.0, §7 |
 
 열린 질문 없음. 이 명세는 구현 착수 가능 상태다. 이후 변경은 이 표에 delta로 추가한다.
+
+---
+
+## 10. 선행 사례 · 벤치마크 (Prior Art)
+
+"그래프 중심으로 모의해킹 진행을 관리한다"는 UX는 상용 제품에서 이미 검증된 방향이다. 다만 이 도구가 목표로 하는
+**"사람의 수동 진행/사고 과정 자체를 knowledge graph로 기록 + Tree/Outline + Attack Path + 리포트"**를 그대로
+겹치는 제품은 없다. 상용 다수는 "시스템이 자동 공격 → 결과를 그래프로 시각화"인 반면, 이 도구는
+"모의해커의 작업 상태·판단을 워크스페이스로 기록"이다.
+
+| 제품 | 그래프가 나타내는 것 | 유사도 | 우리와의 차이 |
+|---|---|---:|---|
+| Core Impact (Interactive Attack Map) | 실 pentest 진행·pivot·attack, 제조사가 "primary working space"로 명시 | ★★★★★ | 에이전트/자동 기반, 상용. 우리는 수동·근거 중심 |
+| NodeZero (AttackGraph) | 실제 수행된 autonomous attack path. DAG, 노드 Host/Service/Weakness/Credential, 엣지=공격 순서, layer/time | ★★★★★ | 데이터 모델이 매우 유사. 단 자동 수행 |
+| Pentera Core | 검증된 attack path + Attack Path Root Cause Analysis | ★★★★ | 자동 검증 중심 |
+| BloodHound | **가능한(예측)** identity attack path | ★★★ | 예측·판정형. 우리는 예측·자동판정 안 함(제품 원칙) |
+| Metasploit Pro | network topology | ★★ | 토폴로지지, 작업과정 그래프 아님 |
+
+**데이터 모델 정합성 (NodeZero AttackGraph 대비).**
+- 노드: 우리 `Host/Service/Finding/Technique/Credential` ≈ NodeZero `Host/Service/Weakness/Credential`.
+  ("Weakness" ≈ 우리 "Finding".)
+- **결정적 차이 — Technique를 엣지가 아니라 노드로 둔다.** NodeZero는 공격 "행위"를 엣지로 표현하지만,
+  워크스페이스에서는 하나의 시도가 status(성공/실패/차단)·notes·evidence·Execution 승격을 갖는 **1급 작업 항목**이어야
+  하므로 노드로 승격한다. 이 선택이 "attack map"과 "workspace"를 가르는 핵심이다.
+- **작업 그래프는 일반 유향그래프**(순환 허용, `↩`로 표시)지만, 파생된 **Attack Path는 DAG**로 NodeZero AttackGraph와
+  동일한 성질을 갖는다(§3.3의 `successPaths`는 순환을 만들지 않음).
+- NodeZero의 layer/time → 우리는 이미 `createdAt`을 보유하므로 timeline/temporal 렌더가 가능하다(발전 후보).
+
+**차별점 = workspace 정체성.** `attempt-failed`/`blocked` 상태, `↗ reference`, credential reuse, 수동 canonical,
+Execution→Graph 수동 승격, Notes/Evidence 통합 — 전부 단순 attack map이 아니라 작업공간에 속하는 개념이다.
+BloodHound식 "가능한 경로 자동 탐색"은 채택하지 않는다. 대신 우리의 `untried` 상태가 곧 사용자가 손으로 세운
+"아직 안 해본 가설"이며, 이것이 제품 원칙(자동 판정 금지)을 지키는 방식이다.
+
+**범위·컴플라이언스 경계 (중요).** Core Impact·Metasploit Pro 등은 OSCP 시험 금지 도구다. 이 도구는 그 제품들을
+**사용·연동·래핑하지 않으며**, 오직 UX/데이터모델을 **설계 벤치마크로만** 참고한다. 자동 익스플로잇·자동 판정을 하지
+않는 수동 기록기라는 점이 (a) 제품 원칙(`docs/ARCHITECTURE.md`), (b) 시험 규정 준수, (c) 상용 대비 차별화를
+동시에 만족시킨다. 즉 **차별점과 컴플라이언스 경계가 같은 선**이다.
+
+**참고 출처(사용자 제공, 미검증):** Core Impact 데이터시트/리포팅, Horizon3 NodeZero GraphQL API(AttackGraph),
+Pentera Core, Rapid7 Metasploit, SpecterOps BloodHound. NodeZero AttackGraph 스키마는 별도 1차 출처 조사로
+정밀 대조할 가치가 있다(발전 후보).
