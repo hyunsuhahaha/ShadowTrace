@@ -9,14 +9,15 @@
 
 ## 0. 한 줄 요약
 
-하나의 프로젝트(=하나의 대상 호스트)에 대해 정찰→열거→시도→결과의 흐름을 **단일 그래프**
-`(nodes, edges)`로 저장하고, 같은 데이터를 두 방식으로 렌더링한다.
+하나의 프로젝트(여러 대상 호스트 포함)에 대해 정찰→열거→시도→결과의 흐름을 **단일 그래프**
+`(nodes, edges)`로 저장하고, 같은 데이터를 **역할이 분리된 3개 뷰**로 렌더링한다.
 
-- **Graph 뷰** (force-directed): 탐색용. "어디서 막혔나 / 무엇을 안 해봤나"를 색으로 드러냄.
-- **Reference Tree 뷰**: 정리·리포트용. root(최초 nmap 노드)에서 펼친 트리이며, 다중 부모/순환은
-  복제하지 않고 `↗ 참조` / `↩ 순환 참조`로 canonical 노드를 가리킨다.
+- **Graph 뷰** (Pixi.js + d3-force): 탐색용. Obsidian급 유기적 네트워크로 "어디서 막혔나 / 무엇을 안 해봤나"를 드러냄.
+- **Outline 뷰** (React DOM + CSS + Motion): 작업·정리용. root(합성 project-root)에서 펼친 아웃라인이며, 다중 부모/순환은
+  복제하지 않고 `↗ 참조` / `↩ 순환 참조`로 canonical 노드를 가리킨다. IDE/Linear급 micro-interaction 포함.
+- **Attack Path 뷰** (Pixi/SVG): 결과·설명용. 성공한 침투 흐름만 추린 선형 시각화.
 
-두 뷰는 **같은 데이터**를 공유하고 렌더러만 다르다. 트리 구조는 종료 후 리포트 목차로 그대로 변환된다.
+세 뷰는 **같은 데이터**를 공유하고 렌더러/레이아웃만 다르다. Outline 구조는 종료 후 리포트 목차로 그대로 변환된다.
 
 ---
 
@@ -38,7 +39,7 @@
 |---|---|---|---|
 | `id` | string (ULID) | ✔ | 전역 고유. ULID는 시간순 정렬성이 있어 tie-break에 유리 |
 | `projectId` | string | ✔ | 스코핑 키. 이 값으로 그래프를 격리 |
-| `type` | enum `NodeType` | ✔ | `host` \| `service` \| `finding` \| `technique` \| `credential` |
+| `type` | enum `NodeType` | ✔ | `project-root` \| `host` \| `service` \| `finding` \| `technique` \| `credential` |
 | `label` | string | ✔ | 화면 표시명 (예: `445/tcp smb`, `MS17-010`) |
 | `status` | enum `NodeStatus` | ✔ | 아래 1.5. 색 인코딩의 근거 |
 | `createdAt` | ISO-8601 datetime | ✔ | **canonical 판정의 기준값**. 최초 발견/시도 시각 |
@@ -49,6 +50,9 @@
 | `pinned` | boolean | – | 레이아웃 고정 여부 (그래프 뷰) |
 | `position` | `{x,y}` \| null | – | 수동 배치 좌표 캐시. null이면 시뮬레이션이 결정 |
 | `meta` | object | – | 타입별 필드(1.3) |
+
+> **`project-root`** 은 시스템이 프로젝트당 1개 자동 생성하는 합성 노드다(사용자 생성 불가, 삭제 불가).
+> 다중 Target(2.1)을 담는 트리·리포트의 최상위 앵커이며 `meta`는 비어 있거나 프로젝트 요약만 담는다.
 
 ### 1.3 타입별 `meta`
 
@@ -123,8 +127,13 @@
 | `enumerated` | service → finding | ✔ | 열거로 finding 도출 |
 | `attempted` | finding → technique | ✔ | finding에 기법 시도 |
 | `yielded` | technique → (credential\|host\|service\|finding) | ✔ | 시도 결과 산출물(성공의 구조적 자식) |
+| `pivoted-to` | host → host | ✔ | 내부망 이동(lateral movement). 새 호스트를 pivot 호스트 아래로 중첩 |
 | `reused-credential` | credential → (host\|service) | ✘ | 크리덴셜 재사용(cross-cutting) |
 | `blocked-by` | (technique\|finding) → (node) | ✘ | 진행 차단 원인(cross-cutting) |
+
+> **`pivoted-to` vs `reused-credential`** — 둘 다 호스트를 넘나들지만 성격이 다르다. pivot은 **골격**(structural)으로
+> 트리·Attack Path에서 내부 호스트를 부모 호스트 아래 중첩시킨다(OSCP 리포트가 실제 서술하는 방식). 반면 호스트 간
+> 크리덴셜 재사용은 **cross-cutting 참조**로 남겨 `↗`로만 표현한다. 이 구분이 3-뷰 전체의 구조를 결정한다.
 
 > `succeeded`/`failed`를 **별도 relation으로 두지 않는다.** 성공/실패는 `attempted` 엣지의
 > `status` 값(`succeeded`\|`attempt-failed`)으로 표현한다. 성공 시 산출물이 있으면 별도
@@ -151,7 +160,7 @@
 
 ### 1.6 파생 규칙 (`structural`)
 
-- `structural = (relation ∈ {discovered, enumerated, attempted, yielded})`
+- `structural = (relation ∈ {discovered, enumerated, attempted, yielded, pivoted-to})`
 - `reused-credential`, `blocked-by`는 항상 비구조적(cross-cutting) → 트리 골격에 쓰지 않고
   항상 `↗ 참조`로만 표현. 이것이 "크리덴셜 재사용을 복제 없이 참조로" 요구사항을 만족시킨다.
 
@@ -166,23 +175,37 @@
 
 ## 2. Root 선택 & Canonical 판정 알고리즘
 
-### 2.1 Root 선택
+### 2.1 Root 선택 (프로젝트 스코프 · 다중 Target)
 
-프로젝트 = 하나의 대상이므로 root는 자동·고정이다.
+**결정(Q1/Q2):** 그래프 스코프는 **Project** 단위다. 하나의 Project 그래프 안에 여러 Target(호스트)이
+공존하며 서로 연결(`pivoted-to`, 호스트 간 `reused-credential`)될 수 있다. 따라서 root는 단일 호스트가 아니라
+**프로젝트당 1개의 합성 `project-root` 노드**로 고정한다.
 
 ```
 resolveRoot(project):
     if project.rootNodeId != null and nodeExists(project.rootNodeId):
         return project.rootNodeId
-    # 최초 설정: 가장 이른 host 노드, 없으면 가장 이른 노드
-    hosts = nodes(project).filter(type == "host").sortBy(createdAt, id)
-    root = hosts.first() ?? nodes(project).sortBy(createdAt, id).first()
-    project.rootNodeId = root.id      # 고정(persist)
+    # 합성 루트 자동 생성(프로젝트당 1개, idempotent)
+    root = ensureNode(project, type="project-root",
+                      label=project.name, status="in-progress")
+    project.rootNodeId = root.id            # 고정(persist)
     return root.id
+
+# 각 Target의 최초 host 노드는 project-root 아래 최상위 섹션으로 붙는다.
+attachHost(project, hostNode):
+    if not exists(edge where source==rootOf(project) and target==hostNode and structural):
+        createEdge(source=rootOf(project), target=hostNode,
+                   relation="discovered", status=hostNode.status,
+                   createdAt=hostNode.createdAt)   # host의 시각을 승계 → canonical 순서 보존
 ```
 
-- 최초 nmap 가져오기 시 host 노드가 생성되며 이때 root로 확정된다.
-- 이후 root는 변하지 않는다(수동 재지정은 관리 기능으로만, 감사 로그 필수).
+- project-root는 사용자가 만들거나 지울 수 없다. 트리·리포트의 최상위(H1 위의 프로젝트 제목)이자 Graph 뷰에서는
+  숨기거나(기본) 중심 앵커로 표시(옵션)할 수 있다.
+- 각 host는 `project-root → host` 의 `discovered` 엣지로 부착되며, 이 엣지의 `createdAt`은 host의 최초 발견 시각을
+  승계해 **다중 호스트 사이의 canonical 정렬(발견순)**을 보존한다.
+- 내부망으로 확장된 호스트는 project-root가 아니라 자신을 발견하게 한 pivot 호스트 아래에 `pivoted-to`로 중첩된다
+  (즉 외부 진입점 호스트만 project-root 직속, 내부 호스트는 pivot 체인 아래).
+- root(project-root) 자체는 변하지 않는다. host의 canonical 배치는 수동 재지정(2.3, Q3 허용) 가능.
 
 ### 2.2 Canonical parent 결정 (트리 골격 계산)
 
@@ -197,7 +220,9 @@ computeCanonicalParents(project):
     for n in nodes(project):
         incoming = edges(project).filter(e ->
             e.target == n.id and e.structural == true)
-        if incoming.isEmpty():
+        if n.pinnedCanonicalEdgeId != null:      # 수동 override(3.5, Q3)
+            parentOf[n.id] = edge(n.pinnedCanonicalEdgeId)
+        elif incoming.isEmpty():
             parentOf[n.id] = null            # root 또는 detached
         else:
             parentOf[n.id] = incoming
@@ -260,70 +285,148 @@ buildTree(project):
 
 ---
 
-## 3. 뷰 명세
+## 3. 뷰 명세 — 3-뷰 아키텍처
 
-### 3.1 Graph 뷰 (force-directed, 탐색용)
+**결정(Q8):** 하나의 데이터 위에 **역할이 명확히 분리된 3개 뷰**를 둔다. 상단 세그먼트 탭으로 전환한다.
 
-**목적**: 전체 연결과 cross-cutting(크리덴셜 재사용 등)을 시각적으로 드러내 "막힘/미시도"를 즉시 파악.
+```
+[ Graph ]      [ Outline ]        [ Attack Path ]
+ 탐색용          작업·정리용         결과·설명용
+ Pixi.js        React DOM          Pixi.js / SVG
+```
 
-레이아웃
-- 물리 시뮬레이션(force-directed). 권장 라이브러리: `d3-force`(경량, 커스텀 용이).
-  대안 `@react-sigma`/`react-force-graph`. 기존 스택이 순수 React/Vite이므로 D3-force + SVG/Canvas 조합 권장.
-- 노드 수 200 초과 시 Canvas 렌더 + 뷰포트 컬링. 그 이하 SVG로 충분.
-- 힘 구성: `forceLink`(거리는 relation별 가변), `forceManyBody`(반발), `forceCollide`(겹침 방지),
-  `forceCenter`. `pinned`/`position` 노드는 시뮬레이션에서 고정.
+| 뷰 | 역할 | 렌더러 | 성격 |
+|---|---|---|---|
+| **Graph** | 탐색 — 전체 연결·cross-cutting을 유기적으로 | **Pixi.js(WebGL) + d3-force + Graphology** | 공간적, 자유 배치 |
+| **Outline** | 작업·정리 — 정보 밀도 높은 인터랙티브 아웃라인 | **React DOM + CSS + Motion** | 문서적, 계층 |
+| **Attack Path** | 결과 설명 — 성공한 침투 흐름의 선형 시각화 | **Pixi.js 또는 SVG** | 공간적, 방향성 |
 
-비주얼("고급스러운 UI" 톤)
-- 다크 캔버스, 은은한 그리드/비네트 배경. 노드는 부드러운 글로우, 상태색 채움 + 미세한 외곽선.
-- 노드 크기 = 중요도(예: 자식 수 또는 성공 산출물 수)로 가변.
-- 아이콘: type별 라인 아이콘(host=서버, service=플러그, finding=돋보기, technique=번개, credential=열쇠).
-- 엣지: 상태색. `structural`은 실선, cross-cutting(`reused-credential`/`blocked-by`)은 점선 + 곡선.
-  방향 화살표(작게). 성공 경로는 약한 애니메이션 흐름(옵션, 접근성 위해 off 가능).
-- 색 범례 고정 패널. **status/type 색 토글** 스위치.
+세 뷰는 **동일한 `(nodes, edges)`**를 공유하고 렌더러/레이아웃만 다르다. 아래 3.4의 컴포넌트 경계로 렌더러를
+교체·추가해도 데이터·상태 계층은 불변이어야 한다.
+
+### 3.0 렌더러 스택 결정 (구현 확정)
+
+- **Graph = Pixi.js(WebGL)** — Obsidian급 유기적 네트워크. SVG는 수백 노드에서 무너지고 글로우/블룸 질감을 못 낸다.
+- **물리/레이아웃 = d3-force** — 렌더러와 독립. 매 tick 좌표만 Pixi에 전달. **v1은 메인 스레드**, 대규모 시 Web Worker로 이관(과설계 방지 위해 v1엔 넣지 않음).
+- **그래프 데이터/알고리즘 = Graphology** — 단, **단일 진실 소스가 아니다.** 원본은 우리 스키마(§1)이고 Graphology는
+  렌더·알고리즘(이웃 조회, connected-components, centrality 기반 노드 크기)을 위한 **파생 인메모리 인덱스**로만 쓴다. 둘 다에 상태를 쓰면 동기화 버그가 난다.
+- **React = UI shell 전용** — 컨트롤 패널·필터·Inspector(상세 패널)만. **캔버스 렌더 루프에 React state를 절대 넣지 않는다.**
+  Pixi ↔ React는 ref 기반 imperative API + 이벤트 버스로 연결. 히트테스트(클릭/호버)는 Pixi sprite interaction으로 처리.
+
+### 3.1 Graph 뷰 (Pixi.js, 탐색용)
+
+**목적**: 전체 연결과 cross-cutting(크리덴셜 재사용, blocker 등)을 유기적으로 드러내 "막힘/미시도"를 즉시 파악.
+
+레이아웃/물리
+- d3-force: `forceLink`(거리 relation별 가변), `forceManyBody`(반발), `forceCollide`(겹침 방지), `forceCenter`.
+  `pinned`/`position` 노드는 시뮬레이션에서 고정. project-root는 기본 숨김(옵션으로 중심 앵커 표시).
+
+비주얼(Obsidian급 톤)
+- 다크 캔버스, 은은한 비네트/그리드 배경. 노드는 부드러운 글로우 + 상태색 채움 + 미세 외곽선.
+- 노드 크기 = 중요도(자식 수 또는 성공 산출물 수, Graphology centrality).
+- type별 라인 아이콘(host=서버, service=플러그, finding=돋보기, technique=번개, credential=열쇠, project-root=원점).
+- 엣지: 상태색. `structural`(pivoted-to 포함) 실선, cross-cutting(reused-credential/blocked-by) 점선+곡선.
+  방향 화살표. 성공 경로는 약한 흐름 애니메이션(접근성 위해 off 가능).
+- 색 범례 고정 패널 + **status/type 색 토글**.
 
 인터랙션
-- 드래그: 노드 이동(놓으면 `pinned=false`면 재정착, 더블클릭으로 pin/unpin).
-- 호버: 툴팁(label, status, 최근 updatedAt, notes 요약). 연결 엣지 하이라이트, 나머지 디밍.
-- 클릭: 우측 상세 패널(전체 meta, notes 편집, status 변경, sourceRef 바로가기).
-- 필터 바: type/status/tag별 표시 토글, 텍스트 검색(라벨/노트). "미시도만", "막힌 것만" 프리셋.
-- 포커스 모드: 특정 노드 선택 시 N-hop 이웃만 표시.
-- 미니맵(노드 다수 시).
-- "이 노드를 트리에서 보기" 버튼 → Tree 뷰로 전환하며 해당 canonical 위치로 스크롤/펼침.
+- 드래그(이동/pin·unpin 더블클릭), 호버(툴팁 + 연결 하이라이트·나머지 디밍), 클릭(우측 Inspector 동기화).
+- 필터 바(type/status/tag 토글, 텍스트 검색), 프리셋("미시도만"/"막힌 것만"), 포커스 모드(N-hop 이웃), 미니맵.
+- "Outline에서 보기" 버튼 → Outline 뷰로 전환하며 canonical 위치로 스크롤/펼침.
 
-빈/로딩 상태
-- 프로젝트에 노드 없음 → "nmap 결과를 가져와 시작하세요" CTA(기존 nmap import로 딥링크).
+### 3.2 Outline 뷰 (React DOM, 작업·정리용) — 렌더러 확정: React DOM
 
-### 3.2 Reference Tree 뷰 (정리·리포트용)
+**렌더링 방식은 React DOM으로 확정한다. 이는 구현 편의성을 위한 선택이지 시각적 완성도를 낮추는 선택이 아니다.
+기본 브라우저 트리 UI 수준은 허용하지 않는다.** 목표 수준은 Obsidian / Linear / 현대 IDE의 sidebar·outliner이며,
+아래 micro-interaction을 포함한다. 시각적 완성도는 렌더러가 아니라 디자인/애니메이션 레이어(CSS + Motion)에서 올린다.
 
-**목적**: root에서 펼친 절차적 트리. 리포트 목차와 1:1.
+DOM을 쓰는 이유: 텍스트 선택, 컨텍스트 메뉴, inline edit, tooltip, focus 관리, drag/drop, 키보드 내비, 접근성이
+전부 네이티브로 제공된다. 이를 Canvas로 구현하면 공수가 폭증하며 얻는 게 없다. 이 뷰는 시각화가 아니라 **문서**다.
 
-구조
-- 들여쓰기 트리. 각 행: `[아이콘] label  [status 배지]  [번호 §1.2.3]`.
-- 번호는 `buildTree`의 `order`/`path` 기반(리포트 섹션 번호와 동일).
-- `↗ 참조` 리프: 흐린 스타일 + 화살표 아이콘 + "→ §canonical번호 label".
-- `↩ 순환 참조` 리프: 순환 아이콘 + "↩ §조상번호 label".
+목표 렌더 예시(계층 연결선·상태 배지 포함):
+```
+● 10.10.11.23
+│
+├─ ◉ 445 / SMB                    SUCCESS
+│  ├─ ◇ Anonymous enumeration      ✓
+│  └─ 🔑 svc_backup                ACQUIRED
+│        └─ ↗ reused on 10.10.11.24
+├─ ◉ 80 / HTTP                    ACTIVE
+│  └─ ◇ Directory enumeration
+│       ├─ /admin
+│       └─ /uploads
+└─ ◉ 22 / SSH                     BLOCKED
+```
+
+레이아웃
+- `buildTree`(§2.3) 결과의 **중첩 들여쓰기**. d3-hierarchy/tidy-tree 같은 공간 배치가 아니라 CSS 들여쓰기 + 연결선.
+  별도 레이아웃 라이브러리 불필요. 긴 트리는 react-window로 가상화(랩 규모면 v1엔 불필요).
+- 각 행: `[계층 연결선] [type 아이콘] label [status 배지] [§번호]`.
+- 왼쪽 계층 연결선(`│ ├─ └─`)은 CSS로 부드럽게 이어지게 그린다.
+
+micro-interaction(요구사항 — 전부 포함)
+- 노드 hover 시 배경 미세하게 밝아짐, 성공 경로는 subtle glow.
+- `blocked`는 흐린 색 + blocker indicator(어떤 노드에 막혔는지 표시).
+- expand/collapse 시 height/opacity 트랜지션. 노드 생성 시 scale/fade 애니메이션.
+- 접힌 노드에 하위 상태 요약 배지(`S2 F3 U5` = 성공2/실패3/미시도5).
+- 선택 노드는 우측 **Inspector와 실시간 동기화**.
+- 키보드 `↑↓←→` 탐색(←접기/→펼치기), `/` 검색, **command palette**(노드 점프·status 변경 등).
+
+`↗ reference` 내비게이션(핵심)
+1. hover 시 대상 경로 **preview**(툴팁으로 canonical 위치·label 미리보기).
+2. 클릭 시 대상까지의 경로를 자동 expand.
+3. 대상 canonical 행으로 스무스 스크롤 + 이동하며 해당 노드에 **pulse**.
+4. **Back 버튼**으로 참조를 눌렀던 원위치로 부드럽게 복귀(왕복 탐색). 키보드 `Enter`=점프, `Esc`/`Backspace`=복귀.
+- `↩ 순환 참조`도 동일하게 조상 노드로 점프하되 더 내려가지 않음.
+
+편집/정리
+- 인라인 status 변경, notes 편집(Inspector 공유). 구조 변경(엣지 추가/삭제)은 Graph 뷰 또는 Inspector에서.
+- 발견순(`createdAt`) 결정론을 지키기 위해 **자유 순서 재정렬은 금지**. 대신 canonical 재지정은 명시적 액션(3.5).
 - "미연결" 섹션: root에 닿지 않은 노드 모음(정리 유도).
 
-확장/축소 동작
-- 각 노드 좌측 토글(▶/▼). 기본: root부터 2단계 펼침, 이하 접힘.
-- 단축: "성공 경로만 펼치기", "실패/미시도만 펼치기", "전체 펼침/접힘".
-- 접힌 노드에 하위 상태 요약 배지(예: `S2 F3 U5` = 성공2 / 실패3 / 미시도5).
+### 3.3 Attack Path 뷰 (Pixi.js/SVG, 결과·설명용)
 
-`↗ 참조` 클릭 인터랙션 (요구된 핵심)
-1. 클릭 시 canonical 노드까지의 경로를 모두 펼친다.
-2. canonical 행으로 스무스 스크롤 + 1.5초 하이라이트 펄스.
-3. "돌아가기" 플로팅 버튼 제공(참조를 눌렀던 위치로 복귀) → 왕복 탐색 지원.
-4. 키보드: `Enter`=점프, `Esc`/`Backspace`=복귀.
+**목적**: 성공한 침투 흐름을 공간적·선형으로 보여줌 — 리포트의 "공격 경로 요약" 그림. Outline이 전수 기록이라면
+Attack Path는 그중 **root → … → 최종 권한**에 이르는 성공 체인만 추린 스토리보드다.
 
-편집
-- 인라인 status 변경, notes 편집(우측 패널 공유). 구조 변경(엣지 추가/삭제)은 그래프 뷰 또는 상세 패널에서.
-- 드래그로 순서 변경은 금지(순서는 `createdAt` 결정론 유지). 대신 "canonical 재지정"은 명시적 액션(3.3).
+- 데이터: `project-root/host`에서 시작해 `succeeded` 상태의 `attempted`/`yielded`/`pivoted-to` 엣지를 따라가는
+  경로(들)를 추출(§3.4의 selector). 여러 성공 경로가 있으면 병렬 레인으로 표시.
+- 비주얼 예시(세로 방향 흐름):
+```
+[External] → [10.10.11.23] --HTTP--> [Web Exploit] → [www-data]
+                                                        │ Credential
+                                                        ▼
+                                              [user] --PrivEsc--> [root]
+```
+- pivot(`pivoted-to`)은 호스트 경계를 넘는 화살표로 강조. 크리덴셜 재사용은 보조 점선으로.
+- 상호작용은 최소(설명용): hover 시 단계 상세, 클릭 시 Inspector/Outline 해당 노드로 이동.
+- 렌더러는 Pixi(Graph와 셰이더/자원 공유) 또는 정적이면 SVG. **선택은 M5에서 확정**하되, 데이터·selector는 지금 설계에 포함.
 
-### 3.3 canonical 수동 재지정(선택 기능, 감사 필요)
+### 3.4 컴포넌트 경계 (렌더러 교체·추가 가능하게)
 
-- 기본은 timestamp 규칙 자동. 사용자가 특정 노드의 canonical parent를 바꾸고 싶으면
-  `pinnedCanonicalEdgeId`를 노드에 설정 → `computeCanonicalParents`에서 이 값이 있으면 우선.
-- 리포트 재현성을 위해 이 override는 프로젝트에 영구 저장되고 감사 로그를 남긴다.
+데이터·상태 계층을 렌더러로부터 분리한다. Attack Path 같은 뷰를 추가해도 아래 경계가 불변이어야 한다.
+
+```
+GraphStore (진실 소스: 우리 스키마, React 밖)
+  ├─ selectors: buildTree(), successPaths(), neighbors(), filterBy()
+  ├─ GraphologyIndex (파생 인덱스, 렌더·알고리즘용)
+  └─ mutations: node/edge CRUD, status 전이, canonical override
+        │
+        ├─ <GraphView>       Pixi renderer  ← positions from d3-force
+        ├─ <OutlineView>     React DOM      ← buildTree() 결과
+        ├─ <AttackPathView>  Pixi/SVG       ← successPaths() 결과
+        └─ <Inspector>       React DOM      ← 선택 노드(세 뷰 공유)
+```
+
+- 세 뷰는 `GraphStore`의 selector만 소비하고 서로를 모른다. 선택/포커스 상태만 공유(단일 selection store).
+- `successPaths(project)` selector: root에서 `succeeded` 체인을 DFS로 추출 → Attack Path의 입력.
+
+### 3.5 canonical 수동 재지정(Q3 — 허용 확정)
+
+- 기본은 timestamp 규칙 자동(§2.2). 사용자가 특정 노드의 canonical parent를 바꾸려면
+  노드에 `pinnedCanonicalEdgeId`를 설정 → `computeCanonicalParents`에서 이 값이 있으면 우선한다.
+- 리포트 재현성을 위해 override는 프로젝트에 영구 저장되고 **감사 로그**를 남긴다.
+- Outline/Graph 어디서든 "이 위치를 canonical로 지정" 액션으로 설정 가능.
 
 ---
 
@@ -331,9 +434,10 @@ buildTree(project):
 
 ### 4.1 스코핑
 
-- 그래프는 **프로젝트 단위로 완전히 격리**된다. 모든 조회/변경은 `projectId` 필수.
-- 프로젝트는 기존 `core` 모듈의 Project와 1:1로 매핑(또는 Target 단위로 세분 가능 — 열린 질문 Q1).
-- 교차-프로젝트 참조 없음(엣지 무결성 규칙 1.7).
+- **결정(Q1):** 그래프 스코프 = 기존 `core` 모듈의 **Project와 1:1**. 하나의 Project 그래프가 여러 Target(호스트)을 담는다.
+- 모든 조회/변경은 `projectId` 필수. 교차-프로젝트 참조 없음(엣지 무결성 규칙 1.7).
+- Project의 각 Target은 project-root 아래 host 노드로 편입되며(§2.1), Target 간 연결은 `pivoted-to`(골격) 또는
+  `reused-credential`(cross-cutting)로 표현한다(Q2).
 
 ### 4.2 저장 형태
 
@@ -390,7 +494,9 @@ graph_project_meta(
 
 | 트리 요소 | 리포트 산출 |
 |---|---|
-| root(host) | 최상위 섹션 "Host: `<ip>` (`<hostname>`)" |
+| project-root | 문서 제목 "Project: `<name>`" (H1 위 표지/개요) |
+| host | 최상위 섹션(H1) "Host: `<ip>` (`<hostname>`)" |
+| pivoted-to host | pivot 호스트 하위 섹션 "Lateral Movement → Host: `<ip>`" (중첩 유지) |
 | service | 하위 섹션 "Service Enumeration — `<port>/<proto> <name>`" |
 | finding | 하위 항목 "Finding — `<label>`" (severity/CVE 표기) |
 | technique(성공) | "Exploitation — `<label>`" (명령/도구/결과) |
@@ -443,8 +549,10 @@ DELETE /api/graph/nodes/{id}                     # (root 불가) 감사 로그
 POST   /api/projects/{pid}/graph/edges           # 엣지 생성(타입쌍 검증)
 PATCH  /api/graph/edges/{id}
 DELETE /api/graph/edges/{id}
-GET    /api/projects/{pid}/graph/tree            # buildTree 결과(참조/순환 포함)
-POST   /api/projects/{pid}/graph/root            # 수동 재지정(감사)
+GET    /api/projects/{pid}/graph/tree            # Outline용 buildTree 결과(참조/순환 포함)
+GET    /api/projects/{pid}/graph/attack-paths    # successPaths selector 결과(Attack Path 뷰)
+PATCH  /api/graph/nodes/{id}/canonical           # pinnedCanonicalEdgeId 설정/해제(감사)
+POST   /api/projects/{pid}/graph/root            # project-root 관리(감사)
 GET    /api/projects/{pid}/graph/export          # JSON export
 POST   /api/projects/{pid}/graph/import          # JSON import(검증)
 GET    /api/projects/{pid}/graph/report-outline?format=md|json|toc
@@ -461,7 +569,7 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 
 ## 7. 비기능 요구사항
 
-- 성능: 노드 500/엣지 1500까지 60fps 목표(Canvas 폴백). 트리·canonical 계산은 O(N log N).
+- 성능: 노드 500/엣지 1500까지 60fps 목표(Pixi.js WebGL; 대규모 시 d3-force를 Web Worker로 이관). 트리·canonical 계산은 O(N log N).
 - 접근성: 색만으로 상태 구분하지 않도록 status 배지 텍스트/아이콘 병행. 애니메이션 off 옵션.
 - 결정론: 동일 데이터 → 동일 트리·동일 리포트 번호(정렬 키 고정).
 - 로컬 전용/보안: 기존 경계 준수(127.0.0.1 바인딩, 비밀 마스킹, credential opt-in).
@@ -471,29 +579,26 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 
 ## 8. 구현 단계(제안)
 
-1. **M1 스키마·저장**: 테이블, 무결성 검증, CRUD API, export/import.
-2. **M2 트리 엔진**: canonical 계산 + buildTree + tree API(단위 테스트로 결정론 고정).
-3. **M3 Tree 뷰**: 확장/축소, `↗`/`↩` 참조 점프·복귀.
-4. **M4 Graph 뷰**: d3-force, 상태색/타입아이콘, 필터·상세 패널, status 토글.
-5. **M5 리포트 export**: md/json/toc, `reports` 모듈 연동.
-6. **M6 sync 훅**: nmap/서비스 자동 투영, 대시보드 요약 카드.
+1. **M1 스키마·저장**: 테이블, project-root/pivoted-to 포함 무결성 검증, CRUD API, export/import.
+2. **M2 트리 엔진**: canonical 계산(override 포함) + buildTree + successPaths selector(단위 테스트로 결정론 고정).
+3. **M3 Outline 뷰(React DOM)**: 계층 연결선, 상태 배지, expand/collapse 트랜지션, `↗`/`↩` 참조 점프·pulse·Back, 키보드·`/`검색·command palette.
+4. **M4 Graph 뷰(Pixi.js)**: d3-force + Graphology 인덱스, 상태색/타입아이콘, 필터·Inspector, status 토글.
+5. **M5 Attack Path 뷰(Pixi/SVG)**: successPaths 시각화, pivot/재사용 표현, 렌더러 확정.
+6. **M6 리포트 export**: md/json/toc, `reports` 모듈 연동.
+7. **M7 sync 훅**: nmap/서비스 자동 투영, 대시보드 요약 카드.
 
 ---
 
 ## 9. 열린 질문 (사용자 확인 필요)
 
-- **Q1. 프로젝트 = Project vs Target 단위?**
-  기존 모델은 Project 1—N Target이다. "프로젝트 = 하나의 대상 호스트"라면 그래프 스코프를
-  Project가 아니라 **Target** 단위로 잡아야 할 수 있다. 다중 호스트 랩에서 어떻게 다룰지 확정 필요.
-  (제안 기본값: 그래프 스코프 = Target. root = 해당 Target의 최초 nmap host 노드.)
+- **Q1. 스코프 = Project — 확정.** 그래프 스코프는 Project와 1:1, 다중 Target을 한 그래프에 담는다(§2.1, §4.1).
+- **Q2. 다중 호스트 연결 — 확정.** 같은 Project 그래프 안에서 project-root 아래 host들을 두고, 호스트 간 이동은
+  구조적 `pivoted-to`, 크리덴셜 재사용은 cross-cutting `reused-credential`로 표현(§1.4).
+- **Q3. canonical override — 허용 확정.** `pinnedCanonicalEdgeId` + 감사 로그(§3.5, §2.2).
+- **Q8. 렌더러 — 확정.** Graph=Pixi.js+d3-force+Graphology, Outline=React DOM+CSS+Motion,
+  Attack Path=Pixi/SVG(§3.0~3.4). Tree는 React DOM으로 확정하되 "기본 브라우저 트리 금지" 요구 명시.
 
-- **Q2. pivot/다중 호스트 표현.**
-  랩이 여러 호스트로 확장(내부망 pivot)될 때, 새 호스트를 같은 그래프에 second host 노드로
-  넣을지, 별도 그래프로 분리할지? cross-host 이동은 `yielded`(성공 산출물로서 새 host) vs
-  새 relation `pivoted-to`가 필요할지.
-
-- **Q3. canonical override 허용 범위.**
-  3.3의 수동 재지정을 넣을지, 아니면 timestamp 규칙만으로 고정(단순·재현 우선)할지.
+남은 확인 필요:
 
 - **Q4. Execution/Runbook 자동 투영 강도.**
   기존 실행/런북 진행을 technique 노드로 자동 생성할지(편리하지만 노이즈), 수동 승격만 할지.
@@ -508,6 +613,9 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 - **Q7. 리포트 정렬 정책.**
   기본을 "트리 순서(발견순)"로 둘지, "성공 경로 우선"으로 둘지. OSCP 리포트 관례에 맞춤 필요.
 
-- **Q8. Graph 뷰 렌더러 선택.**
-  순수 d3-force 자체 구현 vs `react-force-graph` 도입. 후자는 빠르지만 의존성 추가.
-  프로젝트의 의존성 최소화 방침과 조율 필요.
+- **Q9. Attack Path 렌더러(Pixi vs SVG).**
+  M5에서 확정. 상호작용이 적고 정적이면 SVG로 충분, Graph와 자원 공유가 크면 Pixi.
+
+- **Q10. Pixi.js 의존성 도입 승인.**
+  현재 레포는 경량 스택(순수 React/Vite + xterm)이다. Pixi.js(v8, ESM)는 지금까지 가장 무거운 의존성이며,
+  "Obsidian급 유기적 비주얼" 목표가 그 비용을 정당화한다는 전제를 확정할지.
