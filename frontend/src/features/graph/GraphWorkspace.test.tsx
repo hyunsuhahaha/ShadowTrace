@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector,
-  isCrackableCredential, buildActivityFeed, clampActivityPanel,
+  initialGraphPositionNearParent, isCrackableCredential, buildActivityFeed, clampActivityPanel,
   nodeStatusReason, nodeSummary } from "./GraphWorkspace";
 
 afterEach(() => {
@@ -38,6 +38,8 @@ it("preserves settled node positions when graph topology changes", () => {
   const settled = new Map([["host-1", { x: 712, y: 418 }]]);
   expect(initialGraphPosition("host-1", 0, 2, settled)).toEqual({ x: 712, y: 418 });
   expect(initialGraphPosition("service-new", 1, 2, settled)).not.toEqual({ x: 712, y: 418 });
+  const child = initialGraphPositionNearParent("execution-42", settled.get("host-1"));
+  expect(Math.hypot(child!.x - 712, child!.y - 418)).toBeCloseTo(74);
 });
 
 it("summarizes node outcomes and incomplete reasons without empty glyphs", () => {

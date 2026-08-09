@@ -574,6 +574,13 @@ export function initialGraphPosition(id: string, index: number, total: number,
   return { x: 400 + Math.cos(angle) * 180, y: 300 + Math.sin(angle) * 140 };
 }
 
+export function initialGraphPositionNearParent(id: string, parent?: GraphPosition): GraphPosition | null {
+  if (!parent) return null;
+  const seed = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const angle = (seed % 360) * Math.PI / 180;
+  return { x: parent.x + Math.cos(angle) * 74, y: parent.y + Math.sin(angle) * 74 };
+}
+
 function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean;
   selected: string | null; onSelect: (id: string) => void;
@@ -619,11 +626,17 @@ function GraphCanvas(props: {
 
     const visible = (n: GraphNode) =>
       !(hideRoot && n.type === "project-root") && (showHidden || !n.hidden);
+    const cached = positions.current[props.layoutMode];
+    const parentByNode = new Map(data.edges.map((edge) => [edge.target, edge.source]));
+    const retained = new Set(data.nodes.filter((node) => cached.has(node.id)).map((node) => node.id));
     const nodes: Sim[] = data.nodes.filter(visible).map((n, i) => {
-      const point = initialGraphPosition(n.id, i, data.nodes.length,
-        positions.current[props.layoutMode]);
+      const parent = cached.get(parentByNode.get(n.id) || "");
+      const point = cached.get(n.id) || initialGraphPositionNearParent(n.id, parent)
+        || initialGraphPosition(n.id, i, data.nodes.length, cached);
       return { ...n, ...point, vx: 0, vy: 0 };
     });
+    const stabilizationEnds = retained.size && retained.size < nodes.length
+      ? performance.now() + 700 : 0;
     const index = new Map(nodes.map((n) => [n.id, n]));
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
     const structural = new Set(["discovered", "enumerated", "attempted", "yielded",
@@ -685,6 +698,11 @@ function GraphCanvas(props: {
       const cx = W / 2, cy = H / 2;
       for (const n of nodes) {
         if (n.id === anchorId) { n.x = cx; n.y = cy; n.vx = n.vy = 0; continue; }
+        if (props.layoutMode === "graph" && stabilizationEnds > performance.now()
+            && retained.has(n.id) && n !== dragging) {
+          n.vx = n.vy = 0;
+          continue;
+        }
         n.vx += (cx - n.x) * 0.0015; n.vy += (cy - n.y) * 0.0015;
         n.vx *= 0.86; n.vy *= 0.86;
         if (n !== dragging) { n.x += n.vx; n.y += n.vy; }

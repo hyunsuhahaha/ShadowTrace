@@ -539,6 +539,8 @@ Inspector(하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
 끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
 technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stderr/error를 표시한다.
+명령 시작으로 execution 노드가 추가될 때는 기존 Canvas 좌표를 700ms 유지하고 새 노드를
+부모 근처에서 먼저 안정화해, topology 갱신이 화면 전체를 밀어내는 들썩임을 방지한다.
 `http-link-extract`는 여기에 유형순 링크 목록, Evidence 파생 저장과 Web Testing Request
 handoff를 추가로 제공하며, handoff 시 그래프를 벗어나지 않고 우측 GraphRequestPanel에서
 편집·저장·전송·응답 검토까지 수행한다. GraphRequestPanel은 `/vpn/status`의 tun0 IPv4를
