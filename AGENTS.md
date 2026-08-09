@@ -9,6 +9,22 @@
 - 작업 적용을 위해 서버 재시작이 필요하면 완료 안내에 재시작이 필요하다고 명시한다.
 - 허가된 OffSec 학습 환경, 개인 실습실 또는 명시적으로 승인된 대상만 다룬다.
 
+## 코드베이스 탐색
+
+- 파일 위치, 모듈 책임, 프런트엔드 화면 구성, custom event(`oscp-*`)나 localStorage
+  키의 의미가 궁금하면 먼저 [`docs/ENGINEERING_ONBOARDING.md`](docs/ENGINEERING_ONBOARDING.md)를
+  읽는다 — 백엔드 21개 모듈과 최상위 파일, 프런트엔드 14개 워크스페이스와 하위
+  컴포넌트, custom event 5종, localStorage 키, CSS 파일까지 파일 단위로 정리돼 있다.
+  이 문서를 먼저 읽고도 부족할 때만 직접 탐색한다.
+- 이 문서는 사실 나열용이며 설계 원칙은 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+  도메인 용어는 [`CONTEXT.md`](CONTEXT.md), 현재 세션 상태는
+  [`HANDOFF.md`](HANDOFF.md)에 있다. 단, `ARCHITECTURE.md`의 모듈 표는 오래돼 실제
+  폴더 구성과 어긋난 부분이 있다(`ENGINEERING_ONBOARDING.md` §11.1에 정리됨) — 모듈
+  이름/책임을 확인할 때는 `ENGINEERING_ONBOARDING.md`를 우선한다.
+- 새 파일·모듈·라우트·custom event를 추가하거나 옮기거나 지웠다면
+  `docs/ENGINEERING_ONBOARDING.md`의 해당 절도 같은 작업에서 함께 갱신한다. 갱신하지
+  않으면 다음 세션이 다시 전수조사를 해야 한다.
+
 ## OSCP+ 시험 준수
 
 - 이 에이전트와 ChatGPT, Codex, KAI, DeepSeek, Gemini 등 모든 LLM·AI 챗봇은 실제 시험 진행 및 시험 보고서 작성 단계에서 사용하지 않는다.
