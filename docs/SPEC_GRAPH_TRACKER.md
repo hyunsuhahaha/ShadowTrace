@@ -1,6 +1,6 @@
 # 명세서: 진행상황 그래프 트래커 (Progress Graph Tracker)
 
-- 상태: Draft v1 (구현 착수 가능 수준)
+- 상태: v1 — 모든 설계 결정 종결(§9), 구현 착수 가능
 - 대상 스택: 기존 OSCP Workspace (FastAPI + SQLite 백엔드, React/Vite + TypeScript 프론트)
 - 배치: `backend/app/modules/graph`, `frontend/src/features/graph`
 - 범위: 허가된 랩/연습 환경의 **개인 진행상황 트래킹** 전용. 실제 시험 세션 사용을 목표로 하지 않는다.
@@ -15,7 +15,7 @@
 - **Graph 뷰** (Pixi.js + d3-force): 탐색용. Obsidian급 유기적 네트워크로 "어디서 막혔나 / 무엇을 안 해봤나"를 드러냄.
 - **Outline 뷰** (React DOM + CSS + Motion): 작업·정리용. root(합성 project-root)에서 펼친 아웃라인이며, 다중 부모/순환은
   복제하지 않고 `↗ 참조` / `↩ 순환 참조`로 canonical 노드를 가리킨다. IDE/Linear급 micro-interaction 포함.
-- **Attack Path 뷰** (Pixi/SVG): 결과·설명용. 성공한 침투 흐름만 추린 선형 시각화.
+- **Attack Path 뷰** (SVG): 결과·설명용. 성공한 침투 흐름만 추린 선형 시각화.
 
 세 뷰는 **같은 데이터**를 공유하고 렌더러/레이아웃만 다르다. Outline 구조는 종료 후 리포트 목차로 그대로 변환된다.
 
@@ -147,13 +147,15 @@
 |---|---|---|
 | `untried` | 회색 `#8b8b93` | 발견됐지만 아직 시도 안 함 → "안 해본 시도" |
 | `in-progress` | 앰버 `#f5a524` | 진행 중 |
-| `attempt-failed` | 레드 `#e5484d` | 시도했으나 실패 → "막힌 지점" |
+| `attempt-failed` | 레드 `#e5484d` | 내가 시도했고 실패함 → "막힌 지점" |
 | `succeeded` | 그린 `#30a46c` | 성공 |
-| `blocked` | 퍼플 `#8e4ec6` | 외부 요인/의존성으로 막힘(`blocked-by` 있음) |
+| `blocked` | 퍼플 `#8e4ec6` | 외부 요인/선행 의존성 때문에 아직 시도조차 못 함(`blocked-by` 있음) |
 | `not-applicable` | 흐린 회색 `#5a5a60` | 해당 없음으로 정리됨 |
 
 - 노드 status는 그 노드로 향하는/그 노드가 대표하는 시도의 종합 상태를 뜻한다.
   (예: service 노드 아래 모든 technique이 실패면 service는 시각적으로 "막힘"을 부각)
+- `attempt-failed`와 `blocked`는 별도 status로 유지한다(Q6). 전자는 "내가 해봤는데 안 됨", 후자는 "선행조건 때문에
+  아직 못 함"으로 의미가 다르며, 트래커의 1차 목적("막힌 지점 vs 안 해본 시도" 구분)상 합치면 안 된다.
 - 색은 status가 결정, 아이콘/모양은 type이 결정한다.
 - **color-by-type 토글**: 참고 이미지처럼 타입별 색을 쓰고 싶을 때. type→색 팔레트는
   `host`/`service`/`finding`/`technique`/`credential` 5색 고정.
@@ -299,7 +301,7 @@ buildTree(project):
 |---|---|---|---|
 | **Graph** | 탐색 — 전체 연결·cross-cutting을 유기적으로 | **Pixi.js(WebGL) + d3-force + Graphology** | 공간적, 자유 배치 |
 | **Outline** | 작업·정리 — 정보 밀도 높은 인터랙티브 아웃라인 | **React DOM + CSS + Motion** | 문서적, 계층 |
-| **Attack Path** | 결과 설명 — 성공한 침투 흐름의 선형 시각화 | **Pixi.js 또는 SVG** | 공간적, 방향성 |
+| **Attack Path** | 결과 설명 — 성공한 침투 흐름의 선형 시각화 | **SVG(+dagre 레이아웃)** | 정적·계층적, 방향성 |
 
 세 뷰는 **동일한 `(nodes, edges)`**를 공유하고 렌더러/레이아웃만 다르다. 아래 3.4의 컴포넌트 경계로 렌더러를
 교체·추가해도 데이터·상태 계층은 불변이어야 한다.
@@ -400,7 +402,9 @@ Attack Path는 그중 **root → … → 최종 권한**에 이르는 성공 체
 ```
 - pivot(`pivoted-to`)은 호스트 경계를 넘는 화살표로 강조. 크리덴셜 재사용은 보조 점선으로.
 - 상호작용은 최소(설명용): hover 시 단계 상세, 클릭 시 Inspector/Outline 해당 노드로 이동.
-- 렌더러는 Pixi(Graph와 셰이더/자원 공유) 또는 정적이면 SVG. **선택은 M5에서 확정**하되, 데이터·selector는 지금 설계에 포함.
+- **렌더러 = SVG 우선 확정(Q9).** Attack Path는 Graph와 달리 정적·계층적(선형 흐름)이라 물리 시뮬레이션이 없고,
+  SVG가 더 적합하다(선명한 벡터, 손쉬운 라벨/화살표, 낮은 복잡도, PNG/PDF export 용이). Pixi 자원 공유 이점보다
+  SVG의 단순함이 크다. dagre류 경량 계층 레이아웃으로 노드 배치, SVG로 렌더.
 
 ### 3.4 컴포넌트 경계 (렌더러 교체·추가 가능하게)
 
@@ -508,7 +512,11 @@ graph_project_meta(
 
 - 섹션 번호 = `buildTree`의 `path`. 결정론적이라 리포트 재생성 시 안정.
 - 각 노드의 `notes`(Markdown)가 본문 서술 원천. `evidenceRefs`는 그림/부록 링크로 변환.
-- 성공 경로(root→…→succeeded)를 우선 배치하도록 "성공 우선" 정렬 옵션 제공(단, 기본은 트리 순서 유지).
+- **정렬 정책(Q7) — 뷰별로 다르다:**
+  - **Outline(작업 화면) 기본 = 발견순(`createdAt`)**. 작업 기록의 흐름을 시간순으로 보존한다.
+  - **Report(export) 기본 = 성공 경로 우선**. root→…→`succeeded` 체인을 앞에 배치하고, 실패/미시도는 뒤로 돌린다.
+    최종 보고서의 목적은 "어떻게 뚫었는가"의 서술이라 성공 흐름을 앞세운다. 두 정렬 모두 tie-break는 `(createdAt, id)`로
+    결정론을 유지한다(같은 데이터 → 같은 문서).
 
 ### 5.2 출력 형식
 
@@ -562,7 +570,10 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 ### 6.1 기존 도메인 → 그래프 투영(sync)
 
 - nmap import/서비스 발견 시 자동으로 host/service 노드와 `discovered` 엣지를 생성(idempotent, `sourceRef`로 중복 방지).
-- Runbook/Execution 진행이 technique 노드/`attempted` 엣지로 반영되도록 훅 제공(선택).
+  이는 정찰 골격이라 자동화해도 노이즈가 아니다.
+- **Runbook/Execution은 자동 노드화하지 않는다(Q4).** 실행 기록 전부를 technique 노드로 만들면 그래프가 쓰레기통이 된다.
+  대신 **자동 제안 + 수동 승격** 모델을 쓴다: 시스템은 "이 실행을 technique 노드로 승격하시겠습니까?" 제안만 큐에 쌓고,
+  사용자가 승격한 것만 그래프에 들어온다. 제안은 `sourceRef(executions)`를 담아 원클릭 승격을 지원한다.
 - 투영은 **덮어쓰지 않고 병합**: 사용자가 그래프에서 수정한 label/notes/status는 보존, sourceRef 원천 필드만 갱신.
 
 ---
@@ -583,39 +594,25 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 2. **M2 트리 엔진**: canonical 계산(override 포함) + buildTree + successPaths selector(단위 테스트로 결정론 고정).
 3. **M3 Outline 뷰(React DOM)**: 계층 연결선, 상태 배지, expand/collapse 트랜지션, `↗`/`↩` 참조 점프·pulse·Back, 키보드·`/`검색·command palette.
 4. **M4 Graph 뷰(Pixi.js)**: d3-force + Graphology 인덱스, 상태색/타입아이콘, 필터·Inspector, status 토글.
-5. **M5 Attack Path 뷰(Pixi/SVG)**: successPaths 시각화, pivot/재사용 표현, 렌더러 확정.
+5. **M5 Attack Path 뷰(SVG+dagre)**: successPaths 시각화, pivot/재사용 표현, PNG/PDF export.
 6. **M6 리포트 export**: md/json/toc, `reports` 모듈 연동.
 7. **M7 sync 훅**: nmap/서비스 자동 투영, 대시보드 요약 카드.
 
 ---
 
-## 9. 열린 질문 (사용자 확인 필요)
+## 9. 결정 기록 (모든 열린 질문 종결)
 
-- **Q1. 스코프 = Project — 확정.** 그래프 스코프는 Project와 1:1, 다중 Target을 한 그래프에 담는다(§2.1, §4.1).
-- **Q2. 다중 호스트 연결 — 확정.** 같은 Project 그래프 안에서 project-root 아래 host들을 두고, 호스트 간 이동은
-  구조적 `pivoted-to`, 크리덴셜 재사용은 cross-cutting `reused-credential`로 표현(§1.4).
-- **Q3. canonical override — 허용 확정.** `pinnedCanonicalEdgeId` + 감사 로그(§3.5, §2.2).
-- **Q8. 렌더러 — 확정.** Graph=Pixi.js+d3-force+Graphology, Outline=React DOM+CSS+Motion,
-  Attack Path=Pixi/SVG(§3.0~3.4). Tree는 React DOM으로 확정하되 "기본 브라우저 트리 금지" 요구 명시.
+| # | 결정 | 반영 위치 |
+|---|---|---|
+| Q1 | 스코프 = **Project 1:1**, 다중 Target 수용 | §2.1, §4.1 |
+| Q2 | 다중 호스트는 project-root 아래. 이동=`pivoted-to`(골격), 재사용=`reused-credential`(참조) | §1.4, §2.1 |
+| Q3 | canonical override **허용** (`pinnedCanonicalEdgeId` + 감사) | §2.2, §3.5 |
+| Q4 | Runbook/Execution은 자동 노드화 안 함. **자동 제안 + 수동 승격** | §6.1 |
+| Q5 | finding `severity`는 **사용자 지정 라벨**. CVSS 자동판정 배제 | §1.3 |
+| Q6 | `attempt-failed`와 `blocked`는 **별도 status 유지** | §1.5 |
+| Q7 | **Outline=발견순 / Report=성공경로 우선** | §5.1 |
+| Q8 | Graph=Pixi.js+d3-force+Graphology, Outline=React DOM+CSS+Motion, Attack Path=SVG | §3.0~3.4 |
+| Q9 | Attack Path 렌더러 = **SVG(+dagre)** 확정 | §3.3 |
+| Q10 | **Pixi.js 도입 승인** (Obsidian급 Graph의 필수 비용) | §3.0, §7 |
 
-남은 확인 필요:
-
-- **Q4. Execution/Runbook 자동 투영 강도.**
-  기존 실행/런북 진행을 technique 노드로 자동 생성할지(편리하지만 노이즈), 수동 승격만 할지.
-
-- **Q5. finding "severity"의 성격.**
-  사용자 표기용 라벨로만 둘지(제품 원칙: 자동 판정 금지), CVSS류 계산은 배제 확정인지.
-
-- **Q6. 상태 어휘 확정.**
-  1.5의 `blocked`를 별도 status로 둘지, `blocked-by` 엣지 존재로만 표현하고 status는
-  `attempt-failed`로 통일할지(어휘 최소화).
-
-- **Q7. 리포트 정렬 정책.**
-  기본을 "트리 순서(발견순)"로 둘지, "성공 경로 우선"으로 둘지. OSCP 리포트 관례에 맞춤 필요.
-
-- **Q9. Attack Path 렌더러(Pixi vs SVG).**
-  M5에서 확정. 상호작용이 적고 정적이면 SVG로 충분, Graph와 자원 공유가 크면 Pixi.
-
-- **Q10. Pixi.js 의존성 도입 승인.**
-  현재 레포는 경량 스택(순수 React/Vite + xterm)이다. Pixi.js(v8, ESM)는 지금까지 가장 무거운 의존성이며,
-  "Obsidian급 유기적 비주얼" 목표가 그 비용을 정당화한다는 전제를 확정할지.
+열린 질문 없음. 이 명세는 구현 착수 가능 상태다. 이후 변경은 이 표에 delta로 추가한다.
