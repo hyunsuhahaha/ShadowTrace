@@ -232,6 +232,9 @@ export default function AppShell({
       if (victim.id === activeProjectId) {
         localStorage.removeItem("oscp-workspace-project");
         setActiveProjectId(0);
+        // Notify listeners (e.g. the Progress Graph) that there is no active
+        // project now, so they reset instead of keeping the deleted project's id.
+        dispatchEvent(new CustomEvent("oscp-project-change", { detail: 0 }));
       }
       // Deleting a project cascades to nearly every resource table on the
       // backend (scans, web requests, credentials, findings, ...), and a
@@ -239,6 +242,8 @@ export default function AppShell({
       // the one just removed — so every cached query, not just the project
       // and target lists, has to be dropped or a workspace tab left mounted
       // through the delete will keep showing the deleted project's data.
+      queryClient.removeQueries({ queryKey: ["graph"] });
+      queryClient.removeQueries({ queryKey: ["graphTree"] });
       await queryClient.invalidateQueries();
       setPendingDelete(null);
     } catch (reason) {
