@@ -679,6 +679,25 @@ BloodHound식 "가능한 경로 자동 탐색"은 채택하지 않는다. 대신
 않는 수동 기록기라는 점이 (a) 제품 원칙(`docs/ARCHITECTURE.md`), (b) 시험 규정 준수, (c) 상용 대비 차별화를
 동시에 만족시킨다. 즉 **차별점과 컴플라이언스 경계가 같은 선**이다.
 
-**참고 출처(사용자 제공, 미검증):** Core Impact 데이터시트/리포팅, Horizon3 NodeZero GraphQL API(AttackGraph),
-Pentera Core, Rapid7 Metasploit, SpecterOps BloodHound. NodeZero AttackGraph 스키마는 별도 1차 출처 조사로
-정밀 대조할 가치가 있다(발전 후보).
+**참고 출처:** Core Impact 데이터시트/리포팅, Pentera Core, Rapid7 Metasploit, SpecterOps BloodHound(사용자 제공).
+NodeZero AttackGraph는 1차 출처(Horizon3 공식 GraphQL API 레퍼런스)로 정밀 조사 완료 →
+[docs/RESEARCH_NODEZERO_ATTACKGRAPH.md](RESEARCH_NODEZERO_ATTACKGRAPH.md).
+
+**조사로 검증된 정합성/차이 (요약):**
+- NodeZero는 `Host`/`Weakness`/`Credential`을 그래프 노드로 노출한다(우리 host/finding/credential과 강한 정합).
+  Service는 엔티티지만 노드로 직접 노출하지 않는다(우리는 service를 1급 노드로 둠 — 워크스페이스 목적상 유지).
+- **Technique/action은 노드가 아니라 노드 속성**(`icon_label` + `found_by_module_meta`(MITRE)+명령 로그)이다.
+  → 우리는 Technique를 노드로 두는 것을 **의도적 분기**로 유지(조사도 "conscious choice, not shortfall"로 평가).
+- **엣지는 무타입 단방향**(from→to, "한 스텝")이고 의미는 도착 노드에 산다. 우리는 **7개 타입 relation**으로 엣지에
+  의미를 실음 — 워크스페이스에서 discovered/attempted/blocked를 구분해야 하므로 의도적 분기.
+- **AttackGraph는 엄격한 DAG**(문서에 명시). 우리 작업 그래프는 순환 허용(↩ 표시)이되 **파생 Attack Path는 DAG**로
+  동일 성질을 만족 → 정합.
+- **목표는 1급 개념**: `target_node` + `Impact`/`ImpactType`(DomainCompromise 등) + criticality score. 우리 Q11
+  `objective`/`objectiveKind`와 정합(우리는 OSCP 목적상 kind 열거로 단순화, criticality는 선택).
+- **시간축 존재**: `time_to_finding`(HH:MM:SS) + timestep layer(`subflow_nodes`, v3). 우리 `createdAt`이 동일한
+  시간 원천 → timeline 렌더가 사실상 무료로 가능(발전 후보). (단 `Node.layer_label`은 문서-미검증으로 표시됨.)
+- **`blocked-by`는 NodeZero에 없음**: 그들의 그래프는 성공경로 DAG이고 실패는 `Weakness.proof_failure_*`에 남는다.
+  우리의 attempt-failed/blocked는 워크스페이스 고유 차별점.
+
+**흡수 후보(조사 권고):** ① 노드 provenance(어느 technique/execution이 이 노드를 만들었는지 stamp, MITRE 포함),
+② 노드 layer/time 필드(우리 `createdAt`로 timeline), ③ objective criticality(선택), ④ Attack Path 요약 rollup(노드/크리덴셜/호스트 수).
