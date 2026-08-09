@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector,
-  isCrackableCredential, buildActivityFeed, nodeStatusReason, nodeSummary } from "./GraphWorkspace";
+  isCrackableCredential, buildActivityFeed, clampActivityPanel,
+  nodeStatusReason, nodeSummary } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
@@ -63,6 +64,11 @@ it("builds a newest-first clickable activity feed from graph nodes", () => {
     nodes: nodes as Parameters<typeof buildActivityFeed>[0]["nodes"], edges: [] });
   expect(feed.map((item) => item.nodeId)).toEqual(["cred", "svc"]);
   expect(feed[0].text).toContain("captured");
+});
+
+it("keeps a moved or resized activity stream inside the graph", () => {
+  expect(clampActivityPanel(900, -20, 280, 180, 1000, 700))
+    .toEqual({ x: 720, y: 0 });
 });
 
 it("inserts the tun0 responder path without leaving the graph request panel", async () => {

@@ -111,6 +111,29 @@ export function nodeSummary(node: Pick<GraphNode, "type" | "status" | "label" | 
 }
 
 type ActivityItem = { nodeId: string; at: string; text: string };
+type ActivityPanelState = { x?: number; y?: number; width: number; height: number; collapsed: boolean };
+const ACTIVITY_PANEL_KEY = "oscp-graph-activity-panel";
+const defaultActivityPanel: ActivityPanelState = {
+  width: 292, height: 238, collapsed: false,
+};
+
+export function clampActivityPanel(x: number, y: number, width: number, height: number,
+  boundsWidth: number, boundsHeight: number) {
+  return { x: Math.max(0, Math.min(x, Math.max(0, boundsWidth - width))),
+    y: Math.max(0, Math.min(y, Math.max(0, boundsHeight - height))) };
+}
+
+function readActivityPanel(): ActivityPanelState {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ACTIVITY_PANEL_KEY) || "null");
+    if (saved && Number.isFinite(saved.width) && Number.isFinite(saved.height))
+      return { x: Number.isFinite(saved.x) ? saved.x : undefined,
+        y: Number.isFinite(saved.y) ? saved.y : undefined,
+        width: Math.max(220, saved.width), height: Math.max(120, saved.height),
+        collapsed: !!saved.collapsed };
+  } catch { /* use the compact default */ }
+  return defaultActivityPanel;
+}
 export function buildActivityFeed(data: GraphOut): ActivityItem[] {
   const active = data.nodes.flatMap((node) => {
     const activity = getNodeActivity(node);
@@ -920,19 +943,84 @@ function GraphCanvas(props: {
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
-      <section style={S.activityStream} aria-label="최근 활동">
-        <header style={S.activityHead}><span>ACTIVITY STREAM</span><b>{activity.length}</b></header>
-        {activity.length ? activity.map((item, index) => <button key={`${item.nodeId}-${item.at}-${index}`}
-          style={S.activityRow} onClick={() => props.onActivitySelect(item.nodeId)}>
-          <time>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
-          <span>{item.text}</span>
-        </button>) : <div style={S.activityEmpty}>아직 기록된 활동이 없습니다.</div>}
-      </section>
+      <ActivityStream items={activity} onSelect={props.onActivitySelect} />
       <div style={S.hint}>
         초록 신호 = 실행 중 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
       </div>
     </div>
   );
+}
+
+function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: (id: string) => void }) {
+  const [panel, setPanel] = useState(readActivityPanel);
+  const ref = useRef<HTMLElement>(null);
+  const drag = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
+  useEffect(() => {
+    localStorage.setItem(ACTIVITY_PANEL_KEY, JSON.stringify(panel));
+  }, [panel]);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || panel.collapsed) return;
+    const observer = new ResizeObserver(() => {
+      const width = Math.round(element.offsetWidth), height = Math.round(element.offsetHeight);
+      if (width !== panel.width || height !== panel.height) {
+        const parent = element.parentElement;
+        const position = parent && panel.x !== undefined && panel.y !== undefined
+          ? clampActivityPanel(panel.x, panel.y, width, height,
+            parent.clientWidth, parent.clientHeight) : {};
+        setPanel((current) => ({ ...current, width, height, ...position }));
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [panel.collapsed, panel.width, panel.height]);
+  const startDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const element = ref.current, parent = element?.parentElement;
+    if (!element || !parent) return;
+    const rect = element.getBoundingClientRect();
+    drag.current = { pointerId: event.pointerId, dx: event.clientX - rect.left,
+      dy: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const active = drag.current, element = ref.current, parent = element?.parentElement;
+    if (!active || !element || !parent) return;
+    const bounds = parent.getBoundingClientRect();
+    const next = clampActivityPanel(event.clientX - bounds.left - active.dx,
+      event.clientY - bounds.top - active.dy, element.offsetWidth, element.offsetHeight,
+      bounds.width, bounds.height);
+    setPanel((current) => ({ ...current, ...next }));
+  };
+  const stopDrag = (event: React.PointerEvent<HTMLElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const positioned = panel.x === undefined || panel.y === undefined
+    ? { right: 14, bottom: 14 } : { left: panel.x, top: panel.y };
+  return <section ref={ref} style={{ ...S.activityStream, ...positioned,
+    width: panel.collapsed ? 184 : panel.width,
+    height: panel.collapsed ? 34 : panel.height,
+    resize: panel.collapsed ? "none" : "both" }} aria-label="최근 활동">
+    <header style={S.activityHead} onPointerDown={startDrag} onPointerMove={moveDrag}
+      onPointerUp={stopDrag} onPointerCancel={stopDrag} title="드래그하여 이동">
+      <span>ACTIVITY STREAM</span>
+      <span style={S.activityHeadActions}><b>{items.length}</b>
+        <button type="button" aria-label={panel.collapsed ? "활동 펼치기" : "활동 접기"}
+          title={panel.collapsed ? "펼치기" : "접기"}
+          style={S.activityToggle}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => setPanel((current) => ({ ...current, collapsed: !current.collapsed }))}>
+          {panel.collapsed ? "□" : "—"}
+        </button></span>
+    </header>
+    {!panel.collapsed && (items.length ? items.map((item, index) =>
+      <button key={`${item.nodeId}-${item.at}-${index}`} style={S.activityRow}
+        onClick={() => onSelect(item.nodeId)}>
+        <time>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
+        <span>{item.text}</span>
+      </button>) : <div style={S.activityEmpty}>아직 기록된 활동이 없습니다.</div>)}
+  </section>;
 }
 
 // ---------------- Outline (React DOM) ----------------
@@ -1496,13 +1584,18 @@ const S: Record<string, React.CSSProperties> = {
   stage: { flex: 1, display: "flex", minHeight: 0 },
   hint: { position: "absolute", left: 16, bottom: 14, color: "#6b6b76", fontSize: 12,
     pointerEvents: "none" },
-  activityStream: { position: "absolute", right: 14, bottom: 14, width: 292,
-    maxHeight: 238, overflow: "auto", border: "1px solid rgba(89,245,154,.16)",
+  activityStream: { position: "absolute", minWidth: 184, minHeight: 34,
+    overflow: "auto", border: "1px solid rgba(89,245,154,.16)",
     background: "rgba(8,12,11,.88)", backdropFilter: "blur(8px)", color: "#cbd8d2" },
   activityHead: { position: "sticky", top: 0, zIndex: 1, display: "flex",
     justifyContent: "space-between", padding: "8px 10px", borderBottom: "1px solid #223029",
-    background: "rgba(8,12,11,.96)", color: "#59f59a",
+    background: "rgba(8,12,11,.96)", color: "#59f59a", cursor: "move",
+    touchAction: "none", userSelect: "none",
     font: "600 9px ui-monospace,monospace", letterSpacing: 1 },
+  activityHeadActions: { display: "flex", alignItems: "center", gap: 8 },
+  activityToggle: { width: 22, height: 20, padding: 0, border: "1px solid #294036",
+    background: "#101a15", color: "#75d99c", cursor: "pointer",
+    font: "600 10px ui-monospace,monospace" },
   activityRow: { width: "100%", display: "grid", gridTemplateColumns: "58px minmax(0,1fr)",
     gap: 8, padding: "7px 10px", border: 0, borderBottom: "1px solid rgba(255,255,255,.045)",
     background: "transparent", color: "#b9c8c1", textAlign: "left", cursor: "pointer",

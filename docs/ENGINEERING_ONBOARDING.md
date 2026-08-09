@@ -562,7 +562,8 @@ DISCOVERY→ENUMERATION→ACCESS→PRIVILEGE→EVIDENCE의
 옅은 단계 링을 그린다. service/execution/finding/credential 메타는 sync 때 최신 값으로
 갱신되어 노드 hover/선택 요약(제품·버전, 실행 시간·exit/error, 심각도·Evidence 수,
 credential 유형)에 쓰인다. 우하단 Activity Stream은 `created_at`과 실행 시작 시각을 합쳐
-최신순으로 보여주며 클릭하면 해당 노드를 선택하고 중앙으로 이동한다. 미완료 상태는
+최신순으로 보여주며 클릭하면 해당 노드를 선택하고 중앙으로 이동한다. 헤더 드래그로 이동,
+브라우저 native resize handle로 크기 조절, 최소화 버튼으로 접을 수 있고 배치는 유지된다. 미완료 상태는
 DB enum을 바꾸지 않고 UI에서 준비됨/선행 정보 부족/사용자 검토 대기/실행 중/재시도 가능/
 적용 불가로 번역한다. 선택한 그래프·트리·Outline 모드는 `oscp-graph-view`에 유지한다.
 GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
@@ -700,6 +701,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-sidebar-width` | 사이드바 px(184–420 clamp) | `AppShell.tsx` 사이드바 리사이즈 유지 |
 | `oscp-sidebar-collapsed` | `"true"`/`"false"` | `AppShell.tsx` 사이드바 접힘 상태 |
 | `oscp-graph-pane` | Progress Graph 우측 패널 px(최소 320) | `GraphWorkspace.tsx` 리사이즈 유지 |
+| `oscp-graph-view` / `oscp-graph-activity-panel` | 보기 모드 / JSON `{x,y,width,height,collapsed}` | Graph/Tree/Outline 선택과 Activity Stream 배치·크기·접힘 유지 |
 | `oscp-web-launch` | JSON `{targetId, serviceId, url}` | Enumeration/Graph → Web Testing "이 URL 열기" 1회성 핸드오프, 소비 후 제거 |
 | `oscp-crack-form-width` / `oscp-crack-history-width` | px | `HashCrackingWorkspace.tsx` 폼/이력 컬럼 리사이즈 |
 | `oscp-workspace-hash-target` / `-mode` / `-value` | target id / hashcat 모드 / 해시 문자열 | `App.tsx`(Kerberoast/AS-REP/DCSync/NTLM 버튼) → `HashCrackingWorkspace.tsx` 1회성 핸드오프, 소비 후 제거 |
