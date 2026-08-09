@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector,
-  isCrackableCredential } from "./GraphWorkspace";
+  isCrackableCredential, buildActivityFeed, nodeStatusReason, nodeSummary } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
@@ -37,6 +37,32 @@ it("preserves settled node positions when graph topology changes", () => {
   const settled = new Map([["host-1", { x: 712, y: 418 }]]);
   expect(initialGraphPosition("host-1", 0, 2, settled)).toEqual({ x: 712, y: 418 });
   expect(initialGraphPosition("service-new", 1, 2, settled)).not.toEqual({ x: 712, y: 418 });
+});
+
+it("summarizes node outcomes and incomplete reasons without empty glyphs", () => {
+  expect(nodeSummary({ type: "service", status: "untried", label: "80/tcp http",
+    meta: JSON.stringify({ product: "Apache httpd", version: "2.4.52" }) }))
+    .toBe("80/tcp http · Apache httpd · 2.4.52");
+  expect(nodeSummary({ type: "technique", status: "attempt-failed", label: "whatweb",
+    meta: JSON.stringify({ error: "timeout", exitCode: 124 }) }))
+    .toBe("timeout · exit 124");
+  expect(nodeStatusReason({ type: "technique", status: "in-progress",
+    meta: JSON.stringify({ executionStatus: "completed" }) })).toBe("사용자 검토 대기");
+  expect(nodeStatusReason({ type: "service", status: "blocked", meta: "{}" }))
+    .toBe("선행 정보 부족");
+});
+
+it("builds a newest-first clickable activity feed from graph nodes", () => {
+  const nodes = [{ id: "svc", type: "service", status: "untried", label: "80/tcp http",
+    objective: false, source_ref: "", hidden: false, created_at: "2026-08-09T10:42:38Z",
+    meta: JSON.stringify({ product: "Apache", version: "2.4.52" }) },
+  { id: "cred", type: "credential", status: "succeeded", label: "Administrator",
+    objective: false, source_ref: "", hidden: false, created_at: "2026-08-09T10:46:09Z",
+    meta: JSON.stringify({ username: "Administrator", credType: "NetNTLMv2" }) }];
+  const feed = buildActivityFeed({ root_node_id: null,
+    nodes: nodes as Parameters<typeof buildActivityFeed>[0]["nodes"], edges: [] });
+  expect(feed.map((item) => item.nodeId)).toEqual(["cred", "svc"]);
+  expect(feed[0].text).toContain("captured");
 });
 
 it("inserts the tun0 responder path without leaving the graph request panel", async () => {

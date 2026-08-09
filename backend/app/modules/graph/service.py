@@ -10,10 +10,10 @@ import json
 import os
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (Credential, Execution, Finding, GraphEdge, GraphNode,
+from ...models import (Credential, Execution, Finding, FindingEvidence, GraphEdge, GraphNode,
                        GraphProjectMeta, InteractiveSession, Project, ScanJob,
                        Service, Target)
 from ..vpn import vpn_status
@@ -351,9 +351,14 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 select(Service).where(Service.target_id == target.id)):
             raw = f"{service.port}/{service.protocol} {service.name}".strip()
             refined = f"{service.port}/{service.protocol} {_service_display_name(service)}".strip()
+            service_meta = json.dumps({"port": service.port, "protocol": service.protocol,
+                                       "name": _service_display_name(service),
+                                       "product": service.product or "",
+                                       "version": service.version or ""})
             if ("service", service.id) not in index:
                 svc = create_node(db, project_id, "service", label=refined,
-                                  source_ref=_source_ref("scans", "service", service.id))
+                                  source_ref=_source_ref("scans", "service", service.id),
+                                  meta=service_meta)
                 create_edge(db, project_id, host.id, svc.id, "discovered")
                 index[("service", service.id)] = svc
                 created["services"] += 1
@@ -363,6 +368,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 node = index[("service", service.id)]
                 if node.label == raw and raw != refined:
                     node.label = refined
+                node.meta = service_meta
 
     # findings + credentials attach to their service, else their host.
     def parent_of(service_id, target_id) -> GraphNode | None:
@@ -372,13 +378,17 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     for finding in db.scalars(
             select(Finding).where(Finding.project_id == project_id)):
-        if ("finding", finding.id) in index:
-            continue
         parent = parent_of(finding.service_id, finding.target_id)
         if parent is None:
             continue
+        evidence_count = db.scalar(select(func.count(FindingEvidence.id)).where(
+            FindingEvidence.finding_id == finding.id)) or 0
         meta = json.dumps({"severity": finding.severity or "",
-                           "category": finding.category or ""})
+                           "category": finding.category or "",
+                           "evidenceCount": evidence_count})
+        if ("finding", finding.id) in index:
+            index[("finding", finding.id)].meta = meta
+            continue
         node = create_node(db, project_id, "finding", label=finding.title,
                            source_ref=_source_ref("findings", "finding", finding.id),
                            meta=meta)
@@ -388,8 +398,6 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     for cred in db.scalars(
             select(Credential).where(Credential.project_id == project_id)):
-        if ("credential", cred.id) in index:
-            continue
         parent = parent_of(cred.service_id, cred.target_id)
         if parent is None:
             continue
@@ -399,6 +407,10 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                            "secretHint": cred.secret_hint or ""})
         provenance = json.dumps({"source": cred.source_kind or "",
                                  "detail": cred.source_detail or ""})
+        if ("credential", cred.id) in index:
+            index[("credential", cred.id)].meta = meta
+            index[("credential", cred.id)].provenance = provenance
+            continue
         node = create_node(db, project_id, "credential", label=label,
                            source_ref=_source_ref("core", "credential", cred.id),
                            meta=meta, provenance=provenance)
@@ -418,15 +430,18 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             activity = _runtime_activity(
                 "execution", ex.status, ex.template_id or "COMMAND", ex.started_at)
             existing = index.get(("execution", ex.id))
+            runtime = {"tool": ex.template_id or "", "command": ex.command or "",
+                       "executionStatus": ex.status, "exitCode": ex.exit_code,
+                       "error": ex.error or "",
+                       "startedAt": ex.started_at.isoformat() if ex.started_at else None,
+                       "endedAt": ex.ended_at.isoformat() if ex.ended_at else None}
             if existing is not None:
-                existing.meta = _activity_meta(existing.meta, activity)
+                existing.meta = _activity_meta(json.dumps(runtime), activity)
                 if (ex.status in {"failed", "interrupted"}
                         and existing.status == "in-progress"):
                     existing.status = "attempt-failed"
                 continue
-            meta = _activity_meta(json.dumps({
-                "tool": ex.template_id or "", "command": ex.command or "",
-            }), activity)
+            meta = _activity_meta(json.dumps(runtime), activity)
             provenance = json.dumps({"executionRef": {"module": "executions", "id": ex.id},
                                      "tool": ex.template_id or ""})
             node = create_node(

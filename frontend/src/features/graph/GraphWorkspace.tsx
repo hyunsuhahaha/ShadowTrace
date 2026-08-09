@@ -21,7 +21,7 @@ type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
   | "technique" | "credential";
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
-  source_ref: string; hidden: boolean; meta?: string;
+  source_ref: string; hidden: boolean; meta?: string; created_at?: string; updated_at?: string;
 };
 type DeepLink = { label: string; open: () => void };
 type GraphEdge = {
@@ -56,6 +56,11 @@ const STATUS_LABEL: Record<string, string> = {
   untried: "미시도", "in-progress": "진행중", "attempt-failed": "실패",
   succeeded: "성공", blocked: "차단", "not-applicable": "N/A",
 };
+const STATUS_REASON: Record<string, string> = {
+  untried: "준비됨", "in-progress": "실행 중",
+  "attempt-failed": "실패 후 재시도 가능", succeeded: "완료",
+  blocked: "선행 정보 부족", "not-applicable": "적용 불가",
+};
 const LINK_KIND_LABEL: Record<string, string> = {
   page: "페이지", asset: "정적 리소스", absolute: "절대경로", anchor: "앵커",
 };
@@ -69,6 +74,56 @@ const GLYPH: Record<NodeType, string> = {
   technique: "⚡", credential: "🔑",
 };
 const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
+
+function nodeMeta(node: Pick<GraphNode, "meta">): Record<string, any> {
+  try { return JSON.parse(node.meta || "{}"); } catch { return {}; }
+}
+
+export function nodeStatusReason(node: Pick<GraphNode, "status" | "type" | "meta">): string {
+  const meta = nodeMeta(node);
+  if (node.type === "technique" && node.status === "in-progress"
+      && ["completed", "closed"].includes(meta.executionStatus)) return "사용자 검토 대기";
+  return STATUS_REASON[node.status] ?? node.status;
+}
+
+export function nodeSummary(node: Pick<GraphNode, "type" | "status" | "label" | "meta">): string {
+  const meta = nodeMeta(node);
+  if (node.type === "service")
+    return [node.label, meta.product, meta.version].filter(Boolean).join(" · ");
+  if (node.type === "technique") {
+    const started = meta.startedAt ? Date.parse(meta.startedAt) : NaN;
+    const ended = meta.endedAt ? Date.parse(meta.endedAt) : NaN;
+    const duration = Number.isFinite(started) && Number.isFinite(ended)
+      ? `${Math.max(0, Math.round((ended - started) / 1000))}s` : "";
+    if (meta.error || meta.executionStatus === "failed")
+      return [meta.error || "failed", meta.exitCode == null ? "" : `exit ${meta.exitCode}`]
+        .filter(Boolean).join(" · ");
+    return [meta.tool || node.label, meta.executionStatus || nodeStatusReason(node), duration]
+      .filter(Boolean).join(" · ");
+  }
+  if (node.type === "credential")
+    return [meta.username || node.label, meta.credType || "credential", "captured"]
+      .filter(Boolean).join(" · ");
+  if (node.type === "finding")
+    return [node.label, meta.severity, `evidence ${meta.evidenceCount || 0}`]
+      .filter(Boolean).join(" · ");
+  return node.label;
+}
+
+type ActivityItem = { nodeId: string; at: string; text: string };
+export function buildActivityFeed(data: GraphOut): ActivityItem[] {
+  const active = data.nodes.flatMap((node) => {
+    const activity = getNodeActivity(node);
+    return activity?.startedAt ? [{ nodeId: node.id, at: activity.startedAt,
+      text: `${activity.label} ${activity.kind === "listener" ? "listening" : "started"}` }] : [];
+  });
+  const created = data.nodes.flatMap((node) => node.created_at ? [{ nodeId: node.id,
+    at: node.created_at, text: node.type === "service" ? `${nodeSummary(node)} discovered`
+      : node.type === "credential" ? `${nodeSummary(node)} captured`
+      : node.type === "finding" ? `${nodeSummary(node)} identified`
+      : node.type === "technique" ? nodeSummary(node) : `${node.label} discovered` }] : []);
+  return [...active, ...created].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 8);
+}
 
 export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | null {
   if (!node.meta) return null;
@@ -104,7 +159,9 @@ function useActiveProjectId(): number | null {
 export default function GraphWorkspace() {
   const projectId = useActiveProjectId();
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"graph" | "outline">("graph");
+  const [view, setView] = useState<"graph" | "tree" | "outline">(() =>
+    (localStorage.getItem("oscp-graph-view") as "graph" | "tree" | "outline") || "graph");
+  useEffect(() => { localStorage.setItem("oscp-graph-view", view); }, [view]);
   const [selected, setSelected] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
@@ -379,7 +436,8 @@ export default function GraphWorkspace() {
     <div style={S.wrap}>
       <div style={S.bar}>
         <div style={S.tabs}>
-          <Tab on={view === "graph"} onClick={() => setView("graph")}>Graph</Tab>
+          <Tab on={view === "graph"} onClick={() => setView("graph")}>그래프</Tab>
+          <Tab on={view === "tree"} onClick={() => setView("tree")}>트리</Tab>
           <Tab on={view === "outline"} onClick={() => setView("outline")}>Outline</Tab>
         </div>
         {selectedNode && !noProject && (
@@ -397,7 +455,7 @@ export default function GraphWorkspace() {
           </button>
         )}
         <div style={S.legend}>
-          {Object.entries(STATUS_LABEL).map(([k, v]) => (
+          {Object.entries(STATUS_REASON).map(([k, v]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ width: 9, height: 9, borderRadius: 9, background: color(k) }} />
               {v}
@@ -406,9 +464,10 @@ export default function GraphWorkspace() {
         </div>
       </div>
       <div style={S.stage}>
-        {view === "graph" ? (
+        {view !== "outline" ? (
           <GraphCanvas data={data} hostCount={hostCount} showHidden={showHidden}
-            selected={selected} onSelect={setSelected} focus={focus} />
+            selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
+            onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
@@ -496,6 +555,7 @@ function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean;
   selected: string | null; onSelect: (id: string) => void;
   focus: { id: string; nonce: number } | null;
+  layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -507,7 +567,8 @@ function GraphCanvas(props: {
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const positions = useRef(new Map<string, GraphPosition>());
+  const positions = useRef({ graph: new Map<string, GraphPosition>(),
+    tree: new Map<string, GraphPosition>() });
   const activityStarted = useRef(new Map<string, number>());
   const latestNodes = useRef(new Map(data.nodes.map((n) => [n.id, n])));
   const latestEdges = useRef(new Map(data.edges.map((e) => [e.id, e])));
@@ -536,13 +597,25 @@ function GraphCanvas(props: {
     const visible = (n: GraphNode) =>
       !(hideRoot && n.type === "project-root") && (showHidden || !n.hidden);
     const nodes: Sim[] = data.nodes.filter(visible).map((n, i) => {
-      const point = initialGraphPosition(n.id, i, data.nodes.length, positions.current);
+      const point = initialGraphPosition(n.id, i, data.nodes.length,
+        positions.current[props.layoutMode]);
       return { ...n, ...point, vx: 0, vy: 0 };
     });
     const index = new Map(nodes.map((n) => [n.id, n]));
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
     const structural = new Set(["discovered", "enumerated", "attempted", "yielded",
       "pivoted-to", "operates", "runs"]);
+    const depths = new Map<string, number>([[anchorId || "", 0]]);
+    for (let pass = 0; pass < nodes.length; pass++) for (const edge of edges) {
+      if (!structural.has(edge.relation)) continue;
+      const parentDepth = depths.get(edge.source);
+      if (parentDepth !== undefined && !depths.has(edge.target)) depths.set(edge.target, parentDepth + 1);
+    }
+    const levels = new Map<number, Sim[]>();
+    nodes.forEach((node) => {
+      const depth = depths.get(node.id) ?? 0;
+      levels.set(depth, [...(levels.get(depth) || []), node]);
+    });
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
@@ -561,6 +634,16 @@ function GraphCanvas(props: {
     const ro = new ResizeObserver(resize); ro.observe(canvas); resize();
 
     const tick = () => {
+      if (props.layoutMode === "tree") {
+        for (const [depth, level] of levels) level.forEach((node, row) => {
+          const tx = 90 + depth * 150;
+          const ty = H / 2 + (row - (level.length - 1) / 2) * Math.min(105, H / Math.max(2, level.length));
+          node.vx += (tx - node.x) * .035; node.vy += (ty - node.y) * .035;
+          node.vx *= .78; node.vy *= .78;
+          if (node !== dragging) { node.x += node.vx; node.y += node.vy; }
+        });
+        return;
+      }
       for (let i = 0; i < nodes.length; i++)
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i], b = nodes[j];
@@ -590,6 +673,20 @@ function GraphCanvas(props: {
       ctx.clearRect(0, 0, W, H);
       ctx.translate(panX, panY);
       ctx.scale(zoomRef.current, zoomRef.current);  // camera zoom: sizes AND spacing
+      if (props.layoutMode === "graph" && anchorId) {
+        const anchor = index.get(anchorId);
+        if (anchor) {
+          const stages = ["DISCOVERY", "ENUMERATION", "ACCESS", "PRIVILEGE", "EVIDENCE"];
+          stages.forEach((stage, i) => {
+            const radius = 70 + i * 58;
+            ctx.beginPath(); ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(89,245,154,${.065 - i * .008})`; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = "rgba(89,245,154,.24)";
+            ctx.font = "600 7px ui-monospace,monospace"; ctx.textAlign = "left";
+            ctx.textBaseline = "bottom"; ctx.fillText(stage, anchor.x + 8, anchor.y - radius + 10);
+          });
+        }
+      }
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;
         const edge = latestEdges.current.get(e.id) ?? e;
@@ -702,10 +799,19 @@ function GraphCanvas(props: {
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
         ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
-        if (hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
+        const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
+        if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
           ctx.font = isAnchor ? "600 12px sans-serif" : "11px sans-serif";
           ctx.fillText(current.label, n.x, n.y + r + 6);
+        }
+        if (hover === n || isSel) {
+          const detail = nodeSummary(current);
+          if (detail !== current.label) {
+            ctx.fillStyle = "#899892"; ctx.font = "9px ui-monospace,monospace";
+            ctx.fillText(detail.length > 54 ? `${detail.slice(0, 53)}…` : detail,
+              n.x, n.y + r + 21);
+          }
         }
         if (activity) {
           const state = activity.kind === "scan" ? "SCANNING"
@@ -797,7 +903,8 @@ function GraphCanvas(props: {
     addEventListener("mouseup", onUp);
     addEventListener("keydown", onKey);
     return () => {
-      positions.current = new Map(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+      positions.current[props.layoutMode] = new Map(
+        nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
       cancelAnimationFrame(raf); ro.disconnect();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mousedown", onDown);
@@ -806,13 +913,23 @@ function GraphCanvas(props: {
       removeEventListener("mouseup", onUp);
       removeEventListener("keydown", onKey);
     };
-  }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden]);
+  }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden, props.layoutMode]);
+
+  const activity = buildActivityFeed(data);
 
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
+      <section style={S.activityStream} aria-label="최근 활동">
+        <header style={S.activityHead}><span>ACTIVITY STREAM</span><b>{activity.length}</b></header>
+        {activity.length ? activity.map((item, index) => <button key={`${item.nodeId}-${item.at}-${index}`}
+          style={S.activityRow} onClick={() => props.onActivitySelect(item.nodeId)}>
+          <time>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
+          <span>{item.text}</span>
+        </button>) : <div style={S.activityEmpty}>아직 기록된 활동이 없습니다.</div>}
+      </section>
       <div style={S.hint}>
-        초록 신호 = 실행 중 · 빨간 신호 = 리스너 대기 · 파란 헤일로 = 루트 · 드래그 / 휠로 이동·확대
+        초록 신호 = 실행 중 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
       </div>
     </div>
   );
@@ -859,7 +976,7 @@ function Row(props: {
         <span style={{ flex: 1 }}>{item.label}</span>
         <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px",
           borderRadius: 20, background: `${c}22`, color: c }}>
-          {(STATUS_LABEL[item.status] ?? item.status).toUpperCase()}
+          {(STATUS_REASON[item.status] ?? item.status).toUpperCase()}
         </span>
       </div>
       {open && hasKids && (
@@ -1039,7 +1156,7 @@ export function Inspector(props: {
               border: `1px solid ${n.status === s ? color(s) : "#2a2a34"}`,
               background: n.status === s ? `${color(s)}22` : "transparent",
               color: n.status === s ? color(s) : "#9a9aa6",
-            }}>{STATUS_LABEL[s] ?? s}</button>
+            }}>{s === n.status ? nodeStatusReason(n) : STATUS_REASON[s] ?? s}</button>
           ))}
         </div>
       </div>
@@ -1379,6 +1496,18 @@ const S: Record<string, React.CSSProperties> = {
   stage: { flex: 1, display: "flex", minHeight: 0 },
   hint: { position: "absolute", left: 16, bottom: 14, color: "#6b6b76", fontSize: 12,
     pointerEvents: "none" },
+  activityStream: { position: "absolute", right: 14, bottom: 14, width: 292,
+    maxHeight: 238, overflow: "auto", border: "1px solid rgba(89,245,154,.16)",
+    background: "rgba(8,12,11,.88)", backdropFilter: "blur(8px)", color: "#cbd8d2" },
+  activityHead: { position: "sticky", top: 0, zIndex: 1, display: "flex",
+    justifyContent: "space-between", padding: "8px 10px", borderBottom: "1px solid #223029",
+    background: "rgba(8,12,11,.96)", color: "#59f59a",
+    font: "600 9px ui-monospace,monospace", letterSpacing: 1 },
+  activityRow: { width: "100%", display: "grid", gridTemplateColumns: "58px minmax(0,1fr)",
+    gap: 8, padding: "7px 10px", border: 0, borderBottom: "1px solid rgba(255,255,255,.045)",
+    background: "transparent", color: "#b9c8c1", textAlign: "left", cursor: "pointer",
+    font: "9px/1.35 ui-monospace,monospace" },
+  activityEmpty: { padding: 14, color: "#63716a", fontSize: 10 },
   outline: { flex: 1, overflow: "auto", padding: 18 },
   row: { display: "flex", alignItems: "center", gap: 8, padding: "5px 8px",
     borderRadius: 7, cursor: "pointer" },

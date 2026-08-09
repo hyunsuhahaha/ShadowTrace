@@ -533,7 +533,8 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/tool-catalog`,
 
 프로젝트 전체를 보여주는 허브: project-root → host → service/finding/technique/credential
 노드의 force-directed Canvas 2D 그래프(nmap target/service에서 자동 동기화 + 수동 추가
-노드/엣지), Outline(트리) 뷰 대안, 노드 상태 편집, 숨김 토글, 우측 상세 패널은 일반
+노드/엣지), 같은 Canvas를 계층 배치하는 트리 모드, 기존 DOM Outline 뷰, 노드 상태 편집,
+숨김 토글, 우측 상세 패널은 일반
 Inspector(하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
 끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
@@ -556,7 +557,15 @@ technique 노드의 `meta.activity`에 투영되어 Canvas에서 녹색 레이�
 빨간 `LISTENING` 레이더로 표시되고 2초 동기화로 창 종료를 반영한다. Responder는 대상
 Host의 자식이 아니라 `Kali Operator · <tun0 IP>` 아래 `runs`로 배치되고, 대상에는 방향성
 비구조 엣지 `captures-from`(`AUTH CAPTURE`)으로 연결된다. 프로젝트가 없으면 "start"
-합성 노드로 프로젝트 생성 유도. GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
+합성 노드로 프로젝트 생성을 유도한다. 그래프 모드는 anchor 주위에
+DISCOVERY→ENUMERATION→ACCESS→PRIVILEGE→EVIDENCE의
+옅은 단계 링을 그린다. service/execution/finding/credential 메타는 sync 때 최신 값으로
+갱신되어 노드 hover/선택 요약(제품·버전, 실행 시간·exit/error, 심각도·Evidence 수,
+credential 유형)에 쓰인다. 우하단 Activity Stream은 `created_at`과 실행 시작 시각을 합쳐
+최신순으로 보여주며 클릭하면 해당 노드를 선택하고 중앙으로 이동한다. 미완료 상태는
+DB enum을 바꾸지 않고 UI에서 준비됨/선행 정보 부족/사용자 검토 대기/실행 중/재시도 가능/
+적용 불가로 번역한다. 선택한 그래프·트리·Outline 모드는 `oscp-graph-view`에 유지한다.
+GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
 OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
 `features/graph/GraphWorkspace.test.tsx`에 있다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),

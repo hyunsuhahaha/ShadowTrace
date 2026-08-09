@@ -238,11 +238,14 @@ def test_sync_relabels_winrm_port_5985():
     p = project(db)
     t = Target(project_id=p.id, name="b", ip="10.0.0.8")
     db.add(t); db.flush()
-    db.add(Service(target_id=t.id, port=5985, protocol="tcp", name="http"))
+    db.add(Service(target_id=t.id, port=5985, protocol="tcp", name="http",
+                   product="Microsoft HTTPAPI httpd", version="2.0"))
     db.flush()
     service.sync_from_project(db, p.id)
     svc = db.query(GraphNode).filter_by(type="service").one()
     assert svc.label == "5985/tcp winrm"
+    assert json.loads(svc.meta) == {"port": 5985, "protocol": "tcp", "name": "winrm",
+                                    "product": "Microsoft HTTPAPI httpd", "version": "2.0"}
 
 
 def test_sync_retroactively_relabels_existing_default_service_node():
