@@ -9,6 +9,9 @@ import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 // primary interface: service node -> Enumeration, root node -> Scan Center.
 const EmbeddedEnumeration = lazy(() => import("../../App"));
 const EmbeddedScanCenter = lazy(() => import("../../ScanCenter"));
+const EmbeddedHashCracking = lazy(() => import("../../HashCrackingWorkspace"));
+const EmbeddedPostExploitation = lazy(() => import("../../PostExploitationWorkspace"));
+const EmbeddedReports = lazy(() => import("../../ReportWorkspace"));
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -27,6 +30,10 @@ type GraphEdge = {
 type GraphOut = { root_node_id: string | null; nodes: GraphNode[]; edges: GraphEdge[] };
 type GraphRequestDraft = {
   projectId: number; targetId: number; serviceId: number; url: string;
+};
+type CredentialHandoff = {
+  id: number; project_id: number; target_id?: number; secret: string;
+  secret_hint?: string; source_kind?: string;
 };
 export type NodeActivity = {
   kind: "scan" | "execution" | "listener";
@@ -103,6 +110,9 @@ export default function GraphWorkspace() {
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [webRequest, setWebRequest] = useState<GraphRequestDraft | null>(null);
+  const [hashPanel, setHashPanel] = useState<CredentialHandoff | null>(null);
+  const [postPanel, setPostPanel] = useState<CredentialHandoff | null>(null);
+  const [reportPanel, setReportPanel] = useState(false);
   const [paneWidth, setPaneWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
     return saved >= 320 ? saved : 640;
@@ -311,45 +321,35 @@ export default function GraphWorkspace() {
     if (!node?.source_ref) return [];
     let ref: { module: string; kind: string; id: number };
     try { ref = JSON.parse(node.source_ref); } catch { return []; }
-    const go = (hash: string) => (): void => { location.hash = hash; };
-    if (ref.kind === "service") {
-      const h = serviceHandoff(id);
-      if (!h) return [];
-      return [{
-        label: "전체 화면으로 열기 →",
-        open: () => {
-          setPendingServiceNav(h);
-          location.hash = "#enumeration";
-          dispatchEvent(new CustomEvent("oscp-service-nav"));
-        },
-      }];
-    }
-    if (ref.kind === "target") return [{ label: "Scan Center 열기 →", open: go("#scans") }];
-    if (ref.kind === "finding") return [{ label: "Reports 열기 →", open: go("#reports") }];
+    const credentialHandoff = async () => {
+      if (!projectId) return null;
+      const rows = await api<CredentialHandoff[]>(
+        `/runbooks/credentials?project_id=${projectId}`);
+      return rows.find((item) => item.id === ref.id) || null;
+    };
+    if (ref.kind === "service" || ref.kind === "target") return [];
+    if (ref.kind === "finding") return [{ label: "Finding 작업 패널 열기 →", open: () => {
+      setHashPanel(null); setPostPanel(null); setWebRequest(null); setReportPanel(true);
+    } }];
     if (ref.kind === "credential") {
       if (!isCrackableCredential(node))
-        return [{ label: "Post-Exploitation 열기 →", open: go("#post-exploitation") }];
+        return [{ label: "Post-Exploitation 패널 열기 →", open: async () => {
+          const credential = await credentialHandoff();
+          if (credential) { setHashPanel(null); setWebRequest(null); setReportPanel(false); setPostPanel(credential); }
+        } }];
       return [{
-        label: "Hash Cracking 열기 →",
+        label: "Hash Cracking 패널 열기 →",
         open: async () => {
-          if (!projectId) return;
-          const credentials = await api<Array<{ id: number; target_id?: number;
-            secret: string; secret_hint?: string; source_kind?: string }>>(
-            `/runbooks/credentials?project_id=${projectId}`);
-          const credential = credentials.find((item) => item.id === ref.id);
+          const credential = await credentialHandoff();
           if (!credential) return;
-          if (credential.target_id)
-            localStorage.setItem("oscp-workspace-hash-target", String(credential.target_id));
-          if (credential.secret)
-            localStorage.setItem("oscp-workspace-hash-value", credential.secret);
-          if (credential.source_kind === "responder"
-              || /NTLMv2/i.test(credential.secret_hint || ""))
-            localStorage.setItem("oscp-workspace-hash-mode", "netntlmv2");
-          location.hash = "#hash-cracking";
+          setPostPanel(null); setWebRequest(null); setReportPanel(false); setHashPanel(credential);
         },
       }, {
-        label: "Post-Exploitation 열기 →",
-        open: go("#post-exploitation"),
+        label: "Post-Exploitation 패널 열기 →",
+        open: async () => {
+          const credential = await credentialHandoff();
+          if (credential) { setHashPanel(null); setWebRequest(null); setReportPanel(false); setPostPanel(credential); }
+        },
       }];
     }
     return [];
@@ -416,7 +416,26 @@ export default function GraphWorkspace() {
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
         <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
           minWidth: 0, minHeight: 0 }}>
-          {webRequest ? (
+          {reportPanel ? (
+            <div style={S.embedPane}><Suspense fallback={<Empty text="Findings 불러오는 중…" />}>
+              <EmbeddedReports embedded initialProjectId={projectId || undefined}
+                onBack={() => setReportPanel(false)} />
+            </Suspense></div>
+          ) : hashPanel ? (
+            <div style={S.embedPane}><Suspense fallback={<Empty text="Hash Cracking 불러오는 중…" />}>
+              <EmbeddedHashCracking embedded initialProjectId={hashPanel.project_id}
+                initialTargetId={hashPanel.target_id} initialHash={hashPanel.secret}
+                initialMode={hashPanel.source_kind === "responder"
+                  || /NTLMv2/i.test(hashPanel.secret_hint || "") ? "netntlmv2" : undefined}
+                onBack={() => setHashPanel(null)} />
+            </Suspense></div>
+          ) : postPanel ? (
+            <div style={S.embedPane}><Suspense fallback={<Empty text="Post-Exploitation 불러오는 중…" />}>
+              <EmbeddedPostExploitation embedded initialProjectId={postPanel.project_id}
+                initialTargetId={postPanel.target_id} initialCredentialId={postPanel.id}
+                onBack={() => setPostPanel(null)} />
+            </Suspense></div>
+          ) : webRequest ? (
             <GraphRequestPanel draft={webRequest} onBack={() => setWebRequest(null)} />
           ) : noProject ? (
             <OnboardingPane creating={createProject.isPending}
@@ -436,7 +455,9 @@ export default function GraphWorkspace() {
           ) : (
             <Inspector node={selectedNode} links={selected ? deepLinks(selected) : []}
               executionContext={executionHandoff(selected)}
-              onOpenRequest={setWebRequest}
+              onOpenRequest={(draft) => {
+                setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
+              }}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
               onSetStatus={(id, status) => setStatus.mutate({ id, status })}

@@ -42,10 +42,12 @@ const blank = (projectId?: number): Partial<Report> => ({
   exploit_research_links: "[]",
   sensitivity_reviewed: false,
 });
-export default function ReportWorkspace() {
+export default function ReportWorkspace({ embedded = false, initialProjectId, onBack }: {
+  embedded?: boolean; initialProjectId?: number; onBack?: () => void;
+} = {}) {
   const qc = useQueryClient();
   const [projectId, setProjectId] = useState<number | undefined>(
-      () => Number(localStorage.getItem("oscp-workspace-project")) || undefined),
+      () => initialProjectId || Number(localStorage.getItem("oscp-workspace-project")) || undefined),
     [reportId, setReportId] = useState<number>(),
     [draft, setDraft] = useState<Partial<Report>>(blank()),
     [baseline, setBaseline] = useState(JSON.stringify(blank())),
@@ -158,8 +160,12 @@ export default function ReportWorkspace() {
     setPreview("");
   };
   return (
-    <div className="reportPage">
-      <header>
+    <div className={`reportPage${embedded ? " reportPage--embedded" : ""}`}>
+      {embedded && <div className="graphWorkspaceHead">
+        <span>FINDINGS · EVIDENCE · REPORTS</span>
+        <button type="button" onClick={onBack}>← 그래프로 돌아가기</button>
+      </div>}
+      {!embedded && <header>
         <div className="brand">
           <span className="mark">OW</span>
           <div>
@@ -167,7 +173,7 @@ export default function ReportWorkspace() {
             <small>보고서</small>
           </div>
         </div>
-      </header>
+      </header>}
       <nav>
         <span className="reportProject">{projects.data?.find((p) => p.id === projectId)?.name || "프로젝트 선택 대기 중"}</span>
         <button

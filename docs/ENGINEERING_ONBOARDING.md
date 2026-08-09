@@ -534,7 +534,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/tool-catalog`,
 프로젝트 전체를 보여주는 허브: project-root → host → service/finding/technique/credential
 노드의 force-directed Canvas 2D 그래프(nmap target/service에서 자동 동기화 + 수동 추가
 노드/엣지), Outline(트리) 뷰 대안, 노드 상태 편집, 숨김 토글, 우측 상세 패널은 일반
-Inspector(연결 워크스페이스로 딥링크, 하위 노드 추가 폼) 또는 — project-root/host 노드
+Inspector(하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
 끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
 technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stderr/error를 표시한다.
@@ -542,6 +542,11 @@ technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stder
 handoff를 추가로 제공하며, handoff 시 그래프를 벗어나지 않고 우측 GraphRequestPanel에서
 편집·저장·전송·응답 검토까지 수행한다. GraphRequestPanel은 `/vpn/status`의 tun0 IPv4를
 UNC 경로로 URL 커서 또는 `page=` 값에 삽입하는 Responder IP 단축 기능도 제공한다.
+Finding과 credential 작업도 라우트를 바꾸지 않는다. Finding은 `ReportWorkspace.tsx`,
+credential은 `HashCrackingWorkspace.tsx`와 `PostExploitationWorkspace.tsx`를 각각
+`embedded` 인터페이스로 우측 패널에 lazy-load한다. 이 어댑터는 프로젝트·대상·해시·모드·
+credential을 초기값으로 넘기되 원본 폼, 실행 터미널, 결과, Evidence 저장, 이력 기능을
+그대로 재사용한다. 패널 폭이 좁으면 container query로 이력을 아래로 재배치하며 숨기지 않는다.
 Responder session 노드는 대상의 캡처 로그를
 4초마다 조회해 해시 보기·복사·Credential 저장을 제공한다. `credential` 노드는 기본적으로
 Post-Exploitation handoff를 제공하고, `credType=hash`이면 실제 secret/target을 채우는 Hash

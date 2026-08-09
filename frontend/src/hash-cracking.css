@@ -1,4 +1,8 @@
 .crackPage{min-height:100vh;background:#070b0d}
+.crackPage--embedded{min-height:0;height:100%;overflow:auto;container-type:inline-size}
+.crackPage--embedded .crackLayout{min-height:calc(100% - 42px);grid-template-columns:minmax(240px,30%) minmax(380px,1fr) minmax(210px,26%)}
+.graphWorkspaceHead{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #29373b;color:#59f59a;font:10px ui-monospace,monospace;letter-spacing:1px}
+.graphWorkspaceHead button{border:0;background:transparent;color:#8fa099;cursor:pointer;font:10px ui-monospace,monospace}
 .crackPage>header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:24px 28px;border-bottom:1px solid var(--line)}
 .crackPage>header h1{margin:0;font-size:22px}
 .crackPage>header p{margin:6px 0 0;color:var(--muted);font-size:12px;max-width:60ch}
@@ -39,3 +43,5 @@
 .crackRow em{font-style:normal;color:var(--green);font-size:9px}
 .crackRow small{color:var(--muted);font-size:10px}
 .crackPage .modal input{width:100%;margin-top:6px;background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:8px;border-radius:3px}
+@container(max-width:900px){.crackPage--embedded .crackLayout{grid-template-columns:minmax(220px,34%) minmax(0,1fr)}.crackPage--embedded .crackHistory{grid-column:1/-1;max-height:18rem;border-top:1px solid var(--line);border-left:0}}
+@container(max-width:620px){.crackPage--embedded .crackLayout{display:block}.crackPage--embedded .crackForm,.crackPage--embedded .crackHistory{max-height:none;border:0;border-bottom:1px solid var(--line)}}

@@ -78,14 +78,18 @@ const post = async <T,>(path: string, body: unknown): Promise<T> => {
   return r.json();
 };
 
-export default function HashCrackingWorkspace() {
+export default function HashCrackingWorkspace({ embedded = false, initialProjectId,
+  initialTargetId, initialHash = "", initialMode, onBack }: {
+  embedded?: boolean; initialProjectId?: number; initialTargetId?: number;
+  initialHash?: string; initialMode?: string; onBack?: () => void;
+} = {}) {
   const qc = useQueryClient();
-  const [projectId, setProjectId] = useState<number>();
-  const [targetId, setTargetId] = useState<number>();
+  const [projectId, setProjectId] = useState<number | undefined>(initialProjectId);
+  const [targetId, setTargetId] = useState<number | undefined>(initialTargetId);
   const [label, setLabel] = useState("");
-  const [hashModeId, setHashModeId] = useState<string>();
+  const [hashModeId, setHashModeId] = useState<string | undefined>(initialMode);
   const [hashModeAuto, setHashModeAuto] = useState(false);
-  const [hashes, setHashes] = useState("");
+  const [hashes, setHashes] = useState(initialHash);
   const [attackMode, setAttackMode] = useState("0");
   const [wordlistId, setWordlistId] = useState<string>();
   const [wordlist2Id, setWordlist2Id] = useState<string>();
@@ -342,8 +346,10 @@ export default function HashCrackingWorkspace() {
   }, [jobId, targetId, qc]);
 
   return (
-    <div className="crackPage">
-      <header>
+    <div className={`crackPage${embedded ? " crackPage--embedded" : ""}`}>
+      {embedded && <div className="graphWorkspaceHead"><b>HASH CRACKING</b>
+        <button onClick={onBack}>← 그래프로 돌아가기</button></div>}
+      {!embedded && <header>
         <div>
           <h1>Hash Cracking</h1>
         </div>
@@ -359,7 +365,7 @@ export default function HashCrackingWorkspace() {
             ))}
           </select>
         </div>
-      </header>
+      </header>}
       {catalog.data && !catalog.data.hashcat_installed && (
         <div className="crackWarning">hashcat이 설치되어 있지 않습니다 (sudo apt install hashcat)</div>
       )}
