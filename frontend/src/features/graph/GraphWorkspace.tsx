@@ -28,7 +28,7 @@ type GraphRequestDraft = {
   projectId: number; targetId: number; serviceId: number; url: string;
 };
 export type NodeActivity = {
-  kind: "scan" | "execution";
+  kind: "scan" | "execution" | "listener";
   status: "queued" | "running" | "processing" | "launched";
   label: string; startedAt?: string | null;
 };
@@ -66,7 +66,7 @@ export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | n
   if (!node.meta) return null;
   try {
     const value = JSON.parse(node.meta).activity;
-    if (!value || !["scan", "execution"].includes(value.kind)
+    if (!value || !["scan", "execution", "listener"].includes(value.kind)
       || !["queued", "running", "processing", "launched"].includes(value.status)) return null;
     return { kind: value.kind, status: value.status,
       label: typeof value.label === "string" ? value.label : "TASK",
@@ -191,6 +191,8 @@ export default function GraphWorkspace() {
       await api(`/projects/${projectId}/graph/sync`, { method: "POST" });
       return api<GraphOut>(`/projects/${projectId}/graph`);
     },
+    refetchInterval: (query) =>
+      query.state.data?.nodes.some((node) => getNodeActivity(node)) ? 2000 : false,
   });
   const tree = useQuery({
     queryKey: ["graphTree", projectId, graph.dataUpdatedAt],
@@ -478,6 +480,7 @@ function GraphCanvas(props: {
     const structural = new Set(["discovered", "enumerated", "attempted", "yielded", "pivoted-to"]);
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const signal = "#59f59a";
+    const listenerSignal = "#ff4d67";
 
     const resize = () => {
       const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
@@ -528,6 +531,7 @@ function GraphCanvas(props: {
         const activeA = getNodeActivity(latestNodes.current.get(a.id) ?? a);
         const activeB = getNodeActivity(latestNodes.current.get(b.id) ?? b);
         const active = activeA || activeB;
+        const edgeSignal = active?.kind === "listener" ? listenerSignal : signal;
         const hot = !!hover && (e.source === hover.id || e.target === hover.id);
         const struct = structural.has(e.relation);
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
@@ -536,7 +540,8 @@ function GraphCanvas(props: {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
-        ctx.strokeStyle = active ? "rgba(89,245,154,.42)"
+        ctx.strokeStyle = active ? (active.kind === "listener"
+          ? "rgba(255,77,103,.48)" : "rgba(89,245,154,.42)")
           : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45";
         ctx.lineWidth = active ? 1.35 : hot ? 2 : 1;
         ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
@@ -545,15 +550,16 @@ function GraphCanvas(props: {
           const flow = ((now / 1250) + (e.id.charCodeAt(0) % 7) / 7) % 1;
           const fromA = !!activeA;
           const t = fromA ? flow : 1 - flow;
-          ctx.save(); ctx.shadowColor = signal; ctx.shadowBlur = 10;
+          ctx.save(); ctx.shadowColor = edgeSignal; ctx.shadowBlur = 10;
           ctx.beginPath(); ctx.arc(a.x + (b.x - a.x) * t,
             a.y + (b.y - a.y) * t, 2.2, 0, Math.PI * 2);
-          ctx.fillStyle = signal; ctx.fill(); ctx.restore();
+          ctx.fillStyle = edgeSignal; ctx.fill(); ctx.restore();
         }
       }
       for (const n of nodes) {
         const current = latestNodes.current.get(n.id) ?? n;
         const activity = getNodeActivity(current);
+        const nodeSignal = activity?.kind === "listener" ? listenerSignal : signal;
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
@@ -562,12 +568,13 @@ function GraphCanvas(props: {
           if (!activityStarted.current.has(n.id)) activityStarted.current.set(n.id, now);
           const fade = Math.min(1, (now - activityStarted.current.get(n.id)!) / 320);
           const phase = (now % 2400) / 2400;
-          ctx.save(); ctx.shadowColor = signal; ctx.shadowBlur = 18;
+          ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 18;
           for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
             const p = reduceMotion ? .38 : (phase + i / 3) % 1;
             ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + p * 30, 0, Math.PI * 2);
             const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
-            ctx.strokeStyle = `rgba(89,245,154,${alpha})`;
+            ctx.strokeStyle = activity.kind === "listener"
+              ? `rgba(255,77,103,${alpha * 1.15})` : `rgba(89,245,154,${alpha})`;
             ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
             ctx.stroke();
           }
@@ -577,12 +584,16 @@ function GraphCanvas(props: {
             ctx.arc(n.x, n.y, r + 24, angle - .42, angle);
             ctx.closePath();
             const sweep = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 24);
-            sweep.addColorStop(0, "rgba(89,245,154,.03)");
-            sweep.addColorStop(1, "rgba(89,245,154,.22)");
+            sweep.addColorStop(0, activity.kind === "listener"
+              ? "rgba(255,77,103,.03)" : "rgba(89,245,154,.03)");
+            sweep.addColorStop(1, activity.kind === "listener"
+              ? "rgba(255,77,103,.25)" : "rgba(89,245,154,.22)");
             ctx.fillStyle = sweep; ctx.fill();
             ctx.beginPath(); ctx.moveTo(n.x, n.y);
             ctx.lineTo(n.x + Math.cos(angle) * (r + 25), n.y + Math.sin(angle) * (r + 25));
-            ctx.strokeStyle = "rgba(130,255,181,.8)"; ctx.lineWidth = 1; ctx.stroke();
+            ctx.strokeStyle = activity.kind === "listener"
+              ? "rgba(255,116,135,.9)" : "rgba(130,255,181,.8)";
+            ctx.lineWidth = 1; ctx.stroke();
           }
           ctx.restore();
         } else activityStarted.current.delete(n.id);
@@ -597,14 +608,15 @@ function GraphCanvas(props: {
           ctx.lineWidth = 2.5; ctx.stroke();
         }
         ctx.save();
-        ctx.shadowColor = activity ? signal : isAnchor ? "#6aa9ff" : color(current.status);
+        ctx.shadowColor = activity ? nodeSignal : isAnchor ? "#6aa9ff" : color(current.status);
         ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = activity ? "#10251a" : color(current.status); ctx.fill();
+        ctx.fillStyle = activity ? (activity.kind === "listener" ? "#2a1016" : "#10251a")
+          : color(current.status); ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : 1;
-        ctx.strokeStyle = activity ? signal : isSel ? "#fff" : isAnchor ? "#6aa9ff"
+        ctx.strokeStyle = activity ? nodeSignal : isSel ? "#fff" : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
         if (current.hidden) ctx.setLineDash([2, 3]);
         ctx.stroke();
@@ -618,16 +630,19 @@ function GraphCanvas(props: {
           ctx.fillText(current.label, n.x, n.y + r + 6);
         }
         if (activity) {
-          const state = activity.kind === "scan" ? "SCANNING" : activity.status.toUpperCase();
+          const state = activity.kind === "scan" ? "SCANNING"
+            : activity.kind === "listener" ? "LISTENING" : activity.status.toUpperCase();
           const caption = `${state}  /  ${activity.label.toUpperCase()}`;
           ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
           const width = ctx.measureText(caption).width + 12;
           const y = n.y - r - 23;
-          ctx.fillStyle = "rgba(5,18,12,.9)";
+          ctx.fillStyle = activity.kind === "listener"
+            ? "rgba(25,5,10,.92)" : "rgba(5,18,12,.9)";
           ctx.fillRect(n.x - width / 2, y - 7, width, 16);
-          ctx.strokeStyle = "rgba(89,245,154,.5)"; ctx.lineWidth = 1;
+          ctx.strokeStyle = activity.kind === "listener"
+            ? "rgba(255,77,103,.62)" : "rgba(89,245,154,.5)"; ctx.lineWidth = 1;
           ctx.strokeRect(n.x - width / 2, y - 7, width, 16);
-          ctx.fillStyle = signal; ctx.textBaseline = "middle";
+          ctx.fillStyle = nodeSignal; ctx.textBaseline = "middle";
           ctx.fillText(caption, n.x, y + 1);
         }
         ctx.globalAlpha = 1;
@@ -719,7 +734,7 @@ function GraphCanvas(props: {
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <div style={S.hint}>
-        초록 신호 = 실행 중 · 파란 헤일로 = 루트 · 드래그로 이동 · 휠 / Ctrl +/− 확대·축소
+        초록 신호 = 실행 중 · 빨간 신호 = 리스너 대기 · 파란 헤일로 = 루트 · 드래그 / 휠로 이동·확대
       </div>
     </div>
   );

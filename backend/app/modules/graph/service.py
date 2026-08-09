@@ -7,6 +7,7 @@ integrity rules (spec 1.4/1.7), and serializes engine output for the API.
 from __future__ import annotations
 
 import json
+import os
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -52,6 +53,16 @@ def _runtime_activity(kind: str, status: str, label: str,
         return None
     return {"kind": kind, "status": status, "label": label,
             "startedAt": started_at.isoformat() if started_at else None}
+
+
+def _pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 def _service_display_name(service) -> str:
@@ -399,9 +410,13 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             parent = parent_of(sess.service_id, sess.target_id)
             if parent is None:
                 continue
+            live_status = sess.status
+            if live_status == "launched" and not _pid_alive(sess.pid):
+                live_status = "closed"
             activity = _runtime_activity(
-                "execution", sess.status, sess.template_id or "SESSION",
-                sess.started_at)
+                "listener" if sess.template_id == "responder-listener" else "execution",
+                live_status, "RESPONDER" if sess.template_id == "responder-listener"
+                else sess.template_id or "SESSION", sess.started_at)
             existing = index.get(("session", sess.id))
             if existing is not None:
                 existing.meta = _activity_meta(existing.meta, activity)

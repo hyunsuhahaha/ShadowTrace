@@ -267,6 +267,7 @@ def test_sync_retroactively_relabels_existing_default_service_node():
 
 
 def test_sync_projects_interactive_sessions_as_technique_nodes():
+    import os
     from app.models import InteractiveSession, Service, Target
     db = database()
     p = project(db)
@@ -275,13 +276,14 @@ def test_sync_projects_interactive_sessions_as_technique_nodes():
     svc = Service(target_id=t.id, port=445, protocol="tcp", name="smb")
     db.add(svc); db.flush()
     db.add(InteractiveSession(target_id=t.id, service_id=svc.id,
-                              template_id="responder", command="responder -I tun0",
-                              cwd="/tmp", status="launched"))
+                              template_id="responder-listener", command="responder -I tun0",
+                              cwd="/tmp", status="launched", pid=os.getpid()))
     db.flush()
     result = service.sync_from_project(db, p.id)
     assert result["created"]["techniques"] == 1
     tech = db.query(GraphNode).filter_by(type="technique").one()
-    assert tech.label == "responder"
+    assert tech.label == "responder-listener"
+    assert json.loads(tech.meta)["activity"]["kind"] == "listener"
     assert json.loads(tech.meta)["activity"]["status"] == "launched"
 
 

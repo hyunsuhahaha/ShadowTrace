@@ -20,6 +20,9 @@ it("parses only live graph activity metadata", () => {
     kind: "execution", status: "completed", label: "whatweb",
   } }) })).toBeNull();
   expect(getNodeActivity({ meta: "broken" })).toBeNull();
+  expect(getNodeActivity({ meta: JSON.stringify({ activity: {
+    kind: "listener", status: "launched", label: "RESPONDER",
+  } }) })?.kind).toBe("listener");
 });
 
 it("preserves settled node positions when graph topology changes", () => {
