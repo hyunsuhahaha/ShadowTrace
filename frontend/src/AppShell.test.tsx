@@ -24,7 +24,7 @@ it("updates the shell when the active project changes", async () => {
     ]);
     if (url.endsWith("/api/targets")) return response([
       {id: 10, project_id: 1, name: "alpha-host", ip: "10.0.0.1"},
-      {id: 20, project_id: 2, name: "bravo-host", ip: "10.0.0.2"},
+      {id: 20, project_id: 2, name: "10.0.0.2", ip: "10.0.0.2"},
     ]);
     if (url.endsWith("/api/projects/1/services") || url.endsWith("/api/projects/2/services"))
       return response([]);
@@ -49,7 +49,7 @@ it("updates the shell when the active project changes", async () => {
 
   await waitFor(() =>
     expect(screen.getByRole("button", {name: /Bravo/})).toBeTruthy());
-  expect(screen.getByText("bravo-host · 10.0.0.2")).toBeTruthy();
+  expect(screen.getByText("10.0.0.2")).toBeTruthy();
   expect(localStorage.getItem("oscp-workspace-project")).toBe("2");
 
   fireEvent.click(screen.getByRole("button", {name: "전체 메뉴 접기"}));

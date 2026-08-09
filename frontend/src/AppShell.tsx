@@ -367,7 +367,8 @@ export default function AppShell({
           <i aria-hidden="true" />
           <div>
             <span>현재 Target</span>
-            <strong>{target ? `${target.name} · ${target.ip}` : "Target 없음"}</strong>
+            <strong>{target ? target.name && target.name !== target.ip
+              ? `${target.name} · ${target.ip}` : target.ip : "Target 없음"}</strong>
           </div>
           <div className="contextBar__page">
             <span>현재 작업</span>
