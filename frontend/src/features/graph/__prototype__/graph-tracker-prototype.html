@@ -1,0 +1,500 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway feel-check for the progress graph tracker.
+  Question it answers: does the 3-view direction (Pixi-style Graph + DOM Outline
+  + SVG Attack Path) feel Obsidian/Linear-grade? Mock data, no backend, no build.
+  The Graph uses Canvas 2D as a stand-in for Pixi/WebGL — the interaction model
+  and visual language are what we're validating; the renderer swap is known.
+  Open this file directly in a browser. Not production code.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Graph Tracker — Prototype</title>
+<style>
+  :root {
+    --bg: #0e0e12; --panel: #16161c; --panel-2: #1c1c24; --line: #2a2a34;
+    --ink: #e7e7ee; --ink-dim: #9a9aa6; --ink-faint: #6b6b76;
+    --untried: #8b8b93; --in-progress: #f5a524; --attempt-failed: #e5484d;
+    --succeeded: #30a46c; --blocked: #8e4ec6; --not-applicable: #5a5a60;
+    --accent: #6aa9ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 800px at 70% -10%, #17171f 0%, var(--bg) 60%);
+    color: var(--ink); font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    border-bottom: 1px solid var(--line); background: rgba(20,20,26,.6);
+    backdrop-filter: blur(6px);
+  }
+  .brand { font-weight: 600; letter-spacing: .2px; }
+  .brand small { color: var(--ink-faint); font-weight: 400; margin-left: 8px; }
+  .tabs { display: flex; gap: 4px; background: var(--panel); padding: 4px;
+    border-radius: 10px; border: 1px solid var(--line); }
+  .tab {
+    padding: 6px 14px; border-radius: 7px; cursor: pointer; color: var(--ink-dim);
+    font-weight: 500; user-select: none; transition: all .15s ease;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { background: var(--panel-2); color: var(--ink);
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 6px 14px rgba(0,0,0,.3); }
+  .tab small { color: var(--ink-faint); margin-left: 6px; font-weight: 400; }
+  .legend { margin-left: auto; display: flex; gap: 12px; align-items: center;
+    color: var(--ink-dim); font-size: 12px; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    margin-right: 5px; vertical-align: middle; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  .stage { flex: 1; position: relative; min-width: 0; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+
+  /* Inspector */
+  .inspector {
+    width: 300px; border-left: 1px solid var(--line); background: var(--panel);
+    padding: 16px; overflow: auto; flex-shrink: 0;
+  }
+  .inspector h3 { margin: 0 0 4px; font-size: 15px; }
+  .inspector .muted { color: var(--ink-faint); font-size: 12px; }
+  .kv { margin-top: 14px; }
+  .kv div { display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px dashed var(--line); }
+  .kv span:first-child { color: var(--ink-dim); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600;
+    letter-spacing: .3px; }
+  .note { margin-top: 14px; color: var(--ink-dim); font-size: 13px;
+    background: var(--panel-2); padding: 10px; border-radius: 8px;
+    border: 1px solid var(--line); }
+
+  /* Graph */
+  canvas { display: block; width: 100%; height: 100%; }
+  .hint { position: absolute; left: 16px; bottom: 14px; color: var(--ink-faint);
+    font-size: 12px; pointer-events: none; }
+
+  /* Outline */
+  .outline { height: 100%; overflow: auto; padding: 18px 8px 60px 18px; }
+  ul.tree { list-style: none; margin: 0; padding: 0; }
+  ul.tree ul { list-style: none; margin: 0; padding-left: 22px;
+    border-left: 1px solid var(--line); margin-left: 10px; }
+  .row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 7px;
+    cursor: pointer; position: relative; transition: background .12s ease;
+  }
+  .row:hover { background: rgba(255,255,255,.035); }
+  .row.selected { background: rgba(106,169,255,.12);
+    box-shadow: inset 0 0 0 1px rgba(106,169,255,.25); }
+  .row.success-path { box-shadow: inset 0 0 0 1px rgba(48,163,108,.18); }
+  .row.success-path:hover { background: rgba(48,163,108,.08); }
+  .row.pulse { animation: pulse 1.4s ease; }
+  @keyframes pulse {
+    0% { background: rgba(106,169,255,.45); }
+    100% { background: transparent; }
+  }
+  .twist { width: 14px; text-align: center; color: var(--ink-faint);
+    transition: transform .15s ease; flex-shrink: 0; }
+  .twist.collapsed { transform: rotate(-90deg); }
+  .twist.leaf { visibility: hidden; }
+  .glyph { width: 18px; text-align: center; flex-shrink: 0; }
+  .label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .status { font-size: 10px; padding: 1px 7px; border-radius: 20px;
+    font-weight: 700; letter-spacing: .4px; flex-shrink: 0; }
+  .summary { font-size: 11px; color: var(--ink-faint); flex-shrink: 0;
+    font-variant-numeric: tabular-nums; }
+  li.collapsed > ul { display: none; }
+  .ref { color: var(--accent); }
+  .ref .label { color: var(--accent); opacity: .85; font-style: italic; }
+  .ref.cycle .label { color: var(--blocked); }
+  .blocker { font-size: 11px; color: var(--blocked); flex-shrink: 0; }
+
+  .back-btn {
+    position: absolute; right: 22px; bottom: 22px; background: var(--accent);
+    color: #06131f; border: none; padding: 9px 16px; border-radius: 22px;
+    font-weight: 700; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    display: none; align-items: center; gap: 6px;
+  }
+  .back-btn.show { display: inline-flex; }
+
+  .cmdk-hint { position: absolute; right: 22px; top: 14px; color: var(--ink-faint);
+    font-size: 12px; }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 5px; padding: 1px 6px; font-size: 11px; }
+
+  /* Attack Path */
+  .attack { height: 100%; overflow: auto; padding: 24px; }
+  .attack h2 { margin: 0 0 4px; font-size: 16px; }
+  .attack .muted { color: var(--ink-faint); font-size: 13px; margin-bottom: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Progress Graph Tracker <small>prototype · mock data</small></div>
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="graph">Graph <small>탐색</small></div>
+    <div class="tab" data-view="outline">Outline <small>작업</small></div>
+    <div class="tab" data-view="attack">Attack Path <small>결과</small></div>
+  </div>
+  <div class="legend" id="legend"></div>
+</header>
+
+<main>
+  <div class="stage">
+    <div class="view active" id="view-graph">
+      <canvas id="cv"></canvas>
+      <div class="hint">드래그로 이동 · 호버로 연결 강조 · 클릭으로 Inspector 동기화 · 점선 = 크리덴셜 재사용/차단</div>
+    </div>
+
+    <div class="view" id="view-outline">
+      <div class="cmdk-hint"><kbd>↑</kbd><kbd>↓</kbd> 이동 · <kbd>←</kbd><kbd>→</kbd> 접기/펼치기 · <kbd>Enter</kbd> 참조 점프 · <kbd>/</kbd> 검색</div>
+      <div class="outline" id="outline"></div>
+      <button class="back-btn" id="backBtn">↩ 돌아가기</button>
+    </div>
+
+    <div class="view" id="view-attack">
+      <div class="attack">
+        <h2>Attack Path — 성공 침투 흐름</h2>
+        <div class="muted">succeeded 체인만 추림 · 실선 = 성공, 점선 = 진행 중(pivot)</div>
+        <div id="attackSvg"></div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="inspector" id="inspector">
+    <h3 id="insTitle">아무 노드나 선택</h3>
+    <div class="muted" id="insType">Graph에서 클릭하거나 Outline에서 탐색</div>
+    <div class="kv" id="insKv"></div>
+    <div class="note" id="insNote"></div>
+  </aside>
+</main>
+
+<script>
+const STATUS = {
+  "untried":        { c: "#8b8b93", label: "미시도" },
+  "in-progress":    { c: "#f5a524", label: "진행중" },
+  "attempt-failed": { c: "#e5484d", label: "실패" },
+  "succeeded":      { c: "#30a46c", label: "성공" },
+  "blocked":        { c: "#8e4ec6", label: "차단" },
+  "not-applicable": { c: "#5a5a60", label: "N/A" },
+};
+const GLYPH = {
+  "project-root": "◎", host: "▣", service: "◉",
+  finding: "◇", technique: "⚡", credential: "🔑",
+};
+
+// ---- Mock graph (one project, multi-target, a pivot, a reused credential) ----
+const N = {};
+function node(id, type, label, status, meta) { N[id] = { id, type, label, status, meta: meta||{} }; return id; }
+node("root","project-root","HTB Lab — Project","in-progress",{note:"프로젝트 루트(합성). 모든 호스트의 최상위 앵커."});
+node("dc01","host","10.10.11.23 (dc01)","succeeded",{ip:"10.10.11.23",os:"Windows Server 2019",note:"외부 진입점. SMB null session으로 초기 자격증명 확보."});
+node("smb","service","445/tcp SMB","succeeded",{product:"Windows SMB",note:"익명 열거 허용."});
+node("http","service","80/tcp HTTP","in-progress",{product:"Apache 2.4",note:"디렉터리 열거 진행 중."});
+node("ssh","service","22/tcp SSH","blocked",{product:"OpenSSH 8.2",note:"유효 자격증명 없어 시도 불가. blocked-by: 크리덴셜 부재."});
+node("f_anon","finding","Anonymous SMB enumeration","succeeded",{note:"null session으로 공유 목록 노출."});
+node("t_null","technique","smbclient null session","succeeded",{tool:"smbclient",note:"$ smbclient -N -L //10.10.11.23"});
+node("cred","credential","svc_backup","succeeded",{credType:"password",note:"백업 서비스 계정. 평문은 vault(secretRef)만 저장."});
+node("f_dir","finding","Directory enumeration","in-progress",{tool:"feroxbuster"});
+node("f_admin","finding","/admin","untried",{note:"인증 필요. 아직 미시도."});
+node("f_upload","finding","/uploads","in-progress",{note:"업로드 폼 존재."});
+node("t_shell","technique","web shell upload","attempt-failed",{tool:"curl",note:"확장자 필터에 막힘. 우회 미완."});
+node("int24","host","10.10.11.24 (internal)","in-progress",{ip:"10.10.11.24",note:"pivot 대상. svc_backup 재사용 시도 중."});
+node("t_priv","technique","GTFOBins privesc","untried",{note:"내부 호스트 권한 상승 후보."});
+
+// edges: {s,t,rel,status, structural}
+const STRUCT = new Set(["discovered","enumerated","attempted","yielded","pivoted-to"]);
+function E(s,t,rel,status){ return { s,t,rel,status, structural: STRUCT.has(rel) }; }
+const EDGES = [
+  E("root","dc01","discovered","succeeded"),
+  E("dc01","smb","discovered","succeeded"),
+  E("dc01","http","discovered","in-progress"),
+  E("dc01","ssh","discovered","blocked"),
+  E("smb","f_anon","enumerated","succeeded"),
+  E("f_anon","t_null","attempted","succeeded"),
+  E("t_null","cred","yielded","succeeded"),
+  E("http","f_dir","enumerated","in-progress"),
+  E("f_dir","f_admin","enumerated","untried"),
+  E("f_dir","f_upload","enumerated","in-progress"),
+  E("f_upload","t_shell","attempted","attempt-failed"),
+  E("dc01","int24","pivoted-to","in-progress"),
+  E("cred","int24","reused-credential","in-progress"),   // cross-cutting → ↗ ref
+  E("cred","ssh","reused-credential","blocked"),          // cross-cutting
+  E("int24","t_priv","attempted","untried"),
+];
+
+// ---------- Inspector ----------
+function showInspector(id) {
+  const n = N[id]; if (!n) return;
+  document.querySelectorAll(".row.selected").forEach(r => r.classList.remove("selected"));
+  const row = document.querySelector(`.row[data-id="${id}"]`);
+  if (row) row.classList.add("selected");
+  document.getElementById("insTitle").textContent = n.label;
+  const st = STATUS[n.status];
+  document.getElementById("insType").innerHTML =
+    `<span class="glyph">${GLYPH[n.type]}</span> ${n.type}
+     &nbsp;·&nbsp; <span class="badge" style="background:${st.c}22;color:${st.c}">${st.label}</span>`;
+  const kv = document.getElementById("insKv"); kv.innerHTML = "";
+  const rows = { ...(n.meta.ip?{IP:n.meta.ip}:{}) , ...(n.meta.os?{OS:n.meta.os}:{}),
+    ...(n.meta.product?{Product:n.meta.product}:{}), ...(n.meta.tool?{Tool:n.meta.tool}:{}),
+    ...(n.meta.credType?{Type:n.meta.credType}:{}) };
+  for (const [k,v] of Object.entries(rows)) {
+    const d = document.createElement("div");
+    d.innerHTML = `<span>${k}</span><span>${v}</span>`; kv.appendChild(d);
+  }
+  document.getElementById("insNote").textContent = n.meta.note || "";
+}
+
+// ---------- Legend ----------
+document.getElementById("legend").innerHTML = Object.entries(STATUS)
+  .map(([k,v]) => `<span><span class="dot" style="background:${v.c}"></span>${v.label}</span>`).join("");
+
+// ================= GRAPH (Canvas force sim — Pixi stand-in) =================
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let W=0, H=0, DPR=Math.min(2, window.devicePixelRatio||1);
+const gnodes = Object.values(N).map((n,i) => ({
+  ...n, x: 0, y: 0, vx:0, vy:0,
+}));
+const gindex = Object.fromEntries(gnodes.map(n => [n.id, n]));
+function resize() {
+  const r = cv.getBoundingClientRect(); W=r.width; H=r.height;
+  cv.width = W*DPR; cv.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+new ResizeObserver(resize).observe(cv);
+// seed positions in a rough radial layout
+gnodes.forEach((n,i) => { const a = i/gnodes.length*Math.PI*2;
+  n.x = 400 + Math.cos(a)*200 + Math.random()*40; n.y = 320 + Math.sin(a)*160 + Math.random()*40; });
+
+let hover=null, dragging=null, selected=null;
+function tick() {
+  // repulsion
+  for (let i=0;i<gnodes.length;i++) for (let j=i+1;j<gnodes.length;j++){
+    const a=gnodes[i], b=gnodes[j]; let dx=a.x-b.x, dy=a.y-b.y;
+    let d2=dx*dx+dy*dy||0.01; let d=Math.sqrt(d2);
+    const f= 2600/d2; const ux=dx/d, uy=dy/d;
+    a.vx+=ux*f; a.vy+=uy*f; b.vx-=ux*f; b.vy-=uy*f;
+  }
+  // springs
+  for (const e of EDGES){ const a=gindex[e.s], b=gindex[e.t]; if(!a||!b) continue;
+    let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy)||0.01;
+    const rest = e.structural?110:150; const k=(d-rest)*0.015; const ux=dx/d, uy=dy/d;
+    a.vx+=ux*k; a.vy+=uy*k; b.vx-=ux*k; b.vy-=uy*k;
+  }
+  // centering + integrate
+  const cx=W/2, cy=H/2;
+  for (const n of gnodes){
+    n.vx += (cx-n.x)*0.0015; n.vy += (cy-n.y)*0.0015;
+    n.vx*=0.86; n.vy*=0.86;
+    if (n!==dragging){ n.x+=n.vx; n.y+=n.vy; }
+  }
+}
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  // edges
+  for (const e of EDGES){ const a=gindex[e.s], b=gindex[e.t]; if(!a||!b) continue;
+    const hot = hover && (e.s===hover.id || e.t===hover.id);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y);
+    if (!e.structural){ const mx=(a.x+b.x)/2, my=(a.y+b.y)/2 - 34;
+      ctx.quadraticCurveTo(mx,my,b.x,b.y); ctx.setLineDash([4,5]); }
+    else { ctx.lineTo(b.x,b.y); ctx.setLineDash([]); }
+    ctx.strokeStyle = hot ? STATUS[e.status].c : (e.structural? "#33333f":"#3a2f45");
+    ctx.lineWidth = hot?2:1; ctx.globalAlpha = hover&&!hot?0.25:0.9; ctx.stroke();
+    ctx.globalAlpha=1; ctx.setLineDash([]);
+  }
+  // nodes
+  for (const n of gnodes){
+    const st=STATUS[n.status]; const isHover = hover===n, isSel=selected===n.id;
+    const r = n.type==="project-root"?9 : (n.type==="host"?14:11);
+    ctx.save();
+    ctx.shadowColor=st.c; ctx.shadowBlur = isHover||isSel?26:14;
+    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
+    ctx.fillStyle = st.c; ctx.globalAlpha = hover&&!isHover&&!edgeTouch(n)?0.4:1; ctx.fill();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
+    ctx.lineWidth=isSel?2.5:1; ctx.strokeStyle=isSel?"#fff":"rgba(255,255,255,.35)"; ctx.stroke();
+    ctx.fillStyle="#0c0c10"; ctx.font=`${r}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(GLYPH[n.type], n.x, n.y+0.5);
+    if (isHover||isSel||n.type==="host"||n.type==="project-root"){
+      ctx.fillStyle="#cdcdd6"; ctx.font="11px sans-serif"; ctx.textBaseline="top";
+      ctx.fillText(n.label, n.x, n.y+r+4);
+    }
+  }
+}
+function edgeTouch(n){ return hover && EDGES.some(e => (e.s===hover.id&&e.t===n.id)||(e.t===hover.id&&e.s===n.id)); }
+function loop(){ tick(); draw(); requestAnimationFrame(loop); }
+resize(); loop();
+
+function nodeAt(mx,my){ for (const n of gnodes){ if (Math.hypot(n.x-mx,n.y-my)<16) return n; } return null; }
+cv.addEventListener("mousemove", ev => {
+  const r=cv.getBoundingClientRect(), mx=ev.clientX-r.left, my=ev.clientY-r.top;
+  if (dragging){ dragging.x=mx; dragging.y=my; dragging.vx=dragging.vy=0; return; }
+  hover = nodeAt(mx,my); cv.style.cursor = hover?"pointer":"default";
+});
+cv.addEventListener("mousedown", ev => {
+  const r=cv.getBoundingClientRect(); dragging=nodeAt(ev.clientX-r.left, ev.clientY-r.top);
+});
+window.addEventListener("mouseup", () => { dragging=null; });
+cv.addEventListener("click", ev => {
+  const r=cv.getBoundingClientRect(), n=nodeAt(ev.clientX-r.left, ev.clientY-r.top);
+  if (n){ selected=n.id; showInspector(n.id); }
+});
+
+// ================= OUTLINE (React-DOM-grade, hand-authored tree) =================
+// canonical tree; ref/cycle leaves point to canonical nodes elsewhere.
+const TREE = {
+  id:"root", children:[
+    { id:"dc01", children:[
+      { id:"smb", children:[
+        { id:"f_anon", children:[
+          { id:"t_null", children:[
+            { id:"cred", children:[
+              { ref:"int24", kind:"ref", note:"reused on 10.10.11.24" },
+              { ref:"ssh", kind:"ref", note:"reused on 22/SSH (blocked)" },
+            ]},
+          ]},
+        ]},
+      ]},
+      { id:"http", children:[
+        { id:"f_dir", children:[
+          { id:"f_admin", children:[] },
+          { id:"f_upload", children:[ { id:"t_shell", children:[] } ] },
+        ]},
+      ]},
+      { id:"ssh", children:[], blocker:"크리덴셜 부재" },
+      { id:"int24", children:[ { id:"t_priv", children:[] } ] },  // pivoted-to nesting
+    ]},
+  ]
+};
+const SUCCESS = new Set(["root","dc01","smb","f_anon","t_null","cred"]); // success path highlight
+
+function summarize(node){ // count descendant statuses
+  let s=0,f=0,u=0;
+  (function walk(x){ for (const c of x.children||[]){ if (c.ref) continue;
+    const st=N[c.id].status; if (st==="succeeded")s++; else if (st==="attempt-failed")f++;
+    else if (st==="untried")u++; walk(c); } })(node);
+  return {s,f,u};
+}
+let path=[1];
+function renderTree(node, container, depth, num){
+  const li=document.createElement("li");
+  const row=document.createElement("div");
+  const hasKids=(node.children&&node.children.length);
+  if (node.ref){
+    row.className="row ref"+(node.kind==="cycle"?" cycle":"");
+    row.innerHTML=`<span class="twist leaf">•</span><span class="glyph">↗</span>
+      <span class="label">${node.kind==="cycle"?"↩ 순환 → ":"참조 → "}${N[node.ref].label} · ${node.note||""}</span>`;
+    row.dataset.jump=node.ref;
+    li.appendChild(row); container.appendChild(li); return;
+  }
+  const n=N[node.id]; const st=STATUS[n.status];
+  row.className="row"+(SUCCESS.has(node.id)?" success-path":"");
+  row.dataset.id=node.id;
+  const sum = hasKids?summarize(node):null;
+  const sumTxt = sum&&(sum.s+sum.f+sum.u>0)?`<span class="summary">S${sum.s} F${sum.f} U${sum.u}</span>`:"";
+  row.innerHTML=`
+    <span class="twist ${hasKids?"":"leaf"}">▾</span>
+    <span class="glyph">${GLYPH[n.type]}</span>
+    <span class="label">${n.label}</span>
+    ${node.blocker?`<span class="blocker">⧗ ${node.blocker}</span>`:""}
+    ${sumTxt}
+    <span class="status" style="background:${st.c}22;color:${st.c}">${st.label.toUpperCase()}</span>`;
+  li.appendChild(row);
+  if (hasKids){
+    const ul=document.createElement("ul");
+    node.children.forEach((c,i)=>renderTree(c, ul, depth+1, i+1));
+    li.appendChild(ul);
+    if (depth>=2) li.classList.add("collapsed"), row.querySelector(".twist").classList.add("collapsed");
+    row.querySelector(".twist").addEventListener("click", ev=>{ ev.stopPropagation(); toggle(li,row); });
+  }
+  row.addEventListener("click", ()=>{ showInspector(node.id); selectRow(row); });
+  container.appendChild(li);
+}
+function toggle(li,row){ li.classList.toggle("collapsed");
+  row.querySelector(".twist").classList.toggle("collapsed"); }
+function expandTo(id){ // expand ancestors of canonical node id
+  const row=document.querySelector(`.row[data-id="${id}"]`); if(!row) return row;
+  let li=row.closest("li");
+  while (li){ li.classList.remove("collapsed");
+    const t=li.querySelector(".twist"); if(t) t.classList.remove("collapsed");
+    li=li.parentElement.closest("li"); }
+  return row;
+}
+const outEl=document.getElementById("outline");
+const rootUl=document.createElement("ul"); rootUl.className="tree";
+renderTree(TREE, rootUl, 0, 1); outEl.appendChild(rootUl);
+
+// selection + keyboard nav
+let curRow=null, returnTo=null;
+function selectRow(row){ document.querySelectorAll(".row.selected").forEach(r=>r.classList.remove("selected"));
+  row.classList.add("selected"); curRow=row; }
+function visibleRows(){ return [...outEl.querySelectorAll(".row")].filter(r=>r.offsetParent!==null); }
+document.getElementById("backBtn").addEventListener("click", ()=>{
+  if (returnTo){ returnTo.scrollIntoView({behavior:"smooth",block:"center"}); selectRow(returnTo);
+    document.getElementById("backBtn").classList.remove("show"); returnTo=null; }
+});
+outEl.addEventListener("click", ev=>{
+  const jump=ev.target.closest("[data-jump]"); if(!jump) return;
+  returnTo=jump; const row=expandTo(jump.dataset.jump);
+  if (row){ setTimeout(()=>{ row.scrollIntoView({behavior:"smooth",block:"center"});
+    row.classList.remove("pulse"); void row.offsetWidth; row.classList.add("pulse");
+    selectRow(row); showInspector(jump.dataset.jump); }, 60);
+    document.getElementById("backBtn").classList.add("show"); }
+});
+window.addEventListener("keydown", ev=>{
+  if (!document.getElementById("view-outline").classList.contains("active")) return;
+  const rows=visibleRows(); if(!rows.length) return;
+  let i=curRow?rows.indexOf(curRow):-1;
+  if (ev.key==="ArrowDown"){ ev.preventDefault(); i=Math.min(rows.length-1,i+1); selectRow(rows[i]);
+    rows[i].scrollIntoView({block:"nearest"}); if(rows[i].dataset.id) showInspector(rows[i].dataset.id); }
+  else if (ev.key==="ArrowUp"){ ev.preventDefault(); i=Math.max(0,i-1); selectRow(rows[i]);
+    rows[i].scrollIntoView({block:"nearest"}); if(rows[i].dataset.id) showInspector(rows[i].dataset.id); }
+  else if (ev.key==="ArrowRight" && curRow){ const li=curRow.closest("li");
+    if(li.classList.contains("collapsed")) toggle(li,curRow); }
+  else if (ev.key==="ArrowLeft" && curRow){ const li=curRow.closest("li");
+    if(li.querySelector("ul")&&!li.classList.contains("collapsed")) toggle(li,curRow); }
+  else if (ev.key==="Enter" && curRow && curRow.dataset.jump){ curRow.click(); }
+});
+
+// ================= ATTACK PATH (SVG success chain) =================
+const chain = [
+  {id:"dc01", edge:"discovered"}, {id:"smb", edge:"445/SMB"},
+  {id:"t_null", edge:"null session ✓"}, {id:"cred", edge:"yielded ✓"},
+];
+const pivot = {id:"int24", edge:"pivoted-to (진행중)"};
+(function drawAttack(){
+  const boxW=210, boxH=52, gap=34, x=40; let y=10;
+  const items=[...chain, pivot];
+  const h = items.length*(boxH+gap)+40;
+  let svg=`<svg width="620" height="${h}" viewBox="0 0 620 ${h}" xmlns="http://www.w3.org/2000/svg">`;
+  svg+=`<defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L8,3 L0,6 Z" fill="#4a4a56"/></marker></defs>`;
+  items.forEach((it,idx)=>{
+    const n=N[it.id]; const st=STATUS[n.status]; const cy=y+boxH/2;
+    if (idx>0){ const py=y-gap; const dashed=(it===pivot)?`stroke-dasharray="6 5"`:"";
+      svg+=`<line x1="${x+boxW/2}" y1="${py}" x2="${x+boxW/2}" y2="${y-4}" stroke="#4a4a56" stroke-width="2" ${dashed} marker-end="url(#arr)"/>`;
+      svg+=`<text x="${x+boxW/2+12}" y="${py+gap/2+2}" fill="#8a8a96" font-size="12">${it.edge}</text>`;
+    }
+    svg+=`<rect x="${x}" y="${y}" rx="10" width="${boxW}" height="${boxH}" fill="#16161c" stroke="${st.c}" stroke-width="1.5"/>`;
+    svg+=`<circle cx="${x+18}" cy="${cy}" r="6" fill="${st.c}"/>`;
+    svg+=`<text x="${x+34}" y="${cy-2}" fill="#e7e7ee" font-size="13" font-weight="600">${n.label}</text>`;
+    svg+=`<text x="${x+34}" y="${cy+14}" fill="${st.c}" font-size="11">${st.label} · ${n.type}</text>`;
+    y+=boxH+gap;
+  });
+  svg+=`</svg>`;
+  document.getElementById("attackSvg").innerHTML=svg;
+})();
+
+// ---------- tab switching ----------
+document.getElementById("tabs").addEventListener("click", ev=>{
+  const tab=ev.target.closest(".tab"); if(!tab) return;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  tab.classList.add("active");
+  document.getElementById("view-"+tab.dataset.view).classList.add("active");
+  if (tab.dataset.view==="graph") resize();
+});
+showInspector("dc01");
+</script>
+</body>
+</html>
