@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import { setPendingServiceNav } from "../../pendingServiceNav";
+import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -58,6 +59,7 @@ export default function GraphWorkspace() {
   const [view, setView] = useState<"graph" | "outline">("graph");
   const [selected, setSelected] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
 
   const setHidden = useMutation({
     mutationFn: (v: { id: string; hidden: boolean }) =>
@@ -90,6 +92,34 @@ export default function GraphWorkspace() {
     const map = new Map<string, GraphNode>();
     graph.data?.nodes.forEach((n) => map.set(n.id, n));
     return map;
+  }, [graph.data]);
+
+  // Reverse bridge: focus the node a specialized workspace pointed us at.
+  useEffect(() => {
+    if (!graph.data) return;
+    const resolve = (kind: string, id: number): string | undefined => {
+      for (const n of graph.data!.nodes) {
+        if (!n.source_ref) continue;
+        try {
+          const r = JSON.parse(n.source_ref);
+          if (r.kind === kind && r.id === id) return n.id;
+        } catch { /* ignore */ }
+      }
+      return undefined;
+    };
+    const apply = () => {
+      const req = consumePendingGraphFocus();
+      if (!req) return;
+      const nodeId = resolve(req.kind, req.id);
+      if (!nodeId) return;
+      setView("graph");
+      setSelected(nodeId);
+      setFocus({ id: nodeId, nonce: Date.now() });
+    };
+    apply();
+    const onEvent = () => apply();
+    addEventListener("oscp-graph-focus", onEvent);
+    return () => removeEventListener("oscp-graph-focus", onEvent);
   }, [graph.data]);
 
   // Two-way bridge: a graph node deep-links into the specialized workspace that
@@ -169,7 +199,7 @@ export default function GraphWorkspace() {
       <div style={S.stage}>
         {view === "graph" ? (
           <GraphCanvas data={data} hostCount={hostCount} showHidden={showHidden}
-            selected={selected} onSelect={setSelected} />
+            selected={selected} onSelect={setSelected} focus={focus} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
@@ -187,8 +217,13 @@ type Sim = GraphNode & { x: number; y: number; vx: number; vy: number };
 function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean;
   selected: string | null; onSelect: (id: string) => void;
+  focus: { id: string; nonce: number } | null;
 }) {
   const { data, hostCount, showHidden } = props;
+  // one-shot recenter request from the reverse bridge; consumed in the loop so
+  // it doesn't re-init the simulation.
+  const focusReq = useRef<{ id: string; nonce: number } | null>(null);
+  useEffect(() => { focusReq.current = props.focus; }, [props.focus]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // adaptive root (decision B): single host => that host is the visual anchor.
   const anchorId = hostCount <= 1
@@ -306,7 +341,21 @@ function GraphCanvas(props: {
       }
     };
 
-    const loop = () => { tick(); draw(); raf = requestAnimationFrame(loop); };
+    let appliedNonce = 0, focusNode: Sim | null = null, focusFrames = 0;
+    const loop = () => {
+      tick();
+      const req = focusReq.current;
+      if (req && req.nonce !== appliedNonce) {
+        appliedNonce = req.nonce;
+        focusNode = index.get(req.id) ?? null;
+        focusFrames = focusNode ? 45 : 0;  // keep centering while it settles
+      }
+      if (focusNode && focusFrames > 0) {
+        panX = W / 2 - focusNode.x; panY = H / 2 - focusNode.y; focusFrames--;
+      }
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
     loop();
 
     const toWorld = (ev: MouseEvent) => {

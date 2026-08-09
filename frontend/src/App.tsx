@@ -75,6 +75,7 @@ import {
 import {api} from "./api";
 import {useEnumerationQueries} from "./useEnumerationQueries";
 import {consumePendingServiceNav, type PendingServiceNav} from "./pendingServiceNav";
+import {focusInGraph} from "./pendingGraphFocus";
 
 const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
   const anchor = document.getElementById(anchorId);
@@ -1928,6 +1929,11 @@ export default function App() {
               </div>}
               {isWinrm&&<div className="webServiceActions webServiceActions--hostname">
                 <span>WinRM(HTTP.sys) 리스너 · 브라우저로 열람 불가 · 아래 NetExec 자격증명 확인으로 진행하세요</span>
+              </div>}
+              {service&&<div className="webServiceActions">
+                <button onClick={()=>focusInGraph({kind:"service",id:service.id})}>
+                  그래프에서 보기 ↗
+                </button>
               </div>}
               <div className="risk">수동 확인 필요</div>
             </div>
