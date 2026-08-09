@@ -17,6 +17,15 @@ const HashCrackingWorkspace=lazy(()=>import("./HashCrackingWorkspace"));
 const ToolsWorkspace=lazy(()=>import("./ToolsWorkspace"));
 const GraphWorkspace=lazy(()=>import("./features/graph/GraphWorkspace"));
 
+// On the first load of a browser session, land on the Progress Graph (home)
+// even if the browser restored a stale hash like #scans from a previous session
+// (reload/session-restore keeps the URL hash, which would otherwise win).
+// Runs once at module import, before the component reads the hash — so no flash.
+if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem("oscp-home-shown")) {
+  sessionStorage.setItem("oscp-home-shown", "1");
+  if (location.hash && location.hash !== "#graph") location.hash = "#graph";
+}
+
 const route=()=>{
   const raw=location.hash.replace("#","")||"graph";
   const[page,...rest]=raw.split("/");
