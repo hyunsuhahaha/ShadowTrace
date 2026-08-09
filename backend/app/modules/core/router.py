@@ -185,6 +185,9 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     for table_name in [
         "evidence", "exploit_research", "http_requests", "directory_objects",
         "tunnels", "reports", "scan_jobs", "remote_executions", "hash_crack_jobs",
+        # graph tables were added after this cascade; without them a deleted
+        # project's nodes orphan and resurface when SQLite reuses the id.
+        "graph_edges", "graph_nodes", "graph_project_meta",
     ]:
         db.execute(sql_delete(tables[table_name]).where(
             tables[table_name].c.project_id == ident))

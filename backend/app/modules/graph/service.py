@@ -95,6 +95,10 @@ def ensure_project_root(db: Session, project_id: int) -> GraphNode:
     if meta is not None and meta.root_node_id:
         root = db.get(GraphNode, meta.root_node_id)
         if root is not None:
+            # keep the root label in sync with the project name (heals roots
+            # created when the project was briefly named after an IP)
+            if root.label != project.name:
+                root.label = project.name
             return root
     root = GraphNode(id=new_ulid(), project_id=project_id, type="project-root",
                      label=project.name, status="in-progress")
@@ -221,6 +225,23 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     root = ensure_project_root(db, project_id)
     nodes, _ = _load(db, project_id)
     index = _index_by_source(nodes)
+
+    # Heal orphans: a node projected from a domain row whose row no longer exists
+    # (e.g. its target/service was deleted) is stale — drop it and its edges.
+    # Manually-created nodes (no source_ref) are never pruned.
+    kind_models = {"target": Target, "service": Service, "finding": Finding,
+                   "credential": Credential, "execution": Execution,
+                   "session": InteractiveSession}
+    for key, node in list(index.items()):
+        model = kind_models.get(key[0])
+        if model is not None and db.get(model, key[1]) is None:
+            db.query(GraphEdge).filter(
+                (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
+            ).delete(synchronize_session=False)
+            db.delete(node)
+            del index[key]
+    db.flush()
+
     created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0,
                "techniques": 0}
     target_ids: list[int] = []

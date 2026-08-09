@@ -236,3 +236,30 @@ def test_sync_projects_interactive_sessions_as_technique_nodes():
     assert result["created"]["techniques"] == 1
     tech = db.query(GraphNode).filter_by(type="technique").one()
     assert tech.label == "responder"
+
+
+def test_sync_prunes_orphaned_nodes_when_target_deleted():
+    from app.models import Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.20")
+    db.add(t); db.flush()
+    db.add(Service(target_id=t.id, port=80, protocol="tcp", name="http")); db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphNode).filter_by(type="host").count() == 1
+    assert db.query(GraphNode).filter_by(type="service").count() == 1
+    # delete the domain rows, then re-sync -> the projected nodes are pruned
+    db.query(Service).delete(); db.query(Target).delete(); db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphNode).filter_by(type="host").count() == 0
+    assert db.query(GraphNode).filter_by(type="service").count() == 0
+
+
+def test_ensure_project_root_refreshes_stale_label():
+    db = database()
+    p = project(db, name="Responder")
+    root = service.ensure_project_root(db, p.id)
+    root.label = "10.129.245.191"  # stale (project was briefly IP-named)
+    db.flush()
+    again = service.ensure_project_root(db, p.id)
+    assert again.label == "Responder"
