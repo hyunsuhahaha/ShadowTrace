@@ -72,6 +72,15 @@ export default function GraphWorkspace() {
   useEffect(() => {
     localStorage.setItem("oscp-graph-pane", String(paneWidth));
   }, [paneWidth]);
+  // A scan (or other workspace) finished producing rows -> re-sync the graph so
+  // the new services/findings appear as nodes. Structural sharing keeps the
+  // reference stable when nothing changed, so this won't reflow spuriously.
+  useEffect(() => {
+    const refresh = () =>
+      queryClient.invalidateQueries({ queryKey: ["graph", projectId] });
+    addEventListener("oscp-graph-refresh", refresh);
+    return () => removeEventListener("oscp-graph-refresh", refresh);
+  }, [queryClient, projectId]);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const onSplitDown = (e: React.PointerEvent) => {
     dragRef.current = { startX: e.clientX, startWidth: paneWidth };

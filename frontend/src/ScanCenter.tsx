@@ -178,6 +178,8 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
         await qc.invalidateQueries({ queryKey: ["scanObs", scanId] });
         await qc.invalidateQueries({ queryKey: ["scanArtifacts", scanId] });
         await qc.invalidateQueries({ queryKey: ["scanAutomation", scanId] });
+        // Let the progress graph pull the freshly-parsed services in as nodes.
+        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
       }
       if (item.stream === "status" && item.status === "running")
         await qc.invalidateQueries({ queryKey: ["scans", targetId] });
