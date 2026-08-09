@@ -550,6 +550,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     setRunStates((current) => current[templateId] ? {
       ...current, [templateId]: {...current[templateId], id: e.id, status: "running"},
     } : current);
+    dispatchEvent(new CustomEvent("oscp-graph-refresh"));
     if (focusedRunIdRef.current === templateId)
       setOutput(`$ ${c.preview}\n\n[실행 중 · 작업 #${e.id}]\n`);
     activeEventSourcesRef.current[templateId]?.close();
@@ -593,6 +594,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             stderr: result.stderr,
           },
         } : current);
+        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
         if (isFocused()) {
           setSelectedExecutionId(e.id);
           setExecutionDetail(result);

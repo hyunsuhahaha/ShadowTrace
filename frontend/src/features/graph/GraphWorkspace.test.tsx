@@ -3,12 +3,23 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { Inspector } from "./GraphWorkspace";
+import { getNodeActivity, Inspector } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.unstubAllGlobals();
+});
+
+it("parses only live graph activity metadata", () => {
+  expect(getNodeActivity({ meta: JSON.stringify({ activity: {
+    kind: "scan", status: "running", label: "Full TCP",
+  } }) })).toEqual({ kind: "scan", status: "running", label: "Full TCP",
+    startedAt: null });
+  expect(getNodeActivity({ meta: JSON.stringify({ activity: {
+    kind: "execution", status: "completed", label: "whatweb",
+  } }) })).toBeNull();
+  expect(getNodeActivity({ meta: "broken" })).toBeNull();
 });
 
 it("offers the full link-extract workflow from an execution node", async () => {

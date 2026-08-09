@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -168,6 +170,50 @@ def test_sync_projects_executions_as_technique_nodes():
     assert tech.label == "feroxbuster"
     # completed command is NOT auto-judged as success (product principle)
     assert tech.status == "in-progress"
+
+
+def test_sync_tracks_and_clears_execution_activity():
+    from app.models import Execution, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.12")
+    db.add(t); db.flush()
+    execution = Execution(target_id=t.id, template_id="nmap-script",
+                          command="nmap --script safe", cwd="/tmp",
+                          status="running")
+    db.add(execution); db.flush()
+
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    activity = json.loads(tech.meta)["activity"]
+    assert activity["kind"] == "execution"
+    assert activity["status"] == "running"
+    assert activity["label"] == "nmap-script"
+    assert activity["startedAt"]
+
+    execution.status = "completed"
+    service.sync_from_project(db, p.id)
+    assert "activity" not in json.loads(tech.meta)
+
+
+def test_sync_marks_host_while_scan_is_active():
+    from app.models import ScanJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.13")
+    db.add(t); db.flush()
+    scan = ScanJob(project_id=p.id, target_id=t.id, status="running",
+                   alias="Full TCP")
+    db.add(scan); db.flush()
+
+    service.sync_from_project(db, p.id)
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert json.loads(host.meta)["activity"]["kind"] == "scan"
+    assert json.loads(host.meta)["activity"]["label"] == "Full TCP"
+
+    scan.status = "completed"
+    service.sync_from_project(db, p.id)
+    assert "activity" not in json.loads(host.meta)
 
 
 def test_hidden_nodes_are_dropped_from_tree():

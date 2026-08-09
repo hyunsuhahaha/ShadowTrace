@@ -24,6 +24,10 @@ type GraphEdge = {
   id: string; source: string; target: string; relation: string; status: string;
 };
 type GraphOut = { root_node_id: string | null; nodes: GraphNode[]; edges: GraphEdge[] };
+export type NodeActivity = {
+  kind: "scan" | "execution"; status: "queued" | "running" | "processing";
+  label: string; startedAt?: string | null;
+};
 
 type TreeRef = { kind: "ref" | "cycle"; edgeId: string; source: string; target: string };
 type TreeNode = {
@@ -53,6 +57,18 @@ const GLYPH: Record<NodeType, string> = {
   technique: "⚡", credential: "🔑",
 };
 const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
+
+export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | null {
+  if (!node.meta) return null;
+  try {
+    const value = JSON.parse(node.meta).activity;
+    if (!value || !["scan", "execution"].includes(value.kind)
+      || !["queued", "running", "processing"].includes(value.status)) return null;
+    return { kind: value.kind, status: value.status,
+      label: typeof value.label === "string" ? value.label : "TASK",
+      startedAt: typeof value.startedAt === "string" ? value.startedAt : null };
+  } catch { return null; }
+}
 
 function useActiveProjectId(): number | null {
   const [id, setId] = useState<number | null>(() => {
@@ -408,6 +424,14 @@ function GraphCanvas(props: {
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const latestNodes = useRef(new Map(data.nodes.map((n) => [n.id, n])));
+  const latestEdges = useRef(new Map(data.edges.map((e) => [e.id, e])));
+  useEffect(() => {
+    latestNodes.current = new Map(data.nodes.map((n) => [n.id, n]));
+    latestEdges.current = new Map(data.edges.map((e) => [e.id, e]));
+  }, [data]);
+  const nodeSet = data.nodes.map((n) => n.id).sort().join("|");
+  const edgeSet = data.edges.map((e) => e.id).sort().join("|");
   // adaptive root (decision B): single host => that host is the visual anchor.
   const anchorId = hostCount === 1
     ? (data.nodes.find((n) => n.type === "host")?.id ?? data.root_node_id)
@@ -420,7 +444,7 @@ function GraphCanvas(props: {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    let W = 0, H = 0, raf = 0, render = () => {};
+    let W = 0, H = 0, raf = 0, render = (_now?: number) => {};
     let panX = 0, panY = 0, panning = false, panStart = { x: 0, y: 0 };
     let dragging: Sim | null = null, hover: Sim | null = null;
 
@@ -433,6 +457,8 @@ function GraphCanvas(props: {
     const index = new Map(nodes.map((n) => [n.id, n]));
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
     const structural = new Set(["discovered", "enumerated", "attempted", "yielded", "pivoted-to"]);
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const signal = "#59f59a";
 
     const resize = () => {
       const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
@@ -472,13 +498,17 @@ function GraphCanvas(props: {
       }
     };
 
-    const draw = () => {
+    const draw = (now = performance.now()) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       ctx.translate(panX, panY);
       ctx.scale(zoomRef.current, zoomRef.current);  // camera zoom: sizes AND spacing
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;
+        const edge = latestEdges.current.get(e.id) ?? e;
+        const activeA = getNodeActivity(latestNodes.current.get(a.id) ?? a);
+        const activeB = getNodeActivity(latestNodes.current.get(b.id) ?? b);
+        const active = activeA || activeB;
         const hot = !!hover && (e.source === hover.id || e.target === hover.id);
         const struct = structural.has(e.relation);
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
@@ -487,46 +517,96 @@ function GraphCanvas(props: {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
-        ctx.strokeStyle = hot ? color(e.status) : struct ? "#33333f" : "#3a2f45";
-        ctx.lineWidth = hot ? 2 : 1;
+        ctx.strokeStyle = active ? "rgba(89,245,154,.42)"
+          : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45";
+        ctx.lineWidth = active ? 1.35 : hot ? 2 : 1;
         ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
+        if (active && !reduceMotion) {
+          const flow = ((now / 1250) + (e.id.charCodeAt(0) % 7) / 7) % 1;
+          const fromA = !!activeA;
+          const t = fromA ? flow : 1 - flow;
+          ctx.save(); ctx.shadowColor = signal; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(a.x + (b.x - a.x) * t,
+            a.y + (b.y - a.y) * t, 2.2, 0, Math.PI * 2);
+          ctx.fillStyle = signal; ctx.fill(); ctx.restore();
+        }
       }
       for (const n of nodes) {
+        const current = latestNodes.current.get(n.id) ?? n;
+        const activity = getNodeActivity(current);
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
-        ctx.globalAlpha = n.hidden ? 0.3 : 1;   // dim user-hidden nodes
+        ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
+        if (activity) {
+          const phase = (now % 2400) / 2400;
+          ctx.save(); ctx.shadowColor = signal; ctx.shadowBlur = 18;
+          for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
+            const p = reduceMotion ? .38 : (phase + i / 3) % 1;
+            ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + p * 30, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(89,245,154,${reduceMotion ? .38 : (1 - p) * .42})`;
+            ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
+            ctx.stroke();
+          }
+          if (!reduceMotion && activity.status !== "queued") {
+            const angle = now / 720;
+            ctx.beginPath(); ctx.moveTo(n.x, n.y);
+            ctx.arc(n.x, n.y, r + 24, angle - .42, angle);
+            ctx.closePath();
+            const sweep = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 24);
+            sweep.addColorStop(0, "rgba(89,245,154,.03)");
+            sweep.addColorStop(1, "rgba(89,245,154,.22)");
+            ctx.fillStyle = sweep; ctx.fill();
+            ctx.beginPath(); ctx.moveTo(n.x, n.y);
+            ctx.lineTo(n.x + Math.cos(angle) * (r + 25), n.y + Math.sin(angle) * (r + 25));
+            ctx.strokeStyle = "rgba(130,255,181,.8)"; ctx.lineWidth = 1; ctx.stroke();
+          }
+          ctx.restore();
+        }
         if (isAnchor) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
         }
-        if (n.objective) {
+        if (current.objective) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
-          ctx.strokeStyle = n.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
+          ctx.strokeStyle = current.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
           ctx.lineWidth = 2.5; ctx.stroke();
         }
         ctx.save();
-        ctx.shadowColor = isAnchor ? "#6aa9ff" : color(n.status);
-        ctx.shadowBlur = isAnchor ? 30 : isSel ? 24 : 12;
+        ctx.shadowColor = activity ? signal : isAnchor ? "#6aa9ff" : color(current.status);
+        ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = color(n.status); ctx.fill();
+        ctx.fillStyle = activity ? "#10251a" : color(current.status); ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : 1;
-        ctx.strokeStyle = isSel ? "#fff" : isAnchor ? "#6aa9ff"
+        ctx.strokeStyle = activity ? signal : isSel ? "#fff" : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
-        if (n.hidden) ctx.setLineDash([2, 3]);
+        if (current.hidden) ctx.setLineDash([2, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-        ctx.fillText(GLYPH[n.type], n.x, n.y + 0.5);
-        if (hover === n || isSel || isHost || isRoot || n.hidden) {
+        ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
+        if (hover === n || isSel || isHost || isRoot || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
           ctx.font = isAnchor ? "600 12px sans-serif" : "11px sans-serif";
-          ctx.fillText(n.label, n.x, n.y + r + 6);
+          ctx.fillText(current.label, n.x, n.y + r + 6);
+        }
+        if (activity) {
+          const state = activity.kind === "scan" ? "SCANNING" : activity.status.toUpperCase();
+          const caption = `${state}  /  ${activity.label.toUpperCase()}`;
+          ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
+          const width = ctx.measureText(caption).width + 12;
+          const y = n.y - r - 23;
+          ctx.fillStyle = "rgba(5,18,12,.9)";
+          ctx.fillRect(n.x - width / 2, y - 7, width, 16);
+          ctx.strokeStyle = "rgba(89,245,154,.5)"; ctx.lineWidth = 1;
+          ctx.strokeRect(n.x - width / 2, y - 7, width, 16);
+          ctx.fillStyle = signal; ctx.textBaseline = "middle";
+          ctx.fillText(caption, n.x, y + 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -546,7 +626,7 @@ function GraphCanvas(props: {
         const z = zoomRef.current;
         panX = W / 2 - z * focusNode.x; panY = H / 2 - z * focusNode.y; focusFrames--;
       }
-      draw();
+      draw(performance.now());
       raf = requestAnimationFrame(loop);
     };
     loop();
@@ -610,13 +690,13 @@ function GraphCanvas(props: {
       removeEventListener("mouseup", onUp);
       removeEventListener("keydown", onKey);
     };
-  }, [data, anchorId, hideRoot, showHidden]);
+  }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden]);
 
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <div style={S.hint}>
-        파란 헤일로 = 루트 · 노드 드래그로 이동 · 빈 공간 드래그로 화면 이동 · 마우스 휠 / Ctrl +/− 확대·축소
+        초록 신호 = 실행 중 · 파란 헤일로 = 루트 · 드래그로 이동 · 휠 / Ctrl +/− 확대·축소
       </div>
     </div>
   );

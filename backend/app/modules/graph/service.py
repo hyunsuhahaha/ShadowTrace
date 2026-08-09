@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models import (Credential, Execution, Finding, GraphEdge, GraphNode,
-                       GraphProjectMeta, InteractiveSession, Project, Service,
-                       Target)
+                       GraphProjectMeta, InteractiveSession, Project, ScanJob,
+                       Service, Target)
 
 # Executions are auto-nodified but their security outcome is never auto-judged
 # (product principle): a completed command is not a "success". Only technical
@@ -27,6 +27,31 @@ _EXECUTION_STATUS = {
 # listener shows up as "http" — so relabel well-known ports the way a pentester
 # reads them.
 _WELL_KNOWN_PORT_NAMES = {5985: "winrm", 5986: "winrm"}
+
+_ACTIVE_STATUSES = {"queued", "running", "processing"}
+
+
+def _activity_meta(raw: str, activity: dict | None) -> str:
+    """Merge ephemeral process activity without disturbing node-owned metadata."""
+    try:
+        meta = json.loads(raw) if raw else {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except (TypeError, json.JSONDecodeError):
+        meta = {}
+    if activity is None:
+        meta.pop("activity", None)
+    else:
+        meta["activity"] = activity
+    return json.dumps(meta)
+
+
+def _runtime_activity(kind: str, status: str, label: str,
+                      started_at=None) -> dict | None:
+    if status not in _ACTIVE_STATUSES:
+        return None
+    return {"kind": kind, "status": status, "label": label,
+            "startedAt": started_at.isoformat() if started_at else None}
 
 
 def _service_display_name(service) -> str:
@@ -249,6 +274,15 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     def host_for(target_id: int) -> GraphNode | None:
         return index.get(("target", target_id))
 
+    active_scans = {
+        scan.target_id: scan for scan in db.scalars(
+            select(ScanJob).where(
+                ScanJob.project_id == project_id,
+                ScanJob.status.in_(_ACTIVE_STATUSES),
+            ).order_by(ScanJob.id)
+        )
+    }
+
     for target in db.scalars(
             select(Target).where(Target.project_id == project_id)):
         target_ids.append(target.id)
@@ -260,6 +294,10 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             create_edge(db, project_id, root.id, host.id, "discovered")
             index[("target", target.id)] = host
             created["hosts"] += 1
+        scan = active_scans.get(target.id)
+        host.meta = _activity_meta(host.meta, _runtime_activity(
+            "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
+        ) if scan else None)
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
@@ -326,12 +364,21 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     if target_ids:
         for ex in db.scalars(
                 select(Execution).where(Execution.target_id.in_(target_ids))):
-            if ("execution", ex.id) in index:
-                continue
             parent = parent_of(ex.service_id, ex.target_id)
             if parent is None:
                 continue
-            meta = json.dumps({"tool": ex.template_id or "", "command": ex.command or ""})
+            activity = _runtime_activity(
+                "execution", ex.status, ex.template_id or "COMMAND", ex.started_at)
+            existing = index.get(("execution", ex.id))
+            if existing is not None:
+                existing.meta = _activity_meta(existing.meta, activity)
+                if (ex.status in {"failed", "interrupted"}
+                        and existing.status == "in-progress"):
+                    existing.status = "attempt-failed"
+                continue
+            meta = _activity_meta(json.dumps({
+                "tool": ex.template_id or "", "command": ex.command or "",
+            }), activity)
             provenance = json.dumps({"executionRef": {"module": "executions", "id": ex.id},
                                      "tool": ex.template_id or ""})
             node = create_node(
@@ -349,13 +396,22 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         for sess in db.scalars(
                 select(InteractiveSession).where(
                     InteractiveSession.target_id.in_(target_ids))):
-            if ("session", sess.id) in index:
-                continue
             parent = parent_of(sess.service_id, sess.target_id)
             if parent is None:
                 continue
-            meta = json.dumps({"tool": sess.template_id or "session",
-                               "command": sess.command or ""})
+            activity = _runtime_activity(
+                "execution", sess.status, sess.template_id or "SESSION",
+                sess.started_at)
+            existing = index.get(("session", sess.id))
+            if existing is not None:
+                existing.meta = _activity_meta(existing.meta, activity)
+                if (sess.status in {"failed", "interrupted"}
+                        and existing.status == "in-progress"):
+                    existing.status = "attempt-failed"
+                continue
+            meta = _activity_meta(json.dumps({
+                "tool": sess.template_id or "session", "command": sess.command or "",
+            }), activity)
             provenance = json.dumps({"sessionRef": {"module": "sessions", "id": sess.id},
                                      "tool": sess.template_id or ""})
             node = create_node(

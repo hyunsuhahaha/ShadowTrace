@@ -539,7 +539,9 @@ Inspector(연결 워크스페이스로 딥링크, 하위 노드 추가 폼) 또�
 끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
 technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stderr/error를 표시한다.
 `http-link-extract`는 여기에 유형순 링크 목록, Evidence 파생 저장과 Web Testing Request
-탭 handoff를 추가로 제공한다. 프로젝트가 없으면 "start"
+탭 handoff를 추가로 제공한다. 실행 중인 스캔은 host 노드, 실행 중인 명령·세션은
+technique 노드의 `meta.activity`에 투영되어 Canvas에서 녹색 레이더 파동·스윕·엣지
+패킷으로 표시되며 종료 시 제거된다. 프로젝트가 없으면 "start"
 합성 노드로 프로젝트 생성 유도. GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
 OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
 `features/graph/GraphWorkspace.test.tsx`에 있다.

@@ -197,8 +197,10 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
         // Let the progress graph pull the freshly-parsed services in as nodes.
         dispatchEvent(new CustomEvent("oscp-graph-refresh"));
       }
-      if (item.stream === "status" && item.status === "running")
+      if (item.stream === "status" && item.status === "running") {
         await qc.invalidateQueries({ queryKey: ["scans", targetId] });
+        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+      }
     };
     events.onerror = () => {
       setStreamState("disconnected");
