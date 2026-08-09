@@ -110,6 +110,10 @@
   .ref .label { color: var(--accent); opacity: .85; font-style: italic; }
   .ref.cycle .label { color: var(--blocked); }
   .blocker { font-size: 11px; color: var(--blocked); flex-shrink: 0; }
+  .roottag { font-size: 9px; font-weight: 800; letter-spacing: .6px; color: #06131f;
+    background: var(--accent); padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
+  .hosttag { font-size: 9px; color: var(--ink-faint); border: 1px solid var(--line);
+    padding: 1px 5px; border-radius: 4px; flex-shrink: 0; }
 
   .back-btn {
     position: absolute; right: 22px; bottom: 22px; background: var(--accent);
@@ -145,7 +149,7 @@
   <div class="stage">
     <div class="view active" id="view-graph">
       <canvas id="cv"></canvas>
-      <div class="hint">드래그로 이동 · 호버로 연결 강조 · 클릭으로 Inspector 동기화 · 점선 = 크리덴셜 재사용/차단</div>
+      <div class="hint">중앙 ◎ = <b style="color:#6aa9ff">ROOT(프로젝트)</b> · ▣ = nmap 대상 호스트 · ◉ = 프로토콜/서비스로 뻗어나감 &nbsp;|&nbsp; 드래그·호버·클릭</div>
     </div>
 
     <div class="view" id="view-outline">
@@ -262,9 +266,11 @@ function resize() {
   cv.width = W*DPR; cv.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 new ResizeObserver(resize).observe(cv);
-// seed positions in a rough radial layout
+// seed positions in a rough radial layout; pin the root at centre so the whole
+// hierarchy visibly radiates from it.
 gnodes.forEach((n,i) => { const a = i/gnodes.length*Math.PI*2;
   n.x = 400 + Math.cos(a)*200 + Math.random()*40; n.y = 320 + Math.sin(a)*160 + Math.random()*40; });
+const rootNode = gindex["root"]; rootNode.fixed = true;
 
 let hover=null, dragging=null, selected=null;
 function tick() {
@@ -284,6 +290,7 @@ function tick() {
   // centering + integrate
   const cx=W/2, cy=H/2;
   for (const n of gnodes){
+    if (n.fixed){ n.x=cx; n.y=cy; n.vx=n.vy=0; continue; }  // root pinned to centre
     n.vx += (cx-n.x)*0.0015; n.vy += (cy-n.y)*0.0015;
     n.vx*=0.86; n.vy*=0.86;
     if (n!==dragging){ n.x+=n.vx; n.y+=n.vy; }
@@ -305,19 +312,34 @@ function draw() {
   // nodes
   for (const n of gnodes){
     const st=STATUS[n.status]; const isHover = hover===n, isSel=selected===n.id;
-    const r = n.type==="project-root"?9 : (n.type==="host"?14:11);
+    const isRoot = n.type==="project-root", isHost = n.type==="host";
+    const r = isRoot?21 : (isHost?15:11);
+    // root gets a double halo ring so the origin of the hierarchy is unmistakable
+    if (isRoot){
+      ctx.beginPath(); ctx.arc(n.x,n.y,r+9,0,Math.PI*2);
+      ctx.strokeStyle="rgba(106,169,255,.35)"; ctx.lineWidth=1; ctx.setLineDash([3,4]); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.save();
-    ctx.shadowColor=st.c; ctx.shadowBlur = isHover||isSel?26:14;
+    ctx.shadowColor=isRoot?"#6aa9ff":st.c; ctx.shadowBlur = isRoot?30:(isHover||isSel?26:14);
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
     ctx.fillStyle = st.c; ctx.globalAlpha = hover&&!isHover&&!edgeTouch(n)?0.4:1; ctx.fill();
     ctx.restore();
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
-    ctx.lineWidth=isSel?2.5:1; ctx.strokeStyle=isSel?"#fff":"rgba(255,255,255,.35)"; ctx.stroke();
+    ctx.lineWidth=isSel?2.5:(isRoot||isHost?2:1);
+    ctx.strokeStyle=isSel?"#fff":(isRoot?"#6aa9ff":(isHost?"rgba(255,255,255,.7)":"rgba(255,255,255,.35)"));
+    ctx.stroke();
     ctx.fillStyle="#0c0c10"; ctx.font=`${r}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(GLYPH[n.type], n.x, n.y+0.5);
-    if (isHover||isSel||n.type==="host"||n.type==="project-root"){
-      ctx.fillStyle="#cdcdd6"; ctx.font="11px sans-serif"; ctx.textBaseline="top";
-      ctx.fillText(n.label, n.x, n.y+r+4);
+    if (isHover||isSel||isHost||isRoot){
+      ctx.textBaseline="top";
+      ctx.fillStyle="#eef"; ctx.font=isRoot?"600 12px sans-serif":"11px sans-serif";
+      ctx.fillText(n.label, n.x, n.y+r+5);
+      // origin/anchor tags so the hierarchy reads at a glance
+      if (isRoot){ ctx.fillStyle="#6aa9ff"; ctx.font="700 9px sans-serif";
+        ctx.fillText("ROOT · 프로젝트", n.x, n.y+r+20); }
+      else if (isHost){ ctx.fillStyle="#8a8a96"; ctx.font="9px sans-serif";
+        ctx.fillText("nmap 대상 → 프로토콜", n.x, n.y+r+19); }
     }
   }
 }
@@ -396,6 +418,8 @@ function renderTree(node, container, depth, num){
     <span class="twist ${hasKids?"":"leaf"}">▾</span>
     <span class="glyph">${GLYPH[n.type]}</span>
     <span class="label">${n.label}</span>
+    ${n.type==="project-root"?`<span class="roottag">ROOT</span>`:""}
+    ${n.type==="host"?`<span class="hosttag">nmap 대상</span>`:""}
     ${node.blocker?`<span class="blocker">⧗ ${node.blocker}</span>`:""}
     ${sumTxt}
     <span class="status" style="background:${st.c}22;color:${st.c}">${st.label.toUpperCase()}</span>`;
