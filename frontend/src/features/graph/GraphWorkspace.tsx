@@ -17,7 +17,7 @@ const EmbeddedScanCenter = lazy(() => import("../../ScanCenter"));
 type NodeType = "project-root" | "host" | "service" | "finding" | "technique" | "credential";
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
-  source_ref: string; hidden: boolean;
+  source_ref: string; hidden: boolean; meta?: string;
 };
 type DeepLink = { label: string; open: () => void };
 type GraphEdge = {
@@ -44,6 +44,10 @@ const LINK_KIND_LABEL: Record<string, string> = {
   page: "페이지", asset: "정적 리소스", absolute: "절대경로", anchor: "앵커",
 };
 const LINK_KIND_ORDER = ["page", "absolute", "asset", "anchor"];
+const EXECUTION_STATUS_LABEL: Record<string, string> = {
+  queued: "대기", running: "실행 중", completed: "완료", failed: "실패",
+  interrupted: "중단됨",
+};
 const GLYPH: Record<NodeType, string> = {
   "project-root": "◎", host: "▣", service: "◉", finding: "◇",
   technique: "⚡", credential: "🔑",
@@ -226,11 +230,24 @@ export default function GraphWorkspace() {
     } catch { /* ignore */ }
     return null;
   };
-  const linkExtractHandoff = (id: string | null) => {
-    if (!id || nodeById.get(id)?.label !== "http-link-extract") return null;
+  const executionHandoff = (id: string | null): { targetId: number; serviceId?: number } | null => {
+    if (!id) return null;
+    const node = nodeById.get(id);
+    if (!node?.source_ref) return null;
+    try {
+      if (JSON.parse(node.source_ref).kind !== "execution") return null;
+    } catch { return null; }
     const edge = graph.data?.edges.find((item) =>
       item.target === id && item.relation === "attempted");
-    return edge ? serviceHandoff(edge.source) : null;
+    if (!edge) return null;
+    const service = serviceHandoff(edge.source);
+    if (service) return service;
+    const parent = nodeById.get(edge.source);
+    if (!parent?.source_ref) return null;
+    try {
+      const ref = JSON.parse(parent.source_ref);
+      return ref.kind === "target" ? { targetId: ref.id } : null;
+    } catch { return null; }
   };
 
   // Scope the embedded Enumeration workspace to the selected service node.
@@ -350,7 +367,7 @@ export default function GraphWorkspace() {
             </div>
           ) : (
             <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
-              linkExtractContext={linkExtractHandoff(selected)}
+              executionContext={executionHandoff(selected)}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
               onSetStatus={(id, status) => setStatus.mutate({ id, status })}
@@ -702,7 +719,7 @@ type AddForm = { type: string; label: string; relation: string; status: string }
 
 export function Inspector(props: {
   node?: GraphNode; link?: DeepLink; busy: boolean;
-  linkExtractContext?: { targetId: number; serviceId: number } | null;
+  executionContext?: { targetId: number; serviceId?: number } | null;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
   onAddNode: (v: AddForm & { sourceId: string }) => void;
@@ -710,7 +727,7 @@ export function Inspector(props: {
   const n = props.node;
   const [adding, setAdding] = useState(false);
   const executionId = (() => {
-    if (n?.label !== "http-link-extract" || !n.source_ref) return null;
+    if (!n?.source_ref) return null;
     try {
       const ref = JSON.parse(n.source_ref);
       return ref.kind === "execution" && Number.isInteger(ref.id) ? ref.id : null;
@@ -719,32 +736,39 @@ export function Inspector(props: {
   const executionOutput = useQuery({
     queryKey: ["executionOutput", executionId],
     enabled: executionId !== null,
-    queryFn: () => api<{ stdout: string }>(`/executions/${executionId}/output`),
+    queryFn: () => api<{ stdout?: string; stderr?: string; status: string;
+      error?: string; exit_code?: number | null }>(`/executions/${executionId}/output`),
   });
   const targets = useQuery({
     queryKey: ["graphLinkTargets"],
-    enabled: executionId !== null && !!props.linkExtractContext,
+    enabled: executionId !== null && !!props.executionContext,
     queryFn: () => api<Array<{ id: number; ip: string; hostname?: string }>>("/targets"),
   });
   const services = useQuery({
-    queryKey: ["graphLinkServices", props.linkExtractContext?.targetId],
-    enabled: executionId !== null && !!props.linkExtractContext,
-    queryFn: () => api<Array<{ id: number; port: number; name: string; tls?: boolean }>>(
-      `/targets/${props.linkExtractContext!.targetId}/services`),
+    queryKey: ["graphLinkServices", props.executionContext?.targetId],
+    enabled: executionId !== null && !!props.executionContext?.serviceId,
+    queryFn: () => api<Array<{ id: number; port: number; name: string;
+      product?: string; tls?: boolean }>>(
+      `/targets/${props.executionContext!.targetId}/services`),
   });
   const [evidenceState, setEvidenceState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "")
     .sort((a, b) => LINK_KIND_ORDER.indexOf(a.kind) - LINK_KIND_ORDER.indexOf(b.kind));
-  const target = targets.data?.find((item) => item.id === props.linkExtractContext?.targetId);
-  const service = services.data?.find((item) => item.id === props.linkExtractContext?.serviceId);
+  const target = targets.data?.find((item) => item.id === props.executionContext?.targetId);
+  const service = services.data?.find((item) => item.id === props.executionContext?.serviceId);
+  const command = (() => {
+    try { return JSON.parse(n?.meta || "{}").command || ""; } catch { return ""; }
+  })();
   const base = target && service
     ? `${service.tls || /https|ssl/i.test(service.name) ? "https" : "http"}`
       + `://${target.hostname || target.ip}:${service.port}/`
     : "";
   const openInRequest = (url: string) => {
-    if (!props.linkExtractContext || !base) return;
+    if (!props.executionContext?.serviceId || !base) return;
     localStorage.setItem("oscp-web-launch", JSON.stringify({
-      ...props.linkExtractContext, url: new URL(url, base).toString(),
+      targetId: props.executionContext.targetId,
+      serviceId: props.executionContext.serviceId,
+      url: new URL(url, base).toString(),
     }));
     location.hash = "#web/request";
   };
@@ -787,7 +811,37 @@ export function Inspector(props: {
           ))}
         </div>
       </div>
-      {executionId !== null && (
+      {executionId !== null && <section style={S.executionResults} aria-label="실행 결과">
+        <div style={S.executionResultsHead}>
+          <strong>실행 결과</strong>
+          <span>{EXECUTION_STATUS_LABEL[executionOutput.data?.status || ""]
+            || STATUS_LABEL[n.status] || executionOutput.data?.status || n.status}
+            {executionOutput.data?.exit_code == null ? "" : ` · exit ${executionOutput.data.exit_code}`}</span>
+        </div>
+        {(target || service) && <div style={S.executionContext}>
+          {target && <div style={S.contextFact}><span>대상</span><b>{target.hostname || target.ip}</b></div>}
+          {service && <div style={S.contextFact}><span>서비스</span><b>{service.port}/tcp · {service.name}
+            {service.product ? ` · ${service.product}` : ""}</b></div>}
+        </div>}
+        {command && <code style={S.executionCommand}>{command}</code>}
+        {executionOutput.isLoading ? <div style={S.resultMessage}>결과 불러오는 중…</div>
+          : executionOutput.isError ? <div style={S.resultError}>실행 결과를 불러오지 못했습니다.</div>
+          : <div style={S.rawOutput}>
+            {executionOutput.data?.error && <div style={S.resultError}>{executionOutput.data.error}</div>}
+            {executionOutput.data?.stdout && <details style={S.outputBlock}
+              open={n.label !== "http-link-extract"}>
+              <summary style={S.outputSummary}>표준 출력</summary>
+              <pre style={S.outputPre}>{executionOutput.data.stdout}</pre>
+            </details>}
+            {executionOutput.data?.stderr && <details style={S.outputBlock} open>
+              <summary style={S.outputSummary}>오류 출력</summary>
+              <pre style={S.outputPre}>{executionOutput.data.stderr}</pre>
+            </details>}
+            {!executionOutput.data?.stdout && !executionOutput.data?.stderr
+              && !executionOutput.data?.error && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
+          </div>}
+      </section>}
+      {executionId !== null && n.label === "http-link-extract" && (
         <section style={S.executionResults} aria-label="링크 추출 결과">
           <div style={S.executionResultsHead}>
             <div><strong>발견된 링크</strong> <span>{extractedLinks.length}개</span></div>
@@ -932,6 +986,20 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #2a2a34" },
   resultError: { padding: "8px 12px", color: "#e3938c", fontSize: 10,
     borderBottom: "1px solid #2a2a34" },
+  executionContext: { display: "grid", gridTemplateColumns: "1fr 1.5fr",
+    gap: 1, background: "#2a2a34", borderBottom: "1px solid #2a2a34" },
+  contextFact: { display: "grid", gap: 4, minWidth: 0, padding: "10px 12px",
+    background: "#121219", fontSize: 10 },
+  executionCommand: { display: "block", margin: 10, padding: 10, overflow: "auto",
+    border: "1px solid #2a2a34", background: "#08080d", color: "#b9d8ca",
+    fontSize: 10, whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  rawOutput: { borderTop: "1px solid #2a2a34" },
+  outputBlock: { borderBottom: "1px solid #2a2a34" },
+  outputSummary: { padding: "9px 12px", color: "#9a9aa6", fontSize: 10,
+    cursor: "pointer" },
+  outputPre: { maxHeight: 320, overflow: "auto", margin: 0, padding: 12,
+    background: "#08080d", color: "#c8ded4", font: "10px/1.55 ui-monospace,monospace",
+    whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
   resultMessage: { padding: 12, color: "#9a9aa6", fontSize: 11 },
   linkList: { maxHeight: 420, overflow: "auto" },
   linkRow: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 80px auto",

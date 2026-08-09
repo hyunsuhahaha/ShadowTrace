@@ -66,6 +66,8 @@ it("opens the latest command output on click and closes it explicitly",async()=>
   fireEvent.click(screen.getByText("HTTP 허용 메서드"));
   await waitFor(()=>expect(screen.getByText("PORT 80/tcp open http")).toBeTruthy());
   expect(api).toHaveBeenCalledWith("/executions/10/output");
-  fireEvent.click(screen.getByLabelText("결과 닫기"));
+  const backdrop=document.querySelector(".intelOutputBackdrop");
+  expect(backdrop).toBeTruthy();
+  fireEvent.click(backdrop!);
   expect(screen.queryByText("PORT 80/tcp open http")).toBeNull();
 });

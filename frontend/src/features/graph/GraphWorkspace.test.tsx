@@ -34,7 +34,7 @@ it("offers the full link-extract workflow from an execution node", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(<QueryClientProvider client={client}>
-    <Inspector linkExtractContext={{ targetId: 10, serviceId: 20 }} node={{
+    <Inspector executionContext={{ targetId: 10, serviceId: 20 }} node={{
       id: "tech-1", type: "technique", status: "succeeded",
       label: "http-link-extract", objective: false, hidden: false,
       source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 42 }),
@@ -61,4 +61,39 @@ it("offers the full link-extract workflow from an execution node", async () => {
     "/api/executions/42/derive", expect.objectContaining({ method: "POST" }),
   ));
   expect(await screen.findByText("Evidence로 저장됨")).toBeTruthy();
+});
+
+it("shows service context and logs for every execution node", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    const body = url.endsWith("/api/executions/77/output") ? {
+      stdout: "HTTPServer[Microsoft-HTTPAPI/2.0]", stderr: "probe timed out once",
+      status: "failed", error: "timeout", exit_code: 1,
+    } : url.endsWith("/api/targets") ? [
+      { id: 10, ip: "10.129.95.234" },
+    ] : url.endsWith("/api/targets/10/services") ? [
+      { id: 20, port: 5985, name: "http", product: "Microsoft HTTPAPI httpd", tls: false },
+    ] : null;
+    if (body === null) throw new Error(`Unhandled request: ${url}`);
+    return Promise.resolve(new Response(JSON.stringify(body), {
+      headers: { "Content-Type": "application/json" },
+    }));
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10, serviceId: 20 }} node={{
+      id: "tech-2", type: "technique", status: "attempt-failed",
+      label: "http-whatweb", objective: false, hidden: false,
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 77 }),
+      meta: JSON.stringify({ command: "whatweb http://10.129.95.234:5985" }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("10.129.95.234")).toBeTruthy();
+  expect(screen.getByText("5985/tcp · http · Microsoft HTTPAPI httpd")).toBeTruthy();
+  expect(screen.getByText("whatweb http://10.129.95.234:5985")).toBeTruthy();
+  expect(screen.getByText("HTTPServer[Microsoft-HTTPAPI/2.0]")).toBeTruthy();
+  expect(screen.getByText("probe timed out once")).toBeTruthy();
+  expect(screen.getByText(/exit 1/)).toBeTruthy();
 });

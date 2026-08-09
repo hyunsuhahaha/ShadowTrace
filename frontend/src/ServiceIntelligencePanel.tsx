@@ -1,4 +1,5 @@
 import {useEffect,useState} from "react";
+import {createPortal} from "react-dom";
 import {useQuery} from "@tanstack/react-query";
 import {api} from "./api";
 
@@ -80,15 +81,17 @@ export default function ServiceIntelligencePanel({data,loading,error,onRun,execu
               </button>
               {execution&&!command.completed&&<button className="intelCommandRerun"
                 onClick={()=>onRun(command.id)}>다시 실행</button>}
-              {execution&&execution.id===previewId&&<section className="intelOutputPreview" role="dialog"
-                aria-label={`${command.name} 최근 실행 결과`}>
+              {execution&&execution.id===previewId&&createPortal(<div className="intelOutputBackdrop"
+                onClick={()=>setPreviewId(undefined)}><section className="intelOutputPreview" role="dialog"
+                aria-modal="true" aria-label={`${command.name} 최근 실행 결과`}
+                onClick={(event)=>event.stopPropagation()}>
                 <header><div><b>{command.name}</b><span>최근 실행 #{execution.id}</span></div><div>
                   <button onClick={()=>navigator.clipboard.writeText(previewText)}>전체 복사</button>
                   <button autoFocus className="intelOutputClose" aria-label="결과 닫기"
                     onClick={()=>setPreviewId(undefined)}>×</button></div></header>
                 {preview.isPending?<p>결과 불러오는 중…</p>:preview.isError?<p>결과를 불러오지 못했습니다.</p>:
                   <pre>{previewText}</pre>}
-              </section>}
+              </section></div>,document.body)}
             </div>;
           })}</div>}
         </div></details>})}</div>

@@ -352,7 +352,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 
 | 하위 컴포넌트 | 역할 |
 |---|---|
-| `ServiceIntelligencePanel.tsx` | 선택 서비스의 "조사 단계" 아코디언, 단계별 명령 실행/미리보기 |
+| `ServiceIntelligencePanel.tsx` | 선택 서비스의 "조사 단계" 아코디언, 단계별 명령 실행과 화면 최상단 결과 모달(Backdrop/×/Escape로 닫기) |
 | `FuzzingPanel.tsx` | feroxbuster 디렉터리/파일 퍼징 + 결과 필터 테이블 |
 | `VhostFuzzPanel.tsx` | ffuf Host 헤더 기반 virtual-host 퍼징 |
 | `DnsSubdomainPanel.tsx` | gobuster DNS 서브도메인 브루트포스 |
@@ -536,9 +536,10 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/tool-catalog`,
 노드/엣지), Outline(트리) 뷰 대안, 노드 상태 편집, 숨김 토글, 우측 상세 패널은 일반
 Inspector(연결 워크스페이스로 딥링크, 하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
-끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). `http-link-extract` technique
-노드는 원본 Execution 출력을 읽어 유형순으로 링크를 표시하고, Evidence 파생 저장과
-Web Testing Request 탭 handoff를 제공한다. 프로젝트가 없으면 "start"
+끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
+technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stderr/error를 표시한다.
+`http-link-extract`는 여기에 유형순 링크 목록, Evidence 파생 저장과 Web Testing Request
+탭 handoff를 추가로 제공한다. 프로젝트가 없으면 "start"
 합성 노드로 프로젝트 생성 유도. GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
 OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
 `features/graph/GraphWorkspace.test.tsx`에 있다.
