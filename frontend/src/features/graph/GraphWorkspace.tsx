@@ -75,6 +75,12 @@ export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | n
   } catch { return null; }
 }
 
+export function isCrackableCredential(node: Pick<GraphNode, "type" | "meta">): boolean {
+  if (node.type !== "credential") return false;
+  try { return JSON.parse(node.meta || "{}").credType === "hash"; }
+  catch { return false; }
+}
+
 function useActiveProjectId(): number | null {
   const [id, setId] = useState<number | null>(() => {
     const raw = Number(localStorage.getItem("oscp-workspace-project"));
@@ -300,29 +306,53 @@ export default function GraphWorkspace() {
   // Two-way bridge: a graph node deep-links into the specialized workspace that
   // owns its underlying domain entity (via source_ref). This is what makes the
   // graph a hub rather than a sibling view.
-  const deepLink = (id: string): DeepLink | undefined => {
+  const deepLinks = (id: string): DeepLink[] => {
     const node = nodeById.get(id);
-    if (!node?.source_ref) return undefined;
+    if (!node?.source_ref) return [];
     let ref: { module: string; kind: string; id: number };
-    try { ref = JSON.parse(node.source_ref); } catch { return undefined; }
+    try { ref = JSON.parse(node.source_ref); } catch { return []; }
     const go = (hash: string) => (): void => { location.hash = hash; };
     if (ref.kind === "service") {
       const h = serviceHandoff(id);
-      if (!h) return undefined;
-      return {
+      if (!h) return [];
+      return [{
         label: "전체 화면으로 열기 →",
         open: () => {
           setPendingServiceNav(h);
           location.hash = "#enumeration";
           dispatchEvent(new CustomEvent("oscp-service-nav"));
         },
-      };
+      }];
     }
-    if (ref.kind === "target") return { label: "Scan Center 열기 →", open: go("#scans") };
-    if (ref.kind === "finding") return { label: "Reports 열기 →", open: go("#reports") };
-    if (ref.kind === "credential")
-      return { label: "Post-Exploitation 열기 →", open: go("#post-exploitation") };
-    return undefined;
+    if (ref.kind === "target") return [{ label: "Scan Center 열기 →", open: go("#scans") }];
+    if (ref.kind === "finding") return [{ label: "Reports 열기 →", open: go("#reports") }];
+    if (ref.kind === "credential") {
+      if (!isCrackableCredential(node))
+        return [{ label: "Post-Exploitation 열기 →", open: go("#post-exploitation") }];
+      return [{
+        label: "Hash Cracking 열기 →",
+        open: async () => {
+          if (!projectId) return;
+          const credentials = await api<Array<{ id: number; target_id?: number;
+            secret: string; secret_hint?: string; source_kind?: string }>>(
+            `/runbooks/credentials?project_id=${projectId}`);
+          const credential = credentials.find((item) => item.id === ref.id);
+          if (!credential) return;
+          if (credential.target_id)
+            localStorage.setItem("oscp-workspace-hash-target", String(credential.target_id));
+          if (credential.secret)
+            localStorage.setItem("oscp-workspace-hash-value", credential.secret);
+          if (credential.source_kind === "responder"
+              || /NTLMv2/i.test(credential.secret_hint || ""))
+            localStorage.setItem("oscp-workspace-hash-mode", "netntlmv2");
+          location.hash = "#hash-cracking";
+        },
+      }, {
+        label: "Post-Exploitation 열기 →",
+        open: go("#post-exploitation"),
+      }];
+    }
+    return [];
   };
 
   const noProject = !projectId;
@@ -404,7 +434,7 @@ export default function GraphWorkspace() {
               </Suspense>
             </div>
           ) : (
-            <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
+            <Inspector node={selectedNode} links={selected ? deepLinks(selected) : []}
               executionContext={executionHandoff(selected)}
               onOpenRequest={setWebRequest}
               busy={addNode.isPending}
@@ -863,7 +893,7 @@ const defaultRelation = (src: string, dst: string) =>
 type AddForm = { type: string; label: string; relation: string; status: string };
 
 export function Inspector(props: {
-  node?: GraphNode; link?: DeepLink; busy: boolean;
+  node?: GraphNode; links?: DeepLink[]; busy: boolean;
   executionContext?: { targetId: number; serviceId?: number } | null;
   onOpenRequest?: (draft: GraphRequestDraft) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -1093,9 +1123,9 @@ export function Inspector(props: {
             </div>}
         </section>
       )}
-      {props.link && (
-        <button onClick={props.link.open} style={S.openBtn}>{props.link.label}</button>
-      )}
+      {props.links?.map((link) => (
+        <button key={link.label} onClick={link.open} style={S.openBtn}>{link.label}</button>
+      ))}
       {adding ? (
         <AddNodeForm source={n} busy={props.busy} onCancel={() => setAdding(false)}
           onSubmit={(v) => { props.onAddNode({ sourceId: n.id, ...v }); setAdding(false); }} />

@@ -3,7 +3,8 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector } from "./GraphWorkspace";
+import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector,
+  isCrackableCredential } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
@@ -23,6 +24,13 @@ it("parses only live graph activity metadata", () => {
   expect(getNodeActivity({ meta: JSON.stringify({ activity: {
     kind: "listener", status: "launched", label: "RESPONDER",
   } }) })?.kind).toBe("listener");
+});
+
+it("routes hash credentials to cracking instead of post-exploitation", () => {
+  expect(isCrackableCredential({ type: "credential",
+    meta: JSON.stringify({ credType: "hash" }) })).toBe(true);
+  expect(isCrackableCredential({ type: "credential",
+    meta: JSON.stringify({ credType: "password" }) })).toBe(false);
 });
 
 it("preserves settled node positions when graph topology changes", () => {
