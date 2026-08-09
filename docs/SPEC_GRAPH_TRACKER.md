@@ -51,7 +51,17 @@
 | `position` | `{x,y}` \| null | – | 수동 배치 좌표 캐시. null이면 시뮬레이션이 결정 |
 | `objective` | boolean | – | 이 노드가 **목표/마일스톤**인지. 기본 false. OSCP의 `local.txt`/`proof.txt` 캡처, DA 획득 등 |
 | `objectiveKind` | enum \| null | – | `foothold`\|`privesc`\|`flag`\|`domain-admin`\|`custom`. `objective=true`일 때만 의미 |
+| `provenance` | object \| null | – | 이 노드를 생성/발견한 근거: `{ techniqueRef?, executionRef?, mitreId?, tool? }`. NodeZero `found_by_module` 대응(§10) |
+| `layer` | number \| null | – | 타임라인 timestep(같은 시각 노드 그룹 인덱스). null이면 `createdAt`에서 파생. timeline 렌더용 |
 | `meta` | object | – | 타입별 필드(1.3) |
+
+> **provenance vs sourceRef vs yielded** — `sourceRef`는 기존 도메인 엔티티 역참조, `yielded` 엣지는 구조적
+> 산출 관계, `provenance`는 "이 노드를 만든 **구체적 실행/기법 + MITRE**"의 스탬프다(리포트의 "어떻게 획득했는가"
+> 서술 원천). yielded 엣지로 이미 표현되는 경우 `provenance.techniqueRef`는 그 엣지 source와 일치할 수 있다.
+
+> **layer/timeline** — 우리는 `createdAt`을 이미 보유하므로 timeline 렌더는 사실상 무료다. `layer`는 "같은 시각에
+> 발견/시도된 노드들"을 하나의 timestep으로 묶는 선택적 파생/명시 필드(NodeZero `subflow_nodes` timestep 모델 대응).
+> 별도 timeline 뷰는 발전 후보이며, 데이터 필드는 지금 확보해 둔다.
 
 > **`project-root`** 은 시스템이 프로젝트당 1개 자동 생성하는 합성 노드다(사용자 생성 불가, 삭제 불가).
 > 다중 Target(2.1)을 담는 트리·리포트의 최상위 앵커이며 `meta`는 비어 있거나 프로젝트 요약만 담는다.
@@ -407,6 +417,8 @@ Attack Path는 그중 **root → … → 최종 권한**에 이르는 성공 체
                                               [user] --PrivEsc--> [root]
 ```
 - pivot(`pivoted-to`)은 호스트 경계를 넘는 화살표로 강조. 크리덴셜 재사용은 보조 점선으로.
+- **요약 rollup(§3.4 selector):** 파생 Attack Path 상단에 `{ hosts, services, findings, techniques, credentials,
+  steps, objectivesReached }` 카운트를 표시(NodeZero `AttackVector` 카운트/`total_score` 대응). 대시보드·리포트 헤더로 재사용.
 - 상호작용은 최소(설명용): hover 시 단계 상세, 클릭 시 Inspector/Outline 해당 노드로 이동.
 - **렌더러 = SVG 우선 확정(Q9).** Attack Path는 Graph와 달리 정적·계층적(선형 흐름)이라 물리 시뮬레이션이 없고,
   SVG가 더 적합하다(선명한 벡터, 손쉬운 라벨/화살표, 낮은 복잡도, PNG/PDF export 용이). Pixi 자원 공유 이점보다
@@ -430,6 +442,8 @@ GraphStore (진실 소스: 우리 스키마, React 밖)
 
 - 세 뷰는 `GraphStore`의 selector만 소비하고 서로를 모른다. 선택/포커스 상태만 공유(단일 selection store).
 - `successPaths(project)` selector: root에서 `succeeded` 체인을 DFS로 추출 → Attack Path의 입력.
+- `attackPathSummary(nodes, edges)` selector: 성공 체인에 포함된 노드를 타입별로 집계해
+  `{ hosts, services, findings, techniques, credentials, steps, objectivesReached }` 반환 → Attack Path/리포트 헤더 rollup.
 
 ### 3.5 canonical 수동 재지정(Q3 — 허용 확정)
 
@@ -639,6 +653,10 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 | Q10 | **Pixi.js 도입 승인** (Obsidian급 Graph의 필수 비용) | §3.0, §7 |
 | Q11 | **Objective/Flag 노드 도입** (`objective`/`objectiveKind`, 사용자 지정, 자동추론 안 함) | §1.2, §3.6 |
 | — | 적응형 루트(B): 단일 host면 project-root 숨김·host가 시각 루트, 2대+면 project-root 앵커 | §2.1, §3.1 |
+| Q12 | NodeZero 흡수: 노드 **provenance** 필드(technique/execution/MITRE stamp) | §1.2, §10 |
+| Q13 | NodeZero 흡수: 노드 **`layer`** 필드(timestep, timeline 후보) | §1.2, §10 |
+| Q14 | NodeZero 흡수: **Attack Path rollup** selector(`attackPathSummary`) | §3.3, §3.4 |
+| — | objective criticality는 **미채택**(OSCP 플래그는 이진, 가치 낮음) | §10 |
 
 열린 질문 없음. 이 명세는 구현 착수 가능 상태다. 이후 변경은 이 표에 delta로 추가한다.
 

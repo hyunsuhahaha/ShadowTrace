@@ -226,6 +226,9 @@ node("t_priv","technique","GTFOBins privesc","untried",{note:"내부 호스트 �
 // objective markers (decision Q11): user-set goals. value = objectiveKind, "" = not a goal.
 N["cred"].objective = "foothold";   // 달성(status succeeded)
 N["t_priv"].objective = "root";     // 미달성(status untried)
+// provenance (Q12): what produced/found this node — technique/tool + MITRE.
+N["cred"].provenance = { technique:"smbclient null session", tool:"smbclient", mitre:"T1135" };
+N["t_shell"].provenance = { technique:"web shell upload", tool:"curl", mitre:"T1505.003" };
 
 // edges: {s,t,rel,status, structural}
 const STRUCT = new Set(["discovered","enumerated","attempted","yielded","pivoted-to"]);
@@ -267,6 +270,9 @@ function showInspector(id) {
     const d = document.createElement("div");
     d.innerHTML = `<span>${k}</span><span>${v}</span>`; kv.appendChild(d);
   }
+  if (n.provenance){ const d = document.createElement("div");   // provenance (Q12)
+    d.innerHTML = `<span>발견 경로</span><span>${n.provenance.technique} · ${n.provenance.mitre||""}</span>`;
+    kv.appendChild(d); }
   document.getElementById("insNote").textContent = n.meta.note || "";
 }
 
@@ -571,7 +577,19 @@ const pivot = {id:"int24", edge:"pivoted-to (진행중)"};
     y+=boxH+gap;
   });
   svg+=`</svg>`;
-  document.getElementById("attackSvg").innerHTML=svg;
+  // rollup summary (Q14): counts over the success chain
+  const counts={host:0,service:0,finding:0,technique:0,credential:0};
+  items.forEach(it=>{ const t=N[it.id].type; if(counts[t]!=null) counts[t]++; });
+  const reached=items.filter(it=>N[it.id].objective && N[it.id].status==="succeeded").length;
+  const rollup=`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;
+    background:#16161c;border:1px solid #2a2a34;border-radius:8px;font-size:12px;color:#9a9aa6">
+    <span>스텝 <b style="color:#e7e7ee">${items.length}</b></span>
+    <span>호스트 <b style="color:#e7e7ee">${counts.host}</b></span>
+    <span>서비스 <b style="color:#e7e7ee">${counts.service}</b></span>
+    <span>technique <b style="color:#e7e7ee">${counts.technique}</b></span>
+    <span>크리덴셜 <b style="color:#e7e7ee">${counts.credential}</b></span>
+    <span>목표달성 <b style="color:#f5c518">${reached}</b></span></div>`;
+  document.getElementById("attackSvg").innerHTML=rollup+svg;
 })();
 
 // ---------- tab switching ----------
