@@ -536,13 +536,16 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/tool-catalog`,
 노드/엣지), Outline(트리) 뷰 대안, 노드 상태 편집, 숨김 토글, 우측 상세 패널은 일반
 Inspector(연결 워크스페이스로 딥링크, 하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
-끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). 프로젝트가 없으면 "start"
+끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). `http-link-extract` technique
+노드는 원본 Execution 출력을 읽어 유형순으로 링크를 표시하고, Evidence 파생 저장과
+Web Testing Request 탭 handoff를 제공한다. 프로젝트가 없으면 "start"
 합성 노드로 프로젝트 생성 유도. GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
-OnboardingPane 등 모든 UI가 이 839줄 단일 파일에 인라인으로 정의됨(별도 하위 컴포넌트
-파일 없음).
+OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
+`features/graph/GraphWorkspace.test.tsx`에 있다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
-`/graph/nodes/{id}`(PATCH).
+`/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
+`/targets`, `/targets/{id}/services`.
 
 ### 10.15 인프라/공용 파일 (특정 워크스페이스에 속하지 않음)
 

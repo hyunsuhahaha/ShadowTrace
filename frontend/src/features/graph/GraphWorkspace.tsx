@@ -43,6 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
 const LINK_KIND_LABEL: Record<string, string> = {
   page: "페이지", asset: "정적 리소스", absolute: "절대경로", anchor: "앵커",
 };
+const LINK_KIND_ORDER = ["page", "absolute", "asset", "anchor"];
 const GLYPH: Record<NodeType, string> = {
   "project-root": "◎", host: "▣", service: "◉", finding: "◇",
   technique: "⚡", credential: "🔑",
@@ -225,6 +226,12 @@ export default function GraphWorkspace() {
     } catch { /* ignore */ }
     return null;
   };
+  const linkExtractHandoff = (id: string | null) => {
+    if (!id || nodeById.get(id)?.label !== "http-link-extract") return null;
+    const edge = graph.data?.edges.find((item) =>
+      item.target === id && item.relation === "attempted");
+    return edge ? serviceHandoff(edge.source) : null;
+  };
 
   // Scope the embedded Enumeration workspace to the selected service node.
   const selectedType = selected ? nodeById.get(selected)?.type : undefined;
@@ -343,6 +350,7 @@ export default function GraphWorkspace() {
             </div>
           ) : (
             <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
+              linkExtractContext={linkExtractHandoff(selected)}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
               onSetStatus={(id, status) => setStatus.mutate({ id, status })}
@@ -694,6 +702,7 @@ type AddForm = { type: string; label: string; relation: string; status: string }
 
 export function Inspector(props: {
   node?: GraphNode; link?: DeepLink; busy: boolean;
+  linkExtractContext?: { targetId: number; serviceId: number } | null;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
   onAddNode: (v: AddForm & { sourceId: string }) => void;
@@ -712,7 +721,47 @@ export function Inspector(props: {
     enabled: executionId !== null,
     queryFn: () => api<{ stdout: string }>(`/executions/${executionId}/output`),
   });
-  const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "");
+  const targets = useQuery({
+    queryKey: ["graphLinkTargets"],
+    enabled: executionId !== null && !!props.linkExtractContext,
+    queryFn: () => api<Array<{ id: number; ip: string; hostname?: string }>>("/targets"),
+  });
+  const services = useQuery({
+    queryKey: ["graphLinkServices", props.linkExtractContext?.targetId],
+    enabled: executionId !== null && !!props.linkExtractContext,
+    queryFn: () => api<Array<{ id: number; port: number; name: string; tls?: boolean }>>(
+      `/targets/${props.linkExtractContext!.targetId}/services`),
+  });
+  const [evidenceState, setEvidenceState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "")
+    .sort((a, b) => LINK_KIND_ORDER.indexOf(a.kind) - LINK_KIND_ORDER.indexOf(b.kind));
+  const target = targets.data?.find((item) => item.id === props.linkExtractContext?.targetId);
+  const service = services.data?.find((item) => item.id === props.linkExtractContext?.serviceId);
+  const base = target && service
+    ? `${service.tls || /https|ssl/i.test(service.name) ? "https" : "http"}`
+      + `://${target.hostname || target.ip}:${service.port}/`
+    : "";
+  const openInRequest = (url: string) => {
+    if (!props.linkExtractContext || !base) return;
+    localStorage.setItem("oscp-web-launch", JSON.stringify({
+      ...props.linkExtractContext, url: new URL(url, base).toString(),
+    }));
+    location.hash = "#web/request";
+  };
+  const saveEvidence = async () => {
+    if (executionId === null || !executionOutput.data?.stdout) return;
+    setEvidenceState("saving");
+    try {
+      await api(`/executions/${executionId}/derive`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: executionOutput.data.stdout,
+          filename: `link-extract-${executionId}.txt`,
+        }),
+      });
+      setEvidenceState("saved");
+    } catch { setEvidenceState("error"); }
+  };
   if (!n)
     return <aside style={S.inspector}>
       <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
@@ -741,19 +790,34 @@ export function Inspector(props: {
       {executionId !== null && (
         <section style={S.executionResults} aria-label="링크 추출 결과">
           <div style={S.executionResultsHead}>
-            <strong>발견된 링크</strong>
-            <span>{extractedLinks.length}개</span>
+            <div><strong>발견된 링크</strong> <span>{extractedLinks.length}개</span></div>
+            {!!extractedLinks.length && (
+              <button style={S.resultAction} disabled={evidenceState === "saving"}
+                onClick={() => void saveEvidence()}>
+                {evidenceState === "saving" ? "저장 중…" : "Evidence로 저장"}
+              </button>
+            )}
           </div>
+          {evidenceState === "saved" && <div style={S.resultNotice}>Evidence로 저장됨</div>}
+          {evidenceState === "error" && <div style={S.resultError}>Evidence 저장 실패</div>}
           {executionOutput.isLoading ? (
             <div style={S.resultMessage}>결과 불러오는 중…</div>
           ) : executionOutput.isError ? (
             <div style={S.resultMessage}>실행 결과를 불러오지 못했습니다.</div>
           ) : extractedLinks.length ? (
             <div style={S.linkList}>
+              <div style={{ ...S.linkRow, ...S.linkHeader }}>
+                <span>링크</span><span>유형</span><span />
+              </div>
               {extractedLinks.map((item) => (
                 <div key={`${item.kind}:${item.url}`} style={S.linkRow}>
                   <code style={S.linkCode}>{item.url}</code>
                   <span style={S.linkKind}>{LINK_KIND_LABEL[item.kind] || item.kind}</span>
+                  <span>{(item.kind === "page" || item.kind === "absolute") && base && (
+                    <button style={S.rowAction} onClick={() => openInRequest(item.url)}>
+                      Request 탭에 채우기
+                    </button>
+                  )}</span>
                 </div>
               ))}
             </div>
@@ -860,14 +924,25 @@ const S: Record<string, React.CSSProperties> = {
   executionResults: { marginTop: 18, border: "1px solid #2a2a34",
     borderRadius: 8, overflow: "hidden", background: "#101016" },
   executionResultsHead: { display: "flex", alignItems: "center", gap: 8,
-    padding: "10px 12px", borderBottom: "1px solid #2a2a34", fontSize: 12 },
+    justifyContent: "space-between", padding: "10px 12px",
+    borderBottom: "1px solid #2a2a34", fontSize: 12 },
+  resultAction: { border: "1px solid #454552", borderRadius: 6, padding: "5px 8px",
+    background: "#22222b", color: "#e7e7ee", fontSize: 10 },
+  resultNotice: { padding: "8px 12px", color: "#8ed1a9", fontSize: 10,
+    borderBottom: "1px solid #2a2a34" },
+  resultError: { padding: "8px 12px", color: "#e3938c", fontSize: 10,
+    borderBottom: "1px solid #2a2a34" },
   resultMessage: { padding: 12, color: "#9a9aa6", fontSize: 11 },
   linkList: { maxHeight: 420, overflow: "auto" },
-  linkRow: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+  linkRow: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 80px auto",
     alignItems: "center", gap: 10, padding: "9px 12px",
     borderBottom: "1px solid #22222b" },
+  linkHeader: { position: "sticky", top: 0, zIndex: 1, background: "#15151c",
+    color: "#9a9aa6", fontSize: 10 },
   linkCode: { minWidth: 0, overflowWrap: "anywhere", color: "#d7dedb", fontSize: 11 },
   linkKind: { color: "#9a9aa6", fontSize: 10, whiteSpace: "nowrap" },
+  rowAction: { border: "1px solid #454552", borderRadius: 5, padding: "4px 7px",
+    background: "#22222b", color: "#e7e7ee", fontSize: 9, whiteSpace: "nowrap" },
   embedPane: { flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
     background: "#0e0e12" },
   splitter: { width: 6, flexShrink: 0, cursor: "col-resize", background: "#2a2a34",
