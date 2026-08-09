@@ -40,6 +40,7 @@ const pages = [
     items: [
       { route: "evidence", step: "05", label: "Evidence", detail: "증거 저장과 분류" },
       { route: "reports", step: "06", label: "Reports", detail: "누락 확인과 보고서 작성" },
+      { route: "graph", step: "", label: "Progress Graph", detail: "진행 그래프 · Outline" },
     ],
   },
   {

@@ -74,3 +74,26 @@ def test_deleting_edge_clears_pinned_canonical_reference():
     api.delete_edge(edge.id, db)
     db.refresh(host)
     assert host.pinned_canonical_edge_id is None
+
+
+def test_sync_endpoint_creates_host_and_service_nodes():
+    from app.models import Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.5")
+    db.add(t); db.flush()
+    db.add(Service(target_id=t.id, port=22, protocol="tcp", name="ssh")); db.flush()
+    result = api.sync_graph(p.id, db)
+    assert result["created"] == {"hosts": 1, "services": 1}
+    out = api.get_graph(p.id, db)
+    assert any(n.type == "host" for n in out.nodes)
+    assert any(n.type == "service" for n in out.nodes)
+
+
+def test_attack_paths_endpoint_returns_paths_and_summary():
+    db = database()
+    p = project(db)
+    api.get_graph(p.id, db)
+    res = api.get_attack_paths(p.id, db)
+    assert res["paths"] == []
+    assert res["summary"]["steps"] == 0 and res["summary"]["objectivesReached"] == 0

@@ -15,6 +15,7 @@ const RunbookWorkspace=lazy(()=>import("./RunbookWorkspace"));
 const PostExploitationWorkspace=lazy(()=>import("./PostExploitationWorkspace"));
 const HashCrackingWorkspace=lazy(()=>import("./HashCrackingWorkspace"));
 const ToolsWorkspace=lazy(()=>import("./ToolsWorkspace"));
+const GraphWorkspace=lazy(()=>import("./features/graph/GraphWorkspace"));
 
 const route=()=>{
   const raw=location.hash.replace("#","")||"scans";
@@ -49,6 +50,7 @@ export default function Root(){
     case"post-exploitation":content=<PostExploitationWorkspace/>;break;
     case"hash-cracking":content=<HashCrackingWorkspace/>;break;
     case"tools":content=<ToolsWorkspace/>;break;
+    case"graph":content=<GraphWorkspace/>;break;
     default:content=<ScanCenter/>;
   }
   return (
