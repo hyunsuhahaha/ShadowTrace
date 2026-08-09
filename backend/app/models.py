@@ -755,3 +755,46 @@ class RunbookRecommendationDismissal(Base):
     version_id: Mapped[int] = mapped_column(ForeignKey("runbook_template_versions.id"))
     fingerprint: Mapped[str] = mapped_column(String(64))
     dismissed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GraphNode(Base):
+    __tablename__ = "graph_nodes"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    type: Mapped[str] = mapped_column(String(20))
+    label: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(20), default="untried")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    source_ref: Mapped[str] = mapped_column(Text, default="")  # JSON object or ""
+    notes: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    position: Mapped[str] = mapped_column(Text, default="")  # JSON {x,y} or ""
+    meta: Mapped[str] = mapped_column(Text, default="{}")  # JSON object
+    pinned_canonical_edge_id: Mapped[str | None] = mapped_column(
+        String(26), nullable=True)
+
+
+class GraphEdge(Base):
+    __tablename__ = "graph_edges"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    source: Mapped[str] = mapped_column(ForeignKey("graph_nodes.id"), index=True)
+    target: Mapped[str] = mapped_column(ForeignKey("graph_nodes.id"), index=True)
+    relation: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20), default="untried")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    label: Mapped[str] = mapped_column(String(300), default="")
+    meta: Mapped[str] = mapped_column(Text, default="{}")  # JSON object
+
+
+class GraphProjectMeta(Base):
+    __tablename__ = "graph_project_meta"
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), primary_key=True)
+    root_node_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    layout: Mapped[str] = mapped_column(Text, default="{}")  # JSON object
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

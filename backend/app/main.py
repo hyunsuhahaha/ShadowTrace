@@ -43,6 +43,7 @@ from .modules.hash_cracking.router import router as hash_cracking_router
 from .modules.hash_cracking.manager import manager as hash_cracking_manager
 from .modules.privesc_analysis.router import router as privesc_analysis_router
 from .modules.decoders.router import router as decoders_router
+from .modules.graph.router import router as graph_router
 from .modules.core.router import (
     delete_project,
     ensure_target,
@@ -111,6 +112,7 @@ app.include_router(directory_router)
 app.include_router(tunnel_router)
 app.include_router(report_router)
 app.include_router(finding_router)
+app.include_router(graph_router)
 app.include_router(operations_router)
 app.include_router(vpn_router)
 app.include_router(hosts_router)
