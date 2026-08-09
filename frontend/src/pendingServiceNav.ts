@@ -9,7 +9,6 @@ export type PendingServiceNav = {
   targetId: number;
   serviceId: number;
   anchorId?: string;
-  executionId?: number;
 };
 
 let pending: PendingServiceNav | undefined;

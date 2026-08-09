@@ -235,7 +235,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (result.action === "apply") {
       setServiceId(result.serviceId);
       if (result.anchorId) scrollToAnchorSoon(result.anchorId);
-      if (!pendingNavRef.current?.executionId) pendingNavRef.current = undefined;
+      pendingNavRef.current = undefined;
       return;
     }
     if (result.action === "pending") return;
@@ -248,7 +248,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (result.action === "apply") {
       setServiceId(result.serviceId);
       if (result.anchorId) scrollToAnchorSoon(result.anchorId);
-      if (!nav.executionId) pendingNavRef.current = undefined;
+      pendingNavRef.current = undefined;
     }
   };
   useEffect(() => {
@@ -766,14 +766,6 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
         `\n[${data.status}${data.exit_code == null ? "" : ` · exit ${data.exit_code}`}]`,
     );
   };
-  useEffect(() => {
-    const nav = pendingNavRef.current;
-    if (!nav?.executionId || nav.serviceId !== serviceId
-      || !serviceExecutions.some((item) => item.id === nav.executionId)) return;
-    pendingNavRef.current = undefined;
-    void openExecution(nav.executionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceId, serviceExecutions]);
   const stopSavedExecution = async () => {
     if (!selectedExecutionId) return;
     await api(`/executions/${selectedExecutionId}/stop`, { method: "POST" });
