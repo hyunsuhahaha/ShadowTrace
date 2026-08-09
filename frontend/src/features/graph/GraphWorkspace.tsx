@@ -110,17 +110,20 @@ export function nodeSummary(node: Pick<GraphNode, "type" | "status" | "label" | 
   return node.label;
 }
 
-type ActivityItem = { nodeId: string; at: string; text: string };
+type ActivityKind = "live" | "service" | "task" | "credential" | "finding" | "target";
+type ActivityItem = { nodeId: string; at: string; text: string; kind: ActivityKind;
+  status: string; reason: string };
 type ActivityPanelState = { x?: number; y?: number; width: number; height: number; collapsed: boolean };
 const ACTIVITY_PANEL_KEY = "oscp-graph-activity-panel";
 const defaultActivityPanel: ActivityPanelState = {
-  width: 292, height: 238, collapsed: false,
+  width: 380, height: 340, collapsed: false,
 };
 
 export function clampActivityPanel(x: number, y: number, width: number, height: number,
   boundsWidth: number, boundsHeight: number) {
-  return { x: Math.max(0, Math.min(x, Math.max(0, boundsWidth - width))),
-    y: Math.max(0, Math.min(y, Math.max(0, boundsHeight - height))) };
+  const resizeHandleClearance = 28;
+  return { x: Math.max(0, Math.min(x, Math.max(0, boundsWidth - width - resizeHandleClearance))),
+    y: Math.max(0, Math.min(y, Math.max(0, boundsHeight - height - resizeHandleClearance))) };
 }
 
 function readActivityPanel(): ActivityPanelState {
@@ -129,7 +132,7 @@ function readActivityPanel(): ActivityPanelState {
     if (saved && Number.isFinite(saved.width) && Number.isFinite(saved.height))
       return { x: Number.isFinite(saved.x) ? saved.x : undefined,
         y: Number.isFinite(saved.y) ? saved.y : undefined,
-        width: Math.max(220, saved.width), height: Math.max(120, saved.height),
+        width: Math.max(360, saved.width), height: Math.max(260, saved.height),
         collapsed: !!saved.collapsed };
   } catch { /* use the compact default */ }
   return defaultActivityPanel;
@@ -138,14 +141,31 @@ export function buildActivityFeed(data: GraphOut): ActivityItem[] {
   const active = data.nodes.flatMap((node) => {
     const activity = getNodeActivity(node);
     return activity?.startedAt ? [{ nodeId: node.id, at: activity.startedAt,
-      text: `${activity.label} ${activity.kind === "listener" ? "listening" : "started"}` }] : [];
+      text: `${activity.label} ${activity.kind === "listener" ? "listening" : "started"}`,
+      kind: "live" as const, status: "in-progress", reason: "실행 중" }] : [];
   });
-  const created = data.nodes.flatMap((node) => node.created_at ? [{ nodeId: node.id,
+  const activeIds = new Set(active.map((item) => item.nodeId));
+  const created = data.nodes.flatMap((node) => node.created_at && !activeIds.has(node.id) ? [{ nodeId: node.id,
     at: node.created_at, text: node.type === "service" ? `${nodeSummary(node)} discovered`
       : node.type === "credential" ? `${nodeSummary(node)} captured`
       : node.type === "finding" ? `${nodeSummary(node)} identified`
-      : node.type === "technique" ? nodeSummary(node) : `${node.label} discovered` }] : []);
-  return [...active, ...created].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 8);
+      : node.type === "technique" ? nodeSummary(node) : `${node.label} discovered`,
+    kind: (node.type === "technique" ? "task" : node.type === "project-root"
+      || node.type === "host" || node.type === "operator" ? "target" : node.type) as ActivityKind,
+    status: node.status, reason: nodeStatusReason(node) }] : []);
+  return [...active, ...created].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 100);
+}
+
+type ActivityStatusFilter = "all" | "running" | "review" | "failed" | "complete";
+export function filterActivityFeed(items: ActivityItem[], query: string,
+  kind: "all" | ActivityKind, status: ActivityStatusFilter = "all"): ActivityItem[] {
+  const needle = query.trim().toLocaleLowerCase();
+  return items.filter((item) => (kind === "all" || item.kind === kind)
+    && (status === "all" || status === "running" && item.kind === "live"
+      || status === "review" && item.reason === "사용자 검토 대기"
+      || status === "failed" && item.status === "attempt-failed"
+      || status === "complete" && item.status === "succeeded")
+    && (!needle || `${item.text} ${item.kind} ${item.reason}`.toLocaleLowerCase().includes(needle)));
 }
 
 export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | null {
@@ -971,27 +991,30 @@ function GraphCanvas(props: {
 
 function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: (id: string) => void }) {
   const [panel, setPanel] = useState(readActivityPanel);
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"all" | ActivityKind>("all");
+  const [status, setStatusFilter] = useState<ActivityStatusFilter>("all");
+  const [newestFirst, setNewestFirst] = useState(true);
   const ref = useRef<HTMLElement>(null);
   const drag = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
+  const resizeDrag = useRef<{ pointerId: number; startX: number; startY: number;
+    width: number; height: number; maxWidth: number; maxHeight: number } | null>(null);
   useEffect(() => {
     localStorage.setItem(ACTIVITY_PANEL_KEY, JSON.stringify(panel));
   }, [panel]);
   useEffect(() => {
-    const element = ref.current;
-    if (!element || panel.collapsed) return;
-    const observer = new ResizeObserver(() => {
-      const width = Math.round(element.offsetWidth), height = Math.round(element.offsetHeight);
-      if (width !== panel.width || height !== panel.height) {
-        const parent = element.parentElement;
-        const position = parent && panel.x !== undefined && panel.y !== undefined
-          ? clampActivityPanel(panel.x, panel.y, width, height,
-            parent.clientWidth, parent.clientHeight) : {};
-        setPanel((current) => ({ ...current, width, height, ...position }));
-      }
+    const element = ref.current, parent = element?.parentElement;
+    if (!element || !parent) return;
+    const keepInside = () => setPanel((current) => {
+      if (current.x === undefined || current.y === undefined) return current;
+      const next = clampActivityPanel(current.x, current.y, element.offsetWidth,
+        element.offsetHeight, parent.clientWidth, parent.clientHeight);
+      return next.x === current.x && next.y === current.y ? current : { ...current, ...next };
     });
-    observer.observe(element);
+    const observer = new ResizeObserver(keepInside);
+    observer.observe(parent); keepInside();
     return () => observer.disconnect();
-  }, [panel.collapsed, panel.width, panel.height]);
+  }, []);
   const startDrag = (event: React.PointerEvent<HTMLElement>) => {
     const element = ref.current, parent = element?.parentElement;
     if (!element || !parent) return;
@@ -1016,14 +1039,43 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
   };
   const positioned = panel.x === undefined || panel.y === undefined
     ? { right: 14, bottom: 14 } : { left: panel.x, top: panel.y };
+  const visible = filterActivityFeed(items, query, kind, status);
+  const ordered = newestFirst ? visible : [...visible].reverse();
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    const element = ref.current, parent = element?.parentElement;
+    if (!element || !parent) return;
+    event.stopPropagation();
+    const rect = element.getBoundingClientRect(), bounds = parent.getBoundingClientRect();
+    const x = rect.left - bounds.left, y = rect.top - bounds.top;
+    setPanel((current) => ({ ...current, x, y }));
+    resizeDrag.current = { pointerId: event.pointerId, startX: event.clientX,
+      startY: event.clientY, width: rect.width, height: rect.height,
+      maxWidth: bounds.width - x - 28, maxHeight: bounds.height - y - 28 };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = resizeDrag.current;
+    if (!active) return;
+    setPanel((current) => ({ ...current,
+      width: Math.max(280, Math.min(active.maxWidth,
+        active.width + event.clientX - active.startX)),
+      height: Math.max(160, Math.min(active.maxHeight,
+        active.height + event.clientY - active.startY)) }));
+  };
+  const stopResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeDrag.current) return;
+    resizeDrag.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   return <section ref={ref} style={{ ...S.activityStream, ...positioned,
+    minWidth: panel.collapsed ? 184 : 360,
     width: panel.collapsed ? 184 : panel.width,
     height: panel.collapsed ? 34 : panel.height,
-    resize: panel.collapsed ? "none" : "both" }} aria-label="최근 활동">
+  }} aria-label="최근 활동">
     <header style={S.activityHead} onPointerDown={startDrag} onPointerMove={moveDrag}
       onPointerUp={stopDrag} onPointerCancel={stopDrag} title="드래그하여 이동">
       <span>ACTIVITY STREAM</span>
-      <span style={S.activityHeadActions}><b>{items.length}</b>
+      <span style={S.activityHeadActions}><b>{visible.length}/{items.length}</b>
         <button type="button" aria-label={panel.collapsed ? "활동 펼치기" : "활동 접기"}
           title={panel.collapsed ? "펼치기" : "접기"}
           style={S.activityToggle}
@@ -1032,12 +1084,51 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
           {panel.collapsed ? "□" : "—"}
         </button></span>
     </header>
-    {!panel.collapsed && (items.length ? items.map((item, index) =>
-      <button key={`${item.nodeId}-${item.at}-${index}`} style={S.activityRow}
-        onClick={() => onSelect(item.nodeId)}>
-        <time>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
-        <span>{item.text}</span>
-      </button>) : <div style={S.activityEmpty}>아직 기록된 활동이 없습니다.</div>)}
+    {!panel.collapsed && <>
+      <div style={S.activityTools}>
+        <label style={S.activitySearch}>
+          <span>⌕</span><input aria-label="활동 검색" value={query}
+            style={S.activitySearchInput} onChange={(event) => setQuery(event.target.value)}
+            placeholder="서비스, 명령, 결과 검색" />
+          {query && <button type="button" aria-label="검색 지우기" style={S.activitySearchClear}
+            onClick={() => setQuery("")}>×</button>}
+        </label>
+        <div style={S.activityFilters} aria-label="활동 필터">
+          <select aria-label="활동 유형" value={kind}
+            style={S.activityControl}
+            onChange={(event) => setKind(event.target.value as "all" | ActivityKind)}>
+            <option value="all">모든 유형</option><option value="live">실행 중</option>
+            <option value="service">서비스</option><option value="task">작업</option>
+            <option value="credential">자격 증명</option><option value="finding">Finding</option>
+          </select>
+          <select aria-label="활동 상태" value={status}
+            style={S.activityControl}
+            onChange={(event) => setStatusFilter(event.target.value as ActivityStatusFilter)}>
+            <option value="all">모든 상태</option><option value="running">실행 중</option>
+            <option value="review">검토 대기</option><option value="failed">실패·재시도</option>
+            <option value="complete">완료</option>
+          </select>
+          <button type="button" onClick={() => setNewestFirst((value) => !value)}
+            style={S.activityControl} title="시간 정렬 전환">
+            {newestFirst ? "최신순 ↓" : "오래된순 ↑"}</button>
+        </div>
+      </div>
+      <div style={S.activityList}>
+        {ordered.length ? ordered.map((item, index) =>
+          <button key={`${item.nodeId}-${item.at}-${index}`} style={S.activityRow}
+            onClick={() => onSelect(item.nodeId)} title="그래프에서 이 노드로 이동">
+            <span style={{ ...S.activityDot, background: color(item.status) }} />
+            <span style={S.activityCopy}><b>{item.text}</b>
+              <small>{item.kind.toUpperCase()} · {item.reason}</small></span>
+            <time style={S.activityTime}>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
+          </button>) : <div style={S.activityEmpty}>
+            {items.length ? "검색 조건에 맞는 활동이 없습니다." : "아직 기록된 활동이 없습니다."}
+          </div>}
+      </div>
+      <div role="separator" aria-label="Activity Stream 크기 조절" title="드래그하여 크기 조절"
+        style={S.activityResize} onPointerDown={startResize} onPointerMove={moveResize}
+        onPointerUp={stopResize} onPointerCancel={stopResize}>⌟</div>
+    </>}
   </section>;
 }
 
@@ -1596,16 +1687,18 @@ const S: Record<string, React.CSSProperties> = {
     background: "#0e0e12", color: "#e7e7ee" },
   bar: { display: "flex", alignItems: "center", gap: 16, padding: "10px 16px",
     borderBottom: "1px solid #2a2a34" },
-  tabs: { display: "flex", gap: 4, background: "#16161c", padding: 4,
+  tabs: { display: "flex", flexShrink: 0, gap: 4, background: "#16161c", padding: 4,
     borderRadius: 10, border: "1px solid #2a2a34" },
-  legend: { marginLeft: "auto", display: "flex", gap: 12, color: "#9a9aa6", fontSize: 12 },
+  legend: { marginLeft: "auto", minWidth: 0, overflowX: "auto", display: "flex",
+    flexWrap: "nowrap", gap: 12, color: "#9a9aa6", fontSize: 12 },
   stage: { flex: 1, display: "flex", minHeight: 0 },
   hint: { position: "absolute", left: 16, bottom: 14, color: "#6b6b76", fontSize: 12,
     pointerEvents: "none" },
   activityStream: { position: "absolute", minWidth: 184, minHeight: 34,
-    overflow: "auto", border: "1px solid rgba(89,245,154,.16)",
-    background: "rgba(8,12,11,.88)", backdropFilter: "blur(8px)", color: "#cbd8d2" },
-  activityHead: { position: "sticky", top: 0, zIndex: 1, display: "flex",
+    display: "flex", flexDirection: "column", overflow: "hidden",
+    border: "1px solid rgba(89,245,154,.22)",
+    background: "rgba(8,12,11,.94)", backdropFilter: "blur(8px)", color: "#d8e2dd" },
+  activityHead: { flex: "0 0 auto", zIndex: 1, display: "flex",
     justifyContent: "space-between", padding: "8px 10px", borderBottom: "1px solid #223029",
     background: "rgba(8,12,11,.96)", color: "#59f59a", cursor: "move",
     touchAction: "none", userSelect: "none",
@@ -1614,11 +1707,31 @@ const S: Record<string, React.CSSProperties> = {
   activityToggle: { width: 22, height: 20, padding: 0, border: "1px solid #294036",
     background: "#101a15", color: "#75d99c", cursor: "pointer",
     font: "600 10px ui-monospace,monospace" },
-  activityRow: { width: "100%", display: "grid", gridTemplateColumns: "58px minmax(0,1fr)",
-    gap: 8, padding: "7px 10px", border: 0, borderBottom: "1px solid rgba(255,255,255,.045)",
-    background: "transparent", color: "#b9c8c1", textAlign: "left", cursor: "pointer",
-    font: "9px/1.35 ui-monospace,monospace" },
-  activityEmpty: { padding: 14, color: "#63716a", fontSize: 10 },
+  activityTools: { flex: "0 0 auto", padding: "10px", borderBottom: "1px solid #223029",
+    background: "#0b100e" },
+  activitySearch: { height: 34, display: "flex", alignItems: "center", gap: 7,
+    padding: "0 9px", border: "1px solid #314139", background: "#060a08", color: "#6f8379" },
+  activitySearchInput: { flex: 1, minWidth: 0, padding: 0, border: 0, outline: 0,
+    background: "transparent", color: "#e0e8e4", fontSize: 11 },
+  activitySearchClear: { width: 22, height: 22, padding: 0, border: 0,
+    background: "transparent", color: "#84938b", cursor: "pointer", fontSize: 15 },
+  activityFilters: { display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, marginTop: 8 },
+  activityControl: { minWidth: 0, height: 30, padding: "0 8px", border: "1px solid #314139",
+    background: "#0c1410", color: "#aebdb5", cursor: "pointer", fontSize: 10 },
+  activityList: { flex: 1, minHeight: 0, overflow: "auto", paddingBottom: 14 },
+  activityRow: { width: "100%", display: "grid",
+    gridTemplateColumns: "8px minmax(0,1fr) auto", alignItems: "start",
+    gap: 9, padding: "10px", border: 0, borderBottom: "1px solid rgba(255,255,255,.055)",
+    background: "transparent", color: "#d2ddd7", textAlign: "left", cursor: "pointer",
+    font: "12px/1.45 ui-monospace,monospace" },
+  activityDot: { width: 7, height: 7, marginTop: 4, borderRadius: "50%" },
+  activityCopy: { display: "grid", gap: 4, minWidth: 0 },
+  activityTime: { color: "#829087", fontSize: 10, fontVariantNumeric: "tabular-nums" },
+  activityEmpty: { padding: 20, color: "#75837c", fontSize: 11, textAlign: "center" },
+  activityResize: { position: "absolute", right: 1, bottom: 1, zIndex: 3,
+    width: 22, height: 22, display: "grid", placeItems: "center", color: "#68d594",
+    background: "#101a15", borderLeft: "1px solid #31533f", borderTop: "1px solid #31533f",
+    cursor: "nwse-resize", touchAction: "none", userSelect: "none", fontSize: 14 },
   outline: { flex: 1, overflow: "auto", padding: 18 },
   row: { display: "flex", alignItems: "center", gap: 8, padding: "5px 8px",
     borderRadius: 7, cursor: "pointer" },
