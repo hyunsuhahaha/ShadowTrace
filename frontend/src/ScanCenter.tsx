@@ -12,7 +12,7 @@ import {
   type Scan, type Target, type VpnStatus,
 } from "./scanCenterModel";
 
-export default function ScanCenter() {
+export default function ScanCenter({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   const [targetId, setTargetId] = useState<number>(),
     [targetIp, setTargetIp] = useState(""),
@@ -381,8 +381,8 @@ export default function ScanCenter() {
       await refresh();
     };
   return (
-    <div className="scanPage">
-      <header>
+    <div className={embedded ? "scanPage scanPage--embedded" : "scanPage"}>
+      {!embedded && <header>
         <div className="brand">
           <span className="mark">OW</span>
           <div>
@@ -391,7 +391,7 @@ export default function ScanCenter() {
           </div>
         </div>
         <VpnControl targetIp={target?.ip} />
-      </header>
+      </header>}
       <nav>
         <a href="#enumeration">Enumeration</a>
         <a href="#web">Web 테스트</a>

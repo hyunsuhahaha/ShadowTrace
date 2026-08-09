@@ -4,9 +4,10 @@ import { api } from "../../api";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 
-// The existing Service Enumeration workspace, embedded (its own chrome hidden)
-// so the graph becomes the primary interface and its tools live beside it.
+// Existing workspaces embedded (their own chrome hidden) so the graph is the
+// primary interface: service node -> Enumeration, root node -> Scan Center.
 const EmbeddedEnumeration = lazy(() => import("../../App"));
+const EmbeddedScanCenter = lazy(() => import("../../ScanCenter"));
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -64,6 +65,21 @@ export default function GraphWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
+
+  const createProject = useMutation({
+    mutationFn: () => api<{ id: number }>("/projects", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `OSCP Practice ${Date.now().toString().slice(-4)}`,
+        description: "Local lab workspace",
+      }),
+    }),
+    onSuccess: (project) => {
+      localStorage.setItem("oscp-workspace-project", String(project.id));
+      dispatchEvent(new CustomEvent("oscp-project-change", { detail: project.id }));
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
 
   const setHidden = useMutation({
     mutationFn: (v: { id: string; hidden: boolean }) =>
@@ -185,18 +201,25 @@ export default function GraphWorkspace() {
     return undefined;
   };
 
-  if (!projectId)
-    return <Empty text="상단에서 프로젝트를 먼저 선택하세요." />;
-  if (graph.isLoading) return <Empty text="그래프 동기화 중…" />;
-  if (graph.isError)
+  const noProject = !projectId;
+  if (!noProject && graph.isLoading) return <Empty text="그래프 동기화 중…" />;
+  if (!noProject && graph.isError)
     return <Empty text={`불러오기 실패: ${(graph.error as Error).message}`} />;
 
-  const data = graph.data!;
+  // Graph-first onboarding: even with no project (or before any scan), show a
+  // graph with a single root node the user can click to start scanning.
+  const SYNTHETIC: GraphOut = {
+    root_node_id: "start",
+    nodes: [{ id: "start", type: "project-root", status: "in-progress",
+      label: "여기서 시작 · 프로젝트 만들기", objective: false, source_ref: "", hidden: false }],
+    edges: [],
+  };
+  const data = noProject ? SYNTHETIC : graph.data!;
   const hostCount = data.nodes.filter((n) => n.type === "host" && !n.hidden).length;
   const hiddenCount = data.nodes.filter((n) => n.hidden).length;
-  const selectedNode = selected ? nodeById.get(selected) : undefined;
-  if (data.nodes.length <= 1)
-    return <Empty text="아직 노드가 없습니다. Scan Center에서 nmap 결과를 먼저 가져오세요." />;
+  const selectedNode = selected
+    ? (noProject ? data.nodes.find((n) => n.id === selected) : nodeById.get(selected))
+    : undefined;
 
   return (
     <div style={S.wrap}>
@@ -229,7 +252,16 @@ export default function GraphWorkspace() {
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
-        {selectedNode?.type === "service" ? (
+        {noProject ? (
+          <OnboardingPane creating={createProject.isPending}
+            onCreate={() => createProject.mutate()} />
+        ) : selectedNode?.type === "project-root" ? (
+          <div style={S.embedPane}>
+            <Suspense fallback={<Empty text="Scan Center 불러오는 중…" />}>
+              <EmbeddedScanCenter embedded />
+            </Suspense>
+          </div>
+        ) : selectedNode?.type === "service" ? (
           <div style={S.embedPane}>
             <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
               <EmbeddedEnumeration embedded />
@@ -264,10 +296,10 @@ function GraphCanvas(props: {
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // adaptive root (decision B): single host => that host is the visual anchor.
-  const anchorId = hostCount <= 1
+  const anchorId = hostCount === 1
     ? (data.nodes.find((n) => n.type === "host")?.id ?? data.root_node_id)
     : data.root_node_id;
-  const hideRoot = hostCount <= 1;
+  const hideRoot = hostCount === 1;  // single host is the anchor; 0 hosts -> show root
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -527,6 +559,23 @@ function Row(props: {
 }
 
 // ---------------- shared ----------------
+
+function OnboardingPane(props: { creating: boolean; onCreate: () => void }) {
+  return (
+    <div style={S.embedPane}>
+      <div style={{ padding: 40, maxWidth: 440 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>여기서 시작하세요</h2>
+        <p style={{ color: "#9a9aa6", fontSize: 13, lineHeight: 1.6 }}>
+          아직 프로젝트가 없습니다. 프로젝트를 만들면 루트 노드가 생기고, 그 노드를 클릭해
+          대상 추가 · nmap 스캔을 그래프에서 바로 진행할 수 있습니다.
+        </p>
+        <button onClick={props.onCreate} disabled={props.creating} style={S.openBtn}>
+          {props.creating ? "만드는 중…" : "＋ 새 프로젝트 만들기"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Inspector(props: {
   node?: GraphNode; link?: DeepLink;
