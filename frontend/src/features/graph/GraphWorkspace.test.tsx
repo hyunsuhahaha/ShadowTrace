@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector,
   initialGraphPositionNearParent, isCrackableCredential, buildActivityFeed, clampActivityPanel,
-  filterActivityFeed, nodeStatusReason, nodeSummary } from "./GraphWorkspace";
+  filterActivityFeed, filterGraph, nodeStatusReason, nodeSummary } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
@@ -74,6 +74,19 @@ it("builds a newest-first clickable activity feed from graph nodes", () => {
 it("keeps a moved or resized activity stream inside the graph", () => {
   expect(clampActivityPanel(900, -20, 280, 180, 1000, 700))
     .toEqual({ x: 692, y: 0 });
+});
+
+it("filters and focuses a large graph without deleting the source topology", () => {
+  const nodes = ["a", "b", "c"].map((id, index) => ({ id, type: index ? "technique" : "host",
+    status: index === 2 ? "attempt-failed" : "untried", label: id, objective: false,
+    source_ref: "", hidden: false, notes: id === "b" ? "check headers" : "" }));
+  const data = { root_node_id: "a", nodes, edges: [
+    { id: "ab", source: "a", target: "b", relation: "attempted", status: "untried" },
+    { id: "bc", source: "b", target: "c", relation: "attempted", status: "untried" }] };
+  const focused = filterGraph(data as Parameters<typeof filterGraph>[0],
+    { query: "", type: "all", status: "all", focusDepth: 1, pinnedOnly: false }, "a");
+  expect(focused.nodes.map((node) => node.id)).toEqual(["a", "b"]);
+  expect(data.nodes).toHaveLength(3);
 });
 
 it("inserts the tun0 responder path without leaving the graph request panel", async () => {

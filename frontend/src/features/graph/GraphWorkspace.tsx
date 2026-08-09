@@ -22,12 +22,15 @@ type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
   source_ref: string; hidden: boolean; meta?: string; created_at?: string; updated_at?: string;
+  notes?: string; tags?: string; pinned?: boolean;
 };
 type DeepLink = { label: string; open: () => void };
 type GraphEdge = {
   id: string; source: string; target: string; relation: string; status: string;
 };
 type GraphOut = { root_node_id: string | null; nodes: GraphNode[]; edges: GraphEdge[] };
+type GraphFilter = { query: string; type: "all" | NodeType; status: string;
+  focusDepth: number; pinnedOnly: boolean };
 type GraphRequestDraft = {
   projectId: number; targetId: number; serviceId: number; url: string;
 };
@@ -168,6 +171,33 @@ export function filterActivityFeed(items: ActivityItem[], query: string,
     && (!needle || `${item.text} ${item.kind} ${item.reason}`.toLocaleLowerCase().includes(needle)));
 }
 
+export function filterGraph(data: GraphOut, filter: GraphFilter,
+  selected: string | null): GraphOut {
+  const allowed = new Set(data.nodes.map((node) => node.id));
+  if (filter.focusDepth > 0 && selected) {
+    allowed.clear(); allowed.add(selected);
+    let frontier = new Set([selected]);
+    for (let depth = 0; depth < filter.focusDepth; depth++) {
+      const next = new Set<string>();
+      data.edges.forEach((edge) => {
+        if (frontier.has(edge.source)) next.add(edge.target);
+        if (frontier.has(edge.target)) next.add(edge.source);
+      });
+      next.forEach((id) => allowed.add(id)); frontier = next;
+    }
+  }
+  const needle = filter.query.trim().toLocaleLowerCase();
+  const nodes = data.nodes.filter((node) => allowed.has(node.id)
+    && (filter.type === "all" || node.type === filter.type)
+    && (filter.status === "all" || node.status === filter.status)
+    && (!filter.pinnedOnly || node.pinned)
+    && (!needle || `${node.label} ${nodeSummary(node)} ${node.notes || ""} ${node.tags || ""}`
+      .toLocaleLowerCase().includes(needle)));
+  const ids = new Set(nodes.map((node) => node.id));
+  return { root_node_id: data.root_node_id, nodes,
+    edges: data.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)) };
+}
+
 export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | null {
   if (!node.meta) return null;
   try {
@@ -205,7 +235,16 @@ export default function GraphWorkspace() {
   const [view, setView] = useState<"graph" | "tree" | "outline">(() =>
     (localStorage.getItem("oscp-graph-view") as "graph" | "tree" | "outline") || "graph");
   useEffect(() => { localStorage.setItem("oscp-graph-view", view); }, [view]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() =>
+    localStorage.getItem("oscp-graph-selected"));
+  useEffect(() => {
+    if (selected) localStorage.setItem("oscp-graph-selected", selected);
+    else localStorage.removeItem("oscp-graph-selected");
+  }, [selected]);
+  const [filter, setFilter] = useState<GraphFilter>({ query: "", type: "all",
+    status: "all", focusDepth: 0, pinnedOnly: false });
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -280,6 +319,12 @@ export default function GraphWorkspace() {
       }),
     onSuccess: invalidateGraph,
   });
+  const setDetails = useMutation({
+    mutationFn: (v: { id: string; notes?: string; pinned?: boolean }) =>
+      api(`/graph/nodes/${v.id}`, { method: "PATCH",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) }),
+    onSuccess: invalidateGraph,
+  });
   // Manual recording: create a node and connect it to the selected one. This is
   // how artifacts the DB never captured (a stolen hash, an observed LFI) get
   // into the graph.
@@ -322,6 +367,9 @@ export default function GraphWorkspace() {
     graph.data?.nodes.forEach((n) => map.set(n.id, n));
     return map;
   }, [graph.data]);
+  useEffect(() => {
+    if (selected && graph.data && !nodeById.has(selected)) setSelected(null);
+  }, [graph.data, nodeById, selected]);
 
   // Reverse bridge: focus the node a specialized workspace pointed us at.
   useEffect(() => {
@@ -469,6 +517,7 @@ export default function GraphWorkspace() {
     edges: [],
   };
   const data = noProject ? SYNTHETIC : graph.data!;
+  const visibleData = filterGraph(data, filter, selected);
   const hostCount = data.nodes.filter((n) => n.type === "host" && !n.hidden).length;
   const hiddenCount = data.nodes.filter((n) => n.hidden).length;
   const selectedNode = selected
@@ -506,10 +555,38 @@ export default function GraphWorkspace() {
           ))}
         </div>
       </div>
+      <div style={S.graphTools}>
+        <label style={S.graphSearch}><span>⌕</span><input aria-label="그래프 검색"
+          style={S.graphSearchInput}
+          value={filter.query} placeholder="노드, 서비스, 메모 검색"
+          onChange={(event) => setFilter({ ...filter, query: event.target.value })} /></label>
+        <select aria-label="노드 유형" value={filter.type}
+          style={S.graphControl}
+          onChange={(event) => setFilter({ ...filter, type: event.target.value as GraphFilter["type"] })}>
+          <option value="all">모든 유형</option>{Object.keys(GLYPH).map((type) =>
+            <option key={type} value={type}>{type}</option>)}</select>
+        <select aria-label="노드 상태" value={filter.status}
+          style={S.graphControl}
+          onChange={(event) => setFilter({ ...filter, status: event.target.value })}>
+          <option value="all">모든 상태</option>{STATUS_ORDER.map((status) =>
+            <option key={status} value={status}>{STATUS_REASON[status]}</option>)}</select>
+        <select aria-label="집중 범위" value={filter.focusDepth}
+          style={S.graphControl}
+          onChange={(event) => setFilter({ ...filter, focusDepth: Number(event.target.value) })}>
+          <option value={0}>전체 관계</option><option value={1}>선택 주변 1단계</option>
+          <option value={2}>선택 주변 2단계</option><option value={3}>선택 주변 3단계</option></select>
+        <button style={{ ...S.graphControl, ...(filter.pinnedOnly ? S.toolActive : {}) }}
+          onClick={() => setFilter({ ...filter, pinnedOnly: !filter.pinnedOnly })}>★ 북마크</button>
+        <button style={S.graphControl} onClick={() => setFilter({ query: "", type: "all", status: "all",
+          focusDepth: 0, pinnedOnly: false })}>필터 초기화</button>
+        <button style={S.graphControl} onClick={() => setQueueOpen((value) => !value)}>작업 큐</button>
+        <span style={S.filterCount}>{visibleData.nodes.length}/{data.nodes.length} nodes</span>
+      </div>
       <div style={S.stage}>
         {view !== "outline" ? (
-          <GraphCanvas data={data} hostCount={hostCount} showHidden={showHidden}
+          <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
+            onContext={(id, x, y) => setContextMenu({ id, x, y })}
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
@@ -563,10 +640,24 @@ export default function GraphWorkspace() {
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
               onSetStatus={(id, status) => setStatus.mutate({ id, status })}
+              onSetDetails={(id, details) => setDetails.mutate({ id, ...details })}
               onAddNode={(v) => addNode.mutate(v)} />
           )}
         </div>
       </div>
+      {queueOpen && <TaskQueue nodes={data.nodes} onClose={() => setQueueOpen(false)}
+        onSelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
+        onStatus={(id, status) => setStatus.mutate({ id, status })}
+        onAdd={() => selectedNode && setAddOpen(true)} canAdd={!!selectedNode} />}
+      {contextMenu && nodeById.get(contextMenu.id) && <NodeQuickMenu
+        node={nodeById.get(contextMenu.id)!} x={contextMenu.x} y={contextMenu.y}
+        onClose={() => setContextMenu(null)}
+        onOpen={() => { setSelected(contextMenu.id); setContextMenu(null); }}
+        onAdd={() => { setSelected(contextMenu.id); setAddOpen(true); setContextMenu(null); }}
+        onPin={() => { const node = nodeById.get(contextMenu.id)!;
+          setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
+        onHide={() => { setHidden.mutate({ id: contextMenu.id, hidden: true }); setContextMenu(null); }}
+        onStatus={(status) => { setStatus.mutate({ id: contextMenu.id, status }); setContextMenu(null); }} />}
       {addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>
           <div style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
@@ -606,6 +697,7 @@ function GraphCanvas(props: {
   selected: string | null; onSelect: (id: string) => void;
   focus: { id: string; nonce: number } | null;
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
+  onContext: (id: string, x: number, y: number) => void;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -641,7 +733,15 @@ function GraphCanvas(props: {
     if (!ctx) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     let W = 0, H = 0, raf = 0, render = (_now?: number) => {};
-    let panX = 0, panY = 0, panning = false, panStart = { x: 0, y: 0 };
+    const workspaceKey = `oscp-graph-camera:${data.root_node_id || "start"}:${props.layoutMode}`;
+    let restored: { panX?: number; panY?: number; zoom?: number;
+      positions?: Record<string, GraphPosition> } = {};
+    try { restored = JSON.parse(localStorage.getItem(workspaceKey) || "{}"); } catch { /* defaults */ }
+    if (restored.positions) positions.current[props.layoutMode] = new Map(Object.entries(restored.positions));
+    if (Number.isFinite(restored.zoom)) zoomRef.current = Math.max(.3, Math.min(4, restored.zoom!));
+    let panX = Number.isFinite(restored.panX) ? restored.panX! : 0;
+    let panY = Number.isFinite(restored.panY) ? restored.panY! : 0;
+    let panning = false, panStart = { x: 0, y: 0 };
     let dragging: Sim | null = null, hover: Sim | null = null;
 
     const visible = (n: GraphNode) =>
@@ -936,9 +1036,17 @@ function GraphCanvas(props: {
       else { panning = true; panStart = { x: ev.clientX - panX, y: ev.clientY - panY }; }
     };
     const onUp = () => { dragging = null; panning = false; };
+    const saveWorkspace = () => localStorage.setItem(workspaceKey, JSON.stringify({ panX, panY,
+      zoom: zoomRef.current, positions: Object.fromEntries(
+        nodes.map((node) => [node.id, { x: node.x, y: node.y }])) }));
     const onClick = (ev: MouseEvent) => {
       const p = toWorld(ev), n = nodeAt(p.x, p.y);
       if (n) props.onSelect(n.id);
+    };
+    const onContext = (ev: MouseEvent) => {
+      const p = toWorld(ev), n = nodeAt(p.x, p.y);
+      if (!n) return;
+      ev.preventDefault(); props.onContext(n.id, ev.clientX, ev.clientY);
     };
     // Zoom about a screen point (sx,sy), keeping the world point under it fixed.
     const zoomAt = (factor: number, sx: number, sy: number) => {
@@ -960,19 +1068,24 @@ function GraphCanvas(props: {
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
     canvas.addEventListener("click", onClick);
+    canvas.addEventListener("contextmenu", onContext);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     addEventListener("mouseup", onUp);
     addEventListener("keydown", onKey);
+    addEventListener("beforeunload", saveWorkspace);
     return () => {
       positions.current[props.layoutMode] = new Map(
         nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
       cancelAnimationFrame(raf); ro.disconnect();
+      saveWorkspace();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mousedown", onDown);
       canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("contextmenu", onContext);
       canvas.removeEventListener("wheel", onWheel);
       removeEventListener("mouseup", onUp);
       removeEventListener("keydown", onKey);
+      removeEventListener("beforeunload", saveWorkspace);
     };
   }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden, props.layoutMode]);
 
@@ -1076,6 +1189,10 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
       onPointerUp={stopDrag} onPointerCancel={stopDrag} title="드래그하여 이동">
       <span>ACTIVITY STREAM</span>
       <span style={S.activityHeadActions}><b>{visible.length}/{items.length}</b>
+        <span role="separator" aria-label="Activity Stream 크기 조절"
+          title="드래그하여 크기 조절" style={S.activityResizeTop}
+          onPointerDown={startResize} onPointerMove={moveResize}
+          onPointerUp={stopResize} onPointerCancel={stopResize}>↘</span>
         <button type="button" aria-label={panel.collapsed ? "활동 펼치기" : "활동 접기"}
           title={panel.collapsed ? "펼치기" : "접기"}
           style={S.activityToggle}
@@ -1208,6 +1325,43 @@ function OnboardingPane(props: { creating: boolean; onCreate: () => void }) {
   );
 }
 
+function TaskQueue(props: { nodes: GraphNode[]; onClose: () => void;
+  onSelect: (id: string) => void; onStatus: (id: string, status: string) => void;
+  onAdd: () => void; canAdd: boolean }) {
+  const tasks = props.nodes.filter((node) => node.type === "technique"
+    && (!node.source_ref || node.status === "attempt-failed" || node.status === "in-progress"));
+  return <aside style={S.taskQueue} aria-label="작업 큐">
+    <header><div><span>WORK QUEUE</span><b>{tasks.length}</b></div>
+      <button onClick={props.onClose}>×</button></header>
+    <button style={S.taskAdd} disabled={!props.canAdd} onClick={props.onAdd}>
+      ＋ 선택 노드 아래 작업 추가</button>
+    <div style={S.taskList}>{tasks.length ? tasks.map((node) =>
+      <article key={node.id} style={S.taskItem}>
+        <button onClick={() => props.onSelect(node.id)}><b>{node.label}</b>
+          <small>{nodeStatusReason(node)}</small></button>
+        <div><button onClick={() => props.onStatus(node.id, "in-progress")}>시작</button>
+          <button onClick={() => props.onStatus(node.id, "succeeded")}>완료</button></div>
+      </article>) : <div style={S.activityEmpty}>대기 중인 수동 작업이 없습니다.</div>}</div>
+  </aside>;
+}
+
+function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; onClose: () => void;
+  onOpen: () => void; onAdd: () => void; onPin: () => void; onHide: () => void;
+  onStatus: (status: string) => void }) {
+  return <div style={S.quickMenuBackdrop} onPointerDown={props.onClose}>
+    <menu style={{ ...S.quickMenu, left: Math.min(props.x, window.innerWidth - 210),
+      top: Math.min(props.y, window.innerHeight - 280) }} onPointerDown={(e) => e.stopPropagation()}>
+      <header><b>{props.node.label}</b><small>{nodeStatusReason(props.node)}</small></header>
+      <button onClick={props.onOpen}>상세·결과 열기</button>
+      <button onClick={props.onAdd}>연결 작업 추가</button>
+      <button onClick={props.onPin}>{props.node.pinned ? "★ 북마크 해제" : "☆ 북마크"}</button>
+      <button onClick={() => props.onStatus("in-progress")}>실행 중으로 표시</button>
+      <button onClick={() => props.onStatus("succeeded")}>완료로 표시</button>
+      <button onClick={props.onHide}>그래프에서 숨기기</button>
+    </menu>
+  </div>;
+}
+
 const ADD_TYPES: NodeType[] = ["finding", "technique", "credential", "service", "host"];
 const STATUS_ORDER = ["untried", "in-progress", "attempt-failed", "succeeded",
   "blocked", "not-applicable"];
@@ -1233,10 +1387,13 @@ export function Inspector(props: {
   onOpenRequest?: (draft: GraphRequestDraft) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
+  onSetDetails?: (id: string, details: { notes?: string; pinned?: boolean }) => void;
   onAddNode: (v: AddForm & { sourceId: string }) => void;
 }) {
   const n = props.node;
   const [adding, setAdding] = useState(false);
+  const [notes, setNotes] = useState(n?.notes || "");
+  useEffect(() => setNotes(n?.notes || ""), [n?.id, n?.notes]);
   const source = (() => {
     if (!n?.source_ref) return null;
     try {
@@ -1338,7 +1495,10 @@ export function Inspector(props: {
     </aside>;
   return (
     <aside style={S.inspector}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{n.label}</h3>
+      <div style={S.inspectorTitle}><h3 style={{ margin: 0, fontSize: 15 }}>{n.label}</h3>
+        <button title={n.pinned ? "북마크 해제" : "북마크"}
+          onClick={() => props.onSetDetails?.(n.id, { pinned: !n.pinned })}>
+          {n.pinned ? "★" : "☆"}</button></div>
       <div style={{ color: "#6b6b76", fontSize: 12 }}>
         {GLYPH[n.type]} {n.type}
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
@@ -1357,6 +1517,12 @@ export function Inspector(props: {
           ))}
         </div>
       </div>
+      <section style={S.nodeNotes}>
+        <div><span>작업 메모</span><button disabled={notes === (n.notes || "")}
+          onClick={() => props.onSetDetails?.(n.id, { notes })}>저장</button></div>
+        <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
+          placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
+      </section>
       {executionId !== null && <section style={S.executionResults} aria-label="실행 결과">
         <div style={S.executionResultsHead}>
           <strong>실행 결과</strong>
@@ -1687,6 +1853,17 @@ const S: Record<string, React.CSSProperties> = {
     background: "#0e0e12", color: "#e7e7ee" },
   bar: { display: "flex", alignItems: "center", gap: 16, padding: "10px 16px",
     borderBottom: "1px solid #2a2a34" },
+  graphTools: { display: "flex", alignItems: "center", gap: 7, padding: "7px 16px",
+    borderBottom: "1px solid #24242d", background: "#111117", overflowX: "auto" },
+  graphSearch: { flex: "1 1 240px", minWidth: 180, display: "flex", alignItems: "center",
+    gap: 7, height: 32, padding: "0 9px", border: "1px solid #30303a", background: "#0b0b10" },
+  graphSearchInput: { flex: 1, minWidth: 0, border: 0, outline: 0, background: "transparent",
+    color: "#dce5e0", fontSize: 11 },
+  graphControl: { height: 32, padding: "0 9px", border: "1px solid #30303a",
+    background: "#17171e", color: "#a6aaa8", fontSize: 10, whiteSpace: "nowrap" },
+  filterCount: { marginLeft: "auto", color: "#758079", font: "10px ui-monospace,monospace",
+    whiteSpace: "nowrap" },
+  toolActive: { borderColor: "#537a5e", color: "#71dfa0", background: "#132018" },
   tabs: { display: "flex", flexShrink: 0, gap: 4, background: "#16161c", padding: 4,
     borderRadius: 10, border: "1px solid #2a2a34" },
   legend: { marginLeft: "auto", minWidth: 0, overflowX: "auto", display: "flex",
@@ -1732,6 +1909,25 @@ const S: Record<string, React.CSSProperties> = {
     width: 22, height: 22, display: "grid", placeItems: "center", color: "#68d594",
     background: "#101a15", borderLeft: "1px solid #31533f", borderTop: "1px solid #31533f",
     cursor: "nwse-resize", touchAction: "none", userSelect: "none", fontSize: 14 },
+  activityResizeTop: { width: 22, height: 20, display: "grid", placeItems: "center",
+    border: "1px solid #294036", background: "#101a15", color: "#75d99c",
+    cursor: "nwse-resize", touchAction: "none", fontSize: 11 },
+  inspectorTitle: { display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: 10 },
+  nodeNotes: { display: "grid", gap: 7, marginTop: 14, padding: 10,
+    border: "1px solid #2a2a34", background: "#111117" },
+  taskQueue: { position: "fixed", zIndex: 55, right: 24, top: 150, width: 360,
+    maxHeight: "calc(100vh - 180px)", overflow: "auto", border: "1px solid #31513e",
+    background: "#0b100e", color: "#d8e2dd", boxShadow: "0 18px 50px rgba(0,0,0,.45)" },
+  taskAdd: { width: "calc(100% - 20px)", margin: 10, padding: 9,
+    border: "1px solid #365743", background: "#14241a", color: "#74dfa0" },
+  taskList: { borderTop: "1px solid #26352d" },
+  taskItem: { display: "grid", gridTemplateColumns: "1fr auto", gap: 8, padding: 9,
+    borderBottom: "1px solid #222e28" },
+  quickMenuBackdrop: { position: "fixed", inset: 0, zIndex: 80 },
+  quickMenu: { position: "fixed", width: 200, margin: 0, padding: 6,
+    border: "1px solid #35453d", background: "#101512", color: "#d8e2dd",
+    boxShadow: "0 14px 40px rgba(0,0,0,.55)" },
   outline: { flex: 1, overflow: "auto", padding: 18 },
   row: { display: "flex", alignItems: "center", gap: 8, padding: "5px 8px",
     borderRadius: 7, cursor: "pointer" },

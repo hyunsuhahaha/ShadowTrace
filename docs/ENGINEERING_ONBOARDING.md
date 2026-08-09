@@ -565,11 +565,17 @@ DISCOVERY→ENUMERATION→ACCESS→PRIVILEGE→EVIDENCE의
 갱신되어 노드 hover/선택 요약(제품·버전, 실행 시간·exit/error, 심각도·Evidence 수,
 credential 유형)에 쓰인다. 우하단 Activity Stream은 `created_at`과 실행 시작 시각을 합쳐
 최대 100건을 최신순으로 보여주며 클릭하면 해당 노드를 선택하고 중앙으로 이동한다. 검색,
-유형·상태 필터, 최신/오래된 정렬을 제공한다. 헤더 드래그로 이동하고 명시적인 우하단 handle로
+유형·상태 필터, 최신/오래된 정렬을 제공한다. 헤더 드래그로 이동하고 헤더·우하단의 명시적인 handle로
 크기를 조절하며 최소화 버튼으로 접을 수 있다. 위치·크기·접힘은 저장하고 viewport가 바뀌면
 handle이 화면 밖으로 잘리지 않도록 좌표를 clamp한다. 미완료 상태는
 DB enum을 바꾸지 않고 UI에서 준비됨/선행 정보 부족/사용자 검토 대기/실행 중/재시도 가능/
 적용 불가로 번역한다. 선택한 그래프·트리·Outline 모드는 `oscp-graph-view`에 유지한다.
+그래프 작업 바는 label/메타/메모/태그 검색, 유형·상태 필터, 선택 노드 기준 1~3-hop 집중,
+북마크 전용 보기와 필터 초기화를 제공한다. 노드 우클릭 메뉴는 상세 열기, 연결 작업 추가,
+북마크, 상태 변경, 숨기기를 제공한다. Inspector의 메모와 북마크는 GraphNode의 기존
+`notes`/`pinned` 필드를 PATCH하므로 서버에 영속된다. Work Queue는 수동 technique과
+실행·실패 상태 작업을 모아 노드 이동 및 상태 전환을 제공한다. Canvas pan/zoom/노드 배치는
+프로젝트·보기 모드별 localStorage에 저장되며 선택 노드도 복원된다.
 GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
 OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
 `features/graph/GraphWorkspace.test.tsx`에 있다.
@@ -706,6 +712,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-sidebar-collapsed` | `"true"`/`"false"` | `AppShell.tsx` 사이드바 접힘 상태 |
 | `oscp-graph-pane` | Progress Graph 우측 패널 px(최소 320) | `GraphWorkspace.tsx` 리사이즈 유지 |
 | `oscp-graph-view` / `oscp-graph-activity-panel` | 보기 모드 / JSON `{x,y,width,height,collapsed}` | Graph/Tree/Outline 선택과 Activity Stream 배치·크기·접힘 유지 |
+| `oscp-graph-selected` / `oscp-graph-camera:<root>:<mode>` | node id / JSON `{panX,panY,zoom,positions}` | 선택 노드와 프로젝트·레이아웃별 Canvas 작업 위치 복원 |
 | `oscp-web-launch` | JSON `{targetId, serviceId, url}` | Enumeration/Graph → Web Testing "이 URL 열기" 1회성 핸드오프, 소비 후 제거 |
 | `oscp-crack-form-width` / `oscp-crack-history-width` | px | `HashCrackingWorkspace.tsx` 폼/이력 컬럼 리사이즈 |
 | `oscp-workspace-hash-target` / `-mode` / `-value` | target id / hashcat 모드 / 해시 문자열 | `App.tsx`(Kerberoast/AS-REP/DCSync/NTLM 버튼) → `HashCrackingWorkspace.tsx` 1회성 핸드오프, 소비 후 제거 |
