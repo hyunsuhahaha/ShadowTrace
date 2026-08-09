@@ -218,3 +218,21 @@ def test_sync_retroactively_relabels_existing_default_service_node():
     service.sync_from_project(db, p.id)
     db.refresh(node)
     assert node.label == "5985/tcp winrm"
+
+
+def test_sync_projects_interactive_sessions_as_technique_nodes():
+    from app.models import InteractiveSession, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.11")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=445, protocol="tcp", name="smb")
+    db.add(svc); db.flush()
+    db.add(InteractiveSession(target_id=t.id, service_id=svc.id,
+                              template_id="responder", command="responder -I tun0",
+                              cwd="/tmp", status="running"))
+    db.flush()
+    result = service.sync_from_project(db, p.id)
+    assert result["created"]["techniques"] == 1
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.label == "responder"

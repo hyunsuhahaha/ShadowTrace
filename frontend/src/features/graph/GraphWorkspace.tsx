@@ -112,16 +112,44 @@ export default function GraphWorkspace() {
     },
   });
 
+  const invalidateGraph = () => {
+    queryClient.invalidateQueries({ queryKey: ["graph", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["graphTree", projectId] });
+  };
   const setHidden = useMutation({
     mutationFn: (v: { id: string; hidden: boolean }) =>
       api(`/graph/nodes/${v.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hidden: v.hidden }),
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["graph", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["graphTree", projectId] });
+    onSuccess: invalidateGraph,
+  });
+  const setStatus = useMutation({
+    mutationFn: (v: { id: string; status: string }) =>
+      api(`/graph/nodes/${v.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: v.status }),
+      }),
+    onSuccess: invalidateGraph,
+  });
+  // Manual recording: create a node and connect it to the selected one. This is
+  // how artifacts the DB never captured (a stolen hash, an observed LFI) get
+  // into the graph.
+  const addNode = useMutation({
+    mutationFn: async (v: {
+      sourceId: string; type: string; label: string; relation: string; status: string;
+    }) => {
+      const node = await api<{ id: string }>(`/projects/${projectId}/graph/nodes`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: v.type, label: v.label, status: v.status }),
+      });
+      await api(`/projects/${projectId}/graph/edges`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: v.sourceId, target: node.id,
+          relation: v.relation, status: v.status }),
+      });
     },
+    onSuccess: invalidateGraph,
   });
 
   const graph = useQuery({
@@ -304,7 +332,10 @@ export default function GraphWorkspace() {
             </div>
           ) : (
             <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
-              onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
+              busy={addNode.isPending}
+              onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}
+              onSetStatus={(id, status) => setStatus.mutate({ id, status })}
+              onAddNode={(v) => addNode.mutate(v)} />
           )}
         </div>
       </div>
@@ -621,43 +652,118 @@ function OnboardingPane(props: { creating: boolean; onCreate: () => void }) {
   );
 }
 
+const ADD_TYPES: NodeType[] = ["finding", "technique", "credential", "service", "host"];
+const STATUS_ORDER = ["untried", "in-progress", "attempt-failed", "succeeded",
+  "blocked", "not-applicable"];
+const RELATIONS = ["discovered", "enumerated", "attempted", "yielded",
+  "pivoted-to", "reused-credential", "blocked-by"];
+const RELATION_DEFAULT: Record<string, string> = {
+  "project-root>host": "discovered", "host>service": "discovered",
+  "host>finding": "enumerated", "host>technique": "attempted", "host>host": "pivoted-to",
+  "service>finding": "enumerated", "service>credential": "enumerated",
+  "service>technique": "attempted", "finding>technique": "attempted",
+  "technique>credential": "yielded", "technique>host": "yielded",
+  "technique>service": "yielded", "technique>finding": "yielded",
+  "credential>host": "reused-credential", "credential>service": "reused-credential",
+};
+const defaultRelation = (src: string, dst: string) =>
+  RELATION_DEFAULT[`${src}>${dst}`] ?? "attempted";
+
+type AddForm = { type: string; label: string; relation: string; status: string };
+
 function Inspector(props: {
-  node?: GraphNode; link?: DeepLink;
+  node?: GraphNode; link?: DeepLink; busy: boolean;
   onToggleHidden: (id: string, hidden: boolean) => void;
+  onSetStatus: (id: string, status: string) => void;
+  onAddNode: (v: AddForm & { sourceId: string }) => void;
 }) {
   const n = props.node;
+  const [adding, setAdding] = useState(false);
+  if (!n)
+    return <aside style={S.inspector}>
+      <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
+    </aside>;
   return (
     <aside style={S.inspector}>
-      {n ? (
-        <>
-          <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{n.label}</h3>
-          <div style={{ color: "#6b6b76", fontSize: 12 }}>
-            {GLYPH[n.type]} {n.type}
-            {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
-            {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
-          </div>
-          <div style={{ marginTop: 14, fontSize: 12 }}>
-            <span style={{ color: "#9a9aa6" }}>상태 </span>
-            <span style={{ color: color(n.status) }}>
-              {STATUS_LABEL[n.status] ?? n.status}
-            </span>
-          </div>
-          {props.link && (
-            <button onClick={props.link.open} style={S.openBtn}>
-              {props.link.label}
-            </button>
-          )}
-          {n.type !== "project-root" && (
-            <button onClick={() => props.onToggleHidden(n.id, !n.hidden)}
-              style={S.hideBtn}>
-              {n.hidden ? "복원" : "그래프에서 숨기기"}
-            </button>
-          )}
-        </>
+      <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>{n.label}</h3>
+      <div style={{ color: "#6b6b76", fontSize: 12 }}>
+        {GLYPH[n.type]} {n.type}
+        {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
+        {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {STATUS_ORDER.map((s) => (
+            <button key={s} onClick={() => props.onSetStatus(n.id, s)} style={{
+              fontSize: 11, padding: "4px 8px", borderRadius: 6, cursor: "pointer",
+              border: `1px solid ${n.status === s ? color(s) : "#2a2a34"}`,
+              background: n.status === s ? `${color(s)}22` : "transparent",
+              color: n.status === s ? color(s) : "#9a9aa6",
+            }}>{STATUS_LABEL[s] ?? s}</button>
+          ))}
+        </div>
+      </div>
+      {props.link && (
+        <button onClick={props.link.open} style={S.openBtn}>{props.link.label}</button>
+      )}
+      {adding ? (
+        <AddNodeForm source={n} busy={props.busy} onCancel={() => setAdding(false)}
+          onSubmit={(v) => { props.onAddNode({ sourceId: n.id, ...v }); setAdding(false); }} />
       ) : (
-        <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
+        <button onClick={() => setAdding(true)} style={S.openBtn}>＋ 연결 노드 추가</button>
+      )}
+      {n.type !== "project-root" && (
+        <button onClick={() => props.onToggleHidden(n.id, !n.hidden)} style={S.hideBtn}>
+          {n.hidden ? "복원" : "그래프에서 숨기기"}
+        </button>
       )}
     </aside>
+  );
+}
+
+function AddNodeForm(props: {
+  source: GraphNode; busy: boolean;
+  onCancel: () => void; onSubmit: (v: AddForm) => void;
+}) {
+  const [type, setType] = useState<string>("finding");
+  const [label, setLabel] = useState("");
+  const [status, setStatus] = useState("untried");
+  const [relation, setRelation] = useState(() =>
+    defaultRelation(props.source.type, "finding"));
+  return (
+    <div style={{ marginTop: 14, padding: 12, border: "1px solid #2a2a34",
+      borderRadius: 8, background: "#12121a" }}>
+      <div style={{ fontSize: 11, color: "#9a9aa6", marginBottom: 8 }}>
+        「{props.source.label}」 아래에 노드 추가
+      </div>
+      <input placeholder="라벨 (예: Administrator NTLMv2 해시)" value={label}
+        onChange={(e) => setLabel(e.target.value)} style={S.field} />
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <select value={type} style={{ ...S.field, flex: 1 }}
+          onChange={(e) => { setType(e.target.value);
+            setRelation(defaultRelation(props.source.type, e.target.value)); }}>
+          {ADD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={relation} onChange={(e) => setRelation(e.target.value)}
+          style={{ ...S.field, flex: 1 }}>
+          {RELATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      <select value={status} onChange={(e) => setStatus(e.target.value)}
+        style={{ ...S.field, marginTop: 8, width: "100%" }}>
+        {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>)}
+      </select>
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <button disabled={!label.trim() || props.busy}
+          style={{ ...S.openBtn, marginTop: 0, flex: 1, opacity: label.trim() ? 1 : 0.5 }}
+          onClick={() => props.onSubmit({ type, label: label.trim(), relation, status })}>
+          {props.busy ? "추가 중…" : "추가"}
+        </button>
+        <button style={{ ...S.hideBtn, marginTop: 0, width: "auto", padding: "8px 14px" }}
+          onClick={props.onCancel}>취소</button>
+      </div>
+    </div>
   );
 }
 
@@ -707,4 +813,7 @@ const S: Record<string, React.CSSProperties> = {
   hiddenChip: { padding: "5px 12px", borderRadius: 8, border: "1px solid #2a2a34",
     background: "#16161c", color: "#9a9aa6", fontSize: 12, fontWeight: 600,
     cursor: "pointer" },
+  field: { width: "100%", padding: "8px 10px", borderRadius: 6,
+    border: "1px solid #2a2a34", background: "#0e0e12", color: "#e7e7ee",
+    fontSize: 13 },
 };

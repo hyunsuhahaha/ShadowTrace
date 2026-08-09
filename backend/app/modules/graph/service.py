@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models import (Credential, Execution, Finding, GraphEdge, GraphNode,
-                       GraphProjectMeta, Project, Service, Target)
+                       GraphProjectMeta, InteractiveSession, Project, Service,
+                       Target)
 
 # Executions are auto-nodified but their security outcome is never auto-judged
 # (product principle): a completed command is not a "success". Only technical
@@ -320,6 +321,30 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             create_edge(db, project_id, parent.id, node.id, "attempted",
                         status=node.status)
             index[("execution", ex.id)] = node
+            created["techniques"] += 1
+
+        # interactive sessions (Responder, reverse shells) -> technique nodes.
+        # Low-volume and high-signal; counted under techniques.
+        for sess in db.scalars(
+                select(InteractiveSession).where(
+                    InteractiveSession.target_id.in_(target_ids))):
+            if ("session", sess.id) in index:
+                continue
+            parent = parent_of(sess.service_id, sess.target_id)
+            if parent is None:
+                continue
+            meta = json.dumps({"tool": sess.template_id or "session",
+                               "command": sess.command or ""})
+            provenance = json.dumps({"sessionRef": {"module": "sessions", "id": sess.id},
+                                     "tool": sess.template_id or ""})
+            node = create_node(
+                db, project_id, "technique", label=sess.template_id or "session",
+                status=_EXECUTION_STATUS.get(sess.status, "in-progress"),
+                source_ref=_source_ref("sessions", "session", sess.id),
+                meta=meta, provenance=provenance)
+            create_edge(db, project_id, parent.id, node.id, "attempted",
+                        status=node.status)
+            index[("session", sess.id)] = node
             created["techniques"] += 1
 
     return {"rootNodeId": root.id, "created": created}
