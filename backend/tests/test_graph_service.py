@@ -82,3 +82,40 @@ def test_attack_paths_surface_succeeded_chain():
                         status="succeeded")
     paths = service.get_attack_paths(db, p.id)
     assert paths == [[finding.id, technique.id, shell.id]]
+
+
+def target_with_services(db, project_id):
+    from app.models import Service, Target
+    t = Target(project_id=project_id, name="box", ip="10.10.11.23",
+               hostname="dc01")
+    db.add(t); db.flush()
+    db.add_all([
+        Service(target_id=t.id, port=445, protocol="tcp", name="smb"),
+        Service(target_id=t.id, port=80, protocol="tcp", name="http"),
+    ]); db.flush()
+    return t
+
+
+def test_sync_projects_targets_and_services_into_graph():
+    db = database()
+    p = project(db)
+    target_with_services(db, p.id)
+    result = service.sync_from_project(db, p.id)
+    assert result["created"] == {"hosts": 1, "services": 2}
+    tree = service.get_tree(db, p.id)
+    host = tree["children"][0]
+    assert host["label"] == "10.10.11.23 (dc01)"
+    svc_labels = sorted(c["label"] for c in host["children"] if c["kind"] == "node")
+    assert svc_labels == ["445/tcp smb", "80/tcp http"]
+
+
+def test_sync_is_idempotent():
+    db = database()
+    p = project(db)
+    target_with_services(db, p.id)
+    service.sync_from_project(db, p.id)
+    second = service.sync_from_project(db, p.id)
+    assert second["created"] == {"hosts": 0, "services": 0}
+    nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
+    # 1 project-root + 1 host + 2 services, no duplicates on re-sync
+    assert len(nodes) == 4

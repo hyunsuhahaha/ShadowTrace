@@ -6,10 +6,12 @@ integrity rules (spec 1.4/1.7), and serializes engine output for the API.
 """
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...models import GraphEdge, GraphNode, GraphProjectMeta, Project
+from ...models import GraphEdge, GraphNode, GraphProjectMeta, Project, Service, Target
 from . import engine
 from .ids import new_ulid
 
@@ -45,6 +47,7 @@ def _node_data(row: GraphNode) -> engine.NodeData:
         id=row.id, type=row.type, status=row.status,
         created_at=row.created_at.isoformat(), label=row.label,
         pinned_canonical_edge_id=row.pinned_canonical_edge_id,
+        objective=row.objective,
     )
 
 
@@ -149,3 +152,54 @@ def get_tree(db: Session, project_id: int) -> dict:
 def get_attack_paths(db: Session, project_id: int) -> list[list[str]]:
     _, edges = _load(db, project_id)
     return engine.success_paths([_edge_data(e) for e in edges])
+
+
+def get_attack_path_summary(db: Session, project_id: int) -> dict:
+    nodes, edges = _load(db, project_id)
+    return engine.attack_path_summary(
+        [_node_data(n) for n in nodes], [_edge_data(e) for e in edges])
+
+
+# --- projection sync: existing domain rows -> graph (spec 6.1) ---
+
+def _source_ref(module: str, kind: str, ident: int) -> str:
+    return json.dumps({"module": module, "kind": kind, "id": ident},
+                      sort_keys=True)
+
+
+def sync_from_project(db: Session, project_id: int) -> dict:
+    """Project existing Targets/Services into host/service nodes (idempotent).
+
+    Matching is by ``source_ref`` so re-running only fills gaps; user-edited
+    label/status/notes on existing nodes are left untouched (spec 6.1).
+    """
+    root = ensure_project_root(db, project_id)
+    nodes, _ = _load(db, project_id)
+    by_ref = {node.source_ref: node for node in nodes if node.source_ref}
+    created = {"hosts": 0, "services": 0}
+
+    for target in db.scalars(
+            select(Target).where(Target.project_id == project_id)):
+        host_ref = _source_ref("core", "target", target.id)
+        host = by_ref.get(host_ref)
+        if host is None:
+            label = target.ip + (f" ({target.hostname})" if target.hostname else "")
+            host = create_node(db, project_id, "host", label=label,
+                               source_ref=host_ref)
+            create_edge(db, project_id, root.id, host.id, "discovered")
+            by_ref[host_ref] = host
+            created["hosts"] += 1
+
+        for service in db.scalars(
+                select(Service).where(Service.target_id == target.id)):
+            svc_ref = _source_ref("scans", "service", service.id)
+            if svc_ref in by_ref:
+                continue
+            label = f"{service.port}/{service.protocol} {service.name}".strip()
+            svc = create_node(db, project_id, "service", label=label,
+                              source_ref=svc_ref)
+            create_edge(db, project_id, host.id, svc.id, "discovered")
+            by_ref[svc_ref] = svc
+            created["services"] += 1
+
+    return {"rootNodeId": root.id, "created": created}

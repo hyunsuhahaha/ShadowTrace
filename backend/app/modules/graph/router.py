@@ -62,7 +62,17 @@ def get_tree(project_id: int, db: Session = Depends(get_db)):
 def get_attack_paths(project_id: int, db: Session = Depends(get_db)):
     if db.get(Project, project_id) is None:
         raise HTTPException(404, "project not found")
-    return {"paths": service.get_attack_paths(db, project_id)}
+    return {"paths": service.get_attack_paths(db, project_id),
+            "summary": service.get_attack_path_summary(db, project_id)}
+
+
+@router.post("/projects/{project_id}/graph/sync")
+def sync_graph(project_id: int, db: Session = Depends(get_db)):
+    if db.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    result = _guard(lambda: service.sync_from_project(db, project_id))
+    db.commit()
+    return result
 
 
 @router.post("/projects/{project_id}/graph/nodes", response_model=NodeOut)
@@ -74,7 +84,9 @@ def create_node(project_id: int, body: NodeIn, db: Session = Depends(get_db)):
     node = _guard(lambda: service.create_node(
         db, project_id, body.type, label=body.label, status=body.status,
         notes=body.notes, tags=body.tags, source_ref=body.source_ref,
-        meta=body.meta))
+        meta=body.meta, objective=body.objective,
+        objective_kind=body.objective_kind, provenance=body.provenance,
+        layer=body.layer))
     db.commit()
     return node
 

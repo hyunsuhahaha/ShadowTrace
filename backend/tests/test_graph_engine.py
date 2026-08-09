@@ -3,7 +3,9 @@ from app.modules.graph.engine import (
     NodeData,
     RefLeaf,
     TreeNode,
+    attack_path_summary,
     build_tree,
+    paths_to_objectives,
     success_paths,
     compute_canonical_parents,
     resolve_root,
@@ -11,9 +13,9 @@ from app.modules.graph.engine import (
 
 
 def n(id, type="finding", status="untried", created_at="2026-01-01T00:00:00Z",
-      pinned=None):
+      pinned=None, objective=False):
     return NodeData(id=id, type=type, status=status, created_at=created_at,
-                    pinned_canonical_edge_id=pinned)
+                    pinned_canonical_edge_id=pinned, objective=objective)
 
 
 def e(id, source, target, relation="attempted", status="untried",
@@ -195,3 +197,35 @@ def test_success_paths_branch_into_separate_chains():
 def test_no_succeeded_edges_yields_no_paths():
     edges = [e("z1", "a", "b", relation="attempted", status="attempt-failed")]
     assert success_paths(edges) == []
+
+
+# --- paths_to_objectives + attack_path_summary ---
+
+def _success_chain():
+    # F --attempted(succeeded)--> T --yielded(succeeded)--> C(objective)
+    nodes = [n("f", type="finding", status="succeeded"),
+             n("t", type="technique", status="succeeded"),
+             n("c", type="credential", status="succeeded", objective=True)]
+    edges = [e("e1", "f", "t", relation="attempted", status="succeeded"),
+             e("e2", "t", "c", relation="yielded", status="succeeded")]
+    return nodes, edges
+
+
+def test_paths_to_objectives_returns_only_chains_reaching_a_goal():
+    nodes, edges = _success_chain()
+    assert paths_to_objectives(nodes, edges) == [["f", "t", "c"]]
+
+
+def test_paths_to_objectives_empty_when_no_objective_marked():
+    nodes, edges = _success_chain()
+    nodes = [NodeData(id=x.id, type=x.type, status=x.status,
+                      created_at=x.created_at) for x in nodes]  # strip objective
+    assert paths_to_objectives(nodes, edges) == []
+
+
+def test_attack_path_summary_counts_types_steps_and_objectives():
+    nodes, edges = _success_chain()
+    assert attack_path_summary(nodes, edges) == {
+        "hosts": 0, "services": 0, "findings": 1, "techniques": 1,
+        "credentials": 1, "steps": 2, "objectivesReached": 1,
+    }

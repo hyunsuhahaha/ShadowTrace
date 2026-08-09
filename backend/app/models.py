@@ -774,6 +774,10 @@ class GraphNode(Base):
     meta: Mapped[str] = mapped_column(Text, default="{}")  # JSON object
     pinned_canonical_edge_id: Mapped[str | None] = mapped_column(
         String(26), nullable=True)
+    objective: Mapped[bool] = mapped_column(Boolean, default=False)
+    objective_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provenance: Mapped[str] = mapped_column(Text, default="")  # JSON object or ""
+    layer: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class GraphEdge(Base):

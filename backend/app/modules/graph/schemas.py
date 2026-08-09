@@ -19,6 +19,10 @@ class NodeOut(BaseModel):
     position: str
     meta: str
     pinned_canonical_edge_id: str | None
+    objective: bool
+    objective_kind: str | None
+    provenance: str
+    layer: int | None
 
 
 class EdgeOut(BaseModel):
@@ -49,6 +53,10 @@ class NodeIn(BaseModel):
     tags: str = "[]"
     source_ref: str = ""
     meta: str = "{}"
+    objective: bool = False
+    objective_kind: str | None = None
+    provenance: str = ""
+    layer: int | None = None
 
 
 class NodePatch(BaseModel):
@@ -59,6 +67,10 @@ class NodePatch(BaseModel):
     position: str | None = None
     pinned: bool | None = None
     meta: str | None = None
+    objective: bool | None = None
+    objective_kind: str | None = None
+    provenance: str | None = None
+    layer: int | None = None
 
 
 class EdgeIn(BaseModel):

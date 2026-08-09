@@ -27,6 +27,7 @@ class NodeData:
     created_at: str  # ISO-8601, lexically sortable
     label: str = ""
     pinned_canonical_edge_id: str | None = None
+    objective: bool = False
 
 
 @dataclass(frozen=True)
@@ -198,3 +199,40 @@ def success_paths(edges: list[EdgeData]) -> list[list[str]]:
     for start in starts:
         walk(start, [start])
     return paths
+
+
+def paths_to_objectives(
+    nodes: list[NodeData], edges: list[EdgeData]
+) -> list[list[str]]:
+    """Success paths that reach a user-marked objective node (spec 3.6)."""
+    objective_ids = {node.id for node in nodes if node.objective}
+    if not objective_ids:
+        return []
+    return [path for path in success_paths(edges)
+            if any(node_id in objective_ids for node_id in path)]
+
+
+def attack_path_summary(
+    nodes: list[NodeData], edges: list[EdgeData]
+) -> dict[str, int]:
+    """Type counts + step/objective rollup over the success subgraph (spec 3.3)."""
+    node_by_id = {node.id: node for node in nodes}
+    paths = success_paths(edges)
+    reached_ids = {node_id for path in paths for node_id in path}
+
+    summary = {"hosts": 0, "services": 0, "findings": 0, "techniques": 0,
+               "credentials": 0, "steps": 0, "objectivesReached": 0}
+    plural = {"host": "hosts", "service": "services", "finding": "findings",
+              "technique": "techniques", "credential": "credentials"}
+    for node_id in reached_ids:
+        node = node_by_id.get(node_id)
+        if node is None:
+            continue
+        key = plural.get(node.type)
+        if key:
+            summary[key] += 1
+        if node.objective and node.status == SUCCESS_STATUS:
+            summary["objectivesReached"] += 1
+    summary["steps"] = len([edge for edge in edges
+                            if is_structural(edge) and edge.status == SUCCESS_STATUS])
+    return summary
