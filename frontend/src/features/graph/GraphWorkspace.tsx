@@ -408,6 +408,15 @@ export default function GraphWorkspace() {
 // ---------------- Graph (Canvas force sim; Pixi swap = M4) ----------------
 
 type Sim = GraphNode & { x: number; y: number; vx: number; vy: number };
+type GraphPosition = { x: number; y: number };
+
+export function initialGraphPosition(id: string, index: number, total: number,
+  cached: ReadonlyMap<string, GraphPosition>): GraphPosition {
+  const previous = cached.get(id);
+  if (previous) return previous;
+  const angle = (index / Math.max(1, total)) * Math.PI * 2;
+  return { x: 400 + Math.cos(angle) * 180, y: 300 + Math.sin(angle) * 140 };
+}
 
 function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean;
@@ -424,6 +433,8 @@ function GraphCanvas(props: {
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const positions = useRef(new Map<string, GraphPosition>());
+  const activityStarted = useRef(new Map<string, number>());
   const latestNodes = useRef(new Map(data.nodes.map((n) => [n.id, n])));
   const latestEdges = useRef(new Map(data.edges.map((e) => [e.id, e])));
   useEffect(() => {
@@ -451,8 +462,8 @@ function GraphCanvas(props: {
     const visible = (n: GraphNode) =>
       !(hideRoot && n.type === "project-root") && (showHidden || !n.hidden);
     const nodes: Sim[] = data.nodes.filter(visible).map((n, i) => {
-      const a = (i / data.nodes.length) * Math.PI * 2;
-      return { ...n, x: 400 + Math.cos(a) * 180, y: 300 + Math.sin(a) * 140, vx: 0, vy: 0 };
+      const point = initialGraphPosition(n.id, i, data.nodes.length, positions.current);
+      return { ...n, ...point, vx: 0, vy: 0 };
     });
     const index = new Map(nodes.map((n) => [n.id, n]));
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
@@ -540,12 +551,15 @@ function GraphCanvas(props: {
         const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (activity) {
+          if (!activityStarted.current.has(n.id)) activityStarted.current.set(n.id, now);
+          const fade = Math.min(1, (now - activityStarted.current.get(n.id)!) / 320);
           const phase = (now % 2400) / 2400;
           ctx.save(); ctx.shadowColor = signal; ctx.shadowBlur = 18;
           for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
             const p = reduceMotion ? .38 : (phase + i / 3) % 1;
             ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + p * 30, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(89,245,154,${reduceMotion ? .38 : (1 - p) * .42})`;
+            const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
+            ctx.strokeStyle = `rgba(89,245,154,${alpha})`;
             ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
             ctx.stroke();
           }
@@ -563,7 +577,7 @@ function GraphCanvas(props: {
             ctx.strokeStyle = "rgba(130,255,181,.8)"; ctx.lineWidth = 1; ctx.stroke();
           }
           ctx.restore();
-        }
+        } else activityStarted.current.delete(n.id);
         if (isAnchor) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
@@ -682,6 +696,7 @@ function GraphCanvas(props: {
     addEventListener("mouseup", onUp);
     addEventListener("keydown", onKey);
     return () => {
+      positions.current = new Map(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
       cancelAnimationFrame(raf); ro.disconnect();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mousedown", onDown);
