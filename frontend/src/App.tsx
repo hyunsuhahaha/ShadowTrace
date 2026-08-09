@@ -87,7 +87,7 @@ const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
     window.setTimeout(() => scrollToAnchorSoon(anchorId, attemptsLeft - 1), 150);
 };
 
-export default function App() {
+export default function App({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   // Keyed by template_id: nothing backend-side serializes executions (each
   // is its own asyncio task/subprocess), so the UI tracks as many
@@ -1793,8 +1793,8 @@ export default function App() {
     : runStates["smb-enum-shares-nmap"]?.stdout || latestSmbEnumShares?.stdout || "";
   const smbShareAccess = parseSmbEnumSharesAccess(smbEnumSharesOutput);
   return (
-    <div className="app">
-      <EnumerationScope
+    <div className={embedded ? "app app--embedded" : "app"}>
+      {!embedded && <EnumerationScope
         project={project}
         target={target}
         projects={projects.data}
@@ -1812,15 +1812,15 @@ export default function App() {
         onCreateTarget={() => createTarget.mutate()}
         onSelectTarget={setTargetId}
         onUpload={upload}
-      />
+      />}
       <main
         className="enumerationLayout"
         style={{
-          "--services-width": `${servicesCollapsed ? 48 : servicesWidth}px`,
-          "--notes-width": `${notesCollapsed ? 48 : notesWidth}px`,
+          "--services-width": embedded ? "0px" : `${servicesCollapsed ? 48 : servicesWidth}px`,
+          "--notes-width": embedded ? "0px" : `${notesCollapsed ? 48 : notesWidth}px`,
         } as CSSProperties}
       >
-        <aside className={`services${servicesCollapsed ? " isCollapsed" : ""}`}>
+        {!embedded && <aside className={`services${servicesCollapsed ? " isCollapsed" : ""}`}>
           <button
             className="panelDockToggle panelDockToggle--services"
             type="button"
@@ -1866,7 +1866,7 @@ export default function App() {
               else applyServicesWidth(servicesWidth + (event.key === "ArrowRight" ? 16 : -16));
             }}
           />}
-        </aside>
+        </aside>}
         <section className="work" ref={workRef}>
           <div className="serviceHead">
             <div>
@@ -2210,7 +2210,7 @@ export default function App() {
           <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
             outcome={currentOutcome} output={output} />
         </section>
-        <aside ref={notesRef} className={`notes${notesCollapsed ? " isCollapsed" : ""}`}
+        {!embedded && <aside ref={notesRef} className={`notes${notesCollapsed ? " isCollapsed" : ""}`}
           style={{"--workspace-height": `${workspaceHeight}px`} as CSSProperties}>
           <button
             className="panelDockToggle panelDockToggle--notes"
@@ -2299,7 +2299,7 @@ export default function App() {
               localStorage.setItem("oscp-service-workspace-collapsed", String(!collapsed));
               return !collapsed;
             })} />
-        </aside>
+        </aside>}
       </main>
       <ExecutionMonitor runs={activeRuns} focusedId={focusedRunId} now={clock}
         onFocus={(templateId) => {

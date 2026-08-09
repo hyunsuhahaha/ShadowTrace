@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
+
+// The existing Service Enumeration workspace, embedded (its own chrome hidden)
+// so the graph becomes the primary interface and its tools live beside it.
+const EmbeddedEnumeration = lazy(() => import("../../App"));
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -122,6 +126,37 @@ export default function GraphWorkspace() {
     return () => removeEventListener("oscp-graph-focus", onEvent);
   }, [graph.data]);
 
+  // Resolve a service node to the {targetId, serviceId} the Enumeration
+  // workspace needs (targetId comes from the parent host node).
+  const serviceHandoff = (id: string | null): { targetId: number; serviceId: number } | null => {
+    if (!id) return null;
+    const node = nodeById.get(id);
+    if (!node || node.type !== "service" || !node.source_ref) return null;
+    let ref: { kind: string; id: number };
+    try { ref = JSON.parse(node.source_ref); } catch { return null; }
+    if (ref.kind !== "service") return null;
+    const edge = graph.data?.edges.find(
+      (e) => e.target === id && e.relation === "discovered");
+    const host = edge ? nodeById.get(edge.source) : undefined;
+    if (!host?.source_ref) return null;
+    try {
+      const h = JSON.parse(host.source_ref);
+      if (h.kind === "target") return { targetId: h.id, serviceId: ref.id };
+    } catch { /* ignore */ }
+    return null;
+  };
+
+  // Scope the embedded Enumeration workspace to the selected service node.
+  const selectedType = selected ? nodeById.get(selected)?.type : undefined;
+  useEffect(() => {
+    const h = serviceHandoff(selected);
+    if (h) {
+      setPendingServiceNav(h);
+      dispatchEvent(new CustomEvent("oscp-service-nav"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selectedType]);
+
   // Two-way bridge: a graph node deep-links into the specialized workspace that
   // owns its underlying domain entity (via source_ref). This is what makes the
   // graph a hub rather than a sibling view.
@@ -132,21 +167,12 @@ export default function GraphWorkspace() {
     try { ref = JSON.parse(node.source_ref); } catch { return undefined; }
     const go = (hash: string) => (): void => { location.hash = hash; };
     if (ref.kind === "service") {
-      const edge = graph.data?.edges.find(
-        (e) => e.target === id && e.relation === "discovered");
-      const host = edge ? nodeById.get(edge.source) : undefined;
-      let targetId: number | undefined;
-      if (host?.source_ref) {
-        try {
-          const h = JSON.parse(host.source_ref);
-          if (h.kind === "target") targetId = h.id;
-        } catch { /* ignore */ }
-      }
-      if (targetId === undefined) return undefined;
+      const h = serviceHandoff(id);
+      if (!h) return undefined;
       return {
-        label: "Service Enumeration 열기 →",
+        label: "전체 화면으로 열기 →",
         open: () => {
-          setPendingServiceNav({ targetId: targetId!, serviceId: ref.id });
+          setPendingServiceNav(h);
           location.hash = "#enumeration";
           dispatchEvent(new CustomEvent("oscp-service-nav"));
         },
@@ -203,8 +229,16 @@ export default function GraphWorkspace() {
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
-        <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
-          onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
+        {selectedNode?.type === "service" ? (
+          <div style={S.embedPane}>
+            <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
+              <EmbeddedEnumeration embedded />
+            </Suspense>
+          </div>
+        ) : (
+          <Inspector node={selectedNode} link={selected ? deepLink(selected) : undefined}
+            onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })} />
+        )}
       </div>
     </div>
   );
@@ -566,6 +600,8 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: "inset 0 0 0 1px rgba(106,169,255,.25)" },
   inspector: { width: 280, borderLeft: "1px solid #2a2a34", background: "#16161c",
     padding: 16, overflow: "auto", flexShrink: 0 },
+  embedPane: { flex: 1.4, minWidth: 480, borderLeft: "1px solid #2a2a34",
+    overflow: "auto", minHeight: 0, background: "#0e0e12" },
   openBtn: { marginTop: 18, width: "100%", padding: "9px 12px", borderRadius: 8,
     border: "1px solid #6aa9ff55", background: "#6aa9ff14", color: "#6aa9ff",
     fontWeight: 600, cursor: "pointer" },
