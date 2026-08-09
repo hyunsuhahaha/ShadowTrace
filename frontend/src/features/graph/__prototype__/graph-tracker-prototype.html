@@ -75,6 +75,13 @@
   canvas { display: block; width: 100%; height: 100%; }
   .hint { position: absolute; left: 16px; bottom: 14px; color: var(--ink-faint);
     font-size: 12px; pointer-events: none; }
+  .gtoolbar { position: absolute; left: 16px; top: 14px; display: flex; gap: 6px;
+    align-items: center; background: rgba(22,22,28,.8); border: 1px solid var(--line);
+    padding: 6px 8px; border-radius: 9px; backdrop-filter: blur(4px); font-size: 12px;
+    color: var(--ink-dim); }
+  .gtoolbar button { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line);
+    padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  .gtoolbar button.on { background: var(--accent); color: #06131f; border-color: var(--accent); }
 
   /* Outline */
   .outline { height: 100%; overflow: auto; padding: 18px 8px 60px 18px; }
@@ -149,7 +156,15 @@
   <div class="stage">
     <div class="view active" id="view-graph">
       <canvas id="cv"></canvas>
-      <div class="hint">중앙 ◎ = <b style="color:#6aa9ff">ROOT(프로젝트)</b> · ▣ = nmap 대상 호스트 · ◉ = 프로토콜/서비스로 뻗어나감 &nbsp;|&nbsp; 드래그·호버·클릭</div>
+      <div class="gtoolbar" id="gtoolbar">
+        <span>머신 수</span>
+        <button data-m="1">1대</button>
+        <button data-m="2" class="on">2대</button>
+      </div>
+      <div class="hint">
+        <b style="color:#6aa9ff">파란 헤일로 = 루트</b> (1대: nmap 호스트가 루트 · 2대+: 프로젝트 루트 등장) ·
+        ◉ = 프로토콜/서비스 &nbsp;|&nbsp; <b>노드 드래그</b>로 이동 · <b>빈 공간 드래그</b>로 화면 이동
+      </div>
     </div>
 
     <div class="view" id="view-outline">
@@ -266,40 +281,60 @@ function resize() {
   cv.width = W*DPR; cv.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 new ResizeObserver(resize).observe(cv);
-// seed positions in a rough radial layout; pin the root at centre so the whole
-// hierarchy visibly radiates from it.
+// seed positions in a rough radial layout.
 gnodes.forEach((n,i) => { const a = i/gnodes.length*Math.PI*2;
   n.x = 400 + Math.cos(a)*200 + Math.random()*40; n.y = 320 + Math.sin(a)*160 + Math.random()*40; });
-const rootNode = gindex["root"]; rootNode.fixed = true;
+
+// --- adaptive root (decision B) + demo machine-count toggle ---
+let MACHINES = 2;                                   // toggle 1<->2 in graph toolbar
+const SINGLE_HIDE = new Set(["int24","t_priv"]);    // pivot host + subtree, hidden when 1 machine
+function visibleHostCount(){ return Object.values(N).filter(x =>
+  x.type==="host" && !(MACHINES<2 && SINGLE_HIDE.has(x.id))).length; }
+function isHidden(id){
+  const n=N[id]; if(!n) return true;
+  if (MACHINES<2 && SINGLE_HIDE.has(id)) return true;
+  // B: project-root appears only with 2+ hosts; otherwise the single nmap host IS the root.
+  if (n.type==="project-root" && visibleHostCount()<2) return true;
+  return false;
+}
+function anchorId(){ return isHidden("root") ? "dc01" : "root"; }  // node pinned to centre
 
 let hover=null, dragging=null, selected=null;
+let panX=0, panY=0, isPanning=false, panStart={x:0,y:0};
 function tick() {
+  const vis = gnodes.filter(n => !isHidden(n.id));
   // repulsion
-  for (let i=0;i<gnodes.length;i++) for (let j=i+1;j<gnodes.length;j++){
-    const a=gnodes[i], b=gnodes[j]; let dx=a.x-b.x, dy=a.y-b.y;
+  for (let i=0;i<vis.length;i++) for (let j=i+1;j<vis.length;j++){
+    const a=vis[i], b=vis[j]; let dx=a.x-b.x, dy=a.y-b.y;
     let d2=dx*dx+dy*dy||0.01; let d=Math.sqrt(d2);
     const f= 2600/d2; const ux=dx/d, uy=dy/d;
     a.vx+=ux*f; a.vy+=uy*f; b.vx-=ux*f; b.vy-=uy*f;
   }
   // springs
-  for (const e of EDGES){ const a=gindex[e.s], b=gindex[e.t]; if(!a||!b) continue;
+  for (const e of EDGES){ if (isHidden(e.s)||isHidden(e.t)) continue;
+    const a=gindex[e.s], b=gindex[e.t];
     let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy)||0.01;
     const rest = e.structural?110:150; const k=(d-rest)*0.015; const ux=dx/d, uy=dy/d;
     a.vx+=ux*k; a.vy+=uy*k; b.vx-=ux*k; b.vy-=uy*k;
   }
-  // centering + integrate
-  const cx=W/2, cy=H/2;
-  for (const n of gnodes){
-    if (n.fixed){ n.x=cx; n.y=cy; n.vx=n.vy=0; continue; }  // root pinned to centre
+  // centering + integrate; the anchor node is pinned to centre
+  const cx=W/2, cy=H/2, anchor=anchorId();
+  for (const n of vis){
+    if (n.id===anchor){ n.x=cx; n.y=cy; n.vx=n.vy=0; continue; }
     n.vx += (cx-n.x)*0.0015; n.vy += (cy-n.y)*0.0015;
     n.vx*=0.86; n.vy*=0.86;
     if (n!==dragging){ n.x+=n.vx; n.y+=n.vy; }
   }
 }
 function draw() {
+  ctx.save();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.clearRect(0,0,W,H);
+  ctx.translate(panX,panY);           // pan the whole scene
+  const anchor=anchorId();
   // edges
-  for (const e of EDGES){ const a=gindex[e.s], b=gindex[e.t]; if(!a||!b) continue;
+  for (const e of EDGES){ if (isHidden(e.s)||isHidden(e.t)) continue;
+    const a=gindex[e.s], b=gindex[e.t];
     const hot = hover && (e.s===hover.id || e.t===hover.id);
     ctx.beginPath(); ctx.moveTo(a.x,a.y);
     if (!e.structural){ const mx=(a.x+b.x)/2, my=(a.y+b.y)/2 - 34;
@@ -310,55 +345,66 @@ function draw() {
     ctx.globalAlpha=1; ctx.setLineDash([]);
   }
   // nodes
-  for (const n of gnodes){
+  for (const n of gnodes){ if (isHidden(n.id)) continue;
     const st=STATUS[n.status]; const isHover = hover===n, isSel=selected===n.id;
     const isRoot = n.type==="project-root", isHost = n.type==="host";
-    const r = isRoot?21 : (isHost?15:11);
-    // root gets a double halo ring so the origin of the hierarchy is unmistakable
-    if (isRoot){
-      ctx.beginPath(); ctx.arc(n.x,n.y,r+9,0,Math.PI*2);
-      ctx.strokeStyle="rgba(106,169,255,.35)"; ctx.lineWidth=1; ctx.setLineDash([3,4]); ctx.stroke();
+    const isAnchor = n.id===anchor;
+    const r = isRoot?30 : (isAnchor?26 : (isHost?17:12));   // root/anchor sized up
+    // the anchor (root, or the single host acting as root) gets a halo ring
+    if (isAnchor){
+      ctx.beginPath(); ctx.arc(n.x,n.y,r+11,0,Math.PI*2);
+      ctx.strokeStyle="rgba(106,169,255,.4)"; ctx.lineWidth=1.5; ctx.setLineDash([3,4]); ctx.stroke();
       ctx.setLineDash([]);
     }
     ctx.save();
-    ctx.shadowColor=isRoot?"#6aa9ff":st.c; ctx.shadowBlur = isRoot?30:(isHover||isSel?26:14);
+    ctx.shadowColor=isAnchor?"#6aa9ff":st.c; ctx.shadowBlur = isAnchor?34:(isHover||isSel?26:14);
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
     ctx.fillStyle = st.c; ctx.globalAlpha = hover&&!isHover&&!edgeTouch(n)?0.4:1; ctx.fill();
     ctx.restore();
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
-    ctx.lineWidth=isSel?2.5:(isRoot||isHost?2:1);
-    ctx.strokeStyle=isSel?"#fff":(isRoot?"#6aa9ff":(isHost?"rgba(255,255,255,.7)":"rgba(255,255,255,.35)"));
+    ctx.lineWidth=isSel?2.5:(isAnchor||isHost?2:1);
+    ctx.strokeStyle=isSel?"#fff":(isAnchor?"#6aa9ff":(isHost?"rgba(255,255,255,.7)":"rgba(255,255,255,.35)"));
     ctx.stroke();
-    ctx.fillStyle="#0c0c10"; ctx.font=`${r}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle="#0c0c10"; ctx.font=`${Math.round(r*0.95)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(GLYPH[n.type], n.x, n.y+0.5);
     if (isHover||isSel||isHost||isRoot){
       ctx.textBaseline="top";
-      ctx.fillStyle="#eef"; ctx.font=isRoot?"600 12px sans-serif":"11px sans-serif";
-      ctx.fillText(n.label, n.x, n.y+r+5);
-      // origin/anchor tags so the hierarchy reads at a glance
-      if (isRoot){ ctx.fillStyle="#6aa9ff"; ctx.font="700 9px sans-serif";
-        ctx.fillText("ROOT · 프로젝트", n.x, n.y+r+20); }
-      else if (isHost){ ctx.fillStyle="#8a8a96"; ctx.font="9px sans-serif";
-        ctx.fillText("nmap 대상 → 프로토콜", n.x, n.y+r+19); }
+      ctx.fillStyle="#eef"; ctx.font=isAnchor?"600 13px sans-serif":"11px sans-serif";
+      ctx.fillText(n.label, n.x, n.y+r+6);
+      let tag=null, tagCol="#8a8a96";
+      if (isRoot){ tag="ROOT · 프로젝트"; tagCol="#6aa9ff"; }
+      else if (isHost && isAnchor){ tag="nmap 루트 → 프로토콜"; tagCol="#6aa9ff"; }
+      else if (isHost){ tag="nmap 대상 → 프로토콜"; }
+      if (tag){ ctx.fillStyle=tagCol; ctx.font="700 9px sans-serif";
+        ctx.fillText(tag, n.x, n.y+r+22); }
     }
   }
+  ctx.restore();
 }
 function edgeTouch(n){ return hover && EDGES.some(e => (e.s===hover.id&&e.t===n.id)||(e.t===hover.id&&e.s===n.id)); }
 function loop(){ tick(); draw(); requestAnimationFrame(loop); }
 resize(); loop();
 
-function nodeAt(mx,my){ for (const n of gnodes){ if (Math.hypot(n.x-mx,n.y-my)<16) return n; } return null; }
+function nodeAt(wx,wy){ for (const n of gnodes){ if (isHidden(n.id)) continue;
+  const rr = n.type==="project-root"?32 : (n.id===anchorId()?28:18);
+  if (Math.hypot(n.x-wx,n.y-wy)<rr) return n; } return null; }
+function toWorld(ev){ const r=cv.getBoundingClientRect();
+  return { x: ev.clientX-r.left-panX, y: ev.clientY-r.top-panY }; }
 cv.addEventListener("mousemove", ev => {
-  const r=cv.getBoundingClientRect(), mx=ev.clientX-r.left, my=ev.clientY-r.top;
-  if (dragging){ dragging.x=mx; dragging.y=my; dragging.vx=dragging.vy=0; return; }
-  hover = nodeAt(mx,my); cv.style.cursor = hover?"pointer":"default";
+  const p=toWorld(ev);
+  if (dragging){ dragging.x=p.x; dragging.y=p.y; dragging.vx=dragging.vy=0; return; }
+  if (isPanning){ panX=ev.clientX-panStart.x; panY=ev.clientY-panStart.y; return; }
+  hover = nodeAt(p.x,p.y); cv.style.cursor = hover?"pointer":"grab";
 });
 cv.addEventListener("mousedown", ev => {
-  const r=cv.getBoundingClientRect(); dragging=nodeAt(ev.clientX-r.left, ev.clientY-r.top);
+  const p=toWorld(ev), n=nodeAt(p.x,p.y);
+  if (n){ dragging=n; }
+  else { isPanning=true; panStart={x:ev.clientX-panX, y:ev.clientY-panY}; cv.style.cursor="grabbing"; }
 });
-window.addEventListener("mouseup", () => { dragging=null; });
+window.addEventListener("mouseup", () => { dragging=null; isPanning=false; });
 cv.addEventListener("click", ev => {
-  const r=cv.getBoundingClientRect(), n=nodeAt(ev.clientX-r.left, ev.clientY-r.top);
+  const p=toWorld(ev), n=nodeAt(p.x,p.y);
   if (n){ selected=n.id; showInspector(n.id); }
 });
 
@@ -517,6 +563,13 @@ document.getElementById("tabs").addEventListener("click", ev=>{
   tab.classList.add("active");
   document.getElementById("view-"+tab.dataset.view).classList.add("active");
   if (tab.dataset.view==="graph") resize();
+});
+
+// machine-count toggle demonstrates adaptive root (decision B)
+document.getElementById("gtoolbar").addEventListener("click", ev=>{
+  const b=ev.target.closest("button[data-m]"); if(!b) return;
+  MACHINES=+b.dataset.m; panX=panY=0;   // recentre when switching modes
+  document.querySelectorAll("#gtoolbar button").forEach(x=>x.classList.toggle("on", x===b));
 });
 showInspector("dc01");
 </script>

@@ -201,8 +201,12 @@ attachHost(project, hostNode):
                    createdAt=hostNode.createdAt)   # host의 시각을 승계 → canonical 순서 보존
 ```
 
-- project-root는 사용자가 만들거나 지울 수 없다. 트리·리포트의 최상위(H1 위의 프로젝트 제목)이자 Graph 뷰에서는
-  숨기거나(기본) 중심 앵커로 표시(옵션)할 수 있다.
+- project-root는 사용자가 만들거나 지울 수 없다. 트리·리포트의 최상위(H1 위의 프로젝트 제목)이다.
+- **Graph 뷰의 적응형 루트(결정 B):** 보이는 host가 **1대뿐이면 project-root를 숨기고 그 host를 시각적 루트**(중심
+  고정 앵커)로 둔다. host가 **2대 이상이면 project-root가 중심 앵커로 등장**하고 host들이 그 아래로 뻗는다. 즉 단일 박스
+  랩에서는 "nmap 호스트 = 루트"라는 사용자 직관대로 보이고, pivot으로 머신이 늘면 자연스럽게 project-root가 상위
+  컨테이너로 드러난다. 루트(앵커)는 캔버스 중심에 고정하되 **빈 공간 드래그로 화면 전체를 패닝**할 수 있다.
+  (Outline/리포트에서는 단일 host일 때 project-root 행을 생략하고 host를 최상위로 올린다.)
 - 각 host는 `project-root → host` 의 `discovered` 엣지로 부착되며, 이 엣지의 `createdAt`은 host의 최초 발견 시각을
   승계해 **다중 호스트 사이의 canonical 정렬(발견순)**을 보존한다.
 - 내부망으로 확장된 호스트는 project-root가 아니라 자신을 발견하게 한 pivot 호스트 아래에 `pivoted-to`로 중첩된다
@@ -321,7 +325,7 @@ buildTree(project):
 
 레이아웃/물리
 - d3-force: `forceLink`(거리 relation별 가변), `forceManyBody`(반발), `forceCollide`(겹침 방지), `forceCenter`.
-  `pinned`/`position` 노드는 시뮬레이션에서 고정. project-root는 기본 숨김(옵션으로 중심 앵커 표시).
+  `pinned`/`position` 노드는 시뮬레이션에서 고정. 루트 앵커는 중심 고정 + 빈 공간 드래그로 패닝(적응형 루트는 §2.1 참조).
 
 비주얼(Obsidian급 톤)
 - 다크 캔버스, 은은한 비네트/그리드 배경. 노드는 부드러운 글로우 + 상태색 채움 + 미세 외곽선.
