@@ -18,6 +18,10 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     [targetIp, setTargetIp] = useState(""),
     [targetName, setTargetName] = useState(""),
     [targetError, setTargetError] = useState(""),
+    [activeProjectId, setActiveProjectId] = useState<number | undefined>(() => {
+      const saved = Number(localStorage.getItem("oscp-workspace-project"));
+      return saved > 0 ? saved : undefined;
+    }),
     [scanId, setScanId] = useState<number>(),
     [baseId, setBaseId] = useState<number>(),
     [tool, setTool] = useState<"nmap" | "masscan">("nmap"),
@@ -86,17 +90,23 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     });
   const masscanBlockedByVpn =
     !!vpnStatus.data?.connected && vpnStatus.data?.link_type === "tun";
+  // The project is chosen once, in AppShell's header dropdown; every other
+  // page (including this one) just follows it, so it can't be picked twice.
+  const effectiveProjectId = activeProjectId || projects.data?.[0]?.id;
   useEffect(() => {
-    if (!targetId && targets.data?.length) {
-      const savedProjectId = Number(
-        localStorage.getItem("oscp-workspace-project"),
-      );
-      const savedTarget = targets.data.find(
-        (item) => item.project_id === savedProjectId,
-      );
-      setTargetId((savedTarget || targets.data[0]).id);
-    }
-  }, [targets.data, targetId]);
+    const change = (e: Event) =>
+      setActiveProjectId((e as CustomEvent<number>).detail || undefined);
+    addEventListener("oscp-project-change", change);
+    return () => removeEventListener("oscp-project-change", change);
+  }, []);
+  useEffect(() => {
+    if (!effectiveProjectId || !targets.data) return;
+    if (targets.data.some(
+      (item) => item.id === targetId && item.project_id === effectiveProjectId,
+    )) return;
+    setTargetId(targets.data.find((item) => item.project_id === effectiveProjectId)?.id);
+    setScanId(undefined);
+  }, [effectiveProjectId, targets.data]);
   useEffect(() => {
     const selectedTarget = targets.data?.find((item) => item.id === targetId);
     if (selectedTarget) syncSelectedProject(selectedTarget.project_id);
@@ -131,6 +141,12 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       top_ports: Number(topPorts),
       extra_arguments: [],
     });
+  // Keep the IP/name inputs showing whichever target is current (picked from
+  // the dropdown, or auto-selected), so "review scan" reuses it by IP instead
+  // of always minting a new target.
+  useEffect(() => {
+    if (target) { setTargetIp(target.ip); setTargetName(target.name); }
+  }, [target?.id]);
   const preview = useQuery({
     queryKey: ["scanPreview", targetId, profileId, ports, topPorts],
     queryFn: async () => {
@@ -284,21 +300,29 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       qc.invalidateQueries({ queryKey: ["scans", targetId] }),
       qc.invalidateQueries({ queryKey: ["services", targetId] }),
     ]);
-  const createTarget = async () => {
+  // One button: IP -> pick a tool/profile -> review. No separate "add target"
+  // step - typing an existing target's IP reuses it (by IP, within the
+  // active project), anything new is created on the fly via /targets/ensure.
+  const beginReview = async () => {
     const ip = targetIp.trim();
-    if (!ip) return;
+    if (!ip || !profileId) return;
     setTargetError("");
-    // Scope the target to the active project (graph-first flow), so entering an
-    // IP adds a target to the current project instead of auto-creating a
-    // project named after the IP.
-    const activeProject = Number(localStorage.getItem("oscp-workspace-project"));
+    const existing = targets.data?.find(
+      (item) => item.ip === ip && item.project_id === effectiveProjectId,
+    );
+    if (existing) {
+      setTargetId(existing.id);
+      setScope(false);
+      setReview(true);
+      return;
+    }
     const r = await fetch("/api/targets/ensure", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ip,
         name: targetName.trim(),
-        project_id: activeProject > 0 ? activeProject : null,
+        project_id: effectiveProjectId ?? null,
       }),
     });
     if (!r.ok) {
@@ -316,8 +340,8 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       qc.invalidateQueries({ queryKey: ["projects"] }),
     ]);
     setTargetId(created.id);
-    setTargetIp("");
-    setTargetName("");
+    setScope(false);
+    setReview(true);
   };
   const upload = async (f: File) => {
     if (!targetId) return;
@@ -409,26 +433,8 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
         <a href="#reports">보고서</a>
         <a href="#operations">운영</a>
         <select
-          aria-label="프로젝트 선택"
-          value={target?.project_id || ""}
-          onChange={(e) => {
-            const projectId = +e.target.value;
-            const projectTarget = targets.data?.find(
-              (item) => item.project_id === projectId,
-            );
-            setTargetId(projectTarget?.id);
-            setScanId(undefined);
-          }}
-        >
-          <option value="">프로젝트 선택</option>
-          {projects.data?.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        <select
           aria-label="대상 선택"
+          title="이 프로젝트에 이미 등록된 대상 중에서 전환"
           value={targetId || ""}
           onChange={(e) => {
             setTargetId(+e.target.value);
@@ -436,7 +442,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
           }}
         >
           {targets.data
-            ?.filter((item) => item.project_id === target?.project_id)
+            ?.filter((item) => item.project_id === effectiveProjectId)
             .map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name} · {item.ip}
@@ -452,17 +458,17 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
           <ScanProfileComposer tool={tool}
             targetIp={targetIp} targetName={targetName} targetError={targetError}
             onTargetIpChange={setTargetIp} onTargetNameChange={setTargetName}
-            onCreateTarget={createTarget}
             profiles={profiles.data} profileId={profileId}
             onSelectProfile={setProfileId} profile={profile} target={target}
             ports={ports} topPorts={topPorts}
             onPortsChange={setPorts} onTopPortsChange={setTopPorts}
             onUpload={upload}
-            previewCommand={preview.data?.command} previewReady={!!preview.data}
-            onReviewScan={() => {
-              setScope(false);
-              setReview(true);
-            }} />
+            previewCommand={preview.data?.command}
+            canReview={!!targetIp.trim() && !!profileId && (
+              !profile?.arguments.includes("{top_ports}") ||
+              (Number(topPorts) >= 1 && Number(topPorts) <= 65535)
+            )}
+            onReviewScan={beginReview} />
           <ScanJobStatus selected={selected} clock={clock} streamState={streamState}
             lastEventAt={lastEventAt} processAlive={processAlive}
             selectedProfile={selectedProfile} automation={automation.data}

@@ -2,14 +2,13 @@ import {profileLabel, privilegedKinds, toolProfileGroups,
   type Profile, type Target} from "./scanCenterModel";
 
 export default function ScanProfileComposer({tool, targetIp, targetName, targetError,
-  onTargetIpChange, onTargetNameChange, onCreateTarget, profiles, profileId,
+  onTargetIpChange, onTargetNameChange, profiles, profileId,
   onSelectProfile, profile, target, ports, topPorts, onPortsChange, onTopPortsChange,
-  onUpload, previewCommand, previewReady, onReviewScan}: {
+  onUpload, previewCommand, canReview, onReviewScan}: {
   tool: "nmap" | "masscan";
   targetIp: string; targetName: string; targetError: string;
   onTargetIpChange: (value: string) => void;
   onTargetNameChange: (value: string) => void;
-  onCreateTarget: () => void;
   profiles?: Profile[];
   profileId?: number;
   onSelectProfile: (id: number) => void;
@@ -20,7 +19,7 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
   onTopPortsChange: (value: string) => void;
   onUpload: (file: File) => void;
   previewCommand?: string;
-  previewReady: boolean;
+  canReview: boolean;
   onReviewScan: () => void;
 }) {
   return <>
@@ -37,12 +36,6 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
         value={targetName}
         onChange={(e) => onTargetNameChange(e.target.value)}
       />
-      <button
-        disabled={!targetIp.trim()}
-        onClick={onCreateTarget}
-      >
-        대상 추가
-      </button>
       {targetError && <span>{targetError}</span>}
     </div>
     <div className="profilePicker">
@@ -81,7 +74,7 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
               profile.engine || "nmap"
             } ${profile.arguments
               .replace("{ports}", ports)
-              .replace("{top_ports}", topPorts)} ${target?.ip || "<IP>"}`}
+              .replace("{top_ports}", topPorts)} ${target?.ip || targetIp.trim() || "<IP>"}`}
           </code>
         </div>
       )}
@@ -121,10 +114,10 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
         />
       )}
       <code>
-        {previewCommand || "대상과 프로필을 선택하세요"}
+        {previewCommand || "IP와 프로필을 선택하세요"}
       </code>
       <button
-        disabled={!previewReady}
+        disabled={!canReview}
         onClick={onReviewScan}
       >
         새 {profile?.engine === "masscan" ? "masscan" : "Nmap"} 스캔 검토

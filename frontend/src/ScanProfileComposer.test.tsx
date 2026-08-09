@@ -21,13 +21,13 @@ const profiles: Profile[] = [
 const baseProps = {
   tool: "nmap" as const,
   targetIp: "", targetName: "", targetError: "",
-  onTargetIpChange: vi.fn(), onTargetNameChange: vi.fn(), onCreateTarget: vi.fn(),
+  onTargetIpChange: vi.fn(), onTargetNameChange: vi.fn(),
   profiles, profileId: 2, onSelectProfile: vi.fn(),
   profile: profiles[1], target: {id: 1, project_id: 1, name: "target", ip: "10.10.10.10"},
   ports: "80,443", topPorts: "100",
   onPortsChange: vi.fn(), onTopPortsChange: vi.fn(), onUpload: vi.fn(),
   previewCommand: "sudo nmap -Pn -p- --min-rate 1000 -T4 10.10.10.10",
-  previewReady: true, onReviewScan: vi.fn(),
+  canReview: true, onReviewScan: vi.fn(),
 };
 
 it("marks a privileged profile's preview with sudo and reports its Korean label", () => {
@@ -37,14 +37,15 @@ it("marks a privileged profile's preview with sudo and reports its Korean label"
     .toBe(2);
 });
 
-it("requires a preview before allowing review and creates a target from typed IP", () => {
-  const onCreateTarget = vi.fn();
+it("disables review until an IP and profile make it reviewable, then runs the scan directly", () => {
   const onReviewScan = vi.fn();
-  render(<ScanProfileComposer {...baseProps} previewReady={false}
-    onCreateTarget={onCreateTarget} onReviewScan={onReviewScan}
-    targetIp="10.10.10.20" />);
+  render(<ScanProfileComposer {...baseProps} canReview={false}
+    onReviewScan={onReviewScan} targetIp="10.10.10.20" />);
   expect(screen.getByText(/새 Nmap 스캔 검토/).closest("button")!.hasAttribute("disabled"))
     .toBe(true);
-  fireEvent.click(screen.getByText("대상 추가"));
-  expect(onCreateTarget).toHaveBeenCalledOnce();
+
+  render(<ScanProfileComposer {...baseProps} canReview
+    onReviewScan={onReviewScan} targetIp="10.10.10.20" />);
+  fireEvent.click(screen.getAllByText(/새 Nmap 스캔 검토/)[1]);
+  expect(onReviewScan).toHaveBeenCalledOnce();
 });
