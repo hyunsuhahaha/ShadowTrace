@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
+import { parseLinkExtractResults } from "../../serviceIntel";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 
@@ -38,6 +39,9 @@ const STATUS_COLOR: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   untried: "미시도", "in-progress": "진행중", "attempt-failed": "실패",
   succeeded: "성공", blocked: "차단", "not-applicable": "N/A",
+};
+const LINK_KIND_LABEL: Record<string, string> = {
+  page: "페이지", asset: "정적 리소스", absolute: "절대경로", anchor: "앵커",
 };
 const GLYPH: Record<NodeType, string> = {
   "project-root": "◎", host: "▣", service: "◉", finding: "◇",
@@ -688,7 +692,7 @@ const defaultRelation = (src: string, dst: string) =>
 
 type AddForm = { type: string; label: string; relation: string; status: string };
 
-function Inspector(props: {
+export function Inspector(props: {
   node?: GraphNode; link?: DeepLink; busy: boolean;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
@@ -696,6 +700,19 @@ function Inspector(props: {
 }) {
   const n = props.node;
   const [adding, setAdding] = useState(false);
+  const executionId = (() => {
+    if (n?.label !== "http-link-extract" || !n.source_ref) return null;
+    try {
+      const ref = JSON.parse(n.source_ref);
+      return ref.kind === "execution" && Number.isInteger(ref.id) ? ref.id : null;
+    } catch { return null; }
+  })();
+  const executionOutput = useQuery({
+    queryKey: ["executionOutput", executionId],
+    enabled: executionId !== null,
+    queryFn: () => api<{ stdout: string }>(`/executions/${executionId}/output`),
+  });
+  const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "");
   if (!n)
     return <aside style={S.inspector}>
       <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
@@ -721,6 +738,30 @@ function Inspector(props: {
           ))}
         </div>
       </div>
+      {executionId !== null && (
+        <section style={S.executionResults} aria-label="링크 추출 결과">
+          <div style={S.executionResultsHead}>
+            <strong>발견된 링크</strong>
+            <span>{extractedLinks.length}개</span>
+          </div>
+          {executionOutput.isLoading ? (
+            <div style={S.resultMessage}>결과 불러오는 중…</div>
+          ) : executionOutput.isError ? (
+            <div style={S.resultMessage}>실행 결과를 불러오지 못했습니다.</div>
+          ) : extractedLinks.length ? (
+            <div style={S.linkList}>
+              {extractedLinks.map((item) => (
+                <div key={`${item.kind}:${item.url}`} style={S.linkRow}>
+                  <code style={S.linkCode}>{item.url}</code>
+                  <span style={S.linkKind}>{LINK_KIND_LABEL[item.kind] || item.kind}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={S.resultMessage}>이 실행에서 찾은 링크가 없습니다.</div>
+          )}
+        </section>
+      )}
       {props.link && (
         <button onClick={props.link.open} style={S.openBtn}>{props.link.label}</button>
       )}
@@ -816,6 +857,17 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: "inset 0 0 0 1px rgba(106,169,255,.25)" },
   inspector: { flex: 1, minWidth: 0, background: "#16161c",
     padding: 16, overflow: "auto" },
+  executionResults: { marginTop: 18, border: "1px solid #2a2a34",
+    borderRadius: 8, overflow: "hidden", background: "#101016" },
+  executionResultsHead: { display: "flex", alignItems: "center", gap: 8,
+    padding: "10px 12px", borderBottom: "1px solid #2a2a34", fontSize: 12 },
+  resultMessage: { padding: 12, color: "#9a9aa6", fontSize: 11 },
+  linkList: { maxHeight: 420, overflow: "auto" },
+  linkRow: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+    alignItems: "center", gap: 10, padding: "9px 12px",
+    borderBottom: "1px solid #22222b" },
+  linkCode: { minWidth: 0, overflowWrap: "anywhere", color: "#d7dedb", fontSize: 11 },
+  linkKind: { color: "#9a9aa6", fontSize: 10, whiteSpace: "nowrap" },
   embedPane: { flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
     background: "#0e0e12" },
   splitter: { width: 6, flexShrink: 0, cursor: "col-resize", background: "#2a2a34",
