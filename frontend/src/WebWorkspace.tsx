@@ -359,7 +359,7 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
             <small>Web 테스트</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
+        <a href="#scans">← Scan Center</a>
       </header>
       <nav>
         <select

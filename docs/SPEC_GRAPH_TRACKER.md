@@ -136,7 +136,7 @@
 | relation | 방향(source→target) | structural | 의미 |
 |---|---|---|---|
 | `discovered` | host → service | ✔ | 스캔이 서비스를 발견 |
-| `enumerated` | service → finding | ✔ | 열거로 finding 도출 |
+| `enumerated` | (service\|host) → (finding\|credential) | ✔ | 열거로 finding/크리덴셜 도출(host-level 관찰·설정파일 크리덴셜 포함) |
 | `attempted` | finding → technique | ✔ | finding에 기법 시도 |
 | `yielded` | technique → (credential\|host\|service\|finding) | ✔ | 시도 결과 산출물(성공의 구조적 자식) |
 | `pivoted-to` | host → host | ✔ | 내부망 이동(lateral movement). 새 호스트를 pivot 호스트 아래로 중첩 |

@@ -108,7 +108,7 @@ export default function SessionWorkspace() {
             <small>Tunnel 및 세션</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
+        <a href="#scans">← Scan Center</a>
       </header>
       <nav>
         <select

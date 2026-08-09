@@ -11,7 +11,8 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...models import GraphEdge, GraphNode, GraphProjectMeta, Project, Service, Target
+from ...models import (Credential, Finding, GraphEdge, GraphNode,
+                       GraphProjectMeta, Project, Service, Target)
 from . import engine
 from .ids import new_ulid
 
@@ -27,7 +28,7 @@ EDGE_STATUSES = NODE_STATUSES  # shared vocabulary (spec 1.5)
 # relation -> (allowed source types, allowed target types) — spec 1.4.
 ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "discovered": ({"project-root", "host"}, {"host", "service"}),
-    "enumerated": ({"service"}, {"finding"}),
+    "enumerated": ({"service", "host"}, {"finding", "credential"}),
     "attempted": ({"finding"}, {"technique"}),
     "yielded": ({"technique"}, {"credential", "host", "service", "finding"}),
     "pivoted-to": ({"host"}, {"host"}),
@@ -167,39 +168,96 @@ def _source_ref(module: str, kind: str, ident: int) -> str:
                       sort_keys=True)
 
 
-def sync_from_project(db: Session, project_id: int) -> dict:
-    """Project existing Targets/Services into host/service nodes (idempotent).
+def _index_by_source(nodes: list[GraphNode]) -> dict[tuple[str, int], GraphNode]:
+    index: dict[tuple[str, int], GraphNode] = {}
+    for node in nodes:
+        if not node.source_ref:
+            continue
+        try:
+            ref = json.loads(node.source_ref)
+        except ValueError:
+            continue
+        index[(ref.get("kind"), ref.get("id"))] = node
+    return index
 
-    Matching is by ``source_ref`` so re-running only fills gaps; user-edited
-    label/status/notes on existing nodes are left untouched (spec 6.1).
+
+def sync_from_project(db: Session, project_id: int) -> dict:
+    """Project existing domain rows into graph nodes (idempotent, spec 6.1).
+
+    Targets/Services -> host/service nodes; Findings/Credentials -> finding/
+    credential nodes attached to their service (or host). Matching is by
+    ``source_ref`` so re-running only fills gaps; user edits are left untouched.
+    Secrets are never copied — only ``secret_hint``.
     """
     root = ensure_project_root(db, project_id)
     nodes, _ = _load(db, project_id)
-    by_ref = {node.source_ref: node for node in nodes if node.source_ref}
-    created = {"hosts": 0, "services": 0}
+    index = _index_by_source(nodes)
+    created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0}
+
+    def host_for(target_id: int) -> GraphNode | None:
+        return index.get(("target", target_id))
 
     for target in db.scalars(
             select(Target).where(Target.project_id == project_id)):
-        host_ref = _source_ref("core", "target", target.id)
-        host = by_ref.get(host_ref)
+        host = host_for(target.id)
         if host is None:
             label = target.ip + (f" ({target.hostname})" if target.hostname else "")
             host = create_node(db, project_id, "host", label=label,
-                               source_ref=host_ref)
+                               source_ref=_source_ref("core", "target", target.id))
             create_edge(db, project_id, root.id, host.id, "discovered")
-            by_ref[host_ref] = host
+            index[("target", target.id)] = host
             created["hosts"] += 1
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
-            svc_ref = _source_ref("scans", "service", service.id)
-            if svc_ref in by_ref:
-                continue
-            label = f"{service.port}/{service.protocol} {service.name}".strip()
-            svc = create_node(db, project_id, "service", label=label,
-                              source_ref=svc_ref)
-            create_edge(db, project_id, host.id, svc.id, "discovered")
-            by_ref[svc_ref] = svc
-            created["services"] += 1
+            if ("service", service.id) not in index:
+                label = f"{service.port}/{service.protocol} {service.name}".strip()
+                svc = create_node(db, project_id, "service", label=label,
+                                  source_ref=_source_ref("scans", "service", service.id))
+                create_edge(db, project_id, host.id, svc.id, "discovered")
+                index[("service", service.id)] = svc
+                created["services"] += 1
+
+    # findings + credentials attach to their service, else their host.
+    def parent_of(service_id, target_id) -> GraphNode | None:
+        if service_id and ("service", service_id) in index:
+            return index[("service", service_id)]
+        return host_for(target_id) if target_id else None
+
+    for finding in db.scalars(
+            select(Finding).where(Finding.project_id == project_id)):
+        if ("finding", finding.id) in index:
+            continue
+        parent = parent_of(finding.service_id, finding.target_id)
+        if parent is None:
+            continue
+        meta = json.dumps({"severity": finding.severity or "",
+                           "category": finding.category or ""})
+        node = create_node(db, project_id, "finding", label=finding.title,
+                           source_ref=_source_ref("findings", "finding", finding.id),
+                           meta=meta)
+        create_edge(db, project_id, parent.id, node.id, "enumerated")
+        index[("finding", finding.id)] = node
+        created["findings"] += 1
+
+    for cred in db.scalars(
+            select(Credential).where(Credential.project_id == project_id)):
+        if ("credential", cred.id) in index:
+            continue
+        parent = parent_of(cred.service_id, cred.target_id)
+        if parent is None:
+            continue
+        label = cred.username or (cred.domain and f"{cred.domain}\\") or "credential"
+        meta = json.dumps({"username": cred.username or "",
+                           "credType": cred.secret_kind or "",
+                           "secretHint": cred.secret_hint or ""})
+        provenance = json.dumps({"source": cred.source_kind or "",
+                                 "detail": cred.source_detail or ""})
+        node = create_node(db, project_id, "credential", label=label,
+                           source_ref=_source_ref("core", "credential", cred.id),
+                           meta=meta, provenance=provenance)
+        create_edge(db, project_id, parent.id, node.id, "enumerated")
+        index[("credential", cred.id)] = node
+        created["credentials"] += 1
 
     return {"rootNodeId": root.id, "created": created}

@@ -69,7 +69,7 @@ export default function OperationsWorkspace() {
             <small>검색 · 감사 · 백업</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
+        <a href="#scans">← Scan Center</a>
       </header>
       <main>
         <section>

@@ -140,7 +140,7 @@ export default function EvidenceWorkspace() {
             <small>증적</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
+        <a href="#scans">← Scan Center</a>
       </header>
       <nav>
         <select

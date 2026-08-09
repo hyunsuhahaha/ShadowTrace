@@ -37,7 +37,8 @@ def test_create_edge_rejects_illegal_type_pair():
     p = project(db)
     root = service.ensure_project_root(db, p.id)
     cred = service.create_node(db, p.id, "credential", "svc_backup")
-    # enumerated is service -> finding only; credential source is illegal.
+    # enumerated allows service/host -> finding/credential; credential source
+    # (and project-root target) are illegal.
     with pytest.raises(GraphIntegrityError):
         service.create_edge(db, p.id, cred.id, root.id, "enumerated")
 
@@ -101,7 +102,8 @@ def test_sync_projects_targets_and_services_into_graph():
     p = project(db)
     target_with_services(db, p.id)
     result = service.sync_from_project(db, p.id)
-    assert result["created"] == {"hosts": 1, "services": 2}
+    assert result["created"] == {"hosts": 1, "services": 2,
+                                 "findings": 0, "credentials": 0}
     tree = service.get_tree(db, p.id)
     host = tree["children"][0]
     assert host["label"] == "10.10.11.23 (dc01)"
@@ -115,7 +117,34 @@ def test_sync_is_idempotent():
     target_with_services(db, p.id)
     service.sync_from_project(db, p.id)
     second = service.sync_from_project(db, p.id)
-    assert second["created"] == {"hosts": 0, "services": 0}
+    assert second["created"] == {"hosts": 0, "services": 0,
+                                 "findings": 0, "credentials": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     # 1 project-root + 1 host + 2 services, no duplicates on re-sync
     assert len(nodes) == 4
+
+
+def test_sync_projects_findings_and_credentials():
+    from app.models import Credential, Finding, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.9")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=445, protocol="tcp", name="smb")
+    db.add(svc); db.flush()
+    db.add(Finding(project_id=p.id, target_id=t.id, service_id=svc.id,
+                   title="Anonymous SMB", severity="Medium", status="open"))
+    db.add(Credential(project_id=p.id, target_id=t.id, service_id=svc.id,
+                      username="svc_backup", secret_kind="password",
+                      secret_hint="8+ chars", secret="REALSECRET",
+                      source_kind="smb"))
+    db.flush()
+    result = service.sync_from_project(db, p.id)
+    assert result["created"] == {"hosts": 1, "services": 1,
+                                 "findings": 1, "credentials": 1}
+    nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
+    cred = next(n for n in nodes if n.type == "credential")
+    assert cred.label == "svc_backup"
+    assert "REALSECRET" not in cred.meta  # secret never copied
+    finding = next(n for n in nodes if n.type == "finding")
+    assert finding.label == "Anonymous SMB"

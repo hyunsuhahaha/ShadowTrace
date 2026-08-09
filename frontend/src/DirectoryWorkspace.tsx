@@ -134,7 +134,7 @@ export default function DirectoryWorkspace() {
             <small>AD 정보</small>
           </div>
         </div>
-        <a href="#">← Scan Center</a>
+        <a href="#scans">← Scan Center</a>
       </header>
       <nav>
         <select

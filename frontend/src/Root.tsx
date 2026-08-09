@@ -18,9 +18,9 @@ const ToolsWorkspace=lazy(()=>import("./ToolsWorkspace"));
 const GraphWorkspace=lazy(()=>import("./features/graph/GraphWorkspace"));
 
 const route=()=>{
-  const raw=location.hash.replace("#","")||"scans";
+  const raw=location.hash.replace("#","")||"graph";
   const[page,...rest]=raw.split("/");
-  return{page:page==="dashboard"?"scans":page,subroute:rest.join("/")||undefined};
+  return{page:page==="dashboard"?"graph":page,subroute:rest.join("/")||undefined};
 };
 
 export default function Root(){
@@ -38,7 +38,7 @@ export default function Root(){
   },[]);
   let content;
   switch(page){
-    case"enumeration":content=<><a className="backToScans" href="#">← Scan Center</a><Enumeration/></>;break;
+    case"enumeration":content=<><a className="backToScans" href="#scans">← Scan Center</a><Enumeration/></>;break;
     case"web":content=<WebWorkspace initialTab={subroute}/>;break;
     case"evidence":content=<EvidenceWorkspace/>;break;
     case"directory":content=<DirectoryWorkspace/>;break;

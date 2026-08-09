@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api";
+import { setPendingServiceNav } from "../../pendingServiceNav";
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -9,7 +10,9 @@ import { api } from "../../api";
 type NodeType = "project-root" | "host" | "service" | "finding" | "technique" | "credential";
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
+  source_ref: string;
 };
+type DeepLink = { label: string; open: () => void };
 type GraphEdge = {
   id: string; source: string; target: string; relation: string; status: string;
 };
@@ -75,6 +78,43 @@ export default function GraphWorkspace() {
     return map;
   }, [graph.data]);
 
+  // Two-way bridge: a graph node deep-links into the specialized workspace that
+  // owns its underlying domain entity (via source_ref). This is what makes the
+  // graph a hub rather than a sibling view.
+  const deepLink = (id: string): DeepLink | undefined => {
+    const node = nodeById.get(id);
+    if (!node?.source_ref) return undefined;
+    let ref: { module: string; kind: string; id: number };
+    try { ref = JSON.parse(node.source_ref); } catch { return undefined; }
+    const go = (hash: string) => (): void => { location.hash = hash; };
+    if (ref.kind === "service") {
+      const edge = graph.data?.edges.find(
+        (e) => e.target === id && e.relation === "discovered");
+      const host = edge ? nodeById.get(edge.source) : undefined;
+      let targetId: number | undefined;
+      if (host?.source_ref) {
+        try {
+          const h = JSON.parse(host.source_ref);
+          if (h.kind === "target") targetId = h.id;
+        } catch { /* ignore */ }
+      }
+      if (targetId === undefined) return undefined;
+      return {
+        label: "Service Enumeration 열기 →",
+        open: () => {
+          setPendingServiceNav({ targetId: targetId!, serviceId: ref.id });
+          location.hash = "#enumeration";
+          dispatchEvent(new CustomEvent("oscp-service-nav"));
+        },
+      };
+    }
+    if (ref.kind === "target") return { label: "Scan Center 열기 →", open: go("#scans") };
+    if (ref.kind === "finding") return { label: "Reports 열기 →", open: go("#reports") };
+    if (ref.kind === "credential")
+      return { label: "Post-Exploitation 열기 →", open: go("#post-exploitation") };
+    return undefined;
+  };
+
   if (!projectId)
     return <Empty text="상단에서 프로젝트를 먼저 선택하세요." />;
   if (graph.isLoading) return <Empty text="그래프 동기화 중…" />;
@@ -109,7 +149,8 @@ export default function GraphWorkspace() {
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
-        <Inspector node={selected ? nodeById.get(selected) : undefined} />
+        <Inspector node={selected ? nodeById.get(selected) : undefined}
+          link={selected ? deepLink(selected) : undefined} />
       </div>
     </div>
   );
@@ -348,7 +389,7 @@ function Row(props: {
 
 // ---------------- shared ----------------
 
-function Inspector(props: { node?: GraphNode }) {
+function Inspector(props: { node?: GraphNode; link?: DeepLink }) {
   const n = props.node;
   return (
     <aside style={S.inspector}>
@@ -365,6 +406,11 @@ function Inspector(props: { node?: GraphNode }) {
               {STATUS_LABEL[n.status] ?? n.status}
             </span>
           </div>
+          {props.link && (
+            <button onClick={props.link.open} style={S.openBtn}>
+              {props.link.label}
+            </button>
+          )}
         </>
       ) : (
         <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
@@ -405,4 +451,7 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: "inset 0 0 0 1px rgba(106,169,255,.25)" },
   inspector: { width: 280, borderLeft: "1px solid #2a2a34", background: "#16161c",
     padding: 16, overflow: "auto", flexShrink: 0 },
+  openBtn: { marginTop: 18, width: "100%", padding: "9px 12px", borderRadius: 8,
+    border: "1px solid #6aa9ff55", background: "#6aa9ff14", color: "#6aa9ff",
+    fontWeight: 600, cursor: "pointer" },
 };
