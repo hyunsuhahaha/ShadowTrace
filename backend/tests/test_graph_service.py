@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import GraphNode, Project
+from app.models import GraphEdge, GraphNode, Project
 from app.modules.graph import service
 from app.modules.graph.service import GraphIntegrityError
 
@@ -266,10 +266,11 @@ def test_sync_retroactively_relabels_existing_default_service_node():
     assert node.label == "5985/tcp winrm"
 
 
-def test_sync_projects_interactive_sessions_as_technique_nodes():
+def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
     import os
     from app.models import InteractiveSession, Service, Target
     db = database()
+    monkeypatch.setattr(service, "_operator_address", lambda: "10.10.16.178")
     p = project(db)
     t = Target(project_id=p.id, name="b", ip="10.0.0.11")
     db.add(t); db.flush()
@@ -285,6 +286,15 @@ def test_sync_projects_interactive_sessions_as_technique_nodes():
     assert tech.label == "responder-listener"
     assert json.loads(tech.meta)["activity"]["kind"] == "listener"
     assert json.loads(tech.meta)["activity"]["status"] == "launched"
+    operator = db.query(GraphNode).filter_by(type="operator").one()
+    assert operator.label == "Kali Operator · 10.10.16.178"
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert ("runs", operator.id, tech.id) in relations
+    assert ("captures-from", tech.id, host.id) in relations
+    assert not any(relation == "attempted" and target == tech.id
+                   for relation, _, target in relations)
 
 
 def test_sync_prunes_orphaned_nodes_when_target_deleted():

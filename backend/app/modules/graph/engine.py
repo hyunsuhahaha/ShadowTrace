@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 # (reused-credential, blocked-by) is cross-cutting and only ever shown as a
 # reference, never as a structural parent.
 STRUCTURAL_RELATIONS = frozenset(
-    {"discovered", "enumerated", "attempted", "yielded", "pivoted-to"}
+    {"discovered", "enumerated", "attempted", "yielded", "pivoted-to",
+     "operates", "runs"}
 )
 
 SUCCESS_STATUS = "succeeded"

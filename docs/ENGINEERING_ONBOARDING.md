@@ -544,7 +544,9 @@ handoff를 추가로 제공하며, handoff 시 그래프를 벗어나지 않고 
 4초마다 조회해 해시 보기·복사·Credential 저장을 제공한다. 실행 중인 스캔은 host 노드, 실행 중인 명령·세션은
 technique 노드의 `meta.activity`에 투영되어 Canvas에서 녹색 레이더 파동·스윕·엣지
 패킷으로 표시되며 종료 시 제거된다. 데스크톱 Responder는 PID가 살아 있는 동안 별도의
-빨간 `LISTENING` 레이더로 표시되고 2초 동기화로 창 종료를 반영한다. 프로젝트가 없으면 "start"
+빨간 `LISTENING` 레이더로 표시되고 2초 동기화로 창 종료를 반영한다. Responder는 대상
+Host의 자식이 아니라 `Kali Operator · <tun0 IP>` 아래 `runs`로 배치되고, 대상에는 방향성
+비구조 엣지 `captures-from`(`AUTH CAPTURE`)으로 연결된다. 프로젝트가 없으면 "start"
 합성 노드로 프로젝트 생성 유도. GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
 OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
 `features/graph/GraphWorkspace.test.tsx`에 있다.

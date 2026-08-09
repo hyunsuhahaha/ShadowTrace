@@ -39,7 +39,7 @@
 |---|---|---|---|
 | `id` | string (ULID) | ✔ | 전역 고유. ULID는 시간순 정렬성이 있어 tie-break에 유리 |
 | `projectId` | string | ✔ | 스코핑 키. 이 값으로 그래프를 격리 |
-| `type` | enum `NodeType` | ✔ | `project-root` \| `host` \| `service` \| `finding` \| `technique` \| `credential` |
+| `type` | enum `NodeType` | ✔ | `project-root` \| `operator` \| `host` \| `service` \| `finding` \| `technique` \| `credential` |
 | `label` | string | ✔ | 화면 표시명 (예: `445/tcp smb`, `MS17-010`) |
 | `status` | enum `NodeStatus` | ✔ | 아래 1.5. 색 인코딩의 근거 |
 | `createdAt` | ISO-8601 datetime | ✔ | **canonical 판정의 기준값**. 최초 발견/시도 시각 |
@@ -136,6 +136,9 @@
 
 | relation | 방향(source→target) | structural | 의미 |
 |---|---|---|---|
+| `operates` | project-root → operator | ✔ | 프로젝트의 로컬 Kali/Operator 작업점 |
+| `runs` | operator → technique | ✔ | 로컬 Operator에서 리스너·도구 실행 |
+| `captures-from` | technique → host | ✘ | 로컬 리스너가 대상에서 인증 시도를 수신 |
 | `discovered` | host → service | ✔ | 스캔이 서비스를 발견 |
 | `enumerated` | (service\|host) → (finding\|credential) | ✔ | 열거로 finding/크리덴셜 도출(host-level 관찰·설정파일 크리덴셜 포함) |
 | `attempted` | (finding\|service\|host) → technique | ✔ | 기법 시도(finding 대상 익스플로잇, 또는 서비스/호스트에 직접 실행) |

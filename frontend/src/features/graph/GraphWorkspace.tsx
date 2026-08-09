@@ -14,7 +14,8 @@ const EmbeddedScanCenter = lazy(() => import("../../ScanCenter"));
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
 // swap is M4 and isolated to <GraphCanvas>). No new dependencies in this slice.
 
-type NodeType = "project-root" | "host" | "service" | "finding" | "technique" | "credential";
+type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
+  | "technique" | "credential";
 type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
   source_ref: string; hidden: boolean; meta?: string;
@@ -57,7 +58,7 @@ const EXECUTION_STATUS_LABEL: Record<string, string> = {
   interrupted: "중단됨",
 };
 const GLYPH: Record<NodeType, string> = {
-  "project-root": "◎", host: "▣", service: "◉", finding: "◇",
+  "project-root": "◎", operator: "⌁", host: "▣", service: "◉", finding: "◇",
   technique: "⚡", credential: "🔑",
 };
 const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
@@ -257,9 +258,21 @@ export default function GraphWorkspace() {
     if (!id) return null;
     const node = nodeById.get(id);
     if (!node?.source_ref) return null;
+    let kind: string;
     try {
-      if (!["execution", "session"].includes(JSON.parse(node.source_ref).kind)) return null;
+      kind = JSON.parse(node.source_ref).kind;
+      if (!["execution", "session"].includes(kind)) return null;
     } catch { return null; }
+    if (kind === "session") {
+      const capture = graph.data?.edges.find((item) =>
+        item.source === id && item.relation === "captures-from");
+      const host = capture ? nodeById.get(capture.target) : undefined;
+      if (!host?.source_ref) return null;
+      try {
+        const ref = JSON.parse(host.source_ref);
+        return ref.kind === "target" ? { targetId: ref.id } : null;
+      } catch { return null; }
+    }
     const edge = graph.data?.edges.find((item) =>
       item.target === id && item.relation === "attempted");
     if (!edge) return null;
@@ -477,7 +490,8 @@ function GraphCanvas(props: {
     });
     const index = new Map(nodes.map((n) => [n.id, n]));
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
-    const structural = new Set(["discovered", "enumerated", "attempted", "yielded", "pivoted-to"]);
+    const structural = new Set(["discovered", "enumerated", "attempted", "yielded",
+      "pivoted-to", "operates", "runs"]);
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
@@ -555,6 +569,17 @@ function GraphCanvas(props: {
             a.y + (b.y - a.y) * t, 2.2, 0, Math.PI * 2);
           ctx.fillStyle = edgeSignal; ctx.fill(); ctx.restore();
         }
+        if (e.relation === "captures-from") {
+          const angle = Math.atan2(b.y - a.y, b.x - a.x);
+          const tipX = b.x - Math.cos(angle) * 21, tipY = b.y - Math.sin(angle) * 21;
+          ctx.beginPath(); ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX - Math.cos(angle - .48) * 8, tipY - Math.sin(angle - .48) * 8);
+          ctx.lineTo(tipX - Math.cos(angle + .48) * 8, tipY - Math.sin(angle + .48) * 8);
+          ctx.closePath(); ctx.fillStyle = "#ff4d67"; ctx.fill();
+          ctx.fillStyle = "#ff7188"; ctx.font = "600 8px ui-monospace,monospace";
+          ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+          ctx.fillText("AUTH CAPTURE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 7);
+        }
       }
       for (const n of nodes) {
         const current = latestNodes.current.get(n.id) ?? n;
@@ -562,7 +587,8 @@ function GraphCanvas(props: {
         const nodeSignal = activity?.kind === "listener" ? listenerSignal : signal;
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
-        const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
+        const isOperator = n.type === "operator";
+        const r = isRoot ? 26 : isAnchor ? 24 : isHost || isOperator ? 16 : 11;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (activity) {
           if (!activityStarted.current.has(n.id)) activityStarted.current.set(n.id, now);
@@ -612,11 +638,12 @@ function GraphCanvas(props: {
         ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.fillStyle = activity ? (activity.kind === "listener" ? "#2a1016" : "#10251a")
-          : color(current.status); ctx.fill();
+          : isOperator ? "#123038" : color(current.status); ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : 1;
-        ctx.strokeStyle = activity ? nodeSignal : isSel ? "#fff" : isAnchor ? "#6aa9ff"
+        ctx.strokeStyle = activity ? nodeSignal : isSel ? "#fff" : isOperator ? "#55d6e8"
+          : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
         if (current.hidden) ctx.setLineDash([2, 3]);
         ctx.stroke();
@@ -624,7 +651,7 @@ function GraphCanvas(props: {
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
         ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
-        if (hover === n || isSel || isHost || isRoot || current.hidden || activity) {
+        if (hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
           ctx.font = isAnchor ? "600 12px sans-serif" : "11px sans-serif";
           ctx.fillText(current.label, n.x, n.y + r + 6);

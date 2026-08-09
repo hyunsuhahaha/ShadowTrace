@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from ...models import (Credential, Execution, Finding, GraphEdge, GraphNode,
                        GraphProjectMeta, InteractiveSession, Project, ScanJob,
                        Service, Target)
+from ..vpn import vpn_status
 
 # Executions are auto-nodified but their security outcome is never auto-judged
 # (product principle): a completed command is not a "success". Only technical
@@ -30,6 +32,12 @@ _EXECUTION_STATUS = {
 _WELL_KNOWN_PORT_NAMES = {5985: "winrm", 5986: "winrm"}
 
 _ACTIVE_STATUSES = {"queued", "running", "processing", "launched"}
+
+
+def _operator_address() -> str:
+    match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})/\d+",
+                      vpn_status().get("tun0", ""))
+    return match.group(1) if match else "tun0 offline"
 
 
 def _activity_meta(raw: str, activity: dict | None) -> str:
@@ -71,7 +79,8 @@ from . import engine
 from .ids import new_ulid
 
 NODE_TYPES = {
-    "project-root", "host", "service", "finding", "technique", "credential",
+    "project-root", "operator", "host", "service", "finding", "technique",
+    "credential",
 }
 NODE_STATUSES = {
     "untried", "in-progress", "attempt-failed", "succeeded", "blocked",
@@ -81,6 +90,9 @@ EDGE_STATUSES = NODE_STATUSES  # shared vocabulary (spec 1.5)
 
 # relation -> (allowed source types, allowed target types) — spec 1.4.
 ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
+    "operates": ({"project-root"}, {"operator"}),
+    "runs": ({"operator"}, {"technique"}),
+    "captures-from": ({"technique"}, {"host"}),
     "discovered": ({"project-root", "host"}, {"host", "service"}),
     "enumerated": ({"service", "host"}, {"finding", "credential"}),
     "attempted": ({"finding", "service", "host"}, {"technique"}),
@@ -259,7 +271,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     Secrets are never copied — only ``secret_hint``.
     """
     root = ensure_project_root(db, project_id)
-    nodes, _ = _load(db, project_id)
+    nodes, edges = _load(db, project_id)
     index = _index_by_source(nodes)
 
     # Heal orphans: a node projected from a domain row whose row no longer exists
@@ -284,6 +296,31 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     def host_for(target_id: int) -> GraphNode | None:
         return index.get(("target", target_id))
+
+    def ensure_edge(source: GraphNode, target: GraphNode, relation: str,
+                    label: str = "") -> GraphEdge:
+        existing = next((edge for edge in edges if edge.source == source.id
+                         and edge.target == target.id and edge.relation == relation), None)
+        if existing:
+            return existing
+        edge = create_edge(db, project_id, source.id, target.id, relation, label=label)
+        edges.append(edge)
+        return edge
+
+    def operator_for() -> GraphNode:
+        operator = index.get(("operator", project_id))
+        address = _operator_address()
+        label = f"Kali Operator · {address}"
+        meta = json.dumps({"interface": "tun0", "ip": address})
+        if operator is None:
+            operator = create_node(
+                db, project_id, "operator", label=label, status="in-progress",
+                source_ref=_source_ref("system", "operator", project_id), meta=meta)
+            index[("operator", project_id)] = operator
+        else:
+            operator.label, operator.meta = label, meta
+        ensure_edge(root, operator, "operates")
+        return operator
 
     active_scans = {
         scan.target_id: scan for scan in db.scalars(
@@ -407,7 +444,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         for sess in db.scalars(
                 select(InteractiveSession).where(
                     InteractiveSession.target_id.in_(target_ids))):
-            parent = parent_of(sess.service_id, sess.target_id)
+            responder = sess.template_id == "responder-listener"
+            parent = operator_for() if responder else parent_of(sess.service_id, sess.target_id)
             if parent is None:
                 continue
             live_status = sess.status
@@ -423,20 +461,31 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 if (sess.status in {"failed", "interrupted"}
                         and existing.status == "in-progress"):
                     existing.status = "attempt-failed"
-                continue
-            meta = _activity_meta(json.dumps({
-                "tool": sess.template_id or "session", "command": sess.command or "",
-            }), activity)
-            provenance = json.dumps({"sessionRef": {"module": "sessions", "id": sess.id},
-                                     "tool": sess.template_id or ""})
-            node = create_node(
-                db, project_id, "technique", label=sess.template_id or "session",
-                status=_EXECUTION_STATUS.get(sess.status, "in-progress"),
-                source_ref=_source_ref("sessions", "session", sess.id),
-                meta=meta, provenance=provenance)
-            create_edge(db, project_id, parent.id, node.id, "attempted",
-                        status=node.status)
-            index[("session", sess.id)] = node
-            created["techniques"] += 1
+                node = existing
+            else:
+                meta = _activity_meta(json.dumps({
+                    "tool": sess.template_id or "session", "command": sess.command or "",
+                }), activity)
+                provenance = json.dumps({"sessionRef": {"module": "sessions", "id": sess.id},
+                                         "tool": sess.template_id or ""})
+                node = create_node(
+                    db, project_id, "technique", label=sess.template_id or "session",
+                    status=_EXECUTION_STATUS.get(sess.status, "in-progress"),
+                    source_ref=_source_ref("sessions", "session", sess.id),
+                    meta=meta, provenance=provenance)
+                index[("session", sess.id)] = node
+                created["techniques"] += 1
+            if responder:
+                # Migrate the legacy victim -> Responder projection.
+                for edge in list(edges):
+                    if edge.target == node.id and edge.relation == "attempted":
+                        db.delete(edge)
+                        edges.remove(edge)
+                ensure_edge(parent, node, "runs")
+                host = host_for(sess.target_id)
+                if host:
+                    ensure_edge(node, host, "captures-from", "AUTH CAPTURE")
+            else:
+                ensure_edge(parent, node, "attempted")
 
     return {"rootNodeId": root.id, "created": created}
