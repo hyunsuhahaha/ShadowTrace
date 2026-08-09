@@ -1129,6 +1129,34 @@ export function GraphRequestPanel(props: {
   const [responseBody, setResponseBody] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "sending">("idle");
   const [error, setError] = useState("");
+  const [lhost, setLhost] = useState("");
+  const urlInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/vpn/status").then((response) => response.json()).then((data) => {
+      const match = /(\d{1,3}\.){3}\d{1,3}/.exec(data.tun0 || "");
+      if (match && !cancelled) setLhost(match[0]);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const insertResponderIp = () => {
+    if (!lhost) return;
+    const snippet = `\\\\${lhost}\\test`;
+    const pageParam = /([?&]page=)([^&]*)/.exec(url);
+    if (pageParam) {
+      const start = pageParam.index + pageParam[1].length;
+      setUrl(url.slice(0, start) + snippet + url.slice(start + pageParam[2].length));
+      return;
+    }
+    const start = urlInput.current?.selectionStart ?? url.length;
+    const end = urlInput.current?.selectionEnd ?? url.length;
+    setUrl(url.slice(0, start) + snippet + url.slice(end));
+    requestAnimationFrame(() => {
+      const cursor = start + snippet.length;
+      urlInput.current?.focus();
+      urlInput.current?.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const requestPayload = () => ({
     project_id: props.draft.projectId, target_id: props.draft.targetId,
@@ -1190,8 +1218,12 @@ export function GraphRequestPanel(props: {
         {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
           .map((item) => <option key={item}>{item}</option>)}
       </select>
-      <input aria-label="Request URL" value={url} onChange={(e) => setUrl(e.target.value)}
+      <input ref={urlInput} aria-label="Request URL" value={url} onChange={(e) => setUrl(e.target.value)}
         style={S.requestUrl} />
+      <button style={S.responderInsert} disabled={!lhost} onClick={insertResponderIp}
+        title="URL 커서 위치 또는 page 파라미터에 UNC 경로 삽입">
+        {lhost ? `RESPONDER IP · ${lhost}` : "TUN0 확인 중"}
+      </button>
       <button style={S.requestSend} disabled={state !== "idle"}
         onClick={() => void send()}>{state === "sending" ? "전송 중" : "SEND"}</button>
     </div>
@@ -1368,6 +1400,9 @@ const S: Record<string, React.CSSProperties> = {
   requestSend: { width: 76, border: 0, borderLeft: "1px solid #365345",
     background: "#173824", color: "#72f7a8", cursor: "pointer",
     font: "700 10px ui-monospace,monospace", letterSpacing: 1 },
+  responderInsert: { maxWidth: 190, border: 0, borderLeft: "1px solid #61303a",
+    padding: "0 12px", background: "#281118", color: "#ff7188", cursor: "pointer",
+    font: "600 9px ui-monospace,monospace", whiteSpace: "nowrap" },
   requestGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
     gap: 10, marginTop: 12 },
   requestField: { display: "grid", gap: 6, color: "#789086",

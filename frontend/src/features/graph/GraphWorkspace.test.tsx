@@ -3,7 +3,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { getNodeActivity, initialGraphPosition, Inspector } from "./GraphWorkspace";
+import { getNodeActivity, GraphRequestPanel, initialGraphPosition, Inspector } from "./GraphWorkspace";
 
 afterEach(() => {
   cleanup();
@@ -29,6 +29,20 @@ it("preserves settled node positions when graph topology changes", () => {
   const settled = new Map([["host-1", { x: 712, y: 418 }]]);
   expect(initialGraphPosition("host-1", 0, 2, settled)).toEqual({ x: 712, y: 418 });
   expect(initialGraphPosition("service-new", 1, 2, settled)).not.toEqual({ x: 712, y: 418 });
+});
+
+it("inserts the tun0 responder path without leaving the graph request panel", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+    tun0: "tun0 UNKNOWN 10.10.16.178/23",
+  }), { headers: { "Content-Type": "application/json" } }))));
+  location.hash = "#graph";
+  render(<GraphRequestPanel draft={{ projectId: 3, targetId: 10, serviceId: 20,
+    url: "http://unika.htb/index.php?page=french.html" }} onBack={vi.fn()} />);
+
+  fireEvent.click(await screen.findByText("RESPONDER IP · 10.10.16.178"));
+  expect((screen.getByLabelText("Request URL") as HTMLInputElement).value)
+    .toBe("http://unika.htb/index.php?page=\\\\10.10.16.178\\test");
+  expect(location.hash).toBe("#graph");
 });
 
 it("offers the full link-extract workflow from an execution node", async () => {
