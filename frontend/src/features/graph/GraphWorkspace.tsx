@@ -343,7 +343,7 @@ function GraphCanvas(props: {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    let W = 0, H = 0, raf = 0;
+    let W = 0, H = 0, raf = 0, render = () => {};
     let panX = 0, panY = 0, panning = false, panStart = { x: 0, y: 0 };
     let dragging: Sim | null = null, hover: Sim | null = null;
 
@@ -359,7 +359,14 @@ function GraphCanvas(props: {
 
     const resize = () => {
       const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
-      canvas.width = W * dpr; canvas.height = H * dpr;
+      const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+      if (canvas.width !== bw || canvas.height !== bh) {
+        // Setting the backing size clears the canvas; ResizeObserver fires after
+        // the frame's draw but before paint, so repaint now to avoid a blank
+        // frame (the "flicker" while dragging the splitter).
+        canvas.width = bw; canvas.height = bh;
+        render();
+      }
     };
     const ro = new ResizeObserver(resize); ro.observe(canvas); resize();
 
@@ -448,6 +455,7 @@ function GraphCanvas(props: {
       }
     };
 
+    render = draw;  // let resize() repaint immediately (no blank frame)
     let appliedNonce = 0, focusNode: Sim | null = null, focusFrames = 0;
     const loop = () => {
       tick();

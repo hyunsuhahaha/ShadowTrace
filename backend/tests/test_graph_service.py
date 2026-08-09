@@ -184,3 +184,37 @@ def test_hidden_nodes_are_dropped_from_tree():
     host_node = tree["children"][0]
     labels = [c["label"] for c in host_node["children"] if c["kind"] == "node"]
     assert "445/smb" not in labels
+
+
+def test_sync_relabels_winrm_port_5985():
+    from app.models import Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.8")
+    db.add(t); db.flush()
+    db.add(Service(target_id=t.id, port=5985, protocol="tcp", name="http"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    svc = db.query(GraphNode).filter_by(type="service").one()
+    assert svc.label == "5985/tcp winrm"
+
+
+def test_sync_retroactively_relabels_existing_default_service_node():
+    from app.models import Service, Target
+    db = database()
+    p = project(db)
+    root = service.ensure_project_root(db, p.id)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.10")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=5985, protocol="tcp", name="http")
+    db.add(svc); db.flush()
+    # simulate a pre-existing node with the raw nmap label
+    host = service.create_node(db, p.id, "host", "10.0.0.10",
+                               source_ref='{"id": %d, "kind": "target", "module": "core"}' % t.id)
+    service.create_edge(db, p.id, root.id, host.id, "discovered")
+    node = service.create_node(db, p.id, "service", "5985/tcp http",
+                               source_ref='{"id": %d, "kind": "service", "module": "scans"}' % svc.id)
+    service.create_edge(db, p.id, host.id, node.id, "discovered")
+    service.sync_from_project(db, p.id)
+    db.refresh(node)
+    assert node.label == "5985/tcp winrm"

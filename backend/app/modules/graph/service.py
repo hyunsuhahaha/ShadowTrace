@@ -21,6 +21,15 @@ _EXECUTION_STATUS = {
     "queued": "in-progress", "running": "in-progress", "completed": "in-progress",
     "failed": "attempt-failed", "interrupted": "attempt-failed",
 }
+
+# nmap reports some services by a generic/misleading name — WinRM's HTTP.sys
+# listener shows up as "http" — so relabel well-known ports the way a pentester
+# reads them.
+_WELL_KNOWN_PORT_NAMES = {5985: "winrm", 5986: "winrm"}
+
+
+def _service_display_name(service) -> str:
+    return _WELL_KNOWN_PORT_NAMES.get(service.port, service.name)
 from . import engine
 from .ids import new_ulid
 
@@ -232,13 +241,20 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
+            raw = f"{service.port}/{service.protocol} {service.name}".strip()
+            refined = f"{service.port}/{service.protocol} {_service_display_name(service)}".strip()
             if ("service", service.id) not in index:
-                label = f"{service.port}/{service.protocol} {service.name}".strip()
-                svc = create_node(db, project_id, "service", label=label,
+                svc = create_node(db, project_id, "service", label=refined,
                                   source_ref=_source_ref("scans", "service", service.id))
                 create_edge(db, project_id, host.id, svc.id, "discovered")
                 index[("service", service.id)] = svc
                 created["services"] += 1
+            else:
+                # Retroactively refine a still-default label (e.g. an existing
+                # "5985/tcp http" -> "5985/tcp winrm"); leave user edits alone.
+                node = index[("service", service.id)]
+                if node.label == raw and raw != refined:
+                    node.label = refined
 
     # findings + credentials attach to their service, else their host.
     def parent_of(service_id, target_id) -> GraphNode | None:
