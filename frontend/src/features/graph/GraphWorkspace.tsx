@@ -220,10 +220,14 @@ function GraphCanvas(props: {
   focus: { id: string; nonce: number } | null;
 }) {
   const { data, hostCount, showHidden } = props;
-  // one-shot recenter request from the reverse bridge; consumed in the loop so
-  // it doesn't re-init the simulation.
+  // These are read through refs inside the render loop so selection/zoom changes
+  // do NOT re-run the effect (which would reseed positions and make the graph
+  // "jump" on every click). The sim only re-inits when the node set changes.
   const focusReq = useRef<{ id: string; nonce: number } | null>(null);
   useEffect(() => { focusReq.current = props.focus; }, [props.focus]);
+  const selectedRef = useRef(props.selected);
+  useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
+  const sizeScaleRef = useRef(1);  // Ctrl +/- node-size zoom (persists across re-init)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // adaptive root (decision B): single host => that host is the visual anchor.
   const anchorId = hostCount <= 1
@@ -301,10 +305,11 @@ function GraphCanvas(props: {
         ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
       }
+      const scale = sizeScaleRef.current;
       for (const n of nodes) {
-        const isAnchor = n.id === anchorId, isSel = n.id === props.selected;
+        const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
-        const r = isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11;
+        const r = (isRoot ? 26 : isAnchor ? 24 : isHost ? 16 : 11) * scale;
         ctx.globalAlpha = n.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (isAnchor) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
@@ -363,8 +368,9 @@ function GraphCanvas(props: {
       return { x: ev.clientX - r.left - panX, y: ev.clientY - r.top - panY };
     };
     const nodeAt = (x: number, y: number) => {
+      const scale = sizeScaleRef.current;
       for (const n of nodes) {
-        const rr = n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18;
+        const rr = (n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18) * scale;
         if (Math.hypot(n.x - x, n.y - y) < rr) return n;
       }
       return null;
@@ -385,24 +391,37 @@ function GraphCanvas(props: {
       const p = toWorld(ev), n = nodeAt(p.x, p.y);
       if (n) props.onSelect(n.id);
     };
+    // Ctrl/Cmd +/- adjusts node size (overrides browser zoom while on the graph).
+    const onKey = (ev: KeyboardEvent) => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      if (ev.key === "-" || ev.key === "_") {
+        sizeScaleRef.current = Math.max(0.5, sizeScaleRef.current - 0.15);
+        ev.preventDefault();
+      } else if (ev.key === "=" || ev.key === "+") {
+        sizeScaleRef.current = Math.min(3, sizeScaleRef.current + 0.15);
+        ev.preventDefault();
+      }
+    };
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
     canvas.addEventListener("click", onClick);
     addEventListener("mouseup", onUp);
+    addEventListener("keydown", onKey);
     return () => {
       cancelAnimationFrame(raf); ro.disconnect();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mousedown", onDown);
       canvas.removeEventListener("click", onClick);
       removeEventListener("mouseup", onUp);
+      removeEventListener("keydown", onKey);
     };
-  }, [data, anchorId, hideRoot, showHidden, props.selected]);
+  }, [data, anchorId, hideRoot, showHidden]);
 
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <div style={S.hint}>
-        파란 헤일로 = 루트 · 노드 드래그로 이동 · 빈 공간 드래그로 화면 이동
+        파란 헤일로 = 루트 · 노드 드래그로 이동 · 빈 공간 드래그로 화면 이동 · Ctrl +/− 노드 크기
       </div>
     </div>
   );
