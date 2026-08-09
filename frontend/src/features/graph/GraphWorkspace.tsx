@@ -65,6 +65,7 @@ export default function GraphWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [paneWidth, setPaneWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
     return saved >= 320 ? saved : 640;
@@ -287,6 +288,12 @@ export default function GraphWorkspace() {
           <Tab on={view === "graph"} onClick={() => setView("graph")}>Graph</Tab>
           <Tab on={view === "outline"} onClick={() => setView("outline")}>Outline</Tab>
         </div>
+        {selectedNode && !noProject && (
+          <button onClick={() => setAddOpen(true)} style={S.hiddenChip}
+            title={`${selectedNode.label} 아래에 노드 추가`}>
+            ＋ 노드 추가
+          </button>
+        )}
         {hiddenCount > 0 && (
           <button onClick={() => setShowHidden((v) => !v)} style={{
             ...S.hiddenChip,
@@ -339,6 +346,16 @@ export default function GraphWorkspace() {
           )}
         </div>
       </div>
+      {addOpen && selectedNode && (
+        <div style={S.overlay} onClick={() => setAddOpen(false)}>
+          <div style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
+            <AddNodeForm source={selectedNode} busy={addNode.isPending}
+              onCancel={() => setAddOpen(false)}
+              onSubmit={(v) => { addNode.mutate({ sourceId: selectedNode.id, ...v });
+                setAddOpen(false); }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -816,4 +833,7 @@ const S: Record<string, React.CSSProperties> = {
   field: { width: "100%", padding: "8px 10px", borderRadius: 6,
     border: "1px solid #2a2a34", background: "#0e0e12", color: "#e7e7ee",
     fontSize: 13 },
+  overlay: { position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.45)",
+    display: "flex", alignItems: "flex-start", justifyContent: "center",
+    paddingTop: 90 },
 };
