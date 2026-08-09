@@ -302,3 +302,26 @@ def test_set_target_hostname_accepts_a_pasted_url(tmp_path):
         target.id, TargetHostnameIn(hostname="http://unika.htb/"), db)
 
     assert updated.hostname == "unika.htb"
+
+
+def test_ensure_target_scoped_to_project_does_not_create_ip_project(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Responder", description="")
+    db.add(project); db.flush()
+    ip = "10.129.245.191"
+    row = ensure_target(TargetEnsureIn(ip=ip, project_id=project.id), db)
+    assert row.project_id == project.id
+    # no extra project named after the IP was created
+    assert db.scalar(select(Project).where(Project.name == ip)) is None
+    # re-ensure within the same project dedupes rather than duplicating
+    again = ensure_target(TargetEnsureIn(ip=ip, project_id=project.id), db)
+    assert again.id == row.id
+    assert len(db.scalars(select(Project)).all()) == 1
+    db.close()
+
+
+def test_ensure_target_scoped_to_missing_project_404s(tmp_path):
+    db = database(tmp_path)
+    with pytest.raises(HTTPException):
+        ensure_target(TargetEnsureIn(ip="10.0.0.5", project_id=9999), db)
+    db.close()

@@ -220,14 +220,26 @@ def create_target(body: TargetIn, db: Session = Depends(get_db)):
 
 @router.post("/api/targets/ensure", response_model=TargetOut)
 def ensure_target(body: TargetEnsureIn, db: Session = Depends(get_db)):
-    existing = db.scalar(select(Target).where(Target.ip == body.ip))
-    if existing:
-        return existing
-    project = db.scalar(select(Project).where(Project.name == body.ip))
-    if not project:
-        project = Project(name=body.ip, description="")
-        db.add(project)
-        db.flush()
+    if body.project_id is not None:
+        # Scoped to an explicit project (graph-first flow): add the target there,
+        # de-duplicating within that project. Never auto-create a project.
+        project = db.get(Project, body.project_id)
+        if project is None:
+            raise HTTPException(404, "project not found")
+        existing = db.scalar(select(Target).where(
+            Target.ip == body.ip, Target.project_id == project.id))
+        if existing:
+            return existing
+    else:
+        # Legacy: one project per target IP (auto-created).
+        existing = db.scalar(select(Target).where(Target.ip == body.ip))
+        if existing:
+            return existing
+        project = db.scalar(select(Project).where(Project.name == body.ip))
+        if not project:
+            project = Project(name=body.ip, description="")
+            db.add(project)
+            db.flush()
     row = Target(
         project_id=project.id, name=body.name or body.ip, ip=body.ip,
         hostname="", os_guess="", vpn="tun0", notes="",

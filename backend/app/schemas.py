@@ -40,6 +40,7 @@ class TargetHostnameIn(BaseModel):
 class TargetEnsureIn(BaseModel):
     ip: str
     name: str = Field(default="", max_length=120, pattern=r"^[\w ._-]*$")
+    project_id: int | None = None
 
     @field_validator("ip")
     @classmethod

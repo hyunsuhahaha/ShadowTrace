@@ -286,12 +286,17 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     const ip = targetIp.trim();
     if (!ip) return;
     setTargetError("");
+    // Scope the target to the active project (graph-first flow), so entering an
+    // IP adds a target to the current project instead of auto-creating a
+    // project named after the IP.
+    const activeProject = Number(localStorage.getItem("oscp-workspace-project"));
     const r = await fetch("/api/targets/ensure", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ip,
         name: targetName.trim(),
+        project_id: activeProject > 0 ? activeProject : null,
       }),
     });
     if (!r.ok) {
