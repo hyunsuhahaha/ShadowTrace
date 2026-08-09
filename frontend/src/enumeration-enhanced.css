@@ -122,3 +122,16 @@ main{grid-template-columns:235px minmax(450px,1fr) var(--notes-width,360px)}.not
 .privescServer{margin:16px 0;border:1px solid #385247;border-radius:8px;background:#101917;padding:14px 16px}.privescServer header h2{margin:0;font-size:14px}.privescServer header small{color:#84968f;font-size:10px;word-break:break-all}.privescServerActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.privescServerActions button{border:1px solid #4c755f;border-radius:4px;padding:8px 12px;background:#b8dec7;color:#102019;font-size:10px;font-weight:750}.privescServerActions button:disabled{border-color:#2b3933;background:#151e1a;color:#5f6c67}
 .msfLock{display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--line-strong);border-radius:999px;font-size:10px;white-space:nowrap}.msfLock span{color:var(--muted)}.msfLock button{border:1px solid var(--line-strong);border-radius:4px;background:var(--surface-raised);color:#c8d2d0;padding:4px 8px;font-size:9px;font-weight:700}.msfLock--current{border-color:#355342;background:#142019}.msfLock--current span{color:var(--green-strong)}.msfLock--blocked{border-color:#5b4934;background:#211b15}.msfLock--blocked span{color:var(--warning)}.msfLock--blocked button{border-color:#714744;background:#382422;color:#ffd8d4}
 @media(max-width:700px){.netexecCredForm{grid-template-columns:1fr}}
+
+/* Enumeration workspace embedded in the graph split-pane. The layout's `main`
+   grid uses fixed side columns and the responsive rules key off the viewport
+   (still wide), so with the asides hidden the work section is squished. Force a
+   single, full-width column here. */
+.app--embedded main { display: block; height: auto; }
+.app--embedded .work { padding: 18px; overflow: visible; height: auto; }
+.app--embedded .cards { grid-template-columns: 1fr; }
+.app--embedded .serviceIntel__facts { grid-template-columns: 1fr; }
+.app--embedded .serviceIntel__facts dl { grid-template-columns: 1fr 1fr; }
+.app--embedded .serviceIntel__lower { grid-template-columns: 1fr; }
+.app--embedded .serviceIntel__lower > section { border-right: 0; border-bottom: 1px solid var(--line); }
+.app--embedded .serviceIdentitySummary { grid-template-columns: 1fr 1fr; }

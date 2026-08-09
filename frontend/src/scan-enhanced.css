@@ -40,3 +40,22 @@
   .scanAutomation div { align-items: flex-start; flex-direction: column; }
   .scanAutomation small { grid-column: auto; }
 }
+
+/* Embedded in the graph split-pane: the responsive media queries key off the
+   viewport (still wide), not the narrow pane, so force the compact single-column
+   layout here. Without this the profile picker's description column collapses and
+   the heading renders one glyph per line. */
+.scanPage--embedded .scanLayout { display: block; }
+.scanPage--embedded .scanProfiles { max-height: 160px; }
+.scanPage--embedded .scanHistory { display: none; }
+.scanPage--embedded .scanCenter { padding: 18px; }
+.scanPage--embedded nav a { display: none; }
+.scanPage--embedded nav { flex-wrap: wrap; gap: 8px; }
+.scanPage--embedded .targetSetup { grid-template-columns: 1fr; }
+.scanPage--embedded .targetSetup > span { grid-column: auto; }
+.scanPage--embedded .profilePicker { grid-template-columns: 1fr; }
+.scanPage--embedded .profilePicker > div { min-width: 0; }
+.scanPage--embedded .scanComposer { display: grid; }
+.scanPage--embedded .scanStats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.scanPage--embedded .tableHead,
+.scanPage--embedded .tableRow { grid-template-columns: 80px 100px 1fr; }
