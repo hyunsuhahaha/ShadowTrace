@@ -835,11 +835,14 @@ function GraphCanvas(props: {
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;
         let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01;
-        // Root -> first-tier edges get their own, much longer rest length --
-        // that hop is the one that most needs breathing room, since every
-        // 1차 node's own children fan out from it next.
-        const touchesRoot = !!anchorId && (e.source === anchorId || e.target === anchorId);
-        const rest = touchesRoot ? 475 : structural.has(e.relation) ? 190 : 230;
+        // Each tier hop gets its own rest length, tapering down with depth:
+        // root->1차 needs the most room (every 1차 node's own children fan
+        // out from it next), but if every hop kept that same spacing the
+        // graph would blow up in size by 3-4 tiers deep.
+        const struct = structural.has(e.relation);
+        const tier = struct ? Math.max(depths.get(e.source) ?? 1, depths.get(e.target) ?? 1) : 0;
+        const rest = !struct ? 230
+          : tier <= 1 ? 475 : tier === 2 ? 250 : tier === 3 ? 160 : 120;
         const k = (d - rest) * 0.015;
         a.vx += (dx / d) * k; a.vy += (dy / d) * k;
         b.vx -= (dx / d) * k; b.vy -= (dy / d) * k;
