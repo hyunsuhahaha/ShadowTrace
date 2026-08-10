@@ -843,7 +843,11 @@ function GraphCanvas(props: {
         const tier = struct ? Math.max(depths.get(e.source) ?? 1, depths.get(e.target) ?? 1) : 0;
         const rest = !struct ? 230
           : tier <= 1 ? 475 : tier === 2 ? 250 : tier === 3 ? 160 : 120;
-        const k = (d - rest) * 0.015;
+        // Spring stiffness has to scale with repulsion (6500, raised from
+        // 2600) or the tiered rest lengths above are cosmetic -- a node's
+        // pull toward its actual parent loses the tug-of-war against the
+        // *sum* of repulsion from every other nearby node, not just one.
+        const k = (d - rest) * 0.045;
         a.vx += (dx / d) * k; a.vy += (dy / d) * k;
         b.vx -= (dx / d) * k; b.vy -= (dy / d) * k;
       }
