@@ -1,0 +1,1 @@
+<nmaprun><host><address addr="10.10.10.55"/><hostnames><hostname name="e2e-box.local"/></hostnames><ports><port protocol="tcp" portid="445"><state state="open"/><service name="microsoft-ds" product="Samba" version="4.6.2"/></port></ports></host></nmaprun>
