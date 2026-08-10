@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pwd
 import re
@@ -16,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from ...config import CONFIG_DIR, WORKSPACE_DIR
 from ...database import SessionLocal, get_db
-from ...models import InteractiveSession, Project, Service, Target
+from ...executor import queues, run_execution
+from ...models import Execution, InteractiveSession, Project, Service, Target
 from ...pty_manager import pty_manager
 from ...schemas import (
     DesktopLaunchIn,
@@ -27,6 +29,7 @@ from ...schemas import (
 from ...templates import catalog
 from ...time import utcnow
 from ..core.support import need, safe_part
+from ..executions.router import _output_path
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
@@ -158,6 +161,41 @@ async def interactive_session_socket(websocket: WebSocket, ident: int):
     await pty_manager.connect(ident, argv, cwd, log_path, websocket)
 
 
+async def _auto_run_ftp_tree(target_id: int, service_id: int) -> None:
+    # ftp-directory-tree's script doubles as the login check (a wrong
+    # password fails before any listing starts), so an anonymous crawl here
+    # is safe to fire for every way an ftp-client session gets opened --
+    # not just the anonymous-exposure and typed-credential paths the
+    # frontend already wires up -- since this endpoint is the one choke
+    # point all of them launch a desktop session through.
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        service = db.get(Service, service_id)
+        if not target or not service:
+            return
+        project = db.get(Project, target.project_id)
+        target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
+                      "targets" / safe_part(target.ip))
+        output_dir = target_dir / "outputs"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        variables = {
+            "host": target.ip, "port": str(service.port), "username": "", "password": "",
+            "target_dir": str(target_dir), "project_dir": str(target_dir.parents[1]),
+            "output_dir": str(output_dir), "repo_dir": str(REPOSITORY_DIR),
+        }
+        item, command, argv = catalog.render("ftp-directory-tree", variables)
+        if not shutil.which(argv[0]):
+            return
+        row = Execution(target_id=target.id, service_id=service.id,
+                         template_id=item["id"], command=command, cwd=str(target_dir),
+                         status="queued")
+        db.add(row); db.commit(); db.refresh(row)
+        output = _output_path(output_dir, "", item["id"])
+        execution_id = row.id
+    queues[execution_id] = asyncio.Queue()
+    await run_execution(execution_id, argv, target_dir, output)
+
+
 def anonymous_ftp_command(host: str, port: int) -> list[str]:
     return [
         "/usr/bin/env", "FTPANONPASS=IEUser@", "ftp", "-a", host, str(port),
@@ -266,6 +304,8 @@ def launch_interactive_session_in_desktop(
     row.started_at = utcnow()
     db.commit()
     db.refresh(row)
+    if row.template_id == "ftp-client" and row.service_id:
+        background_tasks.add_task(_auto_run_ftp_tree, row.target_id, row.service_id)
     return row
 
 

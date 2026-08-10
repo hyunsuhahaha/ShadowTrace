@@ -396,7 +396,9 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     setOutput((value) =>
       `${value}\n[Kali QTerminal에서 anonymous FTP 로그인 세션을 열었습니다.]\n`
     );
-    autoRunFtpTree("", "");
+    // The desktop-launch endpoint itself now auto-runs an anonymous
+    // ftp-directory-tree crawl for every ftp-client session it opens, so
+    // this path no longer needs its own call.
   };
   const openMysqlTerminal = async (username: string) => {
     if (!targetId || !serviceId) return;

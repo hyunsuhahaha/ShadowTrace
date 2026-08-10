@@ -269,6 +269,60 @@ def test_desktop_launch_wraps_the_command_in_expect_when_a_secret_needs_typing(
     assert "hunter2" not in inner_command
 
 
+def test_desktop_launch_of_ftp_client_queues_an_automatic_directory_tree(
+        tmp_path, monkeypatch):
+    # ftp-client sessions can be opened several ways (anonymous-exposure
+    # auto-open, typed credentials, or picking the command straight from a
+    # catalog/workflow) -- only some of which the frontend wires up to an
+    # auto-crawl. This endpoint is the one choke point every path launches
+    # a desktop session through, so it's where the auto-crawl belongs.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                       name="ftp", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    row = InteractiveSession(
+        target_id=box.id, service_id=service.id, template_id="ftp-client",
+        command="ftp 10.10.10.60 21", cwd=str(tmp_path), status="ready",
+    )
+    db.add(row); db.commit()
+    monkeypatch.setattr(sessions_router.shutil, "which", lambda _: "/usr/bin/qterminal")
+    monkeypatch.setattr(sessions_router.subprocess, "Popen",
+        lambda argv, **kwargs: SimpleNamespace(pid=4242))
+    background_tasks = BackgroundTasks()
+
+    launch_interactive_session_in_desktop(row.id, background_tasks, db=db)
+
+    assert len(background_tasks.tasks) == 1
+    task = background_tasks.tasks[0]
+    assert task.func is sessions_router._auto_run_ftp_tree
+    assert task.args == (box.id, service.id)
+
+
+def test_desktop_launch_of_a_non_ftp_session_does_not_queue_a_directory_tree(
+        tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=5985, protocol="tcp", state="open",
+                       name="http", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    row = InteractiveSession(
+        target_id=box.id, service_id=service.id, template_id="manual-shell",
+        command="/bin/bash --noprofile --norc", cwd=str(tmp_path), status="ready",
+    )
+    db.add(row); db.commit()
+    monkeypatch.setattr(sessions_router.shutil, "which", lambda _: "/usr/bin/qterminal")
+    monkeypatch.setattr(sessions_router.subprocess, "Popen",
+        lambda argv, **kwargs: SimpleNamespace(pid=4242))
+    background_tasks = BackgroundTasks()
+
+    launch_interactive_session_in_desktop(row.id, background_tasks, db=db)
+
+    assert background_tasks.tasks == []
+
+
 def test_desktop_launch_requires_expect_when_a_secret_needs_typing(tmp_path, monkeypatch):
     db = database()
     box = target(db, tmp_path, monkeypatch)
