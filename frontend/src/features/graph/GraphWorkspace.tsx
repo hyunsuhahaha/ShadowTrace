@@ -852,7 +852,14 @@ function GraphCanvas(props: {
           n.vx = n.vy = 0;
           continue;
         }
-        n.vx += (cx - n.x) * 0.002; n.vy += (cy - n.y) * 0.002;
+        // Center gravity should only anchor the first tier -- past that, a
+        // node's own parent-edge spring is what it should orbit. Applying
+        // full pull at every depth drags 2차+ nodes toward the canvas
+        // center (i.e. toward the root) instead of around their actual
+        // parent, which is the "floating around the root" look this fixes.
+        const depth = depths.get(n.id) ?? 1;
+        const pull = 0.002 / depth;
+        n.vx += (cx - n.x) * pull; n.vy += (cy - n.y) * pull;
         n.vx *= 0.86; n.vy *= 0.86;
         if (n !== dragging) { n.x += n.vx; n.y += n.vy; }
       }
