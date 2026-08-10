@@ -172,6 +172,25 @@ def test_sync_projects_executions_as_technique_nodes():
     assert tech.status == "in-progress"
 
 
+def test_technique_node_labels_use_the_catalogs_human_readable_name():
+    # "service-version" means nothing to someone reading the graph; the
+    # catalog already carries a Korean name for it, so use that instead of
+    # leaking the internal template id into the UI.
+    from app.models import Execution, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.9")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=80, protocol="tcp", name="http")
+    db.add(svc); db.flush()
+    db.add(Execution(target_id=t.id, service_id=svc.id, template_id="service-version",
+                     command="nmap -sV ...", cwd="/tmp", status="completed"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.label == "제품·버전 식별"
+
+
 def test_sync_tracks_and_clears_execution_activity():
     from app.models import Execution, Target
     db = database()
@@ -286,7 +305,8 @@ def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
     result = service.sync_from_project(db, p.id)
     assert result["created"]["techniques"] == 1
     tech = db.query(GraphNode).filter_by(type="technique").one()
-    assert tech.label == "responder-listener"
+    # catalog's human-readable name, not the raw template id
+    assert tech.label == "Responder 리스너"
     assert json.loads(tech.meta)["activity"]["kind"] == "listener"
     assert json.loads(tech.meta)["activity"]["status"] == "launched"
     operator = db.query(GraphNode).filter_by(type="operator").one()

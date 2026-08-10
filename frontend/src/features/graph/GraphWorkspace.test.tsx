@@ -129,7 +129,8 @@ it("offers the full link-extract workflow from an execution node", async () => {
   render(<QueryClientProvider client={client}>
     <Inspector executionContext={{ targetId: 10, serviceId: 20 }} node={{
       id: "tech-1", type: "technique", status: "succeeded",
-      label: "http-link-extract", objective: false, hidden: false,
+      label: "웹 링크 추출", objective: false, hidden: false,
+      meta: JSON.stringify({ tool: "http-link-extract" }),
       source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 42 }),
     }} busy={false} onOpenRequest={openRequest}
       onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
@@ -216,7 +217,8 @@ it("shows captured credentials for a responder session node", async () => {
   render(<QueryClientProvider client={client}>
     <Inspector executionContext={{ targetId: 10 }} node={{
       id: "session-1", type: "technique", status: "in-progress",
-      label: "responder-listener", objective: false, hidden: false,
+      label: "Responder 리스너", objective: false, hidden: false,
+      meta: JSON.stringify({ tool: "responder-listener" }),
       source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 9 }),
     }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
   </QueryClientProvider>);

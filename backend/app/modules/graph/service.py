@@ -16,7 +16,17 @@ from sqlalchemy.orm import Session
 from ...models import (Credential, Execution, Finding, FindingEvidence, GraphEdge, GraphNode,
                        GraphProjectMeta, InteractiveSession, Project, ScanJob,
                        Service, Target)
+from ...templates import catalog
 from ..vpn import vpn_status
+
+
+def _catalog_label(template_id: str | None, fallback: str) -> str:
+    """Technique nodes are labeled from the catalog's human-readable name
+    (e.g. "제품·버전 식별") rather than its raw id ("service-version") --
+    the id means nothing to someone reading the graph, not just the person
+    who wrote the YAML."""
+    item = catalog.items.get(template_id or "")
+    return (item or {}).get("name") or template_id or fallback
 
 # Executions are auto-nodified but their security outcome is never auto-judged
 # (product principle): a completed command is not a "success". Only technical
@@ -445,7 +455,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             provenance = json.dumps({"executionRef": {"module": "executions", "id": ex.id},
                                      "tool": ex.template_id or ""})
             node = create_node(
-                db, project_id, "technique", label=ex.template_id or "execution",
+                db, project_id, "technique",
+                label=_catalog_label(ex.template_id, "execution"),
                 status=_EXECUTION_STATUS.get(ex.status, "in-progress"),
                 source_ref=_source_ref("executions", "execution", ex.id),
                 meta=meta, provenance=provenance)
@@ -484,7 +495,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 provenance = json.dumps({"sessionRef": {"module": "sessions", "id": sess.id},
                                          "tool": sess.template_id or ""})
                 node = create_node(
-                    db, project_id, "technique", label=sess.template_id or "session",
+                    db, project_id, "technique",
+                    label=_catalog_label(sess.template_id, "session"),
                     status=_EXECUTION_STATUS.get(sess.status, "in-progress"),
                     source_ref=_source_ref("sessions", "session", sess.id),
                     meta=meta, provenance=provenance)

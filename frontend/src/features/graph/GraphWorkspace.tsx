@@ -919,6 +919,13 @@ function GraphCanvas(props: {
         const activity = getNodeActivity(current);
         const signalKind = signalKindOf(activity);
         const nodeSignal = signalKind ? signalHex(signalKind) : signal;
+        // A command that finished five minutes ago and one still running
+        // both land on the same "in-progress" domain status (outcome is
+        // never auto-judged -- the user marks success/failure), so without
+        // this they're visually identical. Once activity stops animating,
+        // a completed-but-unreviewed technique renders hollow instead of
+        // filled: same status color, but "done, take a look" not "running now."
+        const awaitingReview = !activity && nodeStatusReason(current) === "사용자 검토 대기";
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
@@ -983,15 +990,17 @@ function GraphCanvas(props: {
           ctx.lineWidth = 2.5; ctx.stroke();
         }
         ctx.save();
-        ctx.shadowColor = activity ? nodeSignal : isAnchor ? "#6aa9ff" : color(current.status);
-        ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : 12;
+        ctx.shadowColor = activity ? nodeSignal : awaitingReview ? color(current.status)
+          : isAnchor ? "#6aa9ff" : color(current.status);
+        ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : awaitingReview ? 10 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = signalKind ? FILL_BG[signalKind]
+        ctx.fillStyle = awaitingReview ? "rgba(0,0,0,0)" : signalKind ? FILL_BG[signalKind]
           : isOperator ? "#123038" : color(current.status); ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : 1;
-        ctx.strokeStyle = activity ? nodeSignal : isSel ? "#fff" : isOperator ? "#55d6e8"
+        ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : awaitingReview ? 1.6 : 1;
+        ctx.strokeStyle = activity ? nodeSignal : awaitingReview ? color(current.status)
+          : isSel ? "#fff" : isOperator ? "#55d6e8"
           : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
         if (current.hidden) ctx.setLineDash([2, 3]);
@@ -1428,6 +1437,10 @@ export function Inspector(props: {
   onAddNode: (v: AddForm & { sourceId: string }) => void;
 }) {
   const n = props.node;
+  // node.label is now the catalog's human-readable name (e.g. "Responder
+  // 리스너"), not the template id -- template-specific panels below key off
+  // the id, which only survives in meta.tool.
+  const tool = n ? (nodeMeta(n).tool as string | undefined) : undefined;
   const [adding, setAdding] = useState(false);
   const [notes, setNotes] = useState(n?.notes || "");
   useEffect(() => setNotes(n?.notes || ""), [n?.id, n?.notes]);
@@ -1463,7 +1476,7 @@ export function Inspector(props: {
   const [captureMessage, setCaptureMessage] = useState("");
   const responderCaptures = useQuery({
     queryKey: ["responderCaptures", props.executionContext?.targetId],
-    enabled: sessionId !== null && n?.label === "responder-listener"
+    enabled: sessionId !== null && tool === "responder-listener"
       && !!props.executionContext?.targetId,
     refetchInterval: 4000,
     queryFn: () => api<Array<{ label: string; username: string; value: string;
@@ -1590,7 +1603,7 @@ export function Inspector(props: {
               && !executionOutput.data?.error && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
           </div>}
       </section>}
-      {executionId !== null && n.label === "http-link-extract" && (
+      {executionId !== null && tool === "http-link-extract" && (
         <section style={S.executionResults} aria-label="링크 추출 결과">
           <div style={S.executionResultsHead}>
             <div><strong>발견된 링크</strong> <span>{extractedLinks.length}개</span></div>
@@ -1629,7 +1642,7 @@ export function Inspector(props: {
           )}
         </section>
       )}
-      {sessionId !== null && n.label === "responder-listener" && (
+      {sessionId !== null && tool === "responder-listener" && (
         <section style={S.executionResults} aria-label="Responder 캡처 결과">
           <div style={S.executionResultsHead}>
             <div><strong>캡처된 자격증명</strong>{" "}
