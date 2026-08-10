@@ -144,7 +144,8 @@ export function buildActivityFeed(data: GraphOut): ActivityItem[] {
   const active = data.nodes.flatMap((node) => {
     const activity = getNodeActivity(node);
     return activity?.startedAt ? [{ nodeId: node.id, at: activity.startedAt,
-      text: `${activity.label} ${activity.kind === "listener" ? "listening" : "started"}`,
+      text: `${activity.label} ${activity.kind === "listener" ? "listening"
+        : activity.status === "launched" ? "connected" : "started"}`,
       kind: "live" as const, status: "in-progress", reason: "실행 중" }] : [];
   });
   const activeIds = new Set(active.map((item) => item.nodeId));
@@ -773,8 +774,31 @@ function GraphCanvas(props: {
       levels.set(depth, [...(levels.get(depth) || []), node]);
     });
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Three activity languages, one per meaning: green = actively searching
+    // (scan output still streaming, outcome unknown), red = armed and
+    // waiting on something external (Responder), blue = already connected
+    // and settled -- reuses the app's existing anchor/selection blue rather
+    // than inventing a fourth hue.
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
+    const connectedSignal = "#6aa9ff";
+    type SignalKind = "scan" | "listener" | "connected";
+    const SIGNAL_RGB: Record<SignalKind, string> = {
+      scan: "89,245,154", listener: "255,77,103", connected: "106,169,255",
+    };
+    const signalKindOf = (a: NodeActivity | null): SignalKind | null => !a ? null
+      : a.kind === "listener" ? "listener" : a.status === "launched" ? "connected" : "scan";
+    const signalHex = (kind: SignalKind) =>
+      kind === "listener" ? listenerSignal : kind === "connected" ? connectedSignal : signal;
+    const signalRgba = (kind: SignalKind, alpha: number) => `rgba(${SIGNAL_RGB[kind]},${alpha})`;
+    const FILL_BG: Record<SignalKind, string> = {
+      scan: "#10251a", listener: "#2a1016", connected: "#0e1a2a",
+    };
+    const BADGE_BG: Record<SignalKind, string> = {
+      scan: "rgba(5,18,12,.9)", listener: "rgba(25,5,10,.92)", connected: "rgba(6,14,26,.92)",
+    };
+    const signalLabel = (a: NodeActivity, kind: SignalKind) => kind === "listener" ? "LISTENING"
+      : kind === "connected" ? "CONNECTED" : a.kind === "scan" ? "SCANNING" : a.status.toUpperCase();
 
     const resize = () => {
       const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
@@ -854,7 +878,8 @@ function GraphCanvas(props: {
         const activeA = getNodeActivity(latestNodes.current.get(a.id) ?? a);
         const activeB = getNodeActivity(latestNodes.current.get(b.id) ?? b);
         const active = activeA || activeB;
-        const edgeSignal = active?.kind === "listener" ? listenerSignal : signal;
+        const edgeKind = signalKindOf(active);
+        const edgeSignal = edgeKind ? signalHex(edgeKind) : signal;
         const hot = !!hover && (e.source === hover.id || e.target === hover.id);
         const struct = structural.has(e.relation);
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
@@ -863,8 +888,7 @@ function GraphCanvas(props: {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
-        ctx.strokeStyle = active ? (active.kind === "listener"
-          ? "rgba(255,77,103,.48)" : "rgba(89,245,154,.42)")
+        ctx.strokeStyle = edgeKind ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
           : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45";
         ctx.lineWidth = active ? 1.35 : hot ? 2 : 1;
         ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
@@ -893,23 +917,41 @@ function GraphCanvas(props: {
       for (const n of nodes) {
         const current = latestNodes.current.get(n.id) ?? n;
         const activity = getNodeActivity(current);
-        const nodeSignal = activity?.kind === "listener" ? listenerSignal : signal;
+        const signalKind = signalKindOf(activity);
+        const nodeSignal = signalKind ? signalHex(signalKind) : signal;
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
         const r = isRoot ? 26 : isAnchor ? 24 : isHost || isOperator ? 16 : 11;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
-        if (activity) {
+        if (activity && signalKind === "connected") {
+          // Settled, not searching: two slow ease-out rings breathing outward,
+          // no rotation -- the opposite motion language from the scan sweep,
+          // so "already connected" never reads as "still looking."
+          if (!activityStarted.current.has(n.id)) activityStarted.current.set(n.id, now);
+          const fade = Math.min(1, (now - activityStarted.current.get(n.id)!) / 320);
+          ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 14;
+          const period = 2600;
+          const ringCount = reduceMotion ? 1 : 2;
+          for (let i = 0; i < ringCount; i++) {
+            const p = reduceMotion ? .4 : ((now % period) / period + i / ringCount) % 1;
+            const ease = 1 - Math.pow(1 - p, 3);
+            ctx.beginPath(); ctx.arc(n.x, n.y, r + 5 + ease * 24, 0, Math.PI * 2);
+            ctx.strokeStyle = signalRgba("connected", (1 - ease) * .5 * fade);
+            ctx.lineWidth = 1.3; ctx.stroke();
+          }
+          ctx.restore();
+        } else if (activity) {
           if (!activityStarted.current.has(n.id)) activityStarted.current.set(n.id, now);
           const fade = Math.min(1, (now - activityStarted.current.get(n.id)!) / 320);
           const phase = (now % 2400) / 2400;
+          const kind = signalKind!;
           ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 18;
           for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
             const p = reduceMotion ? .38 : (phase + i / 3) % 1;
             ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + p * 30, 0, Math.PI * 2);
             const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
-            ctx.strokeStyle = activity.kind === "listener"
-              ? `rgba(255,77,103,${alpha * 1.15})` : `rgba(89,245,154,${alpha})`;
+            ctx.strokeStyle = signalRgba(kind, kind === "listener" ? alpha * 1.15 : alpha);
             ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
             ctx.stroke();
           }
@@ -919,14 +961,12 @@ function GraphCanvas(props: {
             ctx.arc(n.x, n.y, r + 24, angle - .42, angle);
             ctx.closePath();
             const sweep = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 24);
-            sweep.addColorStop(0, activity.kind === "listener"
-              ? "rgba(255,77,103,.03)" : "rgba(89,245,154,.03)");
-            sweep.addColorStop(1, activity.kind === "listener"
-              ? "rgba(255,77,103,.25)" : "rgba(89,245,154,.22)");
+            sweep.addColorStop(0, signalRgba(kind, .03));
+            sweep.addColorStop(1, signalRgba(kind, kind === "listener" ? .25 : .22));
             ctx.fillStyle = sweep; ctx.fill();
             ctx.beginPath(); ctx.moveTo(n.x, n.y);
             ctx.lineTo(n.x + Math.cos(angle) * (r + 25), n.y + Math.sin(angle) * (r + 25));
-            ctx.strokeStyle = activity.kind === "listener"
+            ctx.strokeStyle = kind === "listener"
               ? "rgba(255,116,135,.9)" : "rgba(130,255,181,.8)";
             ctx.lineWidth = 1; ctx.stroke();
           }
@@ -946,7 +986,7 @@ function GraphCanvas(props: {
         ctx.shadowColor = activity ? nodeSignal : isAnchor ? "#6aa9ff" : color(current.status);
         ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = activity ? (activity.kind === "listener" ? "#2a1016" : "#10251a")
+        ctx.fillStyle = signalKind ? FILL_BG[signalKind]
           : isOperator ? "#123038" : color(current.status); ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
@@ -974,18 +1014,15 @@ function GraphCanvas(props: {
               n.x, n.y + r + 21);
           }
         }
-        if (activity) {
-          const state = activity.kind === "scan" ? "SCANNING"
-            : activity.kind === "listener" ? "LISTENING" : activity.status.toUpperCase();
-          const caption = `${state}  /  ${activity.label.toUpperCase()}`;
+        if (activity && signalKind) {
+          const caption = `${signalLabel(activity, signalKind)}  /  ${activity.label.toUpperCase()}`;
           ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
           const width = ctx.measureText(caption).width + 12;
           const y = n.y - r - 23;
-          ctx.fillStyle = activity.kind === "listener"
-            ? "rgba(25,5,10,.92)" : "rgba(5,18,12,.9)";
+          ctx.fillStyle = BADGE_BG[signalKind];
           ctx.fillRect(n.x - width / 2, y - 7, width, 16);
-          ctx.strokeStyle = activity.kind === "listener"
-            ? "rgba(255,77,103,.62)" : "rgba(89,245,154,.5)"; ctx.lineWidth = 1;
+          ctx.strokeStyle = signalRgba(signalKind, signalKind === "scan" ? .5 : .58);
+          ctx.lineWidth = 1;
           ctx.strokeRect(n.x - width / 2, y - 7, width, 16);
           ctx.fillStyle = nodeSignal; ctx.textBaseline = "middle";
           ctx.fillText(caption, n.x, y + 1);
@@ -1096,7 +1133,7 @@ function GraphCanvas(props: {
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <ActivityStream items={activity} onSelect={props.onActivitySelect} />
       <div style={S.hint}>
-        초록 신호 = 실행 중 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
+        초록 신호 = 실행 중 · 파란 신호 = 연결됨 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
       </div>
     </div>
   );
