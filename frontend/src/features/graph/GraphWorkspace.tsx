@@ -950,7 +950,7 @@ function GraphCanvas(props: {
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
-        const r = isRoot ? 34 : isAnchor ? 32 : isHost || isOperator ? 22 : 16;
+        const r = isRoot ? 40 : isAnchor ? 38 : isHost || isOperator ? 26 : 19;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (activity && signalKind === "connected") {
           // Settled, not searching: two slow ease-out rings breathing outward,
@@ -964,7 +964,7 @@ function GraphCanvas(props: {
           for (let i = 0; i < ringCount; i++) {
             const p = reduceMotion ? .4 : ((now % period) / period + i / ringCount) % 1;
             const ease = 1 - Math.pow(1 - p, 3);
-            ctx.beginPath(); ctx.arc(n.x, n.y, r + 5 + ease * 24, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(n.x, n.y, r + 9 + ease * 41, 0, Math.PI * 2);
             ctx.strokeStyle = signalRgba("connected", (1 - ease) * .5 * fade);
             ctx.lineWidth = 1.3; ctx.stroke();
           }
@@ -977,7 +977,7 @@ function GraphCanvas(props: {
           ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 18;
           for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
             const p = reduceMotion ? .38 : (phase + i / 3) % 1;
-            ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + p * 30, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(n.x, n.y, r + 14 + p * 52, 0, Math.PI * 2);
             const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
             ctx.strokeStyle = signalRgba(kind, kind === "listener" ? alpha * 1.15 : alpha);
             ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
@@ -986,14 +986,14 @@ function GraphCanvas(props: {
           if (!reduceMotion && activity.status !== "queued") {
             const angle = now / 720;
             ctx.beginPath(); ctx.moveTo(n.x, n.y);
-            ctx.arc(n.x, n.y, r + 24, angle - .42, angle);
+            ctx.arc(n.x, n.y, r + 41, angle - .42, angle);
             ctx.closePath();
-            const sweep = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 24);
+            const sweep = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 41);
             sweep.addColorStop(0, signalRgba(kind, .03));
             sweep.addColorStop(1, signalRgba(kind, kind === "listener" ? .25 : .22));
             ctx.fillStyle = sweep; ctx.fill();
             ctx.beginPath(); ctx.moveTo(n.x, n.y);
-            ctx.lineTo(n.x + Math.cos(angle) * (r + 25), n.y + Math.sin(angle) * (r + 25));
+            ctx.lineTo(n.x + Math.cos(angle) * (r + 43), n.y + Math.sin(angle) * (r + 43));
             ctx.strokeStyle = kind === "listener"
               ? "rgba(255,116,135,.9)" : "rgba(130,255,181,.8)";
             ctx.lineWidth = 1; ctx.stroke();
@@ -1001,12 +1001,12 @@ function GraphCanvas(props: {
           ctx.restore();
         } else activityStarted.current.delete(n.id);
         if (isAnchor) {
-          ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 17, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
         }
         if (current.objective) {
-          ctx.beginPath(); ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = current.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
           ctx.lineWidth = 2.5; ctx.stroke();
         }
@@ -1034,21 +1034,21 @@ function GraphCanvas(props: {
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
           ctx.font = isAnchor ? "600 13px sans-serif" : "12px sans-serif";
-          ctx.fillText(current.label, n.x, n.y + r + 6);
+          ctx.fillText(current.label, n.x, n.y + r + 10);
         }
         if (hover === n || isSel) {
           const detail = nodeSummary(current);
           if (detail !== current.label) {
             ctx.fillStyle = "#899892"; ctx.font = "9px ui-monospace,monospace";
             ctx.fillText(detail.length > 54 ? `${detail.slice(0, 53)}…` : detail,
-              n.x, n.y + r + 21);
+              n.x, n.y + r + 36);
           }
         }
         if (activity && signalKind) {
           const caption = `${signalLabel(activity, signalKind)}  /  ${activity.label.toUpperCase()}`;
           ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
           const width = ctx.measureText(caption).width + 12;
-          const y = n.y - r - 23;
+          const y = n.y - r - 40;
           ctx.fillStyle = BADGE_BG[signalKind];
           ctx.fillRect(n.x - width / 2, y - 7, width, 16);
           ctx.strokeStyle = signalRgba(signalKind, signalKind === "scan" ? .5 : .58);
