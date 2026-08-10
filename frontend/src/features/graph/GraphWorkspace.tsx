@@ -950,7 +950,7 @@ function GraphCanvas(props: {
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
-        const r = isRoot ? 26 : isAnchor ? 24 : isHost || isOperator ? 16 : 11;
+        const r = isRoot ? 34 : isAnchor ? 32 : isHost || isOperator ? 22 : 16;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         if (activity && signalKind === "connected") {
           // Settled, not searching: two slow ease-out rings breathing outward,
@@ -1033,7 +1033,7 @@ function GraphCanvas(props: {
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
-          ctx.font = isAnchor ? "600 12px sans-serif" : "11px sans-serif";
+          ctx.font = isAnchor ? "600 13px sans-serif" : "12px sans-serif";
           ctx.fillText(current.label, n.x, n.y + r + 6);
         }
         if (hover === n || isSel) {
