@@ -828,14 +828,14 @@ function GraphCanvas(props: {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i], b = nodes[j];
           let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy || 0.01;
-          const d = Math.sqrt(d2), f = 2600 / d2;
+          const d = Math.sqrt(d2), f = 6500 / d2;
           a.vx += (dx / d) * f; a.vy += (dy / d) * f;
           b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
         }
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;
         let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01;
-        const rest = structural.has(e.relation) ? 110 : 150, k = (d - rest) * 0.015;
+        const rest = structural.has(e.relation) ? 190 : 230, k = (d - rest) * 0.015;
         a.vx += (dx / d) * k; a.vy += (dy / d) * k;
         b.vx -= (dx / d) * k; b.vy -= (dy / d) * k;
       }
@@ -847,7 +847,7 @@ function GraphCanvas(props: {
           n.vx = n.vy = 0;
           continue;
         }
-        n.vx += (cx - n.x) * 0.0015; n.vy += (cy - n.y) * 0.0015;
+        n.vx += (cx - n.x) * 0.002; n.vy += (cy - n.y) * 0.002;
         n.vx *= 0.86; n.vy *= 0.86;
         if (n !== dragging) { n.x += n.vx; n.y += n.vy; }
       }
