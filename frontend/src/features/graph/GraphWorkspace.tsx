@@ -835,7 +835,12 @@ function GraphCanvas(props: {
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;
         let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01;
-        const rest = structural.has(e.relation) ? 190 : 230, k = (d - rest) * 0.015;
+        // Root -> first-tier edges get their own, much longer rest length --
+        // that hop is the one that most needs breathing room, since every
+        // 1차 node's own children fan out from it next.
+        const touchesRoot = !!anchorId && (e.source === anchorId || e.target === anchorId);
+        const rest = touchesRoot ? 475 : structural.has(e.relation) ? 190 : 230;
+        const k = (d - rest) * 0.015;
         a.vx += (dx / d) * k; a.vy += (dy / d) * k;
         b.vx -= (dx / d) * k; b.vy -= (dy / d) * k;
       }
