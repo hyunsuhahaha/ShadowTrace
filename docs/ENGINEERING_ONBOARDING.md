@@ -522,7 +522,7 @@ API: `/projects`, `/targets`, `/hash-cracking/catalog`, `/hash-cracking*`,
 
 ### 10.13 `ToolsWorkspace.tsx` — Tools (`#tools`)
 
-자동 서비스 분류에 의존하지 않는 전체 명령 카탈로그(111개) 탐색 — Nmap이 놓쳤거나
+자동 서비스 분류에 의존하지 않는 전체 명령 카탈로그(130개) 탐색 — Nmap이 놓쳤거나
 오분류한 서비스(예: WinRM을 http로 인식)를 위한 대안 경로. 대상 선택 → 서비스 또는
 수동 포트/스킴 입력 → 변수 채움 → 검토 → 실행(스트리밍 또는 데스크톱 대화형 세션).
 API: `/projects`, `/targets`, `/targets/{id}/services`, `/tool-catalog`,
@@ -665,11 +665,14 @@ exploit_research, findings, hash_cracking, post_exploitation, privesc_analysis, 
 web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 도메인을 넘어선 공용
 유틸리티 허브다.
 
-### 11.1 `docs/ARCHITECTURE.md` 모듈 표와의 차이
+### 11.1 `docs/ARCHITECTURE.md` 모듈 표와의 차이 (해결됨, 2026-08-10)
 
-`docs/ARCHITECTURE.md`는 `core`/`scans`/`enumeration`/`runbooks`/`web`/`directory`/
-`sessions`/`evidence`/`reports` 9개 개념적 모듈로 설명하지만, 실제 `backend/app/modules/`
-폴더 이름과 개수는 다르다(작성 시점 이후 스캐폴딩이 늘어난 것으로 보인다).
+과거 `docs/ARCHITECTURE.md`는 `core`/`scans`/`enumeration`/`runbooks`/`web`/`directory`/
+`sessions`/`evidence`/`reports` 9개 개념적 모듈 표를 별도로 유지했는데, 실제
+`backend/app/modules/` 폴더 이름·개수와 벌어져 있었다(작성 시점 이후 스캐폴딩이 늘어난
+것으로 보인다). `docs/ARCHITECTURE.md`는 이제 표를 두지 않고 이 문서의 §6/§11을
+참조하도록 갱신했다 — 같은 목록을 두 문서에서 관리하면 다시 벌어지므로, 파일 단위
+사실은 이 문서에서만 유지한다. 아래는 당시 벌어져 있던 내용의 기록이다.
 
 - `scans` → 실제 폴더명은 `scan_center`(이름만 다름, 범위는 동일).
 - `enumeration`(서비스 관찰값/정적 명령/실행) → 지금은 `service_intelligence`(서비스
