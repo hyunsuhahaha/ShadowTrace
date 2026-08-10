@@ -250,3 +250,57 @@ Chrome against an isolated DB/profile under `/tmp/oscp-browser-validation`
 failed asset/API requests, and — for the runbooks split — an actual
 `PATCH /api/runbooks/steps/{id}` round trip updating the UI. `git diff
 --check` passed throughout.
+
+### Phase 11 — Golden-path integration tests, GraphWorkspace split, doc drift
+
+Prompted by an external review noting `GraphWorkspace.tsx` had regrown to
+2,112 lines while recent commits only tuned its visuals, that
+`docs/ROADMAP.md` P0's integration-test items were still unmet, and that
+`docs/ENGINEERING_ONBOARDING.md`'s "111개" command count no longer matched
+`services.yaml` (130).
+
+Docs:
+- Fixed the catalog count and replaced `docs/ARCHITECTURE.md`'s stale module
+  table with a pointer to `docs/ENGINEERING_ONBOARDING.md` §6/§11 (already
+  accurate and file-scoped), so the same list stops being tracked in two
+  places. §11.1 kept as a resolved-history note.
+
+Backend: new `backend/tests/test_golden_path_integration.py` chains Nmap XML
+import (`scan_center.service.import_xml`) → `Service` row → runbook
+recommendation/apply → Evidence/Execution attach → Finding + `FindingEvidence`
+→ report export, asserting the exported HTML actually contains the finding
+title and evidence caption. Uses the same local `database()`/`scope()`
+pattern as every other test file (no conftest.py introduced).
+
+Frontend E2E: new `frontend/e2e/` Playwright suite (`golden-path.spec.ts`)
+drives the real SPA — scan XML import, runbook apply, evidence upload —
+against a non-root backend + throwaway SQLite spun up by
+`global-setup.ts`/`global-teardown.ts` (never the root launcher, never the
+developer's real workspace). Finding/report authoring is seeded via the
+backend's own API rather than reproduced through form UI, since that CRUD
+already has backend coverage. New `scripts/test-e2e.sh` keeps it out of the
+fast `scripts/test.sh` path. Added `frontend/vitest.config.ts` to exclude
+`e2e/**` from Vitest's default glob — first attempt merged in
+`vite.config.ts` via `mergeConfig`, which broke cross-file Vitest isolation
+at full-suite scale (an unrelated file's test started reading Graph test
+fixture state); the standalone version doesn't have this problem.
+
+`GraphWorkspace.tsx` (2,112 → 479 lines), same move-only approach as Phase
+10: `graphModel.ts` (types/constants/pure helpers), `graphStyles.ts` (the `S`
+style map), `graphLeaves.tsx` + `OutlineView.tsx` (small presentational
+pieces), `GraphCanvas.tsx` (+`ActivityStream`), `Inspector.tsx`,
+`GraphRequestPanel.tsx`. Existing tests moved with their code
+(`graphModel.test.ts`, `Inspector.test.tsx`, `GraphRequestPanel.test.tsx`);
+`GraphCanvas.tsx` had zero prior tests, so new `GraphCanvas.test.tsx` covers
+mount/unmount/re-render via a stubbed Canvas 2D context (jsdom has none) —
+force-sim physics and pixel output are left out of scope, same as this
+repo's existing pragmatic-testing calls elsewhere.
+
+Verification after each step: `tsc -b`, full Vitest (final: 86 files / 400
+tests), Vite production build, full backend suite (416 passed, includes the
+new integration test), the new Playwright spec, and live Chrome checks
+(Progress Graph, Outline view, no console errors) against the developer's
+running dev instance. A pre-existing (not introduced by this session) layout
+bug was found and filed separately rather than fixed inline: the Activity
+Stream panel renders squished when a project has no graph data yet,
+reproduced identically on pre-refactor code via `git stash`.

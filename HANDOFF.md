@@ -9,49 +9,36 @@
 
 - 브랜치: `phase-8/stabilization`
 - 최근 커밋:
-  - `64ba3f0` — runbooks 라우터를 workflow/execution/credentials로 분리
-  - `bd86601` — ScanCenter를 tool/profile/job-status/history로 분리
-  - `aadfbe6` — App.tsx의 psexec 권한상승/실시간 출력 영역 분리
-- **`main.py`/`App.tsx`/`ScanCenter.tsx`/`runbooks` 대형 파일 모듈화 로드맵이
-  이번 세션에서 모두 완료됐다.** 세부 이력은 `docs/WORKLOG.md`의
-  "Phase 10 — Backend/frontend modularization (stabilization)" 참고.
+  - `b44fd07` — `GraphWorkspace.tsx` 2,112 → 479줄 모듈화 (graphModel/
+    graphStyles/graphLeaves/OutlineView/GraphCanvas/Inspector/
+    GraphRequestPanel)
+  - `bbdcc67` — Playwright golden-path E2E 스펙 추가
+  - `9eeafb1` — 백엔드 golden-path 통합 테스트 추가
+  - `04335c1` — 문서 정합성 수정 (카탈로그 개수, ARCHITECTURE.md 모듈 표)
+- 세부 이력은 `docs/WORKLOG.md`의 "Phase 11" 참고.
 - 원칙: URL, 요청/응답 형식, DB 스키마를 유지하며 작은 단계로 파일만 분리한다.
-
-## 이번 세션 요약
-
-- 백엔드: `main.py` 562줄 → 139줄. system status를
-  `backend/app/modules/system.py`로 이동(TOOLS 딕셔너리 포함). 정적 프런트
-  제공과 lifespan은 `main.py`에 유지.
-- 백엔드: `runbooks/router.py` 1,185줄 → `support.py` + `workflow_router.py` +
-  `execution_router.py` + `credentials_router.py` 4개 파일로 분리. 세 라우터
-  모두 `/api/runbooks` prefix를 공유해 URL은 그대로다.
-- 프런트엔드: `App.tsx` 2,062줄 → 1,110줄. `ScanCenter.tsx` 1,131줄 → 603줄.
-  둘 다 여러 단계로 나눠 각 컴포넌트/모듈에 독립 테스트를 추가했다.
 
 ## 검증
 
-- 전체 backend suite: `125 passed`
-- 전체 frontend Vitest: `39 files / 97 tests` 통과
+- 전체 backend suite: `416 passed` (golden-path 통합 테스트 포함)
+- 전체 frontend Vitest: `86 files / 400 tests` 통과
 - `tsc -b`, Vite production build 통과
-- Chrome 스모크: Scan Center, Service Enumeration, Runbooks에서 격리 DB
-  (`/tmp/oscp-browser-validation`)로 실제 데이터 흐름 확인. Runbooks는
-  `PATCH /api/runbooks/steps/{id}` 실제 왕복까지 확인. console error 없음.
-- `git diff --check` 통과
+- `./scripts/test-e2e.sh` (Playwright golden-path): 통과
+- Chrome 라이브 확인: Progress Graph, Outline view — console error 없음
 
 ## 다음 작업
 
-이전 로드맵 항목은 모두 끝났다. 남은 대형 파일은 급하지 않지만, 다음에 손대기
-좋은 후보:
+이전 로드맵 항목은 모두 끝났다. 급하지 않지만 다음에 손대기 좋은 후보:
 
-1. (선택) 백엔드 `modules/exploit_research/router.py`(729줄) —
-   후보 조사/PoC import/실행 기록 경계로 나눌 수 있다.
+1. (선택) 백엔드 `modules/exploit_research/router.py`(729줄) — 후보 조사/PoC
+   import/실행 기록 경계로 나눌 수 있다.
 2. (선택) 프런트 `ExploitResearchWorkspace.tsx`(702줄), `RunbookWorkspace.tsx`
    (673줄) — 아직 단일 파일이다.
 3. (선택) `ScanCenter.tsx`에 남은 관찰 테이블/필터/통계와 artifact·터미널 출력
    영역.
-
-이 중 어느 것도 이전 대상들(1,100줄 이상)만큼 크지 않으므로, 사용자가 다른
-기능 작업을 우선하고 싶다면 이 목록은 미뤄도 된다.
+4. Progress Graph 홈 화면에서 프로젝트는 있지만 그래프 데이터가 없을 때
+   Activity Stream 패널이 좁게 눌려 겹쳐 보이는 기존 버그(리팩터 이전부터
+   존재, `git stash`로 확인) — 별도 task로 스폰해둠(`task_85f2e15e`).
 
 ## 주의점
 
@@ -59,5 +46,10 @@
 - `models.py`(726줄) 분리는 SQLAlchemy 등록과 순환 import 위험 때문에 마지막에
   검토한다.
 - 명령 실행 승인, loopback 제한, 경로 검증과 OSCP 정책 경계는 약화하지 않는다.
+  Playwright E2E는 반드시 non-root 백엔드로만 구동한다
+  (`frontend/e2e/global-setup.ts`).
+- `frontend/vitest.config.ts`를 `vite.config.ts`와 `mergeConfig`하지 말 것 —
+  cross-file 테스트 격리가 깨진 전례가 있다(Phase 11 참고). `test.exclude`만
+  독립적으로 유지한다.
 - 이 파일은 장기 작업 일지가 아니다. 완료된 세부 내역은 `docs/WORKLOG.md`로 옮기고
   여기에는 다음 도구가 바로 작업을 재개하는 데 필요한 내용만 남긴다.
