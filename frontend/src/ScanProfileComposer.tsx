@@ -1,3 +1,4 @@
+import {Button} from "./ui";
 import {profileLabel, privilegedKinds, toolProfileGroups,
   type Profile, type Target} from "./scanCenterModel";
 
@@ -119,12 +120,13 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
           ? <><b style={{ color: "var(--term-cursor)" }}>$</b> {previewCommand}</>
           : "IP와 프로필을 선택하세요"}
       </code>
-      <button
+      <Button
+        variant="primary"
         disabled={!canReview}
         onClick={onReviewScan}
       >
         새 {profile?.engine === "masscan" ? "masscan" : "Nmap"} 스캔 검토
-      </button>
+      </Button>
     </div>
   </>;
 }

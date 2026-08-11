@@ -13,7 +13,7 @@ it("selects a tool and disables masscan behind a VPN tun interface", () => {
   expect(masscanButton.hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("tun0(VPN)에서는 사용할 수 없음")).toBeTruthy();
 
-  fireEvent.click(screen.getByText("Nmap").closest("button")!);
+  fireEvent.click(screen.getByText("nmap").closest("button")!);
   expect(onSelect).toHaveBeenCalledWith("nmap");
 });
 

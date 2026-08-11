@@ -1,1 +1,91 @@
-.scopeNotice{margin-left:auto;color:#81979d;font-size:9px;letter-spacing:1.3px}.scanPage nav a{color:#b8c7cb;text-decoration:none;border:1px solid #273338;padding:7px 10px;border-radius:4px;font-size:12px}.scanLayout{grid-template-columns:190px minmax(520px,1fr) 290px}.scanProfiles,.scanHistory{background:#0a0f11;overflow:auto}.scanProfiles{border-right:1px solid var(--line)}.scanHistory{border-left:1px solid var(--line)}.scanProfiles>button,.scanHistory>button,.scanHistory>.scanRow{width:100%;display:grid;gap:7px;text-align:left;border:0;border-bottom:1px solid #182226;background:transparent;color:#c9d5d8;padding:14px;cursor:pointer}.scanProfiles>button.active,.scanHistory>button.active,.scanHistory>.scanRow.active{background:#101a1d;box-shadow:inset 3px 0 var(--green)}.scanProfiles small,.scanHistory small{color:var(--muted);font-size:10px}.scanHistory code{color:#668086;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.scanHistory button span,.scanHistory .scanRow span{display:flex;justify-content:space-between}.scanHistory button em,.scanHistory .scanRow em{color:var(--green);font-style:normal;font-size:9px}.scanHistory .scanRow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}.scanCenter{padding:28px;overflow:auto}.targetSetup{display:grid;grid-template-columns:180px minmax(160px,1fr);gap:8px;align-items:center}.targetSetup input{background:#0b1113;border:1px solid #29373b;color:#c9d5d8;padding:9px;border-radius:3px}.targetSetup>span{grid-column:1/-1;color:#ff8e8e;font-size:11px}.profilePicker{display:grid;grid-template-columns:110px minmax(260px,360px) 1fr;gap:10px;align-items:center;margin-top:14px;padding:12px;border:1px solid var(--line);background:#0c1315}.profilePicker>label{font-size:11px;color:#9aadb2}.profilePicker>select{background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:9px;border-radius:3px}.profilePicker>div{display:grid;gap:3px}.profilePicker small{color:var(--muted);font-size:10px}.profilePicker code{color:#8ed9bd;font-size:10px}.scanHero{display:flex;justify-content:flex-end;margin-top:12px}.importScan{border:1px solid #304047;background:#10181b;color:#9aadb2;font-weight:700;padding:8px 12px;border-radius:4px;font-size:11px;cursor:pointer}.importScan input{display:none}.scanComposer{display:flex;gap:8px;margin:14px 0 22px}.scanComposer input,.compare select{background:#0b1113;border:1px solid #29373b;color:#c9d5d8;padding:9px;border-radius:3px}.scanComposer code{flex:1;background:#040708;border:1px solid var(--line);color:#8ed9bd;padding:10px;font-size:11px;overflow:auto}.scanComposer button{border:1px solid #304047;background:#172125;color:#9aadb2;border-radius:3px}.scanStats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.scanStats div{border:1px solid var(--line);background:#0c1315;padding:13px;display:grid;gap:4px}.scanStats span{font-size:9px;color:var(--muted);letter-spacing:1px}.scanStats b{font-size:22px}.scanTable{border:1px solid var(--line)}.tableHead,.tableRow{display:grid;grid-template-columns:100px 130px 1fr 70px;padding:10px 12px;gap:10px;align-items:center}.tableHead{background:#10181b;color:#61767c;font-size:9px;letter-spacing:1px}.tableRow{border-top:1px solid #172125;font-size:11px}.tableRow b{font-family:ui-monospace}.tableRow em{font-style:normal;color:var(--green)}.compare{padding:16px}.compare h3{font-size:10px;letter-spacing:1px;color:#71868c}.compare select{width:100%}.compare p{color:#687b80;font-size:10px;line-height:1.5}.delta{display:flex;gap:8px;margin-top:10px}.delta span{border:1px solid #2a3b40;padding:5px;font-size:10px;color:#9fe870}@media(max-width:1000px){.scanLayout{grid-template-columns:170px 1fr}.scanHistory{display:none}.targetSetup{grid-template-columns:1fr 1fr}.profilePicker{grid-template-columns:1fr 2fr}}@media(max-width:650px){.scanLayout{display:block}.scanProfiles{max-height:130px}.scanCenter{padding:17px}.targetSetup{display:grid;grid-template-columns:1fr}.targetSetup>span{grid-column:auto}.profilePicker{grid-template-columns:1fr}.scanComposer{display:grid}.tableHead,.tableRow{grid-template-columns:80px 100px 1fr}.tableHead span:last-child,.tableRow em{display:none}}
+.scopeNotice{margin-left:auto;color:#81979d;font-size:9px;letter-spacing:1.3px}
+.scanPage nav a{color:#b8c7cb;text-decoration:none;border:1px solid #273338;padding:7px 10px;border-radius:4px;font-size:12px}
+.scanLayout{grid-template-columns:190px minmax(520px,1fr) 290px}
+
+.scanProfiles,.scanHistory{background:var(--term-bg);overflow:auto}
+.scanProfiles{border-right:1px solid var(--term-border)}
+.scanHistory{border-left:1px solid var(--term-border)}
+.scanProfiles>button,.scanHistory>button,.scanHistory>.scanRow{width:100%;display:grid;gap:7px;text-align:left;border:0;border-bottom:1px solid var(--term-border);background:transparent;color:var(--term-fg);padding:14px;cursor:pointer}
+.scanProfiles>button.active,.scanHistory>button.active,.scanHistory>.scanRow.active{background:#0c1416;box-shadow:inset 3px 0 var(--term-cursor)}
+.scanProfiles small,.scanHistory small{color:#5f7a72;font-size:10px}
+.scanHistory code{color:#5c8079;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scanHistory button span,.scanHistory .scanRow span{display:flex;justify-content:space-between}
+.scanHistory button em,.scanHistory .scanRow em{color:var(--term-cursor);font-style:normal;font-size:9px}
+.scanHistory .scanRow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* Panel headers reuse the shared "hacker terminal" dots (.termDots, styles.css)
+   so the tool picker and history rail read as terminal panes, matching the
+   real output panel (.terminal/.terminalStatus) lower in the page. */
+.panelTitle__label{display:flex;align-items:center;gap:9px}
+
+/* Tool picker rows as a TUI menu: a `>` cursor column marks the active
+   selection, the tool name in monospace (it's an ASCII command name), the
+   description stays in the UI's default sans so Korean copy renders normally. */
+.toolRow{display:grid!important;grid-template-columns:14px 1fr;gap:10px!important;align-items:start}
+.toolRow>em{font:12px ui-monospace,monospace;color:var(--term-cursor);font-style:normal}
+.toolRow>span{display:grid;gap:3px}
+.toolRow b{font:650 13px ui-monospace,monospace;color:var(--term-fg);letter-spacing:.02em}
+.toolRow b::before{content:"$ ";color:var(--term-cursor)}
+.toolRow.active b{color:#eef8f2}
+
+.scanCenter{padding:28px;overflow:auto}
+
+.targetSetup{display:grid;grid-template-columns:180px minmax(160px,1fr);gap:8px;align-items:center}
+.targetSetup input{background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px;font:12px ui-monospace,monospace}
+.targetSetup input:focus-visible{border-color:var(--term-cursor)}
+.targetSetup>span{grid-column:1/-1;color:#ff8e8e;font-size:11px}
+
+.profilePicker{display:grid;grid-template-columns:110px minmax(260px,360px) 1fr;gap:10px;align-items:center;margin-top:14px;padding:12px;border:1px solid var(--term-border);background:var(--term-bg)}
+.profilePicker>label{font-size:11px;color:#8fa39c;text-transform:uppercase;letter-spacing:.06em}
+.profilePicker>select{background:#0b1113;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px}
+.profilePicker>div{display:grid;gap:3px}
+.profilePicker small{color:#5f7a72;font-size:10px}
+.profilePicker code{display:block;margin-top:2px;background:#040708;border:1px solid var(--term-border);color:var(--term-cursor);padding:8px 9px;font-size:10px;border-radius:3px;overflow:auto}
+
+.scanHero{display:flex;justify-content:flex-end;margin-top:12px}
+.importScan{position:relative;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--text);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:.5rem .8rem;border-radius:var(--radius);cursor:pointer}
+.importScan::before{content:"[ ";}
+.importScan::after{content:" ]";}
+.importScan input{display:none}
+
+.scanComposer{display:flex;gap:8px;margin:14px 0 22px}
+.scanComposer input{background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px;font:12px ui-monospace,monospace}
+.compare select{background:#0b1113;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px}
+.scanComposer code{flex:1;background:#040708;border:1px solid var(--term-border);color:var(--term-cursor);padding:10px;font-size:11px;overflow:auto;border-radius:3px}
+
+.scanStats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.scanStats div{border:1px solid var(--line);background:#0c1315;padding:13px;display:grid;gap:4px}
+.scanStats span{font-size:9px;color:var(--muted);letter-spacing:1px}
+.scanStats b{font-size:22px}
+
+.scanTable{border:1px solid var(--line)}
+.tableHead,.tableRow{display:grid;grid-template-columns:100px 130px 1fr 70px;padding:10px 12px;gap:10px;align-items:center}
+.tableHead{background:#10181b;color:#61767c;font-size:9px;letter-spacing:1px}
+.tableRow{border-top:1px solid #172125;font-size:11px}
+.tableRow b{font-family:ui-monospace}
+.tableRow em{font-style:normal;color:var(--green)}
+
+.compare{padding:16px}
+.compare h3{font-size:10px;letter-spacing:1px;color:#71868c}
+.compare select{width:100%}
+.compare p{color:#687b80;font-size:10px;line-height:1.5}
+.delta{display:flex;gap:8px;margin-top:10px}
+.delta span{border:1px solid #2a3b40;padding:5px;font-size:10px;color:var(--term-cursor);font-family:ui-monospace,monospace}
+
+@media(max-width:1000px){
+  .scanLayout{grid-template-columns:170px 1fr}
+  .scanHistory{display:none}
+  .targetSetup{grid-template-columns:1fr 1fr}
+  .profilePicker{grid-template-columns:1fr 2fr}
+}
+@media(max-width:650px){
+  .scanLayout{display:block}
+  .scanProfiles{max-height:130px}
+  .scanCenter{padding:17px}
+  .targetSetup{display:grid;grid-template-columns:1fr}
+  .targetSetup>span{grid-column:auto}
+  .profilePicker{grid-template-columns:1fr}
+  .scanComposer{display:grid}
+  .tableHead,.tableRow{grid-template-columns:80px 100px 1fr}
+  .tableHead span:last-child,.tableRow em{display:none}
+}

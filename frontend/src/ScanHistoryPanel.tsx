@@ -1,4 +1,4 @@
-import {ErrorState, LoadingState, statusCopy as statusLabel} from "./ui";
+import {Button, ErrorState, LoadingState, statusCopy as statusLabel} from "./ui";
 import {elapsed, terminal, type Scan} from "./scanCenterModel";
 
 const statusOptions =
@@ -24,7 +24,13 @@ export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoad
 }) {
   return <aside className="scanHistory">
     <div className="panelTitle">
-      <span>스캔 대기열 및 이력</span>
+      <span className="panelTitle__label">
+        <span className="termDots" aria-hidden="true">
+          <i className="termDot" /><i className="termDot termDot--yellow" />
+          <i className="termDot termDot--green" />
+        </span>
+        스캔 대기열 및 이력
+      </span>
       <em>대상</em>
     </div>
     <div className="historyFilters">
@@ -71,37 +77,37 @@ export default function ScanHistoryPanel({visibleScans, allScans, scanId, isLoad
         <code>{s.error || s.command}</code>
         <span className="jobActions">
           {["queued", "running"].includes(s.status) && (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
               onClick={(e) => {
                 e.stopPropagation();
                 onStop(s.id);
               }}
             >
               취소
-            </button>
+            </Button>
           )}
           {s.source === "executed" && terminal.includes(s.status) && (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
               onClick={(e) => {
                 e.stopPropagation();
                 onRerun(s.id);
               }}
             >
               재실행
-            </button>
+            </Button>
           )}
           {terminal.includes(s.status) && (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(s.id);
               }}
             >
               삭제
-            </button>
+            </Button>
           )}
           {s.exit_code != null && <small>exit {s.exit_code}</small>}
         </span>

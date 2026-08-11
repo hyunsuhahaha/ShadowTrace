@@ -1,9 +1,13 @@
 .scanFilters,.historyFilters{display:flex;gap:8px;margin:10px 0;align-items:center}
-.scanFilters input,.scanFilters select,.historyFilters input,.historyFilters select{background:#0b1113;border:1px solid #29373b;color:#c9d5d8;padding:8px;border-radius:3px;min-width:0}
+.scanFilters input,.scanFilters select,.historyFilters input,.historyFilters select{background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:8px;border-radius:3px;min-width:0}
 .scanFilters label{font-size:10px;color:#91a3a8;white-space:nowrap}
 .historyFilters{padding:0 10px;display:grid}
-.jobActions{justify-content:flex-start!important;gap:8px}
-.jobActions button{border:1px solid #405158;background:transparent;padding:4px 6px;border-radius:3px;color:#b9cacd!important;font-size:inherit;font-style:normal;cursor:pointer}
+/* jobActions holds shared <Button variant="quiet"> now (ScanHistoryPanel.tsx)
+   -- .uiButton already supplies the bracket/quiet styling, this just lays the
+   row out and keeps the exit-code <small> readable next to it. */
+.jobActions{justify-content:flex-start!important;gap:6px;align-items:center}
+.jobActions .uiButton{min-height:auto;padding:.3rem .5rem;font-size:9px}
+.jobActions small{color:#5f7a72;font-family:ui-monospace,monospace}
 .artifactPanel{margin-top:16px;border:1px solid var(--line);background:#0a0f11}
 .artifactPanel>div{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--line)}
 .artifactPanel button,.artifactPanel>div a{margin-left:auto;background:#172125;border:1px solid #304047;color:#b9cacd;text-decoration:none;padding:5px 8px;border-radius:3px}

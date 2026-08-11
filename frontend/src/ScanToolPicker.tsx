@@ -4,19 +4,28 @@ export default function ScanToolPicker({tool, masscanBlockedByVpn, onSelect}: {
 }) {
   return <aside className="scanProfiles">
     <div className="panelTitle">
-      <span>스캔 도구</span>
+      <span className="panelTitle__label">
+        <span className="termDots" aria-hidden="true">
+          <i className="termDot" /><i className="termDot termDot--yellow" />
+          <i className="termDot termDot--green" />
+        </span>
+        도구 선택
+      </span>
     </div>
     <button
       type="button"
-      className={tool === "nmap" ? "active" : ""}
+      className={`toolRow ${tool === "nmap" ? "active" : ""}`}
       onClick={() => onSelect("nmap")}
     >
-      <b>Nmap</b>
-      <small>포트 및 서비스 상세 스캔</small>
+      <em aria-hidden="true">{tool === "nmap" ? ">" : " "}</em>
+      <span>
+        <b>nmap</b>
+        <small>포트 및 서비스 상세 스캔</small>
+      </span>
     </button>
     <button
       type="button"
-      className={tool === "masscan" ? "active" : ""}
+      className={`toolRow ${tool === "masscan" ? "active" : ""}`}
       disabled={masscanBlockedByVpn}
       title={
         masscanBlockedByVpn
@@ -25,12 +34,15 @@ export default function ScanToolPicker({tool, masscanBlockedByVpn, onSelect}: {
       }
       onClick={() => onSelect("masscan")}
     >
-      <b>masscan</b>
-      <small>
-        {masscanBlockedByVpn
-          ? "tun0(VPN)에서는 사용할 수 없음"
-          : "초고속 포트 탐색 · 자동 Nmap 상세 스캔 연계"}
-      </small>
+      <em aria-hidden="true">{tool === "masscan" ? ">" : " "}</em>
+      <span>
+        <b>masscan</b>
+        <small>
+          {masscanBlockedByVpn
+            ? "tun0(VPN)에서는 사용할 수 없음"
+            : "초고속 포트 탐색 · 자동 Nmap 상세 스캔 연계"}
+        </small>
+      </span>
     </button>
   </aside>;
 }
