@@ -1,8 +1,88 @@
-.intelPanel{margin:18px 0;border:1px solid #263b35;border-radius:8px;background:#0e1715;color:#d9e4df;overflow:hidden}.intelHeader{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 16px;border-bottom:1px solid #243630}.intelHeader h2{margin:0 0 4px;font-size:17px}.intelHeader span,.intelHeader small{color:#8fa29a;font-size:11px}.intelProgress{text-align:right;min-width:68px}.intelProgress b{display:block;font-size:20px}.intelProgress small{font-size:10px}.intelStages{padding:8px}.intelStage{border-bottom:1px solid #253832;background:#101a17}.intelStage:first-child{border-radius:6px 6px 0 0}.intelStage:last-child{border-bottom:0;border-radius:0 0 6px 6px}.intelStage.isComplete{background:#102019}.intelStage summary{cursor:pointer;display:flex;align-items:center;gap:10px;min-height:48px;padding:10px 12px;list-style:none}.intelStage summary i{font-style:normal;width:24px;color:#94c7ae}.intelStage summary b{flex:1;font-size:13px}.intelStage summary small{padding:3px 6px;border:1px solid #30483e;border-radius:999px;color:#91a59c;font-size:9px}.intelStage summary>span{min-width:58px;text-align:right;color:#c3a272;font-size:10px}.intelStage.isComplete summary>span{color:#9bd0b4}.intelStageBody{padding:0 12px 12px 46px;color:#9caaa5}.intelStageBody ul{margin:0 0 10px;padding-left:17px;font-size:11px;line-height:1.55}.intelCommands{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}.intelCommands button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:9px 10px;border:1px solid #315143;background:#14231e;color:inherit;border-radius:5px}.intelCommands button b{font-size:11px}.intelCommands button span{color:#94c7ae;font-size:9px;white-space:nowrap}.intelCommands button:disabled{opacity:.58}.intelSurface{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid #20312c}.intelSurface strong{margin-right:4px;font-size:10px}.intelSurface span{padding:3px 7px;border:1px solid #315143;border-radius:999px;color:#a9cabb;font-size:10px}.intelFooter{display:flex;gap:24px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid #20312c;background:#0b1311}.intelFooter>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.intelFooter strong{font-size:10px}.intelFooter span,.intelFooter a{padding:3px 6px;background:#16221e;color:#9fb2aa;font-size:10px;text-decoration:none}.intelFooter a{color:#a8d5bf}@media(max-width:900px){.intelHeader{align-items:flex-start}.intelStage summary{flex-wrap:wrap}.intelStage summary>span{margin-left:auto}.intelStageBody{padding-left:12px}}
+/* Investigation checklist ("조사 단계") shown when a service node is selected.
+   Reskinned to match the rest of the app's terminal chrome: sharp corners
+   (var(--radius), not rounded cards/pills), the shared .termDots header, and
+   monospace for identifiers/counters -- Korean prose stays in the default
+   sans font. */
+.intelPanel{margin:18px 0;border:1px solid var(--term-border);border-radius:var(--radius);background:var(--term-bg);color:var(--term-fg);overflow:hidden}
+.intelHeader{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 16px;border-bottom:1px solid var(--term-border);background:var(--term-bar)}
+.intelHeader h2{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:15px}
+.intelHeader span,.intelHeader small{color:#7d9992;font-size:11px}
+.intelProgress{text-align:right;min-width:68px}
+.intelProgress b{display:block;font:650 20px ui-monospace,monospace;color:var(--term-cursor)}
+.intelProgress small{font-size:10px}
+.intelStages{padding:8px}
+.intelStage{border-bottom:1px solid var(--term-border);background:#0a1210}
+.intelStage.isComplete{background:#0d1613}
+.intelStage summary{cursor:pointer;display:flex;align-items:center;gap:10px;min-height:48px;padding:10px 12px;list-style:none}
+.intelStage summary i{font-style:normal;width:24px;font:12px ui-monospace,monospace;color:var(--term-cursor)}
+.intelStage summary b{flex:1;font-size:13px;font-weight:600}
+.intelStage summary small{padding:2px 6px;border:1px solid var(--term-border);border-radius:var(--radius);color:#8fa39c;font-size:9px;font-family:ui-monospace,monospace;text-transform:uppercase;letter-spacing:.04em}
+.intelStage summary>span{min-width:58px;text-align:right;color:var(--warning);font:9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.04em}
+.intelStage.isComplete summary>span{color:var(--term-cursor)}
+.intelStageBody{padding:0 12px 12px 46px;color:#9caaa5}
+.intelStageBody ul{margin:0 0 10px;padding-left:17px;font-size:11px;line-height:1.55}
+.intelCommands{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}
+.intelCommands button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:9px 10px;border:1px solid var(--term-border);background:#0d1613;color:inherit;border-radius:var(--radius)}
+.intelCommands button:hover:not(:disabled){border-color:var(--term-cursor)}
+.intelCommands button b{font-size:11px}
+.intelCommands button span{color:var(--term-cursor);font:9px ui-monospace,monospace;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
+.intelCommands button:disabled{opacity:.58}
+.intelSurface{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--term-border)}
+.intelSurface strong{margin-right:4px;font-size:10px}
+.intelSurface span{padding:2px 7px;border:1px solid var(--term-border);border-radius:var(--radius);color:#9fb2aa;font:10px ui-monospace,monospace}
+.intelFooter{display:flex;gap:24px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--term-border);background:#080d0c}
+.intelFooter>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.intelFooter strong{font-size:10px}
+.intelFooter span,.intelFooter a{padding:2px 6px;border:1px solid var(--term-border);background:transparent;color:#9fb2aa;font:10px ui-monospace,monospace;text-decoration:none}
+.intelFooter a{color:var(--term-cursor)}
+@media(max-width:900px){
+  .intelHeader{align-items:flex-start}
+  .intelStage summary{flex-wrap:wrap}
+  .intelStage summary>span{margin-left:auto}
+  .intelStageBody{padding-left:12px}
+}
 
-.intelPanel{overflow:visible}.intelCommandSlot{position:relative;min-width:0;border-radius:5px}.intelCommandSlot:focus-visible{outline:2px solid #94c7ae;outline-offset:2px}.intelCommandSlot>button{width:100%}.intelOutputPreview{position:absolute;z-index:30;left:0;bottom:calc(100% + 7px);width:min(560px,calc(100vw - 64px));overflow:hidden;border:1px solid #3c594d;border-radius:6px;background:#080d0c;box-shadow:0 12px 32px rgba(0,0,0,.5);color:#cce0d7;animation:intelPreviewIn 140ms cubic-bezier(.23,1,.32,1)}.intelOutputPreview header{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #263b35;background:#111c18;font-size:10px}.intelOutputPreview header span{color:#94c7ae}.intelOutputPreview pre{max-height:280px;overflow:auto;margin:0;padding:11px;color:#b7dfc8;font:10px/1.55 ui-monospace,monospace;white-space:pre-wrap}.intelOutputPreview p{margin:0;padding:16px;color:#8fa29a;font-size:10px}@keyframes intelPreviewIn{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.intelOutputPreview{animation:none}}
+.intelPanel{overflow:visible}
+.intelCommandSlot{position:relative;min-width:0;border-radius:var(--radius)}
+.intelCommandSlot:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.intelCommandSlot>button{width:100%}
+.intelOutputPreview{position:absolute;z-index:30;left:0;bottom:calc(100% + 7px);width:min(560px,calc(100vw - 64px));overflow:hidden;border:1px solid var(--term-border);border-radius:var(--radius);background:var(--term-bg);box-shadow:0 12px 32px rgba(0,0,0,.5);color:var(--term-fg);animation:intelPreviewIn 140ms cubic-bezier(.23,1,.32,1)}
+.intelOutputPreview header{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--term-border);background:var(--term-bar);font-size:10px}
+.intelOutputPreview header span{color:var(--term-cursor)}
+.intelOutputPreview pre{max-height:280px;overflow:auto;margin:0;padding:11px;color:var(--term-fg);font:10px/1.55 ui-monospace,monospace;white-space:pre-wrap}
+.intelOutputPreview p{margin:0;padding:16px;color:#8fa29a;font-size:10px}
+@keyframes intelPreviewIn{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.intelOutputPreview{animation:none}}
 
-.intelCommandSlot{display:flex;gap:6px}.intelCommandSlot>.intelCommandRerun{width:auto;flex:none;padding-inline:12px;color:#94c7ae;white-space:nowrap}.intelOutputBackdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(2,7,6,.72)}.intelOutputBackdrop .intelOutputPreview{position:relative;inset:auto;width:min(900px,calc(100vw - 48px));max-height:min(720px,calc(100vh - 48px));display:flex;flex-direction:column;border-color:#496b5d;border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.7);animation:intelPreviewIn 160ms cubic-bezier(.23,1,.32,1)}.intelOutputBackdrop .intelOutputPreview header{align-items:center;padding:12px 16px}.intelOutputBackdrop .intelOutputPreview header>div{display:flex;align-items:center;gap:10px}.intelOutputBackdrop .intelOutputPreview header>div:first-child{display:grid;gap:3px}.intelOutputBackdrop .intelOutputPreview header b{font-size:14px}.intelOutputBackdrop .intelOutputPreview header span{font-size:11px}.intelOutputBackdrop .intelOutputPreview header button{min-height:36px;border:1px solid #3c594d;border-radius:4px;padding:0 12px;background:#14231e;color:#cce0d7;font-size:12px;cursor:pointer}.intelOutputBackdrop .intelOutputPreview header .intelOutputClose{width:36px;padding:0;font-size:23px;line-height:1}.intelOutputBackdrop .intelOutputPreview pre{min-height:180px;max-height:none;overflow:auto;padding:20px;color:#d4eee2;font:14px/1.65 ui-monospace,monospace;white-space:pre-wrap;user-select:text;cursor:text}.intelOutputBackdrop .intelOutputPreview p{padding:24px;font-size:13px}@media(max-width:700px){.intelOutputBackdrop{padding:12px}.intelOutputBackdrop .intelOutputPreview{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}.intelOutputBackdrop .intelOutputPreview pre{padding:16px;font-size:13px}.intelOutputBackdrop .intelOutputPreview header{align-items:flex-start}.intelOutputBackdrop .intelOutputPreview header>div:last-child{margin-left:auto}}
+.intelCommandSlot{display:flex;gap:6px}
+.intelCommandSlot>.intelCommandRerun{width:auto;flex:none;padding-inline:12px;color:var(--term-cursor);white-space:nowrap;border:1px solid var(--term-border);background:transparent;border-radius:var(--radius)}
+.intelOutputBackdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(2,7,6,.72)}
+.intelOutputBackdrop .intelOutputPreview{position:relative;inset:auto;width:min(900px,calc(100vw - 48px));max-height:min(720px,calc(100vh - 48px));display:flex;flex-direction:column;border-color:var(--term-cursor);box-shadow:0 24px 80px rgba(0,0,0,.7);animation:intelPreviewIn 160ms cubic-bezier(.23,1,.32,1)}
+.intelOutputBackdrop .intelOutputPreview header{align-items:center;padding:12px 16px}
+.intelOutputBackdrop .intelOutputPreview header>div{display:flex;align-items:center;gap:10px}
+.intelOutputBackdrop .intelOutputPreview header>div:first-child{display:grid;gap:3px}
+.intelOutputBackdrop .intelOutputPreview header b{font-size:14px}
+.intelOutputBackdrop .intelOutputPreview header span{font-size:11px}
+.intelOutputBackdrop .intelOutputPreview header button{min-height:36px;border:1px solid var(--term-border);border-radius:var(--radius);padding:0 12px;background:var(--term-bar);color:var(--term-fg);font-size:12px;cursor:pointer}
+.intelOutputBackdrop .intelOutputPreview header .intelOutputClose{width:36px;padding:0;font-size:23px;line-height:1}
+.intelOutputBackdrop .intelOutputPreview pre{min-height:180px;max-height:none;overflow:auto;padding:20px;color:var(--term-fg);font:14px/1.65 ui-monospace,monospace;white-space:pre-wrap;user-select:text;cursor:text}
+.intelOutputBackdrop .intelOutputPreview p{padding:24px;font-size:13px}
+@media(max-width:700px){
+  .intelOutputBackdrop{padding:12px}
+  .intelOutputBackdrop .intelOutputPreview{width:calc(100vw - 24px);max-height:calc(100vh - 24px)}
+  .intelOutputBackdrop .intelOutputPreview pre{padding:16px;font-size:13px}
+  .intelOutputBackdrop .intelOutputPreview header{align-items:flex-start}
+  .intelOutputBackdrop .intelOutputPreview header>div:last-child{margin-left:auto}
+}
 
-.intelCommandSlot .intelOutputPreview{width:min(650px,calc(100vw - 64px));max-height:420px;display:flex;flex-direction:column}.intelCommandSlot .intelOutputPreview header{align-items:center;padding:10px 12px}.intelCommandSlot .intelOutputPreview header>div{display:flex;align-items:center;gap:8px}.intelCommandSlot .intelOutputPreview header>div:first-child{display:grid;gap:2px}.intelCommandSlot .intelOutputPreview header b{font-size:12px}.intelCommandSlot .intelOutputPreview header span{font-size:10px}.intelCommandSlot .intelOutputPreview header button{min-height:30px;border:1px solid #3c594d;border-radius:4px;padding:0 10px;background:#14231e;color:#cce0d7;font-size:11px;cursor:pointer}.intelCommandSlot .intelOutputPreview header .intelOutputClose{width:30px;padding:0;font-size:19px}.intelCommandSlot .intelOutputPreview pre{max-height:340px;overflow:auto;padding:14px;color:#d4eee2;font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;user-select:text;cursor:text}.intelCommandSlot .intelOutputPreview p{padding:18px;font-size:12px}
+.intelCommandSlot .intelOutputPreview{width:min(650px,calc(100vw - 64px));max-height:420px;display:flex;flex-direction:column}
+.intelCommandSlot .intelOutputPreview header{align-items:center;padding:10px 12px}
+.intelCommandSlot .intelOutputPreview header>div{display:flex;align-items:center;gap:8px}
+.intelCommandSlot .intelOutputPreview header>div:first-child{display:grid;gap:2px}
+.intelCommandSlot .intelOutputPreview header b{font-size:12px}
+.intelCommandSlot .intelOutputPreview header span{font-size:10px}
+.intelCommandSlot .intelOutputPreview header button{min-height:30px;border:1px solid var(--term-border);border-radius:var(--radius);padding:0 10px;background:var(--term-bar);color:var(--term-fg);font-size:11px;cursor:pointer}
+.intelCommandSlot .intelOutputPreview header .intelOutputClose{width:30px;padding:0;font-size:19px}
+.intelCommandSlot .intelOutputPreview pre{max-height:340px;overflow:auto;padding:14px;color:var(--term-fg);font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;user-select:text;cursor:text}
+.intelCommandSlot .intelOutputPreview p{padding:18px;font-size:12px}
 .intelCommandSlot:nth-child(even) .intelOutputPreview{left:auto;right:0;transform-origin:bottom right}

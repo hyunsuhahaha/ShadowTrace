@@ -58,7 +58,12 @@ export default function ServiceIntelligencePanel({data,loading,error,onRun,execu
   const nextIndex=data.stages.findIndex(stage=>!stage.completed);
   const previewText=preview.data?.stdout||preview.data?.stderr||preview.data?.error||"저장된 출력이 없습니다.";
   return <section className="intelPanel" aria-labelledby="service-intelligence-heading">
-    <header className="intelHeader"><div><h2 id="service-intelligence-heading">조사 단계</h2>
+    <header className="intelHeader"><div><h2 id="service-intelligence-heading">
+      <span className="termDots" aria-hidden="true">
+        <i className="termDot" /><i className="termDot termDot--yellow" />
+        <i className="termDot termDot--green" />
+      </span>
+      조사 단계</h2>
       <span>{profile}{identity&&` · ${identity}`}</span></div>
       <div className="intelProgress" aria-label={`${data.stages.length}단계 중 ${completed}단계 정보 확인`}>
         <b>{completed}/{data.stages.length}</b><small>정보 확인</small></div></header>
