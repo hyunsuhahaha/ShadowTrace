@@ -155,34 +155,43 @@ export function Inspector(props: {
           placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
       </section>
       {executionId !== null && <section style={S.executionResults} aria-label="실행 결과">
-        <div style={S.executionResultsHead}>
-          <strong>실행 결과</strong>
-          <span>{EXECUTION_STATUS_LABEL[executionOutput.data?.status || ""]
-            || STATUS_LABEL[n.status] || executionOutput.data?.status || n.status}
-            {executionOutput.data?.exit_code == null ? "" : ` · exit ${executionOutput.data.exit_code}`}</span>
+        <div style={S.terminalTitlebar}>
+          <span style={S.terminalDots}>
+            <i style={{ ...S.terminalDot, background: "#ff5f57" }} />
+            <i style={{ ...S.terminalDot, background: "#febc2e" }} />
+            <i style={{ ...S.terminalDot, background: "#28c840" }} />
+          </span>
+          <span style={S.terminalTitle}>
+            {target ? (target.hostname || target.ip) : "localhost"}
+            {service ? `:${service.port}` : ""} — {n.label}
+          </span>
+          <span style={{ font: "10px ui-monospace,monospace", color: "#7fae8f", flexShrink: 0 }}>
+            {EXECUTION_STATUS_LABEL[executionOutput.data?.status || ""]
+              || STATUS_LABEL[n.status] || executionOutput.data?.status || n.status}
+            {executionOutput.data?.exit_code == null ? "" : ` · exit ${executionOutput.data.exit_code}`}
+          </span>
         </div>
-        {(target || service) && <div style={S.executionContext}>
-          {target && <div style={S.contextFact}><span>대상</span><b>{target.hostname || target.ip}</b></div>}
-          {service && <div style={S.contextFact}><span>서비스</span><b>{service.port}/tcp · {service.name}
-            {service.product ? ` · ${service.product}` : ""}</b></div>}
-        </div>}
-        {command && <code style={S.executionCommand}>{command}</code>}
-        {executionOutput.isLoading ? <div style={S.resultMessage}>결과 불러오는 중…</div>
-          : executionOutput.isError ? <div style={S.resultError}>실행 결과를 불러오지 못했습니다.</div>
-          : <div style={S.rawOutput}>
-            {executionOutput.data?.error && <div style={S.resultError}>{executionOutput.data.error}</div>}
-            {executionOutput.data?.stdout && <details style={S.outputBlock}
-              open={n.label !== "http-link-extract"}>
-              <summary style={S.outputSummary}>표준 출력</summary>
-              <pre style={S.outputPre}>{executionOutput.data.stdout}</pre>
-            </details>}
-            {executionOutput.data?.stderr && <details style={S.outputBlock} open>
-              <summary style={S.outputSummary}>오류 출력</summary>
-              <pre style={S.outputPre}>{executionOutput.data.stderr}</pre>
-            </details>}
-            {!executionOutput.data?.stdout && !executionOutput.data?.stderr
-              && !executionOutput.data?.error && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
+        <div style={S.terminalBody}>
+          {command && <div style={S.terminalPromptLine}>
+            <span style={S.terminalPrompt}>$</span>{command}
+            {executionOutput.data?.status === "running" && <span className="term-cursor" />}
           </div>}
+          {executionOutput.isLoading ? <div style={S.resultMessage}>결과 불러오는 중…</div>
+            : executionOutput.isError ? <div style={S.resultError}>실행 결과를 불러오지 못했습니다.</div>
+            : <>
+              {executionOutput.data?.error && <div style={S.resultError}>{executionOutput.data.error}</div>}
+              {executionOutput.data?.stdout && <details open={n.label !== "http-link-extract"}>
+                <summary style={S.terminalComment}># stdout</summary>
+                <pre style={S.terminalOutput}>{executionOutput.data.stdout}</pre>
+              </details>}
+              {executionOutput.data?.stderr && <details open>
+                <summary style={S.terminalComment}># stderr</summary>
+                <pre style={S.terminalOutputError}>{executionOutput.data.stderr}</pre>
+              </details>}
+              {!executionOutput.data?.stdout && !executionOutput.data?.stderr
+                && !executionOutput.data?.error && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
+            </>}
+        </div>
       </section>}
       {executionId !== null && tool === "http-link-extract" && (
         <section style={S.executionResults} aria-label="링크 추출 결과">

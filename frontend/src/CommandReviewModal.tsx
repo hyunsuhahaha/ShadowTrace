@@ -30,7 +30,8 @@ export default function CommandReviewModal({
       <p id="command-review-description">
         허가된 대상에서만 실행하세요. 대상과 전체 옵션을 확인한 뒤 실행 버튼을 누르세요.
       </p>
-      <code>{runWithSudo ? `sudo ${command.preview}` : command.preview}</code>
+      <code><b style={{ color: "var(--term-cursor)" }}>$</b>{" "}
+        {runWithSudo ? `sudo ${command.preview}` : command.preview}</code>
       <label className="sudoOption">
         <input type="checkbox" checked={runWithSudo}
           onChange={(event) => onSudo(event.target.checked)} />

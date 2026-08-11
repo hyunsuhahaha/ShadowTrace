@@ -18,7 +18,10 @@ export default function LiveOutputPanel({run, elapsed, outcome, output}: {
 }) {
   return <div className="terminal">
     <div className={`terminalStatus${run ? ` terminalStatus--${run.status}` : ""}`}>
-      <span aria-hidden="true" />
+      <span className="termDots" aria-hidden="true">
+        <i className="termDot" /><i className="termDot termDot--yellow" />
+        <i className="termDot termDot--green" />
+      </span>
       <b>실시간 출력</b>
       <small role="status" aria-live="polite">
         {!run

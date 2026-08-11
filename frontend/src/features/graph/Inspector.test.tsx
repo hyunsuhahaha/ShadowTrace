@@ -96,9 +96,10 @@ it("shows service context and logs for every execution node", async () => {
     }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
   </QueryClientProvider>);
 
-  expect(await screen.findByText("10.129.95.234")).toBeTruthy();
-  expect(screen.getByText("5985/tcp · http · Microsoft HTTPAPI httpd")).toBeTruthy();
-  expect(screen.getByText("whatweb http://10.129.95.234:5985")).toBeTruthy();
+  // Target/service context now lives in the terminal-style title bar as one
+  // compact line instead of a separate fact grid.
+  expect(await screen.findByText("10.129.95.234:5985 — http-whatweb")).toBeTruthy();
+  expect(screen.getByText(/whatweb http:\/\/10\.129\.95\.234:5985/)).toBeTruthy();
   expect(screen.getByText("HTTPServer[Microsoft-HTTPAPI/2.0]")).toBeTruthy();
   expect(screen.getByText("probe timed out once")).toBeTruthy();
   expect(screen.getByText(/exit 1/)).toBeTruthy();

@@ -160,6 +160,10 @@ export default function InteractiveTerminal({
   return (
     <section className="ptyPanel" aria-label={title} ref={panel}>
       <div className="ptyBar">
+        <span className="termDots" aria-hidden="true">
+          <i className="termDot" /><i className="termDot termDot--yellow" />
+          <i className="termDot termDot--green" />
+        </span>
         <div>
           <b>{title}</b>
           <span>
