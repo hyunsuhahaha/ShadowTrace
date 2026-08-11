@@ -383,7 +383,7 @@ export default function AppShell({
           </div>
           <div className="contextBar__page">
             <span>현재 작업</span>
-            <strong>{pageNames[route] || "Scan Center"}<span className="term-cursor" aria-hidden="true" /></strong>
+            <strong>{pageNames[route] || "Scan Center"}</strong>
           </div>
           <Button
             type="button"

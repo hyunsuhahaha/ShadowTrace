@@ -174,7 +174,6 @@ export function Inspector(props: {
         <div style={S.terminalBody}>
           {command && <div style={S.terminalPromptLine}>
             <span style={S.terminalPrompt}>$</span>{command}
-            {executionOutput.data?.status === "running" && <span className="term-cursor" />}
           </div>}
           {executionOutput.isLoading ? <div style={S.resultMessage}>결과 불러오는 중…</div>
             : executionOutput.isError ? <div style={S.resultError}>실행 결과를 불러오지 못했습니다.</div>
