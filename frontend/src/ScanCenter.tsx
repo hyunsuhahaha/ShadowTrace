@@ -593,7 +593,10 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
           )}
           <div className="terminal scanTerminal">
             <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : ""}>
-              <span aria-hidden="true" />
+              <span className="termDots" aria-hidden="true">
+                <i className="termDot" /><i className="termDot termDot--yellow" />
+                <i className="termDot termDot--green" />
+              </span>
               <b>저장 / 실시간 출력</b>
               <small>
                 {selected
@@ -626,7 +629,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
               대상과 최종 명령을 확인하세요. 선택한 도구는 Kali 호스트에서
               직접 실행됩니다.
             </p>
-            <code>{preview.data?.command}</code>
+            <code><b style={{ color: "var(--term-cursor)" }}>$</b> {preview.data?.command}</code>
             <p>
               <b>대상:</b> {target?.name} · {target?.ip}
             </p>

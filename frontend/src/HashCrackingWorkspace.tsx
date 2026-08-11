@@ -501,7 +501,10 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
         <section className="crackMain">
           <div className="terminal crackTerminal">
             <div className={displayStatus ? `terminalStatus terminalStatus--${displayStatus}` : ""}>
-              <span aria-hidden="true" />
+              <span className="termDots" aria-hidden="true">
+                <i className="termDot" /><i className="termDot termDot--yellow" />
+                <i className="termDot termDot--green" />
+              </span>
               <b>실시간 출력</b>
               <small>
                 {displayStatus

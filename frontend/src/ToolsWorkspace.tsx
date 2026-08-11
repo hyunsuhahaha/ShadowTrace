@@ -304,7 +304,10 @@ export default function ToolsWorkspace() {
             onCancel={() => setReviewOpen(false)} onRun={() => void run()} />
           <div className="terminal lootTerminal">
             <div className={selectedRun ? `terminalStatus terminalStatus--${selectedRun.status}` : ""}>
-              <span aria-hidden="true" />
+              <span className="termDots" aria-hidden="true">
+                <i className="termDot" /><i className="termDot termDot--yellow" />
+                <i className="termDot termDot--green" />
+              </span>
               <b>실시간 출력</b>
               <small>
                 {selectedRun

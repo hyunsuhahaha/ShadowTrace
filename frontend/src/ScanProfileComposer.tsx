@@ -70,6 +70,7 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
               profile.description}
           </small>
           <code>
+            <b style={{ color: "var(--term-cursor)" }}>$</b>{" "}
             {`${privilegedKinds.has(profile.kind) ? "sudo " : ""}${
               profile.engine || "nmap"
             } ${profile.arguments
@@ -114,7 +115,9 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
         />
       )}
       <code>
-        {previewCommand || "IP와 프로필을 선택하세요"}
+        {previewCommand
+          ? <><b style={{ color: "var(--term-cursor)" }}>$</b> {previewCommand}</>
+          : "IP와 프로필을 선택하세요"}
       </code>
       <button
         disabled={!canReview}
