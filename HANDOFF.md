@@ -9,6 +9,11 @@
 
 - 브랜치: `phase-8/stabilization`
 - 최근 커밋:
+  - `c118cc1` — `WebWorkspace.test.tsx`의 실제 레이스 컨디션 수정(Responder IP
+    삽입 테스트 2건, 타이핑이 draft 리셋 effect와 경쟁하던 문제)
+  - `915a828` — Vitest pool을 `forks`로 전환(테스트 파일 간 완전한 프로세스 격리)
+  - `4c4ec90` — 프로젝트 미선택 시 첫 프로젝트로의 폴백을 localStorage에
+    영속화해 헤더/본문 불일치 수정
   - `b44fd07` — `GraphWorkspace.tsx` 2,112 → 479줄 모듈화 (graphModel/
     graphStyles/graphLeaves/OutlineView/GraphCanvas/Inspector/
     GraphRequestPanel)
@@ -21,10 +26,12 @@
 ## 검증
 
 - 전체 backend suite: `416 passed` (golden-path 통합 테스트 포함)
-- 전체 frontend Vitest: `86 files / 400 tests` 통과
+- 전체 frontend Vitest: `86 files / 401 tests` 통과 (연속 실행으로 결정성 확인)
 - `tsc -b`, Vite production build 통과
 - `./scripts/test-e2e.sh` (Playwright golden-path): 통과
-- Chrome 라이브 확인: Progress Graph, Outline view — console error 없음
+- Chrome 라이브 확인: `localStorage`의 `oscp-workspace-project`를 비운 상태에서도
+  헤더와 Progress Graph 본문이 같은 프로젝트를 가리키는지 확인(수정 전에는
+  본문만 온보딩 화면으로 빠졌음)
 
 ## 다음 작업
 
@@ -36,9 +43,11 @@
    (673줄) — 아직 단일 파일이다.
 3. (선택) `ScanCenter.tsx`에 남은 관찰 테이블/필터/통계와 artifact·터미널 출력
    영역.
-4. Progress Graph 홈 화면에서 프로젝트는 있지만 그래프 데이터가 없을 때
-   Activity Stream 패널이 좁게 눌려 겹쳐 보이는 기존 버그(리팩터 이전부터
-   존재, `git stash`로 확인) — 별도 task로 스폰해둠(`task_85f2e15e`).
+4. `task_85f2e15e`(Activity Stream 패널이 좁게 눌리는 버그)로 스폰해뒀던
+   건은 재조사 결과 재현 불가로 판명됐다 — 새 브라우저 탭에서는 정상 렌더링됐고
+   극단적 저장값으로도 clamp 로직이 정상 복구함. 원래 증상은 리팩터링 세션 중
+   HMR을 15회 넘게 거친 낡은 탭 자체의 손상 상태였던 것으로 결론. 대신 조사
+   과정에서 발견한 실제 버그(프로젝트 폴백 미영속화)는 `4c4ec90`으로 수정됨.
 
 ## 주의점
 
