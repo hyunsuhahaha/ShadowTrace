@@ -588,7 +588,13 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
   }} aria-label="최근 활동">
     <header style={S.activityHead} onPointerDown={startDrag} onPointerMove={moveDrag}
       onPointerUp={stopDrag} onPointerCancel={stopDrag} title="드래그하여 이동">
-      <span>ACTIVITY STREAM</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="termDots" aria-hidden="true">
+          <i className="termDot" /><i className="termDot termDot--yellow" />
+          <i className="termDot termDot--green" />
+        </span>
+        ACTIVITY STREAM
+      </span>
       <span style={S.activityHeadActions}><b>{visible.length}/{items.length}</b>
         <span role="separator" aria-label="Activity Stream 크기 조절"
           title="드래그하여 크기 조절" style={S.activityResizeTop}
@@ -635,10 +641,13 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
         {ordered.length ? ordered.map((item, index) =>
           <button key={`${item.nodeId}-${item.at}-${index}`} style={S.activityRow}
             onClick={() => onSelect(item.nodeId)} title="그래프에서 이 노드로 이동">
+            <time style={S.activityTime}>
+              [{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}]
+            </time>
             <span style={{ ...S.activityDot, background: color(item.status) }} />
-            <span style={S.activityCopy}><b>{item.text}</b>
-              <small>{item.kind.toUpperCase()} · {item.reason}</small></span>
-            <time style={S.activityTime}>{new Date(item.at).toLocaleTimeString("ko-KR", { hour12: false })}</time>
+            <span style={S.activityCopy}>{item.text}
+              <span style={S.activityMeta}> — {item.kind.toUpperCase()} · {item.reason}</span>
+            </span>
           </button>) : <div style={S.activityEmpty}>
             {items.length ? "검색 조건에 맞는 활동이 없습니다." : "아직 기록된 활동이 없습니다."}
           </div>}
