@@ -138,6 +138,16 @@ export default function AppShell({
   }, []);
   const project =
     projects.data?.find((item) => item.id === activeProjectId) || projects.data?.[0];
+  // Falling back to the first project above is display-only -- it never
+  // touches localStorage/activeProjectId, so any other component that reads
+  // "current project" straight from localStorage (e.g. GraphWorkspace's
+  // useActiveProjectId) still sees "no project" and renders its own
+  // no-project state even while the header shows a project name. Persisting
+  // the fallback through the same path a manual selection takes keeps every
+  // consumer in sync.
+  useEffect(() => {
+    if (project && project.id !== activeProjectId) selectProject(project.id);
+  }, [project, activeProjectId]);
   const target =
     targets.data?.find((item) => item.id === activeTargetId && item.project_id === project?.id) ||
     targets.data?.find((item) => item.project_id === project?.id);

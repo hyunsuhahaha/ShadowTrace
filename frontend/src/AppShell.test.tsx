@@ -103,6 +103,38 @@ it("feeds the command palette every service in the active project, not just the 
   await waitFor(() => expect(screen.getByText("dc01 · 10.0.0.2")).toBeTruthy());
 });
 
+it("persists the display-only first-project fallback so other components agree", async () => {
+  // No "oscp-workspace-project" in localStorage -- AppShell falls back to
+  // projects.data[0] for its own header, but components that read the
+  // localStorage key directly (GraphWorkspace's useActiveProjectId) would
+  // otherwise still see "no project selected" while the header shows one.
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/projects")) return response([{id: 7, name: "Charlie"}]);
+    if (url.endsWith("/api/targets")) return response([]);
+    if (url.endsWith("/api/projects/7/services")) return response([]);
+    if (url.endsWith("/api/vpn/status")) return response({
+      connected: false, tun0: "", operation: null,
+    });
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({
+    defaultOptions: {queries: {retry: false, staleTime: Infinity}},
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <AppShell route="enumeration"><div /></AppShell>
+    </QueryClientProvider>,
+  );
+
+  await screen.findByText("Charlie");
+  // The persisted value is what every other localStorage-reading consumer
+  // (e.g. GraphWorkspace's useActiveProjectId) actually relies on, so that's
+  // the observable behavior worth asserting -- not the CustomEvent dispatch,
+  // which is an implementation detail of selectProject().
+  await waitFor(() => expect(localStorage.getItem("oscp-workspace-project")).toBe("7"));
+});
+
 it("drops every cached query, not just projects/targets, when a project is deleted", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
