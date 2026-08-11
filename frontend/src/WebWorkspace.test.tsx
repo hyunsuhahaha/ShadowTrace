@@ -206,6 +206,11 @@ it("inserts a UNC path built from the detected tun0 IP at the URL cursor positio
   const button = await screen.findByText("Responder IP 삽입 (10.10.16.178)") as HTMLButtonElement;
   expect(button.disabled).toBe(false);
   const urlInput = screen.getByLabelText("URL") as HTMLInputElement;
+  // The saved-requests-empty text and the draft's target-derived default URL
+  // settle from two independently-resolving effects off the same targetId
+  // change -- typing before the second one lands races it into silently
+  // overwriting whatever was just typed. Wait for the known default first.
+  await waitFor(() => expect(urlInput.value).toBe("http://10.10.10.10/"));
   fireEvent.change(urlInput, { target: { value: "http://unika.htb/index.php?page=" } });
   urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
 
@@ -228,6 +233,9 @@ it("replaces an existing page= value outright instead of appending to it", async
   await screen.findByText("저장된 요청이 없습니다");
   const button = await screen.findByText("Responder IP 삽입 (10.10.16.178)") as HTMLButtonElement;
   const urlInput = screen.getByLabelText("URL") as HTMLInputElement;
+  // See the previous test for why this wait matters: without it, typing can
+  // race the draft's target-derived default URL settling and get overwritten.
+  await waitFor(() => expect(urlInput.value).toBe("http://10.10.10.10/"));
   fireEvent.change(urlInput, { target: { value: "http://unika.htb/index.php?page=french.html" } });
 
   fireEvent.click(button);
