@@ -59,7 +59,7 @@ export function PageHeader({
   return (
     <div className="uiPageHeader">
       <div>
-        {eyebrow && <span>{eyebrow}</span>}
+        {eyebrow && <span># {eyebrow}</span>}
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>

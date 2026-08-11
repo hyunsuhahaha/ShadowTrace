@@ -340,6 +340,7 @@ export default function AppShell({
             <span>현재 프로젝트</span>
             <button type="button" style={PM.button}
               onClick={() => setMenuOpen((open) => !open)}>
+              <span className="contextPrompt" aria-hidden="true">&gt;</span>
               {project?.name || "프로젝트 없음"} <span aria-hidden="true">▾</span>
             </button>
             {menuOpen && (
@@ -382,7 +383,7 @@ export default function AppShell({
           </div>
           <div className="contextBar__page">
             <span>현재 작업</span>
-            <strong>{pageNames[route] || "Scan Center"}</strong>
+            <strong>{pageNames[route] || "Scan Center"}<span className="term-cursor" aria-hidden="true" /></strong>
           </div>
           <Button
             type="button"
