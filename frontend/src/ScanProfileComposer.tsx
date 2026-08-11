@@ -1,10 +1,10 @@
 import {Button} from "./ui";
-import {profileLabel, privilegedKinds, toolProfileGroups,
-  type Profile, type Target} from "./scanCenterModel";
+import {profileLabel, toolProfileGroups,
+  type Profile} from "./scanCenterModel";
 
 export default function ScanProfileComposer({tool, targetIp, targetName, targetError,
   onTargetIpChange, onTargetNameChange, profiles, profileId,
-  onSelectProfile, profile, target, ports, topPorts, onPortsChange, onTopPortsChange,
+  onSelectProfile, profile, ports, topPorts, onPortsChange, onTopPortsChange,
   onUpload, previewCommand, canReview, onReviewScan}: {
   tool: "nmap" | "masscan";
   targetIp: string; targetName: string; targetError: string;
@@ -14,7 +14,6 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
   profileId?: number;
   onSelectProfile: (id: number) => void;
   profile?: Profile;
-  target?: Target;
   ports: string; topPorts: string;
   onPortsChange: (value: string) => void;
   onTopPortsChange: (value: string) => void;
@@ -25,19 +24,25 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
 }) {
   return <>
     <div className="targetSetup">
-      <input
-        aria-label="대상 IP"
-        placeholder="대상 IP"
-        value={targetIp}
-        onChange={(e) => onTargetIpChange(e.target.value)}
-      />
-      <input
-        aria-label="대상 이름"
-        placeholder="대상 이름(선택)"
-        value={targetName}
-        onChange={(e) => onTargetNameChange(e.target.value)}
-      />
-      {targetError && <span>{targetError}</span>}
+      <label className="fieldRow">
+        <span>IP</span>
+        <input
+          aria-label="대상 IP"
+          placeholder="10.10.10.10"
+          value={targetIp}
+          onChange={(e) => onTargetIpChange(e.target.value)}
+        />
+      </label>
+      <label className="fieldRow">
+        <span>NAME</span>
+        <input
+          aria-label="대상 이름"
+          placeholder="선택"
+          value={targetName}
+          onChange={(e) => onTargetNameChange(e.target.value)}
+        />
+      </label>
+      {targetError && <span className="fieldError">{targetError}</span>}
     </div>
     <div className="profilePicker">
       <label htmlFor="nmap-profile">
@@ -64,21 +69,9 @@ export default function ScanProfileComposer({tool, targetIp, targetName, targetE
         ))}
       </select>
       {profile && (
-        <div>
-          <b>{profileLabel[profile.kind]?.name || profile.name}</b>
-          <small>
-            {profileLabel[profile.kind]?.description ||
-              profile.description}
-          </small>
-          <code>
-            <b style={{ color: "var(--term-cursor)" }}>$</b>{" "}
-            {`${privilegedKinds.has(profile.kind) ? "sudo " : ""}${
-              profile.engine || "nmap"
-            } ${profile.arguments
-              .replace("{ports}", ports)
-              .replace("{top_ports}", topPorts)} ${target?.ip || targetIp.trim() || "<IP>"}`}
-          </code>
-        </div>
+        <small>
+          {profileLabel[profile.kind]?.description || profile.description}
+        </small>
       )}
     </div>
     <div className="scanHero">

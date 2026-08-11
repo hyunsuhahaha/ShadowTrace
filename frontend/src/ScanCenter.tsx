@@ -461,7 +461,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
             targetIp={targetIp} targetName={targetName} targetError={targetError}
             onTargetIpChange={setTargetIp} onTargetNameChange={setTargetName}
             profiles={profiles.data} profileId={profileId}
-            onSelectProfile={setProfileId} profile={profile} target={target}
+            onSelectProfile={setProfileId} profile={profile}
             ports={ports} topPorts={topPorts}
             onPortsChange={setPorts} onTopPortsChange={setTopPorts}
             onUpload={upload}

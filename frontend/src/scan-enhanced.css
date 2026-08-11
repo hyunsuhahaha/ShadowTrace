@@ -56,7 +56,7 @@
 .scanPage--embedded nav a { display: none; }
 .scanPage--embedded nav { flex-wrap: wrap; gap: 8px; }
 .scanPage--embedded .targetSetup { grid-template-columns: 1fr; }
-.scanPage--embedded .targetSetup > span { grid-column: auto; }
+.scanPage--embedded .targetSetup .fieldError { grid-column: auto; }
 .scanPage--embedded .profilePicker { grid-template-columns: 1fr; }
 .scanPage--embedded .profilePicker > div { min-width: 0; }
 .scanPage--embedded .scanComposer { display: grid; }

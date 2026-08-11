@@ -30,17 +30,25 @@
 
 .scanCenter{padding:28px;overflow:auto}
 
-.targetSetup{display:grid;grid-template-columns:180px minmax(160px,1fr);gap:8px;align-items:center}
-.targetSetup input{background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px;font:12px ui-monospace,monospace}
-.targetSetup input:focus-visible{border-color:var(--term-cursor)}
-.targetSetup>span{grid-column:1/-1;color:#ff8e8e;font-size:11px}
+/* Each target field carries its own persistent IP/NAME tag instead of
+   relying on placeholder text alone -- once both fields hold the same-
+   looking IP-derived value, placeholder-only labels made them read as an
+   accidental duplicate rather than two distinct fields. */
+.targetSetup{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}
+.targetSetup .fieldError{grid-column:1/-1;color:#ff8e8e;font-size:11px}
+.fieldRow{display:flex;align-items:center;gap:8px;min-width:0}
+.fieldRow>span{flex:none;width:38px;font:10px ui-monospace,monospace;color:var(--term-cursor);letter-spacing:.04em;text-transform:uppercase}
+.fieldRow>input{flex:1;min-width:0;background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px;font:12px ui-monospace,monospace}
+.fieldRow>input:focus-visible{border-color:var(--term-cursor)}
 
+/* Profile detail collapses to one muted description line -- the profile
+   name is already visible in the <select>, and the command itself only
+   needs to appear once (the authoritative preview lives in .scanComposer
+   below, built from the server, not duplicated here from raw arguments). */
 .profilePicker{display:grid;grid-template-columns:110px minmax(260px,360px) 1fr;gap:10px;align-items:center;margin-top:14px;padding:12px;border:1px solid var(--term-border);background:var(--term-bg)}
 .profilePicker>label{font-size:11px;color:#8fa39c;text-transform:uppercase;letter-spacing:.06em}
 .profilePicker>select{background:#0b1113;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px}
-.profilePicker>div{display:grid;gap:3px}
-.profilePicker small{color:#5f7a72;font-size:10px}
-.profilePicker code{display:block;margin-top:2px;background:#040708;border:1px solid var(--term-border);color:var(--term-cursor);padding:8px 9px;font-size:10px;border-radius:3px;overflow:auto}
+.profilePicker>small{color:#5f7a72;font-size:10px;line-height:1.5}
 
 .scanHero{display:flex;justify-content:flex-end;margin-top:12px}
 .importScan{position:relative;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--text);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:.5rem .8rem;border-radius:var(--radius);cursor:pointer}
@@ -75,7 +83,6 @@
 @media(max-width:1000px){
   .scanLayout{grid-template-columns:170px 1fr}
   .scanHistory{display:none}
-  .targetSetup{grid-template-columns:1fr 1fr}
   .profilePicker{grid-template-columns:1fr 2fr}
 }
 @media(max-width:650px){
@@ -83,7 +90,7 @@
   .scanProfiles{max-height:130px}
   .scanCenter{padding:17px}
   .targetSetup{display:grid;grid-template-columns:1fr}
-  .targetSetup>span{grid-column:auto}
+  .targetSetup .fieldError{grid-column:auto}
   .profilePicker{grid-template-columns:1fr}
   .scanComposer{display:grid}
   .tableHead,.tableRow{grid-template-columns:80px 100px 1fr}

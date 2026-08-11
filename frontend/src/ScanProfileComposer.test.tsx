@@ -23,7 +23,7 @@ const baseProps = {
   targetIp: "", targetName: "", targetError: "",
   onTargetIpChange: vi.fn(), onTargetNameChange: vi.fn(),
   profiles, profileId: 2, onSelectProfile: vi.fn(),
-  profile: profiles[1], target: {id: 1, project_id: 1, name: "target", ip: "10.10.10.10"},
+  profile: profiles[1],
   ports: "80,443", topPorts: "100",
   onPortsChange: vi.fn(), onTopPortsChange: vi.fn(), onUpload: vi.fn(),
   previewCommand: "sudo nmap -Pn -p- --min-rate 1000 -T4 10.10.10.10",
@@ -32,9 +32,8 @@ const baseProps = {
 
 it("marks a privileged profile's preview with sudo and reports its Korean label", () => {
   render(<ScanProfileComposer {...baseProps} />);
-  expect(screen.getAllByText("전체 TCP 빠른 탐색 (sudo)").length).toBe(2);
-  expect(screen.getAllByText(/sudo nmap -Pn -p- --min-rate 1000 -T4 10\.10\.10\.10/).length)
-    .toBe(2);
+  expect(screen.getByText("전체 TCP 빠른 탐색 (sudo)")).toBeTruthy();
+  expect(screen.getByText(/sudo nmap -Pn -p- --min-rate 1000 -T4 10\.10\.10\.10/)).toBeTruthy();
 });
 
 it("disables review until an IP and profile make it reviewable, then runs the scan directly", () => {
