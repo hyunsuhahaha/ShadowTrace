@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, filterActivityFeed, getNodeActivity,
-  GraphNode, GraphOut, GraphPosition, initialGraphPosition,
+  GLYPH, GraphNode, GraphOut, GraphPosition, initialGraphPosition,
   initialGraphPositionNearParent, NodeActivity, nodeStatusReason, nodeSummary,
   readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
@@ -86,10 +86,6 @@ export function GraphCanvas(props: {
       const depth = depths.get(node.id) ?? 0;
       levels.set(depth, [...(levels.get(depth) || []), node]);
     });
-    // Short monospace tag instead of a dingbat glyph -- the graph itself
-    // should read as terminal/HUD, not a network-diagram icon set.
-    const TAG: Record<string, string> = { "project-root": "ROOT", operator: "OP",
-      host: "HOST", service: "SVC", finding: "FND", technique: "TCH", credential: "CRD" };
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Three activity languages, one per meaning: green = actively searching
     // (scan output still streaming, outcome unknown), red = armed and
@@ -223,11 +219,7 @@ export function GraphCanvas(props: {
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
         if (struct) { ctx.lineTo(b.x, b.y); ctx.setLineDash([]); }
         else {
-          // Circuit-trace elbow instead of a soft bezier -- non-structural
-          // links (pivoted-to, reused-credential, ...) read as routed wire,
-          // not organic curve.
-          const midX = (a.x + b.x) / 2;
-          ctx.lineTo(midX, a.y); ctx.lineTo(midX, b.y); ctx.lineTo(b.x, b.y);
+          ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
         ctx.strokeStyle = edgeKind ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
@@ -321,28 +313,25 @@ export function GraphCanvas(props: {
           }
           ctx.restore();
         } else activityStarted.current.delete(n.id);
-        const sq = (rad: number) => ctx.rect(n.x - rad, n.y - rad, rad * 2, rad * 2);
         if (isAnchor) {
-          ctx.beginPath(); sq(r + 17);
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 17, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
         }
         if (current.objective) {
-          ctx.beginPath(); sq(r + 10);
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = current.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
           ctx.lineWidth = 2.5; ctx.stroke();
         }
         ctx.save();
         ctx.shadowColor = activity ? nodeSignal : awaitingReview ? color(current.status)
           : isAnchor ? "#6aa9ff" : color(current.status);
-        // Toned down from the circle version (was 10-30) -- a soft blur reads
-        // as "glowing orb"; a HUD box wants a tighter, crisper edge light.
-        ctx.shadowBlur = activity ? 16 : isAnchor ? 18 : isSel ? 14 : awaitingReview ? 5 : 7;
-        ctx.beginPath(); sq(r);
+        ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : awaitingReview ? 10 : 12;
+        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.fillStyle = awaitingReview ? "rgba(0,0,0,0)" : signalKind ? FILL_BG[signalKind]
           : isOperator ? "#123038" : color(current.status); ctx.fill();
         ctx.restore();
-        ctx.beginPath(); sq(r);
+        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : awaitingReview ? 1.6 : 1;
         ctx.strokeStyle = activity ? nodeSignal : awaitingReview ? color(current.status)
           : isSel ? "#fff" : isOperator ? "#55d6e8"
@@ -350,24 +339,14 @@ export function GraphCanvas(props: {
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
         if (current.hidden) ctx.setLineDash([2, 3]);
         ctx.stroke();
-        // HUD viewfinder corner ticks -- reinforces "box", not "circle that
-        // happens to be drawn as a box".
-        const cm = Math.max(4, r * 0.35);
-        ctx.lineWidth = 1; ctx.setLineDash([]);
-        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-          ctx.beginPath();
-          ctx.moveTo(n.x + sx * r, n.y + sy * (r - cm));
-          ctx.lineTo(n.x + sx * r, n.y + sy * r);
-          ctx.lineTo(n.x + sx * (r - cm), n.y + sy * r);
-          ctx.stroke();
-        }
+        ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.font = `700 ${Math.round(r * 0.42)}px ui-monospace,monospace`;
-        ctx.fillText(TAG[current.type] ?? "?", n.x, n.y + 0.5);
+        ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
+        ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
-          ctx.font = isAnchor ? "600 12px ui-monospace,monospace" : "11px ui-monospace,monospace";
+          ctx.font = isAnchor ? "600 13px sans-serif" : "12px sans-serif";
           ctx.fillText(current.label, n.x, n.y + r + 10);
         }
         if (hover === n || isSel) {
