@@ -118,25 +118,48 @@ Evidence traceability 원칙(각 객체가 어떤 Command/Tool/Evidence에서 �
 
 ### 3.4 Evidence — 실행 결과의 canonical store가 아님
 
+> **2026-08-12 정정**: 아래는 실제 매니저 코드(`post_exploitation/manager.py`,
+> `hash_cracking/manager.py`, `exploit_research/router.py`)를 직접 읽고 갱신한
+> 내용이다. 최초 작성 시에는 `evidence_id`가 nullable이라는 이유만으로 "선택적
+> 연결"이라 서술했는데, 실제로는 세 모듈 모두 **정상 종료 시 자동으로** Evidence를
+> 만들고 `evidence_id`를 채운다. 실제 갭은 아래 두 가지로 훨씬 좁다.
+
 `Evidence`(`models.py:198-223`)는 `sha256`, `file_path`, `source_type`/`source_id`
-(약한 참조), `acquired_at` 등 목표 모델이 요구하는 필드를 충분히 갖췄다. 그러나 실제
-명령 실행의 원본 stdout/stderr는 기본적으로 Evidence를 거치지 않고 각 실행 전용
-테이블에 직접 저장된다.
+(약한 참조), `acquired_at` 등 목표 모델이 요구하는 필드를 충분히 갖췄다.
 
-- `Execution.stdout`/`Execution.stderr`(`models.py:61-62`) — 텍스트 그대로 보관
-- `RemoteExecution.stdout_path`/`stderr_path`(`models.py:540-541`) — 파일 경로만 보관
-- `ExploitLocalRun.stdout_path`/`stderr_path`(`models.py:508-509`)
-- `InteractiveSession.log_path`(`models.py:155`), `Tunnel.log_path`(`models.py:267`)
+- `RemoteExecManager._run`(`post_exploitation/manager.py:107-147`)과
+  `HashCrackManager._run`(`hash_cracking/manager.py:117-157`)은 `completed`/
+  `failed`(exit code)/`timed_out`/`cancelled` 등 모든 정상 종료 경로에서 stdout+stderr를
+  합쳐 `output.txt` Evidence를 만들고 `evidence_id`를 채운다(기존 테스트
+  `test_manager_runs_streams_and_captures_evidence` 등으로 이미 검증됨). 다만
+  **`_capture_evidence` 호출이 `try` 블록 안, 프로세스 종료 이후에만 있어서**, subprocess
+  spawn 자체가 실패하는 것처럼 바깥 `except Exception`(`post_exploitation/manager.py:114-121`,
+  `hash_cracking/manager.py:124-131`)으로 빠지는 경우엔 Evidence가 전혀 만들어지지 않고
+  `evidence_id`가 영구히 `null`로 남는다 — **예외 경로 누락**.
+- `ExploitLocalRun`(`exploit_research/router.py:696-772`)도 실행이 끝나면 항상 Evidence를
+  만들지만, 그 Evidence는 `execution.json`(argv/exit_code/timestamps) **메타데이터만**
+  담고 있고 description에 "stdout and stderr remain on the run record"라고 명시돼 있다.
+  실제 stdout/stderr 텍스트는 `ExploitLocalRun.stdout_path`/`stderr_path`
+  (`models.py:508-509`, 별도 테이블 컬럼)에만 있고 Evidence 파일 안에는 없다 —
+  **원본 출력 누락**.
+- `Execution.stdout`/`Execution.stderr`(`models.py:61-62`)는 컬럼에 텍스트 그대로
+  보관되며 자체적으로 Evidence로 승격되는 자동 경로는 없다(사용자가 명시적으로
+  "Evidence로 저장"해야 함) — 다만 Captured Execution은 Runbook Step에 연결되면
+  `RunbookStepEvidence`를 통해 사람이 직접 Evidence를 붙이는 흐름이 이미 있어 위
+  두 가지보다 우선순위가 낮다.
+- `InteractiveSession.log_path`(`models.py:155`)와 `Tunnel.log_path`(`models.py:267`)는
+  Evidence로 연결되는 코드 경로가 전혀 없다. 다만 전자는 세션 전체 기간 동안 쌓이는
+  ANSI 이스케이프 포함 raw PTY 바이트라 "완료 시 stdout 캡처"와 같은 패턴을 그대로
+  적용할 수 없고(ANSI 정리·청킹이 먼저 필요, 데스크톱에서 띄운 세션은 종료 훅 자체가
+  없음), 후자는 `-N`+non-verbose ssh라 정상 동작 시 사실상 빈 로그(에러가 났을 때만
+  한두 줄)라 애초에 캡처할 가치가 있는지부터 별도로 판단해야 한다. 이 두 개는
+  이번 Evidence canonical-store 마이그레이션(§5-1) 범위에서 의도적으로 제외했다.
 
-이들 각각은 `evidence_id`라는 **nullable** FK(`RemoteExecution.evidence_id` at
-`models.py:549-550`, `ExploitLocalRun.evidence_id` at `516-517`,
-`HashCrackJob.evidence_id` at `580-581`)로 Evidence에 선택적으로만 연결된다. Scan
-Center는 `capture_scan_evidence`(`scan_center/service.py:220-292`)가 스캔 산출물과
-positive NSE 결과를 자동으로 Evidence화하지만, 이는 Nmap 전용 로직이고 다른 실행
-종류(Post-Exploitation, Exploit Research, Hash Cracking, 대화형 세션)의 출력은 사용자가
-명시적으로 "Evidence로 저장" 액션을 눌러야 Evidence 테이블에 들어간다. 즉 Evidence는
-있지만 "모든 원본 출력이 반드시 여기로 모인다"는 보장은 없다 — §4의 도구 중심 저장
-패턴과 직결된다.
+Scan Center는 `capture_scan_evidence`(`scan_center/service.py:220-292`)가 스캔 산출물과
+positive NSE 결과를 자동으로 Evidence화하지만 Nmap 전용 로직이다. 즉 Evidence는
+있고 주요 실행 경로 대부분에서 이미 자동으로 채워지지만, 위 두 가지 좁은 구멍(예외
+경로, ExploitLocalRun 원본 출력)과 세션/터널처럼 애초에 연결이 없는 영역이 남아 있다 —
+§4의 도구 중심 저장 패턴과 직결된다.
 
 ### 3.5 Note — 독립 엔티티 없음
 
@@ -215,12 +238,18 @@ Access(SSH/WMIExec/WinRM/secretsdump)에서 `reused-credential`/`pivoted-to` 엣
 한다. 각 단계는 이전 단계가 하위 호환 상태로 완료된 뒤 시작할 수 있도록 배치했다.
 Session/Privilege/Pivot/Attack Path, Faraday 연동은 Phase 2/3 범위이므로 제외했다.
 
-1. **Evidence를 실행 결과의 기본 목적지로 만들기 (Evidence 확장, 스키마 파괴 없음).**
-   `RemoteExecution`/`ExploitLocalRun`/`HashCrackJob`이 실행 종료 시 stdout/stderr를
-   무조건 `Evidence` row로 생성하고 `evidence_id`를 채우도록 각 모듈의 완료 처리
-   경로만 바꾼다. 기존 `stdout_path`/`stderr_path` 컬럼은 당장 제거하지 않고 유지해도
-   된다(하위 호환). 위험이 가장 낮고(신규 컬럼/테이블 없음, FK는 이미 존재), Finding·
-   Credential traceability 개선의 전제 조건이라 가장 먼저 손댈 항목으로 추천한다.
+1. **Evidence 자동 캡처의 남은 구멍 메우기 (스키마 파괴 없음).** §3.4 정정에서
+   확인했듯 `RemoteExecution`/`HashCrackJob`/`ExploitLocalRun`은 이미 정상 종료 시
+   자동으로 Evidence를 만든다. 실제로 남은 작업은 두 가지뿐이다 — (a)
+   `RemoteExecManager._run`/`HashCrackManager._run`의 `except Exception` 경로에서도
+   `_capture_evidence`(또는 그때까지 쓰인 stdout/stderr)를 캡처해 `evidence_id`가
+   `null`로 남지 않게 하고, (b) `ExploitLocalRun`의 Evidence에 `execution.json`
+   메타데이터뿐 아니라 실제 stdout/stderr 텍스트도 담는다. 둘 다 신규 컬럼/테이블
+   없이 기존 nullable FK와 캡처 함수만 손보면 되므로 위험이 가장 낮고, Credential
+   traceability 개선(2번)의 전제 조건이라 가장 먼저 손댈 항목으로 추천한다.
+   `InteractiveSession.log_path`/`Tunnel.log_path`는 같은 패턴을 그대로 적용할 수 없는
+   구조(ANSI raw PTY 바이트, 대부분 빈 운영 로그)라 이번 항목에서 의도적으로 제외했다
+   — 별도 후속 결정 필요.
 
 2. **Credential 출처를 구조화(soft FK → 실제 FK 또는 구조화 필드).**
    `source_kind`/`source_detail` 문자열 대신 `source_execution_kind` +
