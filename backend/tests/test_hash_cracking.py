@@ -413,3 +413,37 @@ def test_hashcat_runs_with_rusticl_enabled_for_the_cpu_opencl_fallback(tmp_path,
     asyncio.run(run())
 
     assert (folder / "stdout.txt").read_text(encoding="utf-8").strip() == "llvmpipe"
+
+
+def test_manager_captures_evidence_when_the_process_fails_to_spawn(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'spawnfail.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.11")
+        db.add(target); db.flush()
+        job = HashCrackJob(
+            project_id=project.id, target_id=target.id, hash_mode_id="netntlmv2",
+            hash_mode="5600", hash_type_name="NetNTLMv2", attack_mode="0",
+            hash_count=1, status="running")
+        db.add(job); db.commit()
+        job_id = job.id
+
+    folder = tmp_path / "spawnfail-job"
+
+    async def run():
+        manager_module.manager.cancel_events[job_id] = asyncio.Event()
+        await manager_module.manager._run(
+            job_id, ["/nonexistent/binary/that/does/not/exist"], folder)
+    asyncio.run(run())
+
+    with factory() as db:
+        finished = db.get(HashCrackJob, job_id)
+        assert finished.status == "failed"
+        assert finished.evidence_id is not None
+        evidence = db.get(Evidence, finished.evidence_id)
+        assert evidence.source_type == "hash_crack_job"
+        assert "No such file" in Path(evidence.file_path).read_text()

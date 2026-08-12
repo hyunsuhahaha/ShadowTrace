@@ -126,7 +126,16 @@ class HashCrackManager:
                 job = db.get(HashCrackJob, job_id)
                 if job:
                     job.status = "failed"; job.error = str(exc)
-                    job.ended_at = utcnow(); db.commit()
+                    job.ended_at = utcnow()
+                    if not stderr_path.is_file() or not stderr_path.read_text(
+                            encoding="utf-8", errors="replace").strip():
+                        stderr_path.write_text(str(exc), encoding="utf-8")
+                    target = db.get(Target, job.target_id)
+                    project = db.get(Project, job.project_id)
+                    self._capture_evidence(db, job, project, target,
+                                           stdout_path, stderr_path,
+                                           parse_cracked(cracked_path))
+                    db.commit()
             await self._publish(job_id, {
                 "stream": "status", "status": "failed", "error": str(exc)})
         finally:
