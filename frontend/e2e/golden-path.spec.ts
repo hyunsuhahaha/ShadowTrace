@@ -35,17 +35,26 @@ test("scan import -> runbook apply -> evidence -> report export", async ({ page 
   // substring-matches "Target" too. The Runbook 범위 section always renders
   // Target's <select> first, Service's second (RunbookWorkspace.tsx) --
   // structural position is the stable anchor.
-  await page.getByRole("region", { name: "Runbook 범위" })
-    .locator("select").first()
+  const runbookScope = page.getByRole("region", { name: "Runbook 범위" });
+  await runbookScope.locator("select").first()
     .selectOption({ label: `${seed.targetName} · ${seed.targetIp}` });
+  await runbookScope.locator("select").nth(1)
+    .selectOption({ label: "445/tcp · microsoft-ds" });
+  // The instance view auto-applies the first matching baseline when the
+  // selected service has no instances. Wait for that mutation to settle;
+  // otherwise its onSuccess can race this tab switch and force the UI back
+  // to the execution view.
+  await page.locator(".runbookExecution .instanceHeader").waitFor();
   await page.getByRole("button", { name: "추천 Runbooks" }).click();
-  // The recommendation-sidebar card's whole label ("E2E SMB basics · v1 445번
-  // Service · 적용") is one button's accessible name -- match on the seeded
-  // template's own name so this doesn't depend on the exact suffix wording.
-  await page.getByRole("button", { name: /E2E SMB basics/ }).click();
-  // Applying doesn't switch the main panel to the new instance -- it stays
-  // on whatever was selected before (e.g. the built-in baseline runbook
-  // every target gets). Select our instance's card explicitly.
+  // The template name is a heading and the apply control is a sibling button;
+  // scope the action to that card instead of assuming the entire card is one
+  // accessible button. A successful apply selects the new instance directly.
+  const seededRunbook = page.locator(".runbookTemplateRelevant")
+    .filter({ hasText: "E2E SMB basics" });
+  await seededRunbook.getByText("이 Runbook 적용", { exact: true }).click();
+  // The refresh can retain the previously selected baseline instance even
+  // though the new instance is present in the sidebar. Select the seeded
+  // instance explicitly before asserting its step content.
   await page.getByRole("button", { name: /E2E SMB basics/ }).click();
   await expect(page.getByText("Check anonymous access")).toBeVisible();
 

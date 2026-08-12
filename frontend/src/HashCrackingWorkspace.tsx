@@ -5,6 +5,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { syncSelectedProject } from "./scanCenterModel";
 import { Badge, ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
+import {DetachableTerminal} from "./FloatingTerminal";
 import "./hash-cracking.css";
 
 type Project = { id: number; name: string };
@@ -499,8 +500,12 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
             }} />
         </section>
         <section className="crackMain">
+          <DetachableTerminal id={`hash-output-${jobId || targetId || "idle"}`}
+            label={`Hashcat ${jobId ? `#${jobId}` : "output"}`}
+            commandContext={targetId && target ? {targetId, targetIp: target.ip} : undefined}>
           <div className="terminal crackTerminal">
-            <div className={`terminalStatus${displayStatus ? ` terminalStatus--${displayStatus}` : ""}`}>
+            <div className={`terminalStatus${displayStatus ? ` terminalStatus--${displayStatus}` : ""}`}
+              data-terminal-drag-handle title="드래그하여 터미널 분리">
               <span className="termDots" aria-hidden="true">
                 <i className="termDot" /><i className="termDot termDot--yellow" />
                 <i className="termDot termDot--green" />
@@ -517,6 +522,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
             </div>
             <pre>{output}</pre>
           </div>
+          </DetachableTerminal>
           {selected && terminal.includes(selected.status) && (
             <div className="crackResults">
               <b>크랙된 자격 증명 {outputQuery.data?.cracked.length ?? selected.cracked_count}건</b>

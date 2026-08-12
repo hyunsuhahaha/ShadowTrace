@@ -16,6 +16,8 @@ export const S: Record<string, CSSProperties> = {
   filterCount: { marginLeft: "auto", color: "#758079", font: "10px ui-monospace,monospace",
     whiteSpace: "nowrap" },
   toolActive: { borderColor: "#537a5e", color: "#71dfa0", background: "#132018" },
+  credentialOverlayActive: { borderColor: "#7b6734", color: "#e3b341",
+    background: "#1c1709" },
   tabs: { display: "flex", flexShrink: 0, gap: 4, background: "#16161c", padding: 4,
     borderRadius: 10, border: "1px solid #2a2a34" },
   legend: { marginLeft: "auto", minWidth: 0, overflowX: "auto", display: "flex",

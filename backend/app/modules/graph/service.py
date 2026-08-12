@@ -6,6 +6,7 @@ integrity rules (spec 1.4/1.7), and serializes engine output for the API.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -13,9 +14,9 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (Credential, Execution, Finding, FindingEvidence, GraphEdge, GraphNode,
-                       GraphProjectMeta, InteractiveSession, Project, ScanJob,
-                       Service, Target)
+from ...models import (Credential, Execution, Finding, FindingEvidence, GraphEdge, GraphEvent,
+                       GraphNode, GraphProjectMeta, InteractiveSession, Project, RemoteExecution,
+                       ScanJob, Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
 
@@ -141,6 +142,33 @@ def _load(db: Session, project_id: int) -> tuple[list[GraphNode], list[GraphEdge
     edges = list(db.scalars(
         select(GraphEdge).where(GraphEdge.project_id == project_id)))
     return nodes, edges
+
+
+def record_snapshot(db: Session, project_id: int) -> GraphEvent | None:
+    """Append a replay frame only when the observable graph actually changed."""
+    nodes, edges = _load(db, project_id)
+    project_meta = db.get(GraphProjectMeta, project_id)
+    payload = json.dumps({
+        "root_node_id": project_meta.root_node_id if project_meta else None,
+        "nodes": [{column.name: getattr(node, column.name)
+                   for column in GraphNode.__table__.columns
+                   if column.name != "project_id"}
+                  for node in sorted(nodes, key=lambda item: item.id)],
+        "edges": [{column.name: getattr(edge, column.name)
+                   for column in GraphEdge.__table__.columns
+                   if column.name != "project_id"}
+                  for edge in sorted(edges, key=lambda item: item.id)],
+    }, default=lambda value: value.isoformat(), sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(payload.encode()).hexdigest()
+    previous = db.scalar(select(GraphEvent).where(
+        GraphEvent.project_id == project_id).order_by(GraphEvent.id.desc()).limit(1))
+    if previous and previous.fingerprint == fingerprint:
+        return None
+    event = GraphEvent(project_id=project_id, kind="graph-snapshot",
+                       fingerprint=fingerprint, payload=payload)
+    db.add(event)
+    db.flush()
+    return event
 
 
 # --- project-root bootstrap (spec 2.1) ---
@@ -316,12 +344,20 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         return index.get(("target", target_id))
 
     def ensure_edge(source: GraphNode, target: GraphNode, relation: str,
-                    label: str = "") -> GraphEdge:
+                    label: str = "", status: str | None = None,
+                    meta: str | None = None) -> GraphEdge:
         existing = next((edge for edge in edges if edge.source == source.id
                          and edge.target == target.id and edge.relation == relation), None)
         if existing:
+            if label:
+                existing.label = label
+            if status:
+                existing.status = status
+            if meta is not None:
+                existing.meta = meta
             return existing
-        edge = create_edge(db, project_id, source.id, target.id, relation, label=label)
+        edge = create_edge(db, project_id, source.id, target.id, relation,
+                           label=label, status=status or "untried", meta=meta or "{}")
         edges.append(edge)
         return edge
 
@@ -421,6 +457,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             continue
         label = cred.username or (cred.domain and f"{cred.domain}\\") or "credential"
         meta = json.dumps({"username": cred.username or "",
+                           "domain": cred.domain or "",
                            "credType": cred.secret_kind or "",
                            "secretHint": cred.secret_hint or ""})
         provenance = json.dumps({"source": cred.source_kind or "",
@@ -435,6 +472,43 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         create_edge(db, project_id, parent.id, node.id, "enumerated")
         index[("credential", cred.id)] = node
         created["credentials"] += 1
+
+    # A completed remote command with exit 0 is direct evidence that the
+    # credential authenticated to the destination. Project two complementary
+    # references: credential -> destination (what unlocked it), and source
+    # host -> destination (where that credential was acquired). The latter is
+    # lateral-access provenance, not proof that packets were routed through the
+    # source host; true network pivoting remains represented by Tunnel records.
+    successful_access = db.scalars(select(RemoteExecution).where(
+        RemoteExecution.project_id == project_id,
+        RemoteExecution.credential_id.is_not(None),
+        RemoteExecution.status == "completed",
+        RemoteExecution.exit_code == 0,
+        RemoteExecution.connection.in_(("ssh", "wmiexec", "winrm", "secretsdump")),
+    ).order_by(RemoteExecution.id)).all()
+    for run in successful_access:
+        credential = db.get(Credential, run.credential_id)
+        credential_node = index.get(("credential", run.credential_id))
+        destination = host_for(run.target_id)
+        if not credential or not credential_node or not destination:
+            continue
+        identity = "\\".join(filter(None, (credential.domain, credential.username)))
+        identity = identity or "credential"
+        meta = json.dumps({
+            "remoteExecutionId": run.id,
+            "credentialId": credential.id,
+            "sourceTargetId": credential.target_id,
+            "destinationTargetId": run.target_id,
+            "connection": run.connection,
+            "confirmedAt": run.ended_at.isoformat() if run.ended_at else None,
+        })
+        ensure_edge(credential_node, destination, "reused-credential",
+                    label=f"{identity} · {run.connection.upper()}",
+                    status="succeeded", meta=meta)
+        source = host_for(credential.target_id) if credential.target_id else None
+        if source and source.id != destination.id:
+            ensure_edge(source, destination, "pivoted-to",
+                        label=f"LATERAL · {identity}", status="succeeded", meta=meta)
 
     # executions auto-nodify into technique nodes (attempted from service/host).
     # Outcome is NOT auto-judged; user marks success. Clutter is managed by the

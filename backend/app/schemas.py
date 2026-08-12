@@ -145,7 +145,7 @@ class InteractiveSessionOut(ORM):
 
 class ManualTerminalIn(BaseModel):
     target_id: int
-    service_id: int
+    service_id: int | None = None
     # Only for commands with no secret in argv — a caller that needs -p/-H
     # style credentials belongs on the embedded-panel path instead, which
     # types them into the PTY rather than storing them in a process's argv

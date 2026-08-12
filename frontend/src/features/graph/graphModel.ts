@@ -15,6 +15,7 @@ export type GraphNode = {
 export type DeepLink = { label: string; open: () => void };
 export type GraphEdge = {
   id: string; source: string; target: string; relation: string; status: string;
+  label?: string; meta?: string; created_at?: string; updated_at?: string;
 };
 export type GraphOut = { root_node_id: string | null; nodes: GraphNode[]; edges: GraphEdge[] };
 export type GraphFilter = { query: string; type: "all" | NodeType; status: string;
@@ -99,6 +100,14 @@ export function nodeSummary(node: Pick<GraphNode, "type" | "status" | "label" | 
     return [node.label, meta.severity, `evidence ${meta.evidenceCount || 0}`]
       .filter(Boolean).join(" · ");
   return node.label;
+}
+
+export function credentialBadge(node: Pick<GraphNode, "type" | "label" | "meta">) {
+  if (node.type !== "credential") return null;
+  const meta = nodeMeta(node);
+  const identity = [meta.domain, meta.username || node.label].filter(Boolean).join("\\");
+  return {identity: identity || "credential",
+    kind: String(meta.credType || "credential").toUpperCase()};
 }
 
 export type ActivityKind = "live" | "service" | "task" | "credential" | "finding" | "target";

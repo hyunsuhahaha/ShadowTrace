@@ -49,6 +49,7 @@ const emptyData: GraphOut = { root_node_id: null, nodes: [], edges: [] };
 
 it("mounts and unmounts without throwing on an empty graph", () => {
   const { unmount } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
+    credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.querySelector("canvas")).toBeTruthy();
@@ -61,17 +62,52 @@ it("re-renders when the node set changes without throwing", () => {
       objective: false, source_ref: "", hidden: false },
   ], edges: [] };
   const { rerender } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
+    credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} onContext={vi.fn()} />);
-  rerender(<GraphCanvas data={data} hostCount={1} showHidden={false}
+  rerender(<GraphCanvas data={data} hostCount={1} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.querySelector("canvas")).toBeTruthy();
 });
 
 it("shows the empty activity stream state when nothing is happening", () => {
-  render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
+  render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.body.textContent).toContain("아직 기록된 활동이 없습니다.");
+});
+
+it("renders credential badges and directional access lineage without secrets", () => {
+  const ctx = stubCanvasContext();
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "a", type: "host", status: "succeeded", label: "10.0.0.10",
+      objective: false, source_ref: "", hidden: false},
+    {id: "b", type: "host", status: "succeeded", label: "10.0.0.20",
+      objective: false, source_ref: "", hidden: false},
+    {id: "cred", type: "credential", status: "succeeded", label: "administrator",
+      objective: false, source_ref: "", hidden: false,
+      meta: JSON.stringify({domain: "CORP", username: "administrator",
+        credType: "hash", secretHint: "must-not-render"})},
+  ], edges: [
+    {id: "ra", source: "root", target: "a", relation: "discovered", status: "untried"},
+    {id: "rb", source: "root", target: "b", relation: "discovered", status: "untried"},
+    {id: "ac", source: "a", target: "cred", relation: "enumerated", status: "succeeded"},
+    {id: "cb", source: "cred", target: "b", relation: "reused-credential",
+      status: "succeeded", label: "CORP\\administrator · WMIEXEC"},
+    {id: "ab", source: "a", target: "b", relation: "pivoted-to",
+      status: "succeeded", label: "LATERAL · CORP\\administrator"},
+  ]};
+
+  render(<GraphCanvas data={data} hostCount={2} showHidden={false} credentialOverlay
+    selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+
+  const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
+  expect(rendered).toContain("CORP\\administrator");
+  expect(rendered).toContain("HASH · CAPTURED");
+  expect(rendered).toContain("CORP\\administrator · WMIEXEC");
+  expect(rendered).not.toContain("must-not-render");
 });

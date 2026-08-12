@@ -28,15 +28,44 @@
   접힌 toolbox에 보존했다.
 - Scan/Service 명령 override는 서버에서 engine·target·port·shell operator drift를 다시
   검증한다. detached terminal의 `[ 원위치 ]`는 detach 전 graph hash와 선택 노드로 복귀한다.
+- `DetachableTerminal` seam으로 Scan뿐 아니라 Graph Execution, Service attached output,
+  Tools, Hash Cracking, Post-Exploitation, 실제 PTY도 헤더 drag로 전역 floating할 수 있다.
+  resize는 window-level pointer tracking과 우측·하단·모서리 grip을 사용하므로 포인터가
+  grip 밖으로 나가도 계속되며, 다른 workspace로 이동해도 floating 출력이 유지된다.
+- 플로팅 결과는 잘린 header preview 대신 출력 바로 위에 전체 실행 명령을 표시한다.
+  Target 컨텍스트가 있는 Scan/Graph/Service/Tools/Hash/Post 결과에는 하단 operator prompt가
+  나타나며, 명령 제출 시 target/service-bound bare Bash session을 열어 실제 xterm PTY로
+  전환한다. 전환 뒤에는 xterm 자체가 계속 키보드 입력을 받는다.
+- Progress Graph에 `🔑 ACCESS LINEAGE` overlay가 추가됐다. 완료·exit 0인
+  SSH/WMIExec/WinRM/secretsdump RemoteExecution만 Credential→목적 host 재사용 edge와
+  획득 host→목적 host Lateral Access edge로 자동 투영한다. Credential은 계정·유형 badge,
+  lineage는 amber/cyan 방향 화살표로 표시하며 secret은 노출하지 않는다. 다른 Target에서
+  획득한 같은 Project Credential도 Post-Exploitation 실행에 사용할 수 있다.
+- Scan, Service, Graph Execution의 raw stdout은 IP·URL·`80/tcp open http`를 underline
+  Candidate로 표시한다. 클릭/우클릭 메뉴에서 승인해야만 child Graph node 생성,
+  브라우저 열기, ferox/ffuf staging이 실행되며 오탐 Candidate는 자동 저장되지 않는다.
+- Progress Graph 상단에 Time-Machine playhead가 추가됐다. Graph 변경은 동일 fingerprint를
+  제거한 append-only `GraphEvent` snapshot으로 누적되며, 과거 frame은 READ ONLY로 잠근다.
+  선택 frame은 프로젝트별로 복원되고 `RETURN LIVE` 뒤에만 실행·편집을 재개할 수 있다.
 
 ## 검증
 
-- 전체 backend suite: `425 passed` (golden-path 통합 테스트 포함)
-- 전체 frontend Vitest: `88 files / 410 tests` 통과
+- 전체 backend suite: `431 passed` (golden-path 통합 테스트 포함)
+- 전체 frontend Vitest: `91 files / 424 tests` 통과
 - `tsc -b`, Vite production build 통과
 - `npm run test:e2e` (Playwright golden-path): `1 passed`; 래퍼 스크립트는 브라우저
   재설치 단계의 interactive sudo 때문에 이 환경에서 실행하지 못했지만 설치된 Chromium을
   사용한 동일 golden-path는 통과했다.
+- Chrome 라이브 확인: Graph의 `제품·버전 식별` Execution 결과를 분리하고
+  `608×293 → 748×383` resize, frame 저장, Evidence 이동 후 유지까지 확인했다.
+- Chrome 라이브 확인: Scan #29를 floating한 뒤 전체 Nmap 명령 노출, 하단 prompt에서
+  `echo FLOAT_PTY_OK` 실행, 실제 Bash PTY의 명령 echo·stdout·다음 prompt까지 확인했다.
+- Chrome 라이브 확인: 두 host·Credential fixture에서 `CORP\\administrator · WMIEXEC`,
+  `LATERAL · CORP\\administrator` 방향 edge와 `HASH · CAPTURED` badge 렌더를 확인했고
+  secret hint가 Canvas draw stream에 포함되지 않는 것도 검증했다.
+- Chrome 라이브 확인: Graph Execution stdout의 `80/tcp open http`를 클릭해 Smart Action
+  menu와 Graph/browser/ferox·ffuf action을 확인했다. Time-Machine 이전 frame에서 node 수가
+  `5→3`으로 복원되고 READ ONLY 잠금, reload 후 frame 복원, LIVE 복귀까지 확인했다.
 - Chrome 라이브 확인: `localStorage`의 `oscp-workspace-project`를 비운 상태에서도
   헤더와 Progress Graph 본문이 같은 프로젝트를 가리키는지 확인(수정 전에는
   본문만 온보딩 화면으로 빠졌음)

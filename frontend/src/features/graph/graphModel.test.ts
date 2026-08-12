@@ -1,7 +1,15 @@
 import { expect, it } from "vitest";
-import { buildActivityFeed, clampActivityPanel, filterActivityFeed, filterGraph,
+import { buildActivityFeed, clampActivityPanel, credentialBadge, filterActivityFeed, filterGraph,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
   isCrackableCredential, nodeStatusReason, nodeSummary } from "./graphModel";
+
+it("formats a credential overlay without exposing secret material", () => {
+  expect(credentialBadge({type: "credential", label: "administrator",
+    meta: JSON.stringify({domain: "CORP", username: "administrator",
+      credType: "hash", secretHint: "NTLM …8f3a"})})).toEqual({
+    identity: "CORP\\administrator", kind: "HASH",
+  });
+});
 
 it("parses only live graph activity metadata", () => {
   expect(getNodeActivity({ meta: JSON.stringify({ activity: {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api";
+import { DetachableTerminal } from "../../FloatingTerminal";
+import SmartTerminalOutput from "../../SmartTerminalOutput";
 import { parseLinkExtractResults } from "../../serviceIntel";
 import { AddForm, color, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
@@ -10,6 +12,7 @@ import { AddNodeForm } from "./graphLeaves";
 
 export function Inspector(props: {
   node?: GraphNode; links?: DeepLink[]; busy: boolean;
+  projectId?: number;
   executionContext?: { targetId: number; serviceId?: number } | null;
   onOpenRequest?: (draft: GraphRequestDraft) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -154,8 +157,16 @@ export function Inspector(props: {
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
           placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
       </section>
-      {executionId !== null && <section style={S.executionResults} aria-label="실행 결과">
-        <div style={S.terminalTitlebar}>
+      {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
+        label={`${n.label} 실행 결과`}
+        commandContext={target && props.executionContext ? {
+          targetId: props.executionContext.targetId,
+          targetIp: target.ip,
+          serviceId: props.executionContext.serviceId,
+        } : undefined}>
+        <section style={S.executionResults} aria-label="실행 결과">
+        <div style={S.terminalTitlebar} data-terminal-drag-handle
+          title="드래그하여 터미널 분리">
           <span style={S.terminalDots}>
             <i style={{ ...S.terminalDot, background: "#ff5f57" }} />
             <i style={{ ...S.terminalDot, background: "#febc2e" }} />
@@ -181,7 +192,10 @@ export function Inspector(props: {
               {executionOutput.data?.error && <div style={S.resultError}>{executionOutput.data.error}</div>}
               {executionOutput.data?.stdout && <details open={n.label !== "http-link-extract"}>
                 <summary style={S.terminalComment}># stdout</summary>
-                <pre style={S.terminalOutput}>{executionOutput.data.stdout}</pre>
+                <pre style={S.terminalOutput}><SmartTerminalOutput
+                  output={executionOutput.data.stdout} context={{projectId: props.projectId,
+                    targetId: props.executionContext?.targetId, targetIp: target?.ip,
+                    serviceId: props.executionContext?.serviceId}} /></pre>
               </details>}
               {executionOutput.data?.stderr && <details open>
                 <summary style={S.terminalComment}># stderr</summary>
@@ -191,7 +205,8 @@ export function Inspector(props: {
                 && !executionOutput.data?.error && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
             </>}
         </div>
-      </section>}
+        </section>
+      </DetachableTerminal>}
       {executionId !== null && tool === "http-link-extract" && (
         <section style={S.executionResults} aria-label="링크 추출 결과">
           <div style={S.executionResultsHead}>

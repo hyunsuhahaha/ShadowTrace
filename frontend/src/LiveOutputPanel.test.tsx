@@ -21,7 +21,7 @@ it("reports focused run status, error message and outcome", () => {
   expect(screen.getByText(/종료 코드 1/)).toBeTruthy();
   expect(screen.getByText("연결 시간 초과")).toBeTruthy();
   expect(screen.getByText("조사가 완료되지 않았습니다")).toBeTruthy();
-  expect(screen.getByText(/nmap -sV 10.10.10.10/)).toBeTruthy();
+  expect(document.querySelector("pre")?.textContent).toContain("nmap -sV 10.10.10.10");
 });
 
 it("renders a completed ftp-directory-tree run as an expandable tree instead of raw text", () => {

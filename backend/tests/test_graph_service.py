@@ -152,6 +152,73 @@ def test_sync_projects_findings_and_credentials():
     assert finding.label == "Anonymous SMB"
 
 
+def test_sync_projects_successful_credential_reuse_as_access_lineage():
+    from app.models import Credential, RemoteExecution, Target
+    db = database()
+    p = project(db)
+    source = Target(project_id=p.id, name="foothold", ip="10.0.0.10")
+    destination = Target(project_id=p.id, name="dc", ip="10.0.0.20")
+    db.add_all([source, destination]); db.flush()
+    credential = Credential(
+        project_id=p.id, target_id=source.id, username="administrator",
+        domain="CORP", secret_kind="hash", secret_hint="NTLM …8f3a")
+    db.add(credential); db.flush()
+    db.add(RemoteExecution(
+        project_id=p.id, target_id=destination.id, credential_id=credential.id,
+        command_id="windows_config_search", category="config_files",
+        connection="wmiexec", request_key="lineage-1", approval_token_hash="x",
+        argv_json="[]", command_display="impacket-wmiexec CORP/administrator@10.0.0.20",
+        timeout_seconds=30, status="completed", exit_code=0))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
+    edges = db.query(GraphEdge).filter_by(project_id=p.id).all()
+    credential_node = next(node for node in nodes if node.type == "credential")
+    hosts = {json.loads(node.source_ref)["id"]: node for node in nodes
+             if node.type == "host"}
+    reused = next(edge for edge in edges if edge.relation == "reused-credential")
+    lateral = next(edge for edge in edges if edge.relation == "pivoted-to")
+    assert reused.source == credential_node.id
+    assert reused.target == hosts[destination.id].id
+    assert reused.status == "succeeded"
+    assert reused.label == "CORP\\administrator · WMIEXEC"
+    assert json.loads(reused.meta)["remoteExecutionId"]
+    assert lateral.source == hosts[source.id].id
+    assert lateral.target == hosts[destination.id].id
+    assert lateral.label == "LATERAL · CORP\\administrator"
+
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="reused-credential").count() == 1
+    assert db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="pivoted-to").count() == 1
+
+
+def test_sync_does_not_claim_lineage_for_failed_authentication():
+    from app.models import Credential, RemoteExecution, Target
+    db = database()
+    p = project(db)
+    source = Target(project_id=p.id, name="source", ip="10.0.0.10")
+    destination = Target(project_id=p.id, name="destination", ip="10.0.0.20")
+    db.add_all([source, destination]); db.flush()
+    credential = Credential(project_id=p.id, target_id=source.id,
+                            username="alice", secret_kind="password")
+    db.add(credential); db.flush()
+    db.add(RemoteExecution(
+        project_id=p.id, target_id=destination.id, credential_id=credential.id,
+        command_id="linux_config_grep", category="config_files", connection="ssh",
+        request_key="lineage-failed", approval_token_hash="x", argv_json="[]",
+        timeout_seconds=30, status="failed", exit_code=255))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    assert db.query(GraphEdge).filter(GraphEdge.relation.in_([
+        "reused-credential", "pivoted-to"])).count() == 0
+
+
 def test_sync_projects_executions_as_technique_nodes():
     from app.models import Execution, Service, Target
     db = database()

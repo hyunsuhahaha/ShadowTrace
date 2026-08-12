@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { defaultFuzzExtensions, parseFeroxbusterResults } from "./serviceIntel";
 
 export type FuzzExecution = {
@@ -32,6 +32,12 @@ export default function FuzzingPanel({
   const [filter, setFilter] = useState("");
   const [excludeStatus, setExcludeStatus] = useState("");
   const [excludeExt, setExcludeExt] = useState("");
+  const [stagedUrl, setStagedUrl] = useState(() => localStorage.getItem("oscp-smart-fuzz-url") || "");
+  useEffect(() => {
+    const sync = () => setStagedUrl(localStorage.getItem("oscp-smart-fuzz-url") || "");
+    addEventListener("oscp-service-nav", sync);
+    return () => removeEventListener("oscp-service-nav", sync);
+  }, []);
   const fuzzTemplateIds = ["http-directory-fuzz", "http-directory-fuzz-ext"];
   const fuzzRunState = runState && fuzzTemplateIds.includes(runState.templateId) ? runState : undefined;
   const latestFuzz = serviceExecutions
@@ -75,6 +81,7 @@ export default function FuzzingPanel({
           {busy ? "탐색 중…" : "퍼징 시작"}
         </button>
       </div>
+      {stagedUrl && <p className="smartFuzzTarget"><b>STAGED TARGET</b><code>{stagedUrl}</code></p>}
       {!!results.length && (
         <div className="intruderResults">
           <header><div><b>발견된 경로</b><span>{visible.length}/{results.length}개 표시</span></div>

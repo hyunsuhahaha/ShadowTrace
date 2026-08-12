@@ -1310,7 +1310,10 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (!target || !service || !wordlist.trim()) return;
     setRunWithSudo(false);
     const scheme = service.name.toLowerCase().includes("ssl") ? "https" : "http";
-    const base = `feroxbuster -u ${scheme}://${target.hostname || target.ip}:${service.port}/ -w ${wordlist}`;
+    const stagedUrl = localStorage.getItem("oscp-smart-fuzz-url");
+    localStorage.removeItem("oscp-smart-fuzz-url");
+    const fuzzUrl = stagedUrl || `${scheme}://${target.hostname || target.ip}:${service.port}/`;
+    const base = `feroxbuster -u ${fuzzUrl} -w ${wordlist}`;
     void run(extensions
       ? {
           id: "http-directory-fuzz-ext",
@@ -1964,6 +1967,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
             outcome={currentOutcome} output={output} targetIp={target?.ip}
+            projectId={projectId} targetId={target?.id} serviceId={service?.id}
             servicePort={service?.port} protocol={service?.protocol} />
           {interactiveSession && <InteractiveTerminal
             sessionId={interactiveSession.id}

@@ -46,6 +46,16 @@ class GraphOut(BaseModel):
     edges: list[EdgeOut]
 
 
+class GraphEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    kind: str
+    fingerprint: str
+    payload: str
+    occurred_at: datetime
+
+
 class NodeIn(BaseModel):
     type: str
     label: str = ""

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { syncSelectedProject } from "./scanCenterModel";
 import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import CommandReviewModal from "./CommandReviewModal";
+import {DetachableTerminal} from "./FloatingTerminal";
 
 type Project = { id: number; name: string };
 type Target = { id: number; project_id: number; name: string; ip: string; hostname: string };
@@ -303,8 +304,14 @@ export default function ToolsWorkspace() {
             runWithSudo={runWithSudo} onSudo={setRunWithSudo}
             outputFilename={outputFilename} onOutputFilename={setOutputFilename}
             onCancel={() => setReviewOpen(false)} onRun={() => void run()} />
+          <DetachableTerminal id={`tools-output-${selectedRun?.id || targetId || "idle"}`}
+            label={`Tools ${target?.ip || "output"}`}
+            commandContext={targetId && target ? {
+              targetId, targetIp: target.ip, serviceId,
+            } : undefined}>
           <div className="terminal lootTerminal">
-            <div className={`terminalStatus${selectedRun ? ` terminalStatus--${selectedRun.status}` : ""}`}>
+            <div className={`terminalStatus${selectedRun ? ` terminalStatus--${selectedRun.status}` : ""}`}
+              data-terminal-drag-handle title="드래그하여 터미널 분리">
               <span className="termDots" aria-hidden="true">
                 <i className="termDot" /><i className="termDot termDot--yellow" />
                 <i className="termDot termDot--green" />
@@ -318,6 +325,7 @@ export default function ToolsWorkspace() {
             </div>
             <pre>{output}</pre>
           </div>
+          </DetachableTerminal>
         </section>
         <aside className="lootHistory">
           <div className="panelTitle"><span>실행 이력</span></div>

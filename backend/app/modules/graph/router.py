@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...database import get_db
-from ...models import GraphEdge, GraphNode, GraphProjectMeta, Project
+from ...models import GraphEdge, GraphEvent, GraphNode, GraphProjectMeta, Project
 from ...time import utcnow
 from . import service
-from .schemas import (CanonicalPatch, EdgeIn, EdgeOut, EdgePatch, GraphOut,
+from .schemas import (CanonicalPatch, EdgeIn, EdgeOut, EdgePatch, GraphEventOut, GraphOut,
                       NodeIn, NodeOut, NodePatch)
 
 router = APIRouter(prefix="/api", tags=["Graph"])
@@ -49,6 +49,14 @@ def get_graph(project_id: int, db: Session = Depends(get_db)):
     return GraphOut(root_node_id=root.id, nodes=nodes, edges=edges)
 
 
+@router.get("/projects/{project_id}/graph/timeline", response_model=list[GraphEventOut])
+def get_timeline(project_id: int, db: Session = Depends(get_db)):
+    if db.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    return list(db.scalars(select(GraphEvent).where(
+        GraphEvent.project_id == project_id).order_by(GraphEvent.id)))
+
+
 @router.get("/projects/{project_id}/graph/tree")
 def get_tree(project_id: int, db: Session = Depends(get_db)):
     if db.get(Project, project_id) is None:
@@ -71,6 +79,7 @@ def sync_graph(project_id: int, db: Session = Depends(get_db)):
     if db.get(Project, project_id) is None:
         raise HTTPException(404, "project not found")
     result = _guard(lambda: service.sync_from_project(db, project_id))
+    service.record_snapshot(db, project_id)
     db.commit()
     return result
 
@@ -87,6 +96,7 @@ def create_node(project_id: int, body: NodeIn, db: Session = Depends(get_db)):
         meta=body.meta, objective=body.objective,
         objective_kind=body.objective_kind, provenance=body.provenance,
         layer=body.layer))
+    service.record_snapshot(db, project_id)
     db.commit()
     return node
 
@@ -100,6 +110,7 @@ def patch_node(node_id: str, body: NodePatch, db: Session = Depends(get_db)):
     for field, value in updates.items():
         setattr(node, field, value)
     node.updated_at = utcnow()
+    service.record_snapshot(db, node.project_id)
     db.commit()
     return node
 
@@ -115,6 +126,7 @@ def set_canonical(node_id: str, body: CanonicalPatch,
             raise HTTPException(422, "pinned edge must point at this node")
     node.pinned_canonical_edge_id = edge_id
     node.updated_at = utcnow()
+    service.record_snapshot(db, node.project_id)
     db.commit()
     return node
 
@@ -124,10 +136,13 @@ def delete_node(node_id: str, db: Session = Depends(get_db)):
     node = _require_node(db, node_id)
     if node.type == "project-root":
         raise HTTPException(422, "project-root cannot be deleted")
+    project_id = node.project_id
     db.query(GraphEdge).filter(
         (GraphEdge.source == node_id) | (GraphEdge.target == node_id)).delete(
         synchronize_session=False)
     db.delete(node)
+    db.flush()
+    service.record_snapshot(db, project_id)
     db.commit()
     return {"ok": True}
 
@@ -139,6 +154,7 @@ def create_edge(project_id: int, body: EdgeIn, db: Session = Depends(get_db)):
     edge = _guard(lambda: service.create_edge(
         db, project_id, body.source, body.target, body.relation,
         status=body.status, label=body.label, meta=body.meta))
+    service.record_snapshot(db, project_id)
     db.commit()
     return edge
 
@@ -152,6 +168,7 @@ def patch_edge(edge_id: str, body: EdgePatch, db: Session = Depends(get_db)):
     for field, value in updates.items():
         setattr(edge, field, value)
     edge.updated_at = utcnow()
+    service.record_snapshot(db, edge.project_id)
     db.commit()
     return edge
 
@@ -163,6 +180,9 @@ def delete_edge(edge_id: str, db: Session = Depends(get_db)):
     db.query(GraphNode).filter(
         GraphNode.pinned_canonical_edge_id == edge_id).update(
         {GraphNode.pinned_canonical_edge_id: None}, synchronize_session=False)
+    project_id = edge.project_id
     db.delete(edge)
+    db.flush()
+    service.record_snapshot(db, project_id)
     db.commit()
     return {"ok": True}

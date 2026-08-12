@@ -803,3 +803,13 @@ class GraphProjectMeta(Base):
     schema_version: Mapped[int] = mapped_column(Integer, default=1)
     layout: Mapped[str] = mapped_column(Text, default="{}")  # JSON object
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GraphEvent(Base):
+    __tablename__ = "graph_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(40), default="graph-snapshot")
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[str] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

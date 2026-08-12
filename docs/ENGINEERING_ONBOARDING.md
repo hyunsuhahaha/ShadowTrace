@@ -395,7 +395,10 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링 |
 | `LiveOutputPanel.tsx` | 실시간 출력 패널(`D\|`/`F\|` 태그 출력은 파일 트리로 렌더) |
 | `OperatorContext.tsx` | 그래프의 root/host ScanCenter와 service Enumeration이 공유하는 대상 프롬프트·실제 상태 fact·작업 액션 헤더 |
-| `FloatingTerminal.tsx` | AppShell 전역 Scan 실행 터미널 — 헤더 드래그로 패널에서 분리하고 라우트와 무관하게 이동·크기 조절·복원·원위치 도킹 |
+| `FloatingTerminal.tsx` | AppShell 전역 터미널 창 관리자와 `DetachableTerminal` seam — Scan, Graph Execution, Service output, Tools, Hash Cracking, Post-Exploitation, PTY를 헤더 드래그로 분리하고 라우트와 무관하게 이동·3방향 크기 조절·원위치 도킹 |
+| `FloatingCommandSession.tsx` | 플로팅 결과의 전체 실행 명령·target/service-bound 하단 prompt; 입력 시 bare Bash interactive session을 만들고 실제 PTY로 전환 |
+| `PtyTerminal.tsx` | xterm.js + WebSocket으로 실제 서버 PTY를 렌더하고 입력·resize·종료를 중계하는 raw 터미널 뷰 |
+| `SmartTerminalOutput.tsx` | raw stdout의 IP/URL/open service 후보를 파싱하고 승인형 Graph/browser/fuzz smart action을 제공 |
 | `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging |
 
 ### 10.2 `ScanCenter.tsx` — 기본(unmatched) 라우트
@@ -486,7 +489,7 @@ API: `/projects`, `/targets`, `/services/{id}/searchsploit`, `/targets/{id}/wes-
 
 | 하위 컴포넌트 | 역할 |
 |---|---|
-| `InteractiveTerminal.tsx` | xterm.js + WebSocket PTY 뷰어; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용 |
+| `InteractiveTerminal.tsx` | `PtyTerminal`을 `DetachableTerminal`에 연결하는 wrapper; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용 |
 
 ### 10.10 `RunbookWorkspace.tsx` — Runbooks (`#runbooks`)
 
@@ -583,8 +586,22 @@ GraphCanvas/OutlineView/Inspector/AddNodeForm/ProjectOperatorSession 등은
 `features/graph/` 하위 파일로 분리돼 있다. `ProjectOperatorSession.tsx`는 project-root를
 실행기가 아닌 Target·최근 세션 TUI 라우터로 렌더하며, host는 source_ref의 target id를
 `ScanCenter`에 직접 전달한다.
+완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
+host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
+`pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라
+Lateral Access provenance이며 edge meta가 원본 RemoteExecution을 보존한다. Canvas의
+`🔑 ACCESS LINEAGE` overlay는 Credential을 계정·유형 badge로, 두 관계를 방향성 amber/cyan
+화살표로 표시하며 저장된 secret은 그리지 않는다. 실패·timeout·미실행은 lineage가 되지 않는다.
+Scan과 Service raw terminal은 `SmartTerminalOutput.tsx`를 공유한다. IP, URL,
+`port/protocol open service`를 겹치지 않게 파싱해 underline Candidate로 표시하며 사용자가
+메뉴에서 승인한 경우에만 child Graph node 생성, 브라우저 열기 또는 Enumeration의
+ferox/ffuf 폼으로 handoff한다. Candidate는 자동으로 Graph를 수정하지 않는다.
+Graph Time-Machine은 `GraphEvent` append-only snapshot을 사용한다. 동일 fingerprint의
+연속 상태는 저장하지 않고 과거 frame은 읽기 전용으로 렌더한다. 배포 이전 데이터는
+node/edge `created_at` 순서로 fallback 재생한다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
-`/projects/{id}/graph/tree`, `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
+`/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
+`/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
 `/targets`, `/targets/{id}/services`.
 
@@ -642,7 +659,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `executions` | 사용자 확인 명령 실행 API(엔진은 `executor.py`) | (inline, `/api/executions`) | `router.py`(208) |
 | `exploit_research` | 익스플로잇 후보/PoC/WES-NG·LES/로컬 실행 lifecycle | (inline) | `router.py`(885, 백엔드 최대 파일) |
 | `findings` | Finding CRUD, CVSS, 재검증, 증적 링크, 이미지 주석, 템플릿 | `/api`(tags=Findings) | `router.py`(403) |
-| `graph` | Progress Graph 트리/DAG, spec: `docs/SPEC_GRAPH_TRACKER.md` | `/api`(tags=Graph) | `service.py`(371) |
+| `graph` | Progress Graph 트리/DAG, Credential/Access Lineage와 append-only Attack Replay snapshot, spec: `docs/SPEC_GRAPH_TRACKER.md` | `/api`(tags=Graph) | `service.py` |
 | `hash_cracking` | hashcat job lifecycle, 모드 자동 감지, 크랙 결과 → Credential 승격 | `/api/hash-cracking` | `router.py`(276) |
 | `operations` | 전역 검색, DB/프로젝트 export/backup | `/api/operations` | `router.py`(169) |
 | `post_exploitation` | 자격증명 기반 원격 명령 실행(impacket/nxc/evil-winrm류) | `/api/post-exploitation` | `manager.py`(180) |
@@ -707,7 +724,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 |---|---|---|---|
 | `oscp-project-change` | `number`(project id, 0=없음) | `AppShell.tsx`(선택/삭제), `App.tsx`(자체 선택기), `scanCenterModel.ts`의 `syncSelectedProject()`, `GraphWorkspace.tsx`(프로젝트 생성 후) | `AppShell.tsx`(헤더 갱신), `Root.tsx`(`projectRevision`++ → `AppShell` 전체 리마운트), `ScanCenter.tsx`, `RunbookWorkspace.tsx`, `GraphWorkspace.tsx` |
 | `oscp-target-change` | `number`(target id) | `WebWorkspace`, `RunbookWorkspace`, `SessionWorkspace`, `App.tsx`, `PostExploitationWorkspace`, `HashCrackingWorkspace`, `ToolsWorkspace`, `ExploitResearchWorkspace`, `EvidenceWorkspace`, `ScanCenter` — 각자 로컬 대상 선택이 확정될 때마다 | `AppShell.tsx`(헤더의 "현재 Target" 표시) |
-| `oscp-graph-refresh` | 없음(신호만) | `ScanCenter.tsx`(스캔 SSE 완료 직후, 새 서비스가 파싱된 뒤) | `GraphWorkspace.tsx`(`["graph", projectId]` 쿼리 무효화) |
+| `oscp-graph-refresh` | 없음(신호만) | `ScanCenter.tsx`(스캔 SSE 완료 직후), `PostExploitationWorkspace.tsx`(원격 실행 종료 직후) | `GraphWorkspace.tsx`(`["graph", projectId]` 쿼리 무효화) |
 | `oscp-service-nav` | 없음(payload는 `pendingServiceNav.ts` 모듈 상태) | `CommandPalette.tsx`, `GraphWorkspace.tsx`(service 노드 선택/딥링크) | `App.tsx`(`consumePendingServiceNav()`로 target/service 이동, 마운트 시에도 1회 소비) |
 | `oscp-graph-focus` | 없음(payload는 `pendingGraphFocus.ts` 모듈 상태) | `pendingGraphFocus.ts`의 `focusInGraph()`(다른 워크스페이스의 "그래프에서 보기" 버튼이 호출) | `GraphWorkspace.tsx`(`consumePendingGraphFocus()`로 노드 선택+포커스) |
 
@@ -718,12 +735,14 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-workspace-project` | project id(문자열) | 활성 프로젝트의 단일 source of truth. 거의 모든 워크스페이스가 마운트 시 읽고, 프로젝트 삭제 시 제거됨 |
 | `oscp-sidebar-width` | 사이드바 px(184–420 clamp) | `AppShell.tsx` 사이드바 리사이즈 유지 |
 | `oscp-sidebar-collapsed` | `"true"`/`"false"` | `AppShell.tsx` 사이드바 접힘 상태 |
-| `oscp-floating-scan-terminal` / `oscp-floating-terminal-frame` | JSON 세션 메타 / `{x,y,width,height}` | 워크스페이스 전역 플로팅 Scan 터미널과 배치·크기 복원 |
+| `oscp-floating-scan-terminal` / `oscp-floating-terminal-frame` | JSON Scan 세션 메타 / `{x,y,width,height}` | Scan 세션 reload 복원과 모든 전역 플로팅 터미널의 마지막 배치·크기 복원(일반 출력 내용은 민감정보·용량 때문에 localStorage에 저장하지 않음) |
 | `oscp-scan-dock` | JSON `{scanId,targetId}` | 플로팅 터미널 원위치 복귀 시 Scan Center 1회성 선택 핸드오프 |
 | `oscp-graph-pane` | Progress Graph 우측 패널 px(최소 320) | `GraphWorkspace.tsx` 리사이즈 유지 |
 | `oscp-graph-view` / `oscp-graph-activity-panel` | 보기 모드 / JSON `{x,y,width,height,collapsed}` | Graph/Tree/Outline 선택과 Activity Stream 배치·크기·접힘 유지 |
 | `oscp-graph-selected` / `oscp-graph-camera:<root>:<mode>` | node id / JSON `{panX,panY,zoom,positions}` | 선택 노드와 프로젝트·레이아웃별 Canvas 작업 위치 복원 |
+| `oscp-graph-replay:<projectId>` | epoch milliseconds | Time-Machine에서 선택한 읽기 전용 frame 복원; LIVE 복귀 시 삭제 |
 | `oscp-web-launch` | JSON `{targetId, serviceId, url}` | Enumeration/Graph → Web Testing "이 URL 열기" 1회성 핸드오프, 소비 후 제거 |
+| `oscp-smart-fuzz-url` | URL 문자열 | terminal Smart Action → Service Enumeration ferox/ffuf target 1회성 handoff |
 | `oscp-crack-form-width` / `oscp-crack-history-width` | px | `HashCrackingWorkspace.tsx` 폼/이력 컬럼 리사이즈 |
 | `oscp-workspace-hash-target` / `-mode` / `-value` | target id / hashcat 모드 / 해시 문자열 | `App.tsx`(Kerberoast/AS-REP/DCSync/NTLM 버튼) → `HashCrackingWorkspace.tsx` 1회성 핸드오프, 소비 후 제거 |
 | `oscp-workspace-hash-label` | 자유 텍스트 라벨 | `App.tsx`가 기록하지만 읽는 곳이 없음(사실상 죽은 write) |
@@ -739,7 +758,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 
 ## 13. CSS 파일 구성
 
-`frontend/src/`의 25개 CSS 중 대부분은 `main.tsx`가 전역으로 불러오고, 일부만 소유
+`frontend/src/`의 CSS 중 대부분은 `main.tsx`가 전역으로 불러오고, 일부만 소유
 컴포넌트가 직접 import한다.
 
 | 파일 | Import 위치 | 담당 영역 |
@@ -752,7 +771,9 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `enumeration-enhanced.css` | `main.tsx` | Service Enumeration(`App.tsx`) 추가 위젯 |
 | `execution.css` | `main.tsx` | 실행/터미널 chrome(Enumeration과 공유) |
 | `execution-review.css` | `main.tsx` | Scan/서비스/도구 명령 실행 전 staging review 모달 |
-| `floating-terminal.css` | `FloatingTerminal.tsx` | AppShell 전역 플로팅 Scan 터미널 이동·크기 조절 chrome |
+| `floating-terminal.css` | `FloatingTerminal.tsx` | AppShell 전역 플로팅 터미널 이동·우측/하단/모서리 크기 조절 chrome |
+| `smart-terminal.css` | `SmartTerminalOutput.tsx` | stdout token underline, Smart Action command menu, staged fuzz target |
+| `features/graph/graph-time-machine.css` | `GraphTimeMachine.tsx` | Graph replay playhead, LIVE/READ-ONLY 상태 |
 | `features/graph/project-operator-session.css` | `ProjectOperatorSession.tsx` | project-root의 Target router·최근 세션 TUI |
 | `service-intelligence.css` | `App.tsx` | `ServiceIntelligencePanel` |
 | `web.css` | `main.tsx` | Web Testing 기본 레이아웃 |

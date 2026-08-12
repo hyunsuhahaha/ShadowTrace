@@ -7,6 +7,7 @@ import ScanProfileComposer from "./ScanProfileComposer";
 import ScanJobStatus from "./ScanJobStatus";
 import ScanHistoryPanel from "./ScanHistoryPanel";
 import {useFloatingTerminal} from "./FloatingTerminal";
+import SmartTerminalOutput from "./SmartTerminalOutput";
 import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import {
   bytes, elapsed, get, selectVisibleScan, syncSelectedProject, terminal, toolProfileGroups,
@@ -279,7 +280,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     if (!start || !selected || !target || !transcriptPanel.current) return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) return;
     floatScan({
-      scanId: selected.id, targetId: target.id, targetIp: target.ip,
+      scanId: selected.id, projectId: target.project_id, targetId: target.id, targetIp: target.ip,
       command: selected.command, source: selected.source, status: selected.status,
       exitCode: selected.exit_code, linkType: vpnStatus.data?.link_type || "local",
       initialOutput: output,
@@ -602,9 +603,9 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
                 : streamState === "disconnected" ? "LINK LOST" : "IDLE"}</em>
             </div>
             <pre ref={transcript} tabIndex={0} aria-label="스캔 세션 출력">
-              <code>{output}</code>
-              {selected && ["queued", "running", "processing"].includes(selected.status) &&
-                <i className="scanTranscript__cursor" aria-hidden="true" />}
+              <SmartTerminalOutput output={output} context={{projectId: effectiveProjectId,
+                targetId: target?.id, targetIp: target?.ip}}
+                cursor={!!selected && ["queued", "running", "processing"].includes(selected.status)} />
             </pre>
             <footer className="scanTranscript__footer">
               <span>{selected ? `SESSION #${selected.id}` : "NO SESSION"}</span>

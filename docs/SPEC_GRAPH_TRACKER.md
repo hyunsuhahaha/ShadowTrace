@@ -143,13 +143,14 @@
 | `enumerated` | (service\|host) → (finding\|credential) | ✔ | 열거로 finding/크리덴셜 도출(host-level 관찰·설정파일 크리덴셜 포함) |
 | `attempted` | (finding\|service\|host) → technique | ✔ | 기법 시도(finding 대상 익스플로잇, 또는 서비스/호스트에 직접 실행) |
 | `yielded` | technique → (credential\|host\|service\|finding) | ✔ | 시도 결과 산출물(성공의 구조적 자식) |
-| `pivoted-to` | host → host | ✔ | 내부망 이동(lateral movement). 새 호스트를 pivot 호스트 아래로 중첩 |
+| `pivoted-to` | host → host | ✔ | 호스트 간 Lateral Access. 관계명은 호환성을 위해 유지하며 실제 network pivot 여부는 meta/evidence로 구분 |
 | `reused-credential` | credential → (host\|service) | ✘ | 크리덴셜 재사용(cross-cutting) |
 | `blocked-by` | (technique\|finding) → (node) | ✘ | 진행 차단 원인(cross-cutting) |
 
-> **`pivoted-to` vs `reused-credential`** — 둘 다 호스트를 넘나들지만 성격이 다르다. pivot은 **골격**(structural)으로
-> 트리·Attack Path에서 내부 호스트를 부모 호스트 아래 중첩시킨다(OSCP 리포트가 실제 서술하는 방식). 반면 호스트 간
-> 크리덴셜 재사용은 **cross-cutting 참조**로 남겨 `↗`로만 표현한다. 이 구분이 3-뷰 전체의 구조를 결정한다.
+> **`pivoted-to` vs `reused-credential`** — `pivoted-to`는 host→host의 구조적 Lateral Access,
+> `reused-credential`은 어떤 Credential이 목적 host/service를 열었는지 보여주는 cross-cutting 참조다.
+> Credential이 source host에서 발견됐다는 사실만으로 트래픽이 그 host를 경유했다고 주장하지 않는다. 실제 network
+> Pivot은 Tunnel/Proxy Evidence가 있을 때만 그렇게 표시한다.
 
 > `succeeded`/`failed`를 **별도 relation으로 두지 않는다.** 성공/실패는 `attempted` 엣지의
 > `status` 값(`succeeded`\|`attempt-failed`)으로 표현한다. 성공 시 산출물이 있으면 별도
@@ -606,6 +607,7 @@ GET    /api/projects/{pid}/graph/export          # JSON export
 POST   /api/projects/{pid}/graph/import          # JSON import(검증)
 GET    /api/projects/{pid}/graph/report-outline?format=md|json|toc
 POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 투영 동기화(6.1)
+GET    /api/projects/{pid}/graph/timeline        # append-only Graph Snapshot replay frames
 ```
 
 ### 6.1 기존 도메인 → 그래프 투영(sync)
@@ -615,6 +617,9 @@ POST   /api/projects/{pid}/graph/sync            # 기존 도메인→그래프 
 - **Execution은 자동으로 technique 노드로 투영한다(Q4 — 재결정).** `attempted`(서비스/호스트→technique)로 부착하며
   provenance에 `executionRef`+MITRE를 스탬프한다. **단 성공 여부는 자동 판정하지 않는다**(제품 원칙): 완료된 명령을
   `succeeded`로 찍지 않고 중립(`in-progress`)으로 두며 기술적 실패/중단만 `attempt-failed`. 성패는 사용자가 표시한다.
+- **Credential 기반 RemoteExecution은 좁은 예외다.** SSH/WMIExec/WinRM/secretsdump가 `completed + exit 0`이면
+  인증 성공을 직접 입증하므로 Credential→목적 host `reused-credential`과 획득 host→목적 host `pivoted-to`를
+  `succeeded`로 투영한다. 실패·timeout·추천·준비 상태는 Access Lineage를 만들지 않는다.
 - **클러터는 억제가 아니라 per-node `hidden`으로 관리한다.** 자동 노드화로 그래프가 붐비면 사용자가 노드를 숨길 수 있고
   (`hidden=true`), 숨긴 노드는 Graph/Outline/Attack Path에서 빠진다. 노드는 여전히 존재하므로 **sync가 되살리지 않는다**
   (삭제와 다름). 이는 NodeZero의 "POC 그래프는 전부 저장, v3/v4는 가지치기 렌더" 패턴과 같은 접근이다.

@@ -123,8 +123,8 @@ def create_manual_terminal(
     body: ManualTerminalIn, db: Session = Depends(get_db)
 ):
     target = need(db, Target, body.target_id)
-    service = need(db, Service, body.service_id)
-    if service.target_id != target.id:
+    service = need(db, Service, body.service_id) if body.service_id else None
+    if service and service.target_id != target.id:
         raise HTTPException(400, "Service does not belong to target")
     project = need(db, Project, target.project_id)
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
@@ -145,7 +145,7 @@ def create_manual_terminal(
             raise HTTPException(409, "sudo is not installed")
         command = shlex.join(["sudo", *argv])
     row = InteractiveSession(
-        target_id=target.id, service_id=service.id,
+        target_id=target.id, service_id=service.id if service else None,
         template_id="manual-shell", command=command,
         cwd=str(target_dir), status="ready",
     )

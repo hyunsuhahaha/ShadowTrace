@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, filterActivityFeed, getNodeActivity,
-  GLYPH, GraphNode, GraphOut, GraphPosition, initialGraphPosition,
+  credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition, initialGraphPosition,
   initialGraphPositionNearParent, NodeActivity, nodeStatusReason, nodeSummary,
   readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
 
 export function GraphCanvas(props: {
-  data: GraphOut; hostCount: number; showHidden: boolean;
+  data: GraphOut; hostCount: number; showHidden: boolean; credentialOverlay: boolean;
   selected: string | null; onSelect: (id: string) => void;
   focus: { id: string; nonce: number } | null;
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
@@ -59,7 +59,9 @@ export function GraphCanvas(props: {
     let dragging: Sim | null = null, hover: Sim | null = null;
 
     const visible = (n: GraphNode) =>
-      !(hideRoot && n.type === "project-root") && (showHidden || !n.hidden);
+      !(hideRoot && n.type === "project-root")
+      && (props.credentialOverlay || n.type !== "credential")
+      && (showHidden || !n.hidden);
     const cached = positions.current[props.layoutMode];
     const parentByNode = new Map(data.edges.map((edge) => [edge.target, edge.source]));
     const retained = new Set(data.nodes.filter((node) => cached.has(node.id)).map((node) => node.id));
@@ -72,7 +74,9 @@ export function GraphCanvas(props: {
     const stabilizationEnds = retained.size && retained.size < nodes.length
       ? performance.now() + 700 : 0;
     const index = new Map(nodes.map((n) => [n.id, n]));
-    const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target));
+    const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target)
+      && (props.credentialOverlay
+        || !["reused-credential", "pivoted-to"].includes(e.relation)));
     const structural = new Set(["discovered", "enumerated", "attempted", "yielded",
       "pivoted-to", "operates", "runs"]);
     const depths = new Map<string, number>([[anchorId || "", 0]]);
@@ -216,15 +220,19 @@ export function GraphCanvas(props: {
         const edgeSignal = edgeKind ? signalHex(edgeKind) : signal;
         const hot = !!hover && (e.source === hover.id || e.target === hover.id);
         const struct = structural.has(e.relation);
+        const credentialUse = e.relation === "reused-credential";
+        const lateral = e.relation === "pivoted-to" && edge.status === "succeeded";
+        const lineageColor = credentialUse ? "#e3b341" : lateral ? "#55d6e8" : "";
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
         if (struct) { ctx.lineTo(b.x, b.y); ctx.setLineDash([]); }
         else {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
-        ctx.strokeStyle = edgeKind ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
-          : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45";
-        ctx.lineWidth = active ? 1.35 : hot ? 2 : 1;
+        ctx.strokeStyle = lineageColor || (edgeKind
+          ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
+          : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45");
+        ctx.lineWidth = lineageColor ? 1.8 : active ? 1.35 : hot ? 2 : 1;
         ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
         if (active && !reduceMotion) {
@@ -247,6 +255,29 @@ export function GraphCanvas(props: {
           ctx.textAlign = "center"; ctx.textBaseline = "bottom";
           ctx.fillText("AUTH CAPTURE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 7);
         }
+        if (lineageColor) {
+          const controlX = (a.x + b.x) / 2, controlY = (a.y + b.y) / 2 - 34;
+          const angle = credentialUse
+            ? Math.atan2(b.y - controlY, b.x - controlX)
+            : Math.atan2(b.y - a.y, b.x - a.x);
+          const tipX = b.x - Math.cos(angle) * 30;
+          const tipY = b.y - Math.sin(angle) * 30;
+          ctx.beginPath(); ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX - Math.cos(angle - .5) * 9, tipY - Math.sin(angle - .5) * 9);
+          ctx.lineTo(tipX - Math.cos(angle + .5) * 9, tipY - Math.sin(angle + .5) * 9);
+          ctx.closePath(); ctx.fillStyle = lineageColor; ctx.fill();
+          const label = edge.label || (credentialUse ? "CREDENTIAL REUSE" : "LATERAL ACCESS");
+          ctx.font = "600 8px ui-monospace,monospace";
+          const labelWidth = Math.min(190, ctx.measureText(label).width + 12);
+          const labelX = (a.x + b.x) / 2, labelY = (a.y + b.y) / 2 - 10;
+          ctx.fillStyle = "rgba(5,9,8,.92)";
+          ctx.fillRect(labelX - labelWidth / 2, labelY - 10, labelWidth, 16);
+          ctx.strokeStyle = lineageColor; ctx.lineWidth = 1;
+          ctx.strokeRect(labelX - labelWidth / 2, labelY - 10, labelWidth, 16);
+          ctx.fillStyle = lineageColor; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(label.length > 30 ? `${label.slice(0, 29)}…` : label,
+            labelX, labelY - 2, labelWidth - 8);
+        }
       }
       for (const n of nodes) {
         const current = latestNodes.current.get(n.id) ?? n;
@@ -265,6 +296,30 @@ export function GraphCanvas(props: {
         const isOperator = n.type === "operator";
         const r = isRoot ? 40 : isAnchor ? 38 : isHost || isOperator ? 26 : 19;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
+        const credential = credentialBadge(current);
+        if (credential) {
+          ctx.font = "600 9px ui-monospace,monospace";
+          const width = Math.max(112, Math.min(190,
+            Math.max(ctx.measureText(credential.identity).width + 36,
+              ctx.measureText(credential.kind).width + 36)));
+          const height = 38, x = n.x - width / 2, y = n.y - height / 2;
+          ctx.save();
+          ctx.shadowColor = isSel ? "#fff" : "#e3b341";
+          ctx.shadowBlur = isSel ? 18 : 8;
+          ctx.fillStyle = "#111006"; ctx.fillRect(x, y, width, height);
+          ctx.restore();
+          ctx.strokeStyle = isSel ? "#fff" : "#806b31";
+          ctx.lineWidth = isSel ? 2 : 1; ctx.strokeRect(x, y, width, height);
+          ctx.fillStyle = "#e3b341"; ctx.font = "13px sans-serif";
+          ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🔑", x + 9, n.y);
+          ctx.fillStyle = "#e8dfc7"; ctx.font = "600 9px ui-monospace,monospace";
+          ctx.fillText(credential.identity.length > 24
+            ? `${credential.identity.slice(0, 23)}…` : credential.identity, x + 30, n.y - 6);
+          ctx.fillStyle = "#8f8157"; ctx.font = "7px ui-monospace,monospace";
+          ctx.fillText(`${credential.kind} · CAPTURED`, x + 30, n.y + 8);
+          ctx.globalAlpha = 1;
+          continue;
+        }
         if (activity && signalKind === "connected") {
           // Settled, not searching: two slow ease-out rings breathing outward,
           // no rotation -- the opposite motion language from the scan sweep,
@@ -399,6 +454,8 @@ export function GraphCanvas(props: {
     };
     const nodeAt = (x: number, y: number) => {  // x,y are world coords
       for (const n of nodes) {
+        if (n.type === "credential"
+            && Math.abs(n.x - x) <= 95 && Math.abs(n.y - y) <= 20) return n;
         const rr = n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18;
         if (Math.hypot(n.x - x, n.y - y) < rr) return n;
       }
@@ -467,7 +524,8 @@ export function GraphCanvas(props: {
       removeEventListener("keydown", onKey);
       removeEventListener("beforeunload", saveWorkspace);
     };
-  }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden, props.layoutMode]);
+  }, [nodeSet, edgeSet, anchorId, hideRoot, showHidden,
+    props.credentialOverlay, props.layoutMode]);
 
   const activity = buildActivityFeed(data);
 

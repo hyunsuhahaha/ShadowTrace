@@ -98,3 +98,19 @@ def test_attack_paths_endpoint_returns_paths_and_summary():
     res = api.get_attack_paths(p.id, db)
     assert res["paths"] == []
     assert res["summary"]["steps"] == 0 and res["summary"]["objectivesReached"] == 0
+
+
+def test_timeline_records_changed_graph_states_without_duplicate_sync_frames():
+    db = database()
+    p = project(db)
+    api.sync_graph(p.id, db)
+    first = api.get_timeline(p.id, db)
+    assert len(first) == 1
+
+    api.sync_graph(p.id, db)
+    assert len(api.get_timeline(p.id, db)) == 1
+
+    api.create_node(p.id, NodeIn(type="finding", label="manual observation"), db)
+    frames = api.get_timeline(p.id, db)
+    assert len(frames) == 2
+    assert "manual observation" in frames[-1].payload

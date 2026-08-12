@@ -2,6 +2,8 @@ import type {RunState} from "./enumerationModel";
 import type {ExecutionSummary} from "./serviceIntel";
 import {statusCopy as statusLabel} from "./ui";
 import {buildFileTree, FileTreeView, parseTaggedTreeLines} from "./fileTree";
+import {DetachableTerminal} from "./FloatingTerminal";
+import SmartTerminalOutput from "./SmartTerminalOutput";
 
 // Commands whose captured output is D|/F|-tagged tree lines (see
 // backend/app/ftp_tree.py) instead of plain text -- rendered as an
@@ -13,14 +15,19 @@ const treeTemplateIds = new Set([
   "snmp-oid-tree", "mongodb-db-tree", "docker-api-tree",
 ]);
 
-export default function LiveOutputPanel({run, elapsed, outcome, output, targetIp = "target",
-  servicePort, protocol = "tcp"}: {
+export default function LiveOutputPanel({run, elapsed, outcome, output, projectId, targetId, serviceId,
+  targetIp = "target", servicePort, protocol = "tcp"}: {
   run?: RunState; elapsed: number; outcome: ExecutionSummary | null; output: string;
-  targetIp?: string; servicePort?: number; protocol?: string;
+  projectId?: number; targetId?: number; serviceId?: number; targetIp?: string;
+  servicePort?: number; protocol?: string;
 }) {
   const closed = !!run && !["starting", "running"].includes(run.status);
-  return <div className={`terminal terminal--attached${run ? "" : " is-idle"}`}>
-    <div className={`terminalStatus${run ? ` terminalStatus--${run.status}` : ""}`}>
+  return <DetachableTerminal id={`service-output-${run?.id || `${targetIp}-${servicePort || 0}`}`}
+    label={`${targetIp}${servicePort ? `:${servicePort}` : ""} 실행 출력`}
+    commandContext={targetId ? {targetId, targetIp, serviceId} : undefined}>
+    <div className={`terminal terminal--attached${run ? "" : " is-idle"}`}>
+    <div className={`terminalStatus${run ? ` terminalStatus--${run.status}` : ""}`}
+      data-terminal-drag-handle title="드래그하여 터미널 분리">
       <span className="termDots" aria-hidden="true">
         <i className="termDot" /><i className="termDot termDot--yellow" />
         <i className="termDot termDot--green" />
@@ -50,10 +57,11 @@ export default function LiveOutputPanel({run, elapsed, outcome, output, targetIp
     {run && treeTemplateIds.has(run.templateId) && run.status === "completed" ? (
       <FileTreeView node={buildFileTree(parseTaggedTreeLines(output), "/")} />
     ) : (
-      <pre>{output}</pre>
+      <pre><SmartTerminalOutput output={output} context={{projectId, targetId, targetIp, serviceId}} /></pre>
     )}
     <footer className="attachedTerminal__footer"><span>{run ? `EXECUTION #${run.id || "pending"}` : "NO SESSION"}</span>
       <span>{run?.exitCode == null ? "stdout / stderr" : `EXIT ${run.exitCode}`}</span>
       <strong>{run ? (closed ? "CLOSED" : "ATTACHED") : "IDLE"}</strong></footer>
-  </div>;
+    </div>
+  </DetachableTerminal>;
 }

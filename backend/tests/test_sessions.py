@@ -151,6 +151,18 @@ def test_manual_terminal_defaults_to_a_bare_shell_when_no_command_is_given(
     assert row.command == "/bin/bash --noprofile --norc"
 
 
+def test_manual_terminal_opens_a_target_level_shell_without_a_service(
+        tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+
+    row = create_manual_terminal(ManualTerminalIn(target_id=box.id), db=db)
+
+    assert row.target_id == box.id
+    assert row.service_id is None
+    assert row.command == "/bin/bash --noprofile --norc"
+
+
 def test_manual_terminal_runs_the_given_safe_command_for_a_desktop_launch(
         tmp_path, monkeypatch):
     # evil-winrm without -p prompts "Enter Password:" itself once the
@@ -343,4 +355,3 @@ def test_desktop_launch_requires_expect_when_a_secret_needs_typing(tmp_path, mon
         launch_interactive_session_in_desktop(
             row.id, BackgroundTasks(), body=DesktopLaunchIn(type_after="hunter2"), db=db)
     assert exc.value.status_code == 409
-

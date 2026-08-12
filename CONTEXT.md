@@ -37,6 +37,38 @@ _Avoid_: Artifact
 사용자가 대상과 최종 명령을 확인하고 승인한 한 번의 명령 수행 기록입니다.
 _Avoid_: Automation, Job
 
+## Access Lineage
+
+**Credential**:
+Target 또는 Service에서 획득하거나 사용자가 기록한 인증 수단입니다. 화면의 계정·유형
+표시는 가능하지만 저장된 비밀값 자체는 lineage가 아닙니다.
+_Avoid_: Password, Account
+
+**Access Lineage**:
+Credential을 어디서 획득했고, 그 Credential로 어느 Target 인증에 성공했는지를 연결한
+증거 기반 경로입니다. 추천이나 실패한 인증 시도는 포함하지 않습니다.
+_Avoid_: Suggested Path, Possible Attack Path
+
+**Lateral Access**:
+한 Target에서 획득한 Credential로 다른 Target 인증에 성공한 관계입니다. 트래픽이 원본
+Target을 경유했다는 뜻은 아닙니다.
+_Avoid_: Pivot
+
+**Pivot**:
+Tunnel이나 프록시처럼 한 Target을 실제 네트워크 경유점으로 사용한 관계입니다.
+Credential 재사용만으로 Pivot이라고 부르지 않습니다.
+_Avoid_: Lateral Access, Credential Reuse
+
+**Terminal Candidate**:
+명령 stdout에서 IP, URL 또는 open Service 형태로 탐지됐지만 아직 사용자가 승인하지 않은
+다음 행동 후보입니다. Candidate 자체는 Graph나 Evidence를 변경하지 않습니다.
+_Avoid_: Finding, Auto-discovered Node
+
+**Attack Replay**:
+append-only Graph Snapshot을 시간순으로 재생하는 읽기 전용 과거 상태입니다. 과거 시점에서
+명령 실행이나 Graph 편집은 허용하지 않으며 LIVE로 복귀해야 작업을 계속할 수 있습니다.
+_Avoid_: Undo, Rollback
+
 ## Runbooks
 
 **Runbook Template**:

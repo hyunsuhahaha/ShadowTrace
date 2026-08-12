@@ -11,6 +11,7 @@ import { AddNodeForm, Empty, NodeQuickMenu, OnboardingPane, Tab, TaskQueue }
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 import { GraphCanvas } from "./GraphCanvas";
+import GraphTimeMachine, {graphAt, type GraphTimelineEvent} from "./GraphTimeMachine";
 import ProjectOperatorSession from "./ProjectOperatorSession";
 import { ActivityItem, ActivityKind, ActivityPanelState, ActivityStatusFilter,
   ACTIVITY_PANEL_KEY, AddForm, ADD_TYPES, buildActivityFeed, clampActivityPanel,
@@ -53,6 +54,8 @@ export default function GraphWorkspace() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [credentialOverlay, setCredentialOverlay] = useState(true);
+  const [replayAt, setReplayAt] = useState<number | null>(null);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [webRequest, setWebRequest] = useState<GraphRequestDraft | null>(null);
@@ -66,6 +69,20 @@ export default function GraphWorkspace() {
   useEffect(() => {
     localStorage.setItem("oscp-graph-pane", String(paneWidth));
   }, [paneWidth]);
+  useEffect(() => {
+    if (!projectId) { setReplayAt(null); return; }
+    const saved = Number(localStorage.getItem(`oscp-graph-replay:${projectId}`));
+    setReplayAt(saved > 0 ? saved : null);
+  }, [projectId]);
+  const changeReplay = (value: number | null) => {
+    setReplayAt(value);
+    if (!projectId) return;
+    const key = `oscp-graph-replay:${projectId}`;
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
+    setContextMenu(null);
+    setAddOpen(false);
+  };
   // A scan (or other workspace) finished producing rows -> re-sync the graph so
   // the new services/findings appear as nodes. Structural sharing keeps the
   // reference stable when nothing changed, so this won't reflow spuriously.
@@ -109,6 +126,7 @@ export default function GraphWorkspace() {
   const invalidateGraph = () => {
     queryClient.invalidateQueries({ queryKey: ["graph", projectId] });
     queryClient.invalidateQueries({ queryKey: ["graphTree", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["graphTimeline", projectId] });
   };
   const setHidden = useMutation({
     mutationFn: (v: { id: string; hidden: boolean }) =>
@@ -167,6 +185,11 @@ export default function GraphWorkspace() {
     queryKey: ["graphTree", projectId, graph.dataUpdatedAt],
     enabled: !!projectId && graph.isSuccess,
     queryFn: () => api<TreeNode>(`/projects/${projectId}/graph/tree`),
+  });
+  const timeline = useQuery({
+    queryKey: ["graphTimeline", projectId, graph.dataUpdatedAt],
+    enabled: !!projectId && graph.isSuccess,
+    queryFn: () => api<GraphTimelineEvent[]>(`/projects/${projectId}/graph/timeline`),
   });
 
   const nodeById = useMemo(() => {
@@ -324,11 +347,13 @@ export default function GraphWorkspace() {
     edges: [],
   };
   const data = noProject ? SYNTHETIC : graph.data!;
-  const visibleData = filterGraph(data, filter, selected);
-  const hostCount = data.nodes.filter((n) => n.type === "host" && !n.hidden).length;
+  const replayData = graphAt(data, noProject ? null : replayAt, timeline.data);
+  const replayNodeById = new Map(replayData.nodes.map((node) => [node.id, node]));
+  const visibleData = filterGraph(replayData, filter, selected);
+  const hostCount = replayData.nodes.filter((n) => n.type === "host" && !n.hidden).length;
   const hiddenCount = data.nodes.filter((n) => n.hidden).length;
   const selectedNode = selected
-    ? (noProject ? data.nodes.find((n) => n.id === selected) : nodeById.get(selected))
+    ? replayNodeById.get(selected)
     : undefined;
   const selectedTargetId = selectedNode?.type === "host" && selectedNode.source_ref
     ? (() => { try {
@@ -344,7 +369,7 @@ export default function GraphWorkspace() {
           <Tab on={view === "tree"} onClick={() => setView("tree")}>트리</Tab>
           <Tab on={view === "outline"} onClick={() => setView("outline")}>Outline</Tab>
         </div>
-        {selectedNode && !noProject && (
+        {selectedNode && !noProject && replayAt == null && (
           <button onClick={() => setAddOpen(true)} style={S.hiddenChip}
             title={`${selectedNode.label} 아래에 노드 추가`}>
             ＋ 노드 추가
@@ -367,6 +392,8 @@ export default function GraphWorkspace() {
           ))}
         </div>
       </div>
+      {!noProject && <GraphTimeMachine data={data} events={timeline.data}
+        timestamp={replayAt} onChange={changeReplay} />}
       <div style={S.graphTools}>
         <label style={S.graphSearch}><span>⌕</span><input aria-label="그래프 검색"
           style={S.graphSearchInput}
@@ -389,6 +416,11 @@ export default function GraphWorkspace() {
           <option value={2}>선택 주변 2단계</option><option value={3}>선택 주변 3단계</option></select>
         <button style={{ ...S.graphControl, ...(filter.pinnedOnly ? S.toolActive : {}) }}
           onClick={() => setFilter({ ...filter, pinnedOnly: !filter.pinnedOnly })}>★ 북마크</button>
+        <button style={{ ...S.graphControl, ...(credentialOverlay ? S.credentialOverlayActive : {}) }}
+          aria-pressed={credentialOverlay}
+          onClick={() => setCredentialOverlay((value) => !value)}>
+          🔑 ACCESS LINEAGE
+        </button>
         <button style={S.graphControl} onClick={() => setFilter({ query: "", type: "all", status: "all",
           focusDepth: 0, pinnedOnly: false })}>필터 초기화</button>
         <button style={S.graphControl} onClick={() => setQueueOpen((value) => !value)}>작업 큐</button>
@@ -397,8 +429,9 @@ export default function GraphWorkspace() {
       <div style={S.stage}>
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
+            credentialOverlay={credentialOverlay}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
-            onContext={(id, x, y) => setContextMenu({ id, x, y })}
+            onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
@@ -407,7 +440,16 @@ export default function GraphWorkspace() {
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
         <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
           minWidth: 0, minHeight: 0, containerType: "inline-size", containerName: "graph-pane" }}>
-          {reportPanel ? (
+          {replayAt != null ? (
+            <div style={S.inspector}>
+              <div className="graphReplayLock"><b>TIME-MACHINE · READ ONLY</b>
+                <span>{new Date(replayAt).toLocaleString("ko-KR")}</span>
+                <p>이 시점의 그래프를 복원했습니다. 명령 실행과 노드 편집은 LIVE로 돌아간 뒤 사용할 수 있습니다.</p>
+                {selectedNode && <code>{GLYPH[selectedNode.type]} {nodeSummary(selectedNode)}</code>}
+                <button type="button" onClick={() => changeReplay(null)}>RETURN LIVE ↵</button>
+              </div>
+            </div>
+          ) : reportPanel ? (
             <div style={S.embedPane}><Suspense fallback={<Empty text="Findings 불러오는 중…" />}>
               <EmbeddedReports embedded initialProjectId={projectId || undefined}
                 onBack={() => setReportPanel(false)} />
@@ -449,7 +491,8 @@ export default function GraphWorkspace() {
               </Suspense>
             </div>
           ) : (
-            <Inspector node={selectedNode} links={selected ? deepLinks(selected) : []}
+            <Inspector node={selectedNode} projectId={projectId || undefined}
+              links={selected ? deepLinks(selected) : []}
               executionContext={executionHandoff(selected)}
               onOpenRequest={(draft) => {
                 setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
@@ -462,11 +505,11 @@ export default function GraphWorkspace() {
           )}
         </div>
       </div>
-      {queueOpen && <TaskQueue nodes={data.nodes} onClose={() => setQueueOpen(false)}
+      {replayAt == null && queueOpen && <TaskQueue nodes={data.nodes} onClose={() => setQueueOpen(false)}
         onSelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
         onStatus={(id, status) => setStatus.mutate({ id, status })}
         onAdd={() => selectedNode && setAddOpen(true)} canAdd={!!selectedNode} />}
-      {contextMenu && nodeById.get(contextMenu.id) && <NodeQuickMenu
+      {replayAt == null && contextMenu && nodeById.get(contextMenu.id) && <NodeQuickMenu
         node={nodeById.get(contextMenu.id)!} x={contextMenu.x} y={contextMenu.y}
         onClose={() => setContextMenu(null)}
         onOpen={() => { setSelected(contextMenu.id); setContextMenu(null); }}
@@ -475,7 +518,7 @@ export default function GraphWorkspace() {
           setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
         onHide={() => { setHidden.mutate({ id: contextMenu.id, hidden: true }); setContextMenu(null); }}
         onStatus={(status) => { setStatus.mutate({ id: contextMenu.id, status }); setContextMenu(null); }} />}
-      {addOpen && selectedNode && (
+      {replayAt == null && addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>
           <div style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
             <AddNodeForm source={selectedNode} busy={addNode.isPending}
