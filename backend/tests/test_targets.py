@@ -193,6 +193,26 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
     db.close()
 
 
+def test_delete_project_removes_its_notes(tmp_path):
+    from app.models import Note
+    from app.modules.notes.router import create_note
+    from app.schemas import NoteIn
+    db = database(tmp_path)
+    project = Project(name="Disposable Notes", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Host", ip="198.51.100.30")
+    db.add(target); db.commit()
+    create_note(NoteIn(project_id=project.id, body="project-wide"), db)
+    create_note(NoteIn(
+        project_id=project.id, target_id=target.id, body="target-scoped"), db)
+    project_id = project.id
+
+    delete_project(project_id, db)
+
+    assert db.scalars(select(Note).where(
+        Note.project_id == project_id)).all() == []
+
+
 def test_delete_project_refuses_while_a_hash_crack_job_is_running(tmp_path):
     db = database(tmp_path)
     project = Project(name="Disposable", description="")

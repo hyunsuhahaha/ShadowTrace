@@ -820,3 +820,20 @@ class GraphEvent(Base):
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[str] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Note(Base):
+    """Free-form note, independent of any single owning record. Existing
+    `notes`/`internal_notes` columns on Target/Service/Credential/etc. stay
+    as-is; this table is for notes that deserve their own id/author/timestamp
+    instead of being appended to one record's single text column."""
+    __tablename__ = "notes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    service_id: Mapped[int | None] = mapped_column(ForeignKey("services.id"), nullable=True)
+    credential_id: Mapped[int | None] = mapped_column(ForeignKey("credentials.id"), nullable=True)
+    body: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String(160), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

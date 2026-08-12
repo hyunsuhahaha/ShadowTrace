@@ -415,6 +415,22 @@ class FindingRetestIn(BaseModel):
     before_evidence_ids: list[int] = Field(default_factory=list, max_length=500)
     after_evidence_ids: list[int] = Field(default_factory=list, max_length=500)
 
+class NoteIn(BaseModel):
+    project_id: int
+    target_id: int | None = None
+    service_id: int | None = None
+    credential_id: int | None = None
+    body: str = Field(min_length=1, max_length=50000)
+    author: str = Field(default="", max_length=160)
+
+class NoteOut(NoteIn, ORM):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+class NoteUpdate(BaseModel):
+    body: str = Field(min_length=1, max_length=50000)
+
 class ImageEditIn(BaseModel):
     operations: list[dict] = Field(default_factory=list, max_length=500)
     caption: str = Field(default="", max_length=2000)

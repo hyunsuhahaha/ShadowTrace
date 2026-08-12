@@ -189,6 +189,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
         # graph tables were added after this cascade; without them a deleted
         # project's nodes orphan and resurface when SQLite reuses the id.
         "graph_events", "graph_edges", "graph_nodes", "graph_project_meta",
+        "notes",
     ]:
         db.execute(sql_delete(tables[table_name]).where(
             tables[table_name].c.project_id == ident))

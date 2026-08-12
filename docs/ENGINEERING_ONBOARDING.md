@@ -130,6 +130,7 @@ Project
      ├─ InteractiveSession
      ├─ HttpRequest ── HttpExchange
      ├─ Evidence
+     ├─ Note (project_id 필수, target_id/service_id/credential_id는 선택)
      ├─ DirectoryObject / DirectoryRelation
      ├─ Tunnel
      ├─ ExploitResearch
@@ -185,6 +186,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
 | Evidence | `modules/evidence/router.py` | Evidence files와 ZIP export |
+| Note | `modules/notes/router.py` | `Note` rows (project 필수, target/service/credential 선택 스코프) |
 | Finding | `modules/findings/router.py` | Finding과 link tables |
 | Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export |
 | Directory | `modules/directory/router.py` | Directory object/relation rows |
@@ -661,6 +663,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `findings` | Finding CRUD, CVSS, 재검증, 증적 링크, 이미지 주석, 템플릿 | `/api`(tags=Findings) | `router.py`(403) |
 | `graph` | Progress Graph 트리/DAG, Credential/Access Lineage와 append-only Attack Replay snapshot, spec: `docs/SPEC_GRAPH_TRACKER.md` | `/api`(tags=Graph) | `service.py` |
 | `hash_cracking` | hashcat job lifecycle, 모드 자동 감지, 크랙 결과 → Credential 승격 | `/api/hash-cracking` | `router.py`(276) |
+| `notes` | project/target/service/credential에 선택적으로 붙는 독립 Note CRUD(id/author/timestamp 보유) | `/api/notes` | `router.py`(72) |
 | `operations` | 전역 검색, DB/프로젝트 export/backup | `/api/operations` | `router.py`(169) |
 | `post_exploitation` | 자격증명 기반 원격 명령 실행(impacket/nxc/evil-winrm류) | `/api/post-exploitation` | `manager.py`(180) |
 | `privesc_analysis` | LinPEAS 파싱/하이라이트, SUID→GTFOBins 매칭 | (inline) | `router.py`(113) |

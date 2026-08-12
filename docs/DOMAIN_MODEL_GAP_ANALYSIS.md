@@ -52,10 +52,11 @@ Finding.references 등 — `ENGINEERING_ONBOARDING.md` §5).
 | Finding | `Finding` + `FindingEvidence` + `FindingAsset` + `FindingRetest` + `FindingTemplate` (`models.py:286-373`) | 일치 | 사람 승인 게이트가 이미 구현됨(§3.2 참고). CVSS·재검증까지 포함해 목표보다 성숙 |
 | Credential | `Credential` (`models.py:711-728`) | 일치 | 독립 테이블, project 전역 재사용 가능(Runbook/Post-Exploitation/Hash Cracking에서 공유). 출처 추적은 약함(§3.3) |
 | Evidence | `Evidence` (`models.py:198-223`) | 부분일치 | 테이블 자체는 견고하나 실행 결과 stdout/stderr의 "canonical store"가 아님(§3.4) |
-| Note | 없음 — 각 테이블의 `notes`/`internal_notes`/`user_notes` 텍스트 컬럼으로 분산 | 없음 | §3.5 |
+| Note | `Note` (`models.py:825-839`, `modules/notes/router.py`) — 각 테이블의 `notes`/`internal_notes`/`user_notes` 컬럼은 그대로 남아 병존 | 부분일치 | 백엔드 테이블/API는 있음, 프런트엔드는 아직 하나도 새 API를 쓰지 않음(§3.5) |
 | 기본 Graph | `GraphNode`/`GraphEdge`/`GraphProjectMeta`/`GraphEvent` (`models.py:760-816`) | 일치(목표 초과) | Host-Service-Credential 관계뿐 아니라 Access Lineage, append-only replay까지 이미 구현됨(§3.6) |
 
-요약: 일치 5 / 부분일치 2 / 없음 2 (총 9개 객체).
+요약(2026-08-13 기준): 일치 5 / 부분일치 3 / 없음 1 (총 9개 객체). 최초 작성 시점(일치 5 /
+부분일치 2 / 없음 2)에서 Note가 "없음 → 부분일치"로 바뀌었다(§5-3 1단계).
 
 ## 3. "부분일치" / "없음" 상세
 
@@ -192,8 +193,15 @@ positive NSE 결과를 자동으로 Evidence화하지만 Nmap 전용 로직이�
 
 ### 3.5 Note — 독립 엔티티 없음
 
-`grep -rn "class Note"`는 아무것도 찾지 못했고, 별도 Note 라우터도 없다. 자유 메모는
-아래처럼 소유 테이블에 텍스트 컬럼으로 흩어져 있다.
+> **2026-08-13 갱신**: §5-3 1단계로 독립 `Note` 테이블/API를 추가했다
+> (마이그레이션 `0036_notes`, `backend/app/modules/notes/router.py`). 아래는 그
+> 이전에 확인한 "흩어진 notes 컬럼" 목록이며, **이 컬럼들은 그대로 남아 있다** —
+> 새 `Note` 테이블을 추가했을 뿐 기존 컬럼을 이관하거나 제거하지 않았다(계획대로
+> 가산적 변경). 프런트엔드 화면들은 여전히 아래 레거시 컬럼을 읽고 쓴다; 새
+> `POST /api/notes`를 실제로 쓰는 화면은 아직 없다 — §5-3 갱신 내용 참고.
+
+`grep -rn "class Note"`는 최초 작성 시점엔 아무것도 찾지 못했고, 별도 Note 라우터도
+없었다. 자유 메모는 아래처럼 소유 테이블에 텍스트 컬럼으로 흩어져 있(었)다.
 
 | 테이블 | 컬럼 | 위치 |
 |---|---|---|
@@ -208,10 +216,20 @@ positive NSE 결과를 자동으로 Evidence화하지만 Nmap 전용 로직이�
 | `ExploitLocalRun` | `user_notes` | `models.py:519` |
 | `GraphNode` | `notes` | `models.py:770` |
 
-각 메모는 소유 레코드 하나에 종속돼 있어 고유 id·작성 시각·작성자·첨부 Evidence를
-가진 독립 객체로 조회하거나 여러 대상에 걸쳐 검색할 수 없다(Operations 전역 검색이
-각 테이블의 `notes` 컬럼을 개별적으로 흝을 뿐, 통합 Note 테이블을 조회하는 것이
-아니다).
+각 메모는 소유 레코드 하나에 종속돼 있어 고유 id·작성 시각·작성자를 가진 독립 객체로
+조회하거나 여러 대상에 걸쳐 검색할 수 없었다(Operations 전역 검색이 각 테이블의
+`notes` 컬럼을 개별적으로 흝을 뿐, 통합 Note 테이블을 조회하는 게 아니었다).
+
+새 `Note`(`models.py:825-839`)는 `id`, `project_id`(필수), `target_id`/`service_id`/
+`credential_id`(선택, `Evidence`와 같은 스코프 검증 방식 — service는 target을 필요로
+하고 credential은 project 일치만 검사), `body`, `author`, `created_at`/`updated_at`을
+가진다. `GET/POST /api/notes`, `PATCH /api/notes/{id}`, `DELETE /api/notes/{id}`로
+CRUD가 가능하고, `core/router.py`의 project 삭제 cascade에도 추가해 project 삭제 시
+같이 정리되도록 했다(추가하지 않았다면 다른 graph 테이블처럼 고아 row가 남았을
+것 — 실제로 이 cascade 누락을 테스트로 먼저 확인한 뒤 고쳤다). 다만 `delete_target`
+(project 삭제가 아니라 target 하나만 지우는 경로)은 Evidence/Credential 등 기존
+target-scoped 테이블도 정리하지 않는 기존 동작과 일관되게 Note도 그대로 뒀다 —
+이건 Note 특유의 문제가 아니라 이 코드베이스의 기존 패턴이다.
 
 ### 3.6 Graph — 이미 목표를 넘어섬
 
@@ -308,6 +326,15 @@ Session/Privilege/Pivot/Attack Path, Faraday 연동은 Phase 2/3 범위이므로
    화면별로 순차적으로 "메모 작성" UI를 새 Note API로 옮기고, 레거시 컬럼은 읽기
    전용으로 유지하다가 데이터 이관 스크립트로 옮긴 뒤 별도 PR에서 제거한다. 영향
    범위가 프런트 다수 화면에 걸치므로 다른 항목보다 뒤에 배치했다.
+   **[2026-08-13 1단계 완료, 2단계는 미착수]** 신규 `Note` 테이블 + `GET/POST
+   /api/notes`, `PATCH/DELETE /api/notes/{id}` CRUD(`backend/app/modules/notes/`,
+   마이그레이션 `0036_notes`)를 추가했고, project 삭제 cascade에도 연결했다.
+   **프런트엔드 화면 전환은 아직 하나도 하지 않았다** — Target/Service/Credential/
+   Finding/GraphNode의 기존 `notes` 계열 컬럼과 그걸 쓰는 UI는 전부 그대로다. 다음
+   단계는 이 계획이 원래 말한 대로 "화면별로 순차적으로" 새 API로 옮기는 작업이고,
+   그 전까지는 새 Note 테이블이 백엔드에만 존재하고 실제로 쓰는 곳이 없는 상태다.
+   테스트 10개(`test_notes.py`) + cascade 테스트 1개(`test_targets.py`) 추가, 백엔드
+   446/프런트 424 전부 통과(프런트는 이번 변경으로 건드린 파일이 없어 그대로).
 
 4. **Host를 Target에서 분리 (가장 크고 가장 나중에).**
    `Host` 테이블을 신설해 `target_id`(스코프) 1:N `host`(발견된 개별 IP) 관계로

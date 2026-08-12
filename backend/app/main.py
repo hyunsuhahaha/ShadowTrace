@@ -15,6 +15,7 @@ from .modules.scan_center.router import router as scan_router
 from .modules.web_testing.router import router as web_router
 from .modules.evidence.router import router as evidence_router
 from .modules.directory.router import router as directory_router
+from .modules.notes.router import router as notes_router
 from .modules.tunnels.router import manager as tunnel_manager, router as tunnel_router
 from .modules.reports.router import router as report_router
 from .modules.findings.router import router as finding_router
@@ -109,6 +110,7 @@ app.include_router(web_router)
 app.include_router(web_proxy_router)
 app.include_router(evidence_router)
 app.include_router(directory_router)
+app.include_router(notes_router)
 app.include_router(tunnel_router)
 app.include_router(report_router)
 app.include_router(finding_router)
