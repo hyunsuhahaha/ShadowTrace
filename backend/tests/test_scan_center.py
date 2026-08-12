@@ -7,13 +7,13 @@ from app.database import Base
 from app.models import Evidence, Finding, FindingEvidence, Project, ScanArtifact, ScanProfile, Target
 from app.models import ScanJob, Service, ServiceObservation
 from app.modules.scan_center.router import (
-    delete_scan, download_artifact, export_observations, update_job,
+    delete_scan, download_artifact, export_observations, preview, update_job,
 )
 from app.modules.scan_center.service import (
     BUILTIN_PROFILES, compare_jobs, create_chain_job, import_xml, render_scan,
     seed_profiles,
 )
-from app.schemas import ScanJobUpdate
+from app.schemas import ScanJobUpdate, ScanPreviewIn
 
 def database():
     engine = create_engine("sqlite:///:memory:")
@@ -80,6 +80,31 @@ def test_top_ports_are_user_selected_and_bounded():
     except ValueError:
         return
     raise AssertionError("out-of-range top port count was accepted")
+
+def test_operator_can_edit_scan_flags_without_escaping_bound_context():
+    profile = ScanProfile(name="Detail", kind="selected_ports", engine="nmap",
+                          arguments="-Pn -sV -p{ports}")
+    target = Target(project_id=1, name="box", ip="10.10.10.10")
+    command, argv = render_scan(
+        profile, target, "22", command_override="nmap -Pn -sV --version-all -p22 10.10.10.10"
+    )
+    assert command == "nmap -Pn -sV --version-all -p22 10.10.10.10"
+    assert argv[-2:] == ["-p22", "10.10.10.10"]
+    with pytest.raises(ValueError, match="selected target IP"):
+        render_scan(profile, target, "22", command_override="nmap -sV 10.10.10.99")
+    with pytest.raises(ValueError, match="must execute nmap"):
+        render_scan(profile, target, "22", command_override="bash -c id 10.10.10.10")
+
+def test_preview_renders_for_an_unsaved_target_without_persisting_it():
+    db = database()
+    profile = ScanProfile(name="Quick", kind="quick", engine="nmap", arguments="-Pn -sV")
+    db.add(profile)
+    db.commit()
+    result = preview(ScanPreviewIn(
+        target_ip="10.10.10.99", profile_id=profile.id,
+    ), db)
+    assert result["command"] == "nmap -Pn -sV 10.10.10.99"
+    assert db.query(Target).count() == 0
 
 def test_import_preserves_history_and_compare_reports_facts(tmp_path, monkeypatch):
     import app.modules.scan_center.service as service

@@ -11,6 +11,7 @@ import { AddNodeForm, Empty, NodeQuickMenu, OnboardingPane, Tab, TaskQueue }
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 import { GraphCanvas } from "./GraphCanvas";
+import ProjectOperatorSession from "./ProjectOperatorSession";
 import { ActivityItem, ActivityKind, ActivityPanelState, ActivityStatusFilter,
   ACTIVITY_PANEL_KEY, AddForm, ADD_TYPES, buildActivityFeed, clampActivityPanel,
   color, CredentialHandoff, DeepLink, defaultActivityPanel, defaultRelation,
@@ -329,6 +330,11 @@ export default function GraphWorkspace() {
   const selectedNode = selected
     ? (noProject ? data.nodes.find((n) => n.id === selected) : nodeById.get(selected))
     : undefined;
+  const selectedTargetId = selectedNode?.type === "host" && selectedNode.source_ref
+    ? (() => { try {
+      const ref = JSON.parse(selectedNode.source_ref);
+      return ref.kind === "target" ? Number(ref.id) : undefined;
+    } catch { return undefined; } })() : undefined;
 
   return (
     <div style={S.wrap}>
@@ -400,7 +406,7 @@ export default function GraphWorkspace() {
         <div style={S.splitter} onPointerDown={onSplitDown}
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
         <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
-          minWidth: 0, minHeight: 0 }}>
+          minWidth: 0, minHeight: 0, containerType: "inline-size", containerName: "graph-pane" }}>
           {reportPanel ? (
             <div style={S.embedPane}><Suspense fallback={<Empty text="Findings 불러오는 중…" />}>
               <EmbeddedReports embedded initialProjectId={projectId || undefined}
@@ -425,10 +431,15 @@ export default function GraphWorkspace() {
           ) : noProject ? (
             <OnboardingPane creating={createProject.isPending}
               onCreate={() => createProject.mutate()} />
-          ) : selectedNode?.type === "project-root" || selectedNode?.type === "host" ? (
+          ) : selectedNode?.type === "project-root" ? (
+            <div style={S.embedPane}>
+              <ProjectOperatorSession project={selectedNode} nodes={data.nodes}
+                onSelect={(id) => { setSelected(id); setFocus({id, nonce: Date.now()}); }} />
+            </div>
+          ) : selectedNode?.type === "host" ? (
             <div style={S.embedPane}>
               <Suspense fallback={<Empty text="Scan Center 불러오는 중…" />}>
-                <EmbeddedScanCenter embedded />
+                <EmbeddedScanCenter key={selectedNode.id} embedded initialTargetId={selectedTargetId} />
               </Suspense>
             </div>
           ) : selectedNode?.type === "service" ? (

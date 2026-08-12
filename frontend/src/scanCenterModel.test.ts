@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { serverTime, syncSelectedProject } from "./scanCenterModel";
+import { selectVisibleScan, serverTime, syncSelectedProject, type Scan } from "./scanCenterModel";
 
 describe("scan timestamps", () => {
   it("treats SQLite timestamps without an offset as UTC", () => {
@@ -10,6 +10,18 @@ describe("scan timestamps", () => {
     expect(serverTime("2026-07-30T01:55:00-04:00")).toBe(
       Date.parse("2026-07-30T01:55:00-04:00"),
     );
+  });
+});
+
+describe("scan selection", () => {
+  const scan = (id: number) => ({id} as Scan);
+
+  it("does not overwrite a newly-created scan while the query cache is stale", () => {
+    expect(selectVisibleScan(26, [scan(25), scan(24)])).toBe(26);
+  });
+
+  it("selects the newest visible scan only when nothing is selected", () => {
+    expect(selectVisibleScan(undefined, [scan(25), scan(24)])).toBe(25);
   });
 });
 

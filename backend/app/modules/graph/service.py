@@ -291,8 +291,16 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession}
     for key, node in list(index.items()):
-        model = kind_models.get(key[0])
-        if model is not None and db.get(model, key[1]) is None:
+        kind, ident = key
+        model = kind_models.get(kind)
+        row = db.get(model, ident) if model is not None else None
+        owner_id = None
+        if isinstance(row, (Target, Finding, Credential)):
+            owner_id = row.project_id
+        elif isinstance(row, (Service, Execution, InteractiveSession)):
+            target = db.get(Target, row.target_id)
+            owner_id = target.project_id if target else None
+        if model is not None and (row is None or owner_id != project_id):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
             ).delete(synchronize_session=False)

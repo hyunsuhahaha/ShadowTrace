@@ -52,7 +52,7 @@ it("shows a semantically empty completed process as review instead of done",()=>
   expect(screen.getByText("명령은 종료됐지만 RPC endpoint는 반환되지 않았습니다.")).toBeTruthy();
 });
 
-it("opens the latest command output on click and closes it explicitly",async()=>{
+it("opens the latest command output inline and closes it explicitly",async()=>{
   vi.mocked(api).mockResolvedValue({stdout:"PORT 80/tcp open http",status:"completed"});
   const data:ServiceIntelligence={
     identity:{name:"http",product:"Apache",version:"2.4.38",cpe:[],tls:false},
@@ -66,8 +66,7 @@ it("opens the latest command output on click and closes it explicitly",async()=>
   fireEvent.click(screen.getByText("HTTP 허용 메서드"));
   await waitFor(()=>expect(screen.getByText("PORT 80/tcp open http")).toBeTruthy());
   expect(api).toHaveBeenCalledWith("/executions/10/output");
-  const backdrop=document.querySelector(".intelOutputBackdrop");
-  expect(backdrop).toBeTruthy();
-  fireEvent.click(backdrop!);
+  expect(document.querySelector(".intelInlineOutput")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"결과 닫기"}));
   expect(screen.queryByText("PORT 80/tcp open http")).toBeNull();
 });

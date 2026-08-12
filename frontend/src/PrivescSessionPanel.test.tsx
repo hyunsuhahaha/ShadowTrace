@@ -85,7 +85,8 @@ it("finds a captured NetNTLMv2 hash from an earlier, now-closed session and forw
   // lives in an earlier, already-closed session (2) for the same target.
   vi.stubGlobal("fetch", vi.fn((url: string) => {
     if (url.includes("target_id=1")) return Promise.resolve(new Response(
-      JSON.stringify([{id: 7}, {id: 2}]), {status: 200}));
+      JSON.stringify([{id: 7, log_path: "/tmp/7.log"},
+        {id: 2, log_path: "/tmp/2.log"}]), {status: 200}));
     if (url.endsWith("/interactive-sessions/7/log")) return Promise.resolve(
       new Response("[*] Skipping previously captured hash for RESPONDER\\Administrator",
         {status: 200}));
@@ -114,4 +115,16 @@ it("does not show a captured-hash section when nothing matched yet", async () =>
   );
   await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(0));
   expect(screen.queryByText("Hash Cracking으로 보내기")).toBeNull();
+});
+
+it("does not request a session log until the backend has a log path", async () => {
+  const fetchMock = vi.fn(() => Promise.resolve(new Response(
+    JSON.stringify([{id: 7, log_path: ""}]), {status: 200}))) as typeof fetch;
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <PrivescSessionPanel targetId={1} serverBusy={false} onToggleServer={vi.fn()}
+      onSendCommand={vi.fn()} onClose={vi.fn()} />,
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  expect(fetchMock).not.toHaveBeenCalledWith("/api/interactive-sessions/7/log");
 });

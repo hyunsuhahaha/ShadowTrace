@@ -13,7 +13,7 @@ it("shows the final command and requires an explicit run action", () => {
 
   expect(screen.getByText("sudo nmap 10.0.0.1")).toBeTruthy();
   expect(screen.getByText(/계정 잠금이나 인증 로그/)).toBeTruthy();
-  fireEvent.click(screen.getByText("명령 실행"));
+  fireEvent.click(screen.getByRole("button", {name: /EXECUTE/}));
   expect(onRun).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("checkbox"));
   expect(onSudo).toHaveBeenCalledWith(false);

@@ -15,7 +15,8 @@ from fastapi import HTTPException
 import app.executor as executor_module
 import app.modules.executions.router as executions_router
 from app.modules.executions.router import (
-    _output_path, delete_execution, derive_output, execute, execution_output_file,
+    _output_path, _validated_override, delete_execution, derive_output, execute,
+    execution_output_file,
 )
 
 
@@ -231,6 +232,57 @@ def test_execute_falls_back_to_ip_for_http_templates_without_a_confirmed_hostnam
         target_id=target.id, service_id=http_service.id, template_id="http-headers",
         variables={}, run_as_root=False), db=db))
     assert "10.10.10.10" in row.command
+
+
+def test_execute_runs_a_valid_operator_argv_edit(tmp_path, monkeypatch):
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    async def noop(*args, **kwargs):
+        pass
+    monkeypatch.setattr(executions_router, "run_execution", noop)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    service = Service(target_id=target.id, port=21, protocol="tcp", state="open",
+        name="ftp", product="", version="", extra_info="", scripts="{}",
+        notes="", tags="[]")
+    db.add(service); db.commit()
+    output = (tmp_path / "projects" / "Lab" / "targets" / "10.10.10.10" /
+        "outputs" / "service-21-identity.xml")
+    command = f"nmap -Pn -sV --version-all --version-trace -p21 -oX {output} 10.10.10.10"
+
+    row = asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=service.id, template_id="service-version",
+        variables={}, run_as_root=False, command_override=command), db=db))
+
+    assert row.command == command
+
+
+@pytest.mark.parametrize("command,detail", [
+    ("curl -Pn -sV -p21 10.10.10.10", "ENGINE CHANGED"),
+    ("nmap -Pn -sV -p22 10.10.10.10", "SERVICE CHANGED"),
+    ("nmap -Pn -sV -p21 10.10.10.20", "TARGET CHANGED"),
+    ("nmap -Pn -sV -p21 10.10.10.10 | tee out", "Shell operators"),
+])
+def test_operator_argv_edit_cannot_leave_its_bound_context(command, detail):
+    service = Service(port=21, protocol="tcp")
+    with pytest.raises(HTTPException) as exc:
+        _validated_override(command,
+            ["nmap", "-Pn", "-sV", "-p21", "10.10.10.10"],
+            "10.10.10.10", service)
+    assert detail in exc.value.detail
+
+
+def test_operator_argv_edit_cannot_rebind_a_generated_output_path():
+    service = Service(port=21, protocol="tcp")
+    base = ["nmap", "-p21", "-oX",
+        "/targets/10.10.10.10/outputs/service-21.xml", "10.10.10.10"]
+    edited = "nmap -p21 -oX /targets/10.10.10.20/outputs/service-21.xml 10.10.10.10"
+    with pytest.raises(HTTPException) as exc:
+        _validated_override(edited, base, "10.10.10.10", service)
+    assert "TARGET CHANGED" in exc.value.detail
 
 
 def test_run_execution_survives_a_long_stretch_without_a_newline(tmp_path, monkeypatch):

@@ -30,7 +30,14 @@ export default function InvestigationCommandList({commands, executions, target, 
     completedTemplateIds: new Set(),
   });
 
-  return <div className="cards">
+  if (!investigationCommands.length) return <p className="investigationEmpty">
+    operation queue 밖의 추가 명령이 없습니다.
+  </p>;
+
+  return <details className="investigationCatalog">
+    <summary><span>&gt; additional command catalog</span>
+      <small>{investigationCommands.length} commands · 필요할 때 확장</small></summary>
+    <div className="cards">
     {investigationCommands.map((command) => {
       const run = runStates[command.id];
       const busy = !!run && ["starting", "running"].includes(run.status);
@@ -65,8 +72,6 @@ export default function InvestigationCommandList({commands, executions, target, 
         </details>}
       </article>;
     })}
-    {!investigationCommands.length && <p className="investigationEmpty">
-      이미 확인된 항목을 제외하면 실행할 명령이 없습니다.
-    </p>}
-  </div>;
+    </div>
+  </details>;
 }

@@ -134,8 +134,16 @@ def create_manual_terminal(
     if not Path(shell).is_file():
         raise HTTPException(409, "Local Bash shell is unavailable")
     command = body.command.strip() or f"{shell} --noprofile --norc"
-    if not shutil.which(command.split()[0]):
-        raise HTTPException(409, f"Tool not installed: {command.split()[0]}")
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid command syntax: {exc}") from exc
+    if not argv or not shutil.which(argv[0]):
+        raise HTTPException(409, f"Tool not installed: {argv[0] if argv else command}")
+    if body.run_as_root:
+        if not shutil.which("sudo"):
+            raise HTTPException(409, "sudo is not installed")
+        command = shlex.join(["sudo", *argv])
     row = InteractiveSession(
         target_id=target.id, service_id=service.id,
         template_id="manual-shell", command=command,

@@ -337,6 +337,23 @@ def test_sync_prunes_orphaned_nodes_when_target_deleted():
     assert db.query(GraphNode).filter_by(type="service").count() == 0
 
 
+def test_sync_prunes_projected_nodes_when_target_moves_to_another_project():
+    from app.models import Target
+    db = database()
+    source = project(db, "Source")
+    destination = project(db, "Destination")
+    target_with_services(db, source.id)
+    service.sync_from_project(db, source.id)
+    moved = db.query(Target).one()
+    moved.project_id = destination.id
+    db.flush()
+
+    service.sync_from_project(db, source.id)
+
+    assert db.query(GraphNode).filter_by(project_id=source.id, type="host").count() == 0
+    assert db.query(GraphNode).filter_by(project_id=source.id, type="service").count() == 0
+
+
 def test_ensure_project_root_refreshes_stale_label():
     db = database()
     p = project(db, name="Responder")

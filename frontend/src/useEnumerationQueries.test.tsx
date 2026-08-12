@@ -30,13 +30,12 @@ it("enables each query only when its scope id is available", async () => {
   expect(fetcher).toHaveBeenCalledWith("/api/projects", undefined);
 
   rerender({projectId: 1, targetId: 2, serviceId: 3});
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(7));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(6));
   expect(fetcher.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
     "/api/projects",
     "/api/targets?project_id=1",
     "/api/targets/2/services",
     "/api/services/3/commands",
-    "/api/services/3/intelligence",
     "/api/targets/2/identity-commands",
     "/api/executions?target_id=2",
   ]));

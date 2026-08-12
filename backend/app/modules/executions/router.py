@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import re
 import shlex
 import shutil
 from datetime import datetime
@@ -26,6 +27,42 @@ from ..core.support import need, safe_part
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
+SHELL_OPERATORS = {"|", "||", "&&", ";", ">", ">>", "<", "<<"}
+
+
+def _bound_value_count(argv: list[str], value: str, numeric: bool = False) -> int:
+    if not value:
+        return 0
+    pattern = re.compile(
+        rf"(?<!\d){re.escape(value)}(?!\d)" if numeric else re.escape(value)
+    )
+    return sum(len(pattern.findall(argument)) for argument in argv)
+
+
+def _validated_override(
+    raw: str, base_argv: list[str], host: str, service: Service | None,
+    context_values: tuple[str, ...] = (),
+) -> tuple[str, list[str]]:
+    try:
+        argv = shlex.split(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid command syntax: {exc}") from exc
+    if not argv:
+        raise HTTPException(400, "Command cannot be empty")
+    if any(argument in SHELL_OPERATORS or re.match(r"^\d*(?:>|<)", argument)
+           for argument in argv):
+        raise HTTPException(400, "Shell operators require a separate shell session")
+    if Path(argv[0]).name != Path(base_argv[0]).name:
+        raise HTTPException(400, "ENGINE CHANGED · EXECUTION LOCKED")
+    for value in {host, *context_values}:
+        if _bound_value_count(argv, value) < _bound_value_count(base_argv, value):
+            raise HTTPException(400, "TARGET CHANGED · EXECUTION LOCKED")
+    if service:
+        port = str(service.port)
+        if (_bound_value_count(argv, port, numeric=True)
+                < _bound_value_count(base_argv, port, numeric=True)):
+            raise HTTPException(400, "SERVICE CHANGED · EXECUTION LOCKED")
+    return raw.strip(), argv
 
 
 def _output_path(output_dir: Path, raw_filename: str, template_id: str) -> Path:
@@ -54,6 +91,8 @@ def executions(target_id: int | None = None, db: Session = Depends(get_db)):
 async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
     target = need(db, Target, body.target_id)
     service = need(db, Service, body.service_id) if body.service_id else None
+    if service and service.target_id != target.id:
+        raise HTTPException(400, "Service does not belong to target")
     project = need(db, Project, target.project_id)
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
@@ -82,6 +121,10 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
             scheme="https" if service.name == "https" else "http",
         )
     item, command, argv = catalog.render(body.template_id, variables)
+    if body.command_override is not None:
+        command, argv = _validated_override(
+            body.command_override, argv, variables["host"], service, (target.ip,),
+        )
     if not shutil.which(argv[0]):
         raise HTTPException(409, f"Tool not installed: {argv[0]}")
     if body.run_as_root:

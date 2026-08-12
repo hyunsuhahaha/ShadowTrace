@@ -13,16 +13,21 @@ const treeTemplateIds = new Set([
   "snmp-oid-tree", "mongodb-db-tree", "docker-api-tree",
 ]);
 
-export default function LiveOutputPanel({run, elapsed, outcome, output}: {
+export default function LiveOutputPanel({run, elapsed, outcome, output, targetIp = "target",
+  servicePort, protocol = "tcp"}: {
   run?: RunState; elapsed: number; outcome: ExecutionSummary | null; output: string;
+  targetIp?: string; servicePort?: number; protocol?: string;
 }) {
-  return <div className="terminal">
+  const closed = !!run && !["starting", "running"].includes(run.status);
+  return <div className={`terminal terminal--attached${run ? "" : " is-idle"}`}>
     <div className={`terminalStatus${run ? ` terminalStatus--${run.status}` : ""}`}>
       <span className="termDots" aria-hidden="true">
         <i className="termDot" /><i className="termDot termDot--yellow" />
         <i className="termDot termDot--green" />
       </span>
-      <b>실시간 출력</b>
+      <div className="attachedTerminal__identity"><b>&gt; service://{targetIp}/{
+        servicePort || "-"}/{protocol}/session/{run?.id || "-"}</b>
+        <span>{run?.templateId || "awaiting command"}</span></div>
       <small role="status" aria-live="polite">
         {!run
           ? "명령 실행 대기"
@@ -32,6 +37,9 @@ export default function LiveOutputPanel({run, elapsed, outcome, output}: {
           }`}
       </small>
     </div>
+    <div className="attachedTerminal__route"><span>operator@kali</span><b>→</b>
+      <span>{protocol}</span><b>→</b><strong>{targetIp}{servicePort ? `:${servicePort}` : ""}</strong>
+      <em>{!run ? "AWAITING COMMAND" : closed ? "STREAM CLOSED" : "RX LIVE"}</em></div>
     {run?.message && <p className="terminalError">{run.message}</p>}
     {outcome && (
       <div className={`executionOutcome executionOutcome--${outcome.tone}`}>
@@ -44,5 +52,8 @@ export default function LiveOutputPanel({run, elapsed, outcome, output}: {
     ) : (
       <pre>{output}</pre>
     )}
+    <footer className="attachedTerminal__footer"><span>{run ? `EXECUTION #${run.id || "pending"}` : "NO SESSION"}</span>
+      <span>{run?.exitCode == null ? "stdout / stderr" : `EXIT ${run.exitCode}`}</span>
+      <strong>{run ? (closed ? "CLOSED" : "ATTACHED") : "IDLE"}</strong></footer>
   </div>;
 }

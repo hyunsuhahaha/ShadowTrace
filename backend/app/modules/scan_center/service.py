@@ -92,7 +92,8 @@ def seed_profiles(db: Session) -> None:
 
 def render_scan(profile: ScanProfile, target: Target, ports: str = "",
                 extra_arguments: list[str] | None = None,
-                top_ports: int = 100) -> tuple[str, list[str]]:
+                top_ports: int = 100,
+                command_override: str | None = None) -> tuple[str, list[str]]:
     args = profile.arguments
     if "{ports}" in args:
         if not ports or not SAFE_PORTS.fullmatch(ports):
@@ -114,6 +115,22 @@ def render_scan(profile: ScanProfile, target: Target, ports: str = "",
         if privileged
         else argv
     )
+    if command_override is not None:
+        try:
+            edited = shlex.split(command_override)
+        except ValueError as exc:
+            raise ValueError(f"The edited command is incomplete: {exc}") from exc
+        if edited[:1] == ["sudo"]:
+            edited = edited[1:]
+        expected_binary = profile.engine or "nmap"
+        if not edited or edited[0] != expected_binary:
+            raise ValueError(f"This profile must execute {expected_binary}")
+        if edited.count(target.ip) != 1 or edited[-1] != target.ip:
+            raise ValueError("The edited command must end with the selected target IP")
+        if any(flag in edited for flag in ("-oA", "-oX")):
+            raise ValueError("Output paths are managed by Scan Center")
+        argv = ["pkexec", *edited] if privileged else edited
+        display_argv = ["sudo", *edited] if privileged else edited
     return shlex.join(display_argv), argv
 
 def _safe(value: str) -> str:

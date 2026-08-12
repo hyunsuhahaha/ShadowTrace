@@ -24,7 +24,7 @@ it("hides a version prompt once the fact is already known", () => {
     target={{hostname: "dc.lab", os_guess: "Windows"} as Target}
     service={{product: "Samba", version: "4.19"} as Service}
     runStates={{}} clock={0} onReview={vi.fn()} />);
-  expect(screen.getByText("이미 확인된 항목을 제외하면 실행할 명령이 없습니다."))
+  expect(screen.getByText("operation queue 밖의 추가 명령이 없습니다."))
     .toBeTruthy();
 });
 

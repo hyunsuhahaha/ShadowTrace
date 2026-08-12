@@ -17,7 +17,7 @@ it("updates the controlled service draft and saves it", () => {
     target: {value: "OpenSSH"},
   });
   expect(onDraft).toHaveBeenCalledWith({...draft, product: "OpenSSH"});
-  fireEvent.click(screen.getByText("작업 공간 저장"));
+  fireEvent.click(screen.getByText("[ WRITE CONTEXT ]"));
   expect(onSave).toHaveBeenCalledOnce();
 });
 

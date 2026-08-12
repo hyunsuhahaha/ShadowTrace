@@ -1,22 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState,
+  type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import VpnControl from "./VpnControl";
 import ScanToolPicker from "./ScanToolPicker";
 import ScanProfileComposer from "./ScanProfileComposer";
 import ScanJobStatus from "./ScanJobStatus";
 import ScanHistoryPanel from "./ScanHistoryPanel";
+import {useFloatingTerminal} from "./FloatingTerminal";
 import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import {
-  bytes, elapsed, get, syncSelectedProject, terminal, toolProfileGroups,
+  bytes, elapsed, get, selectVisibleScan, syncSelectedProject, terminal, toolProfileGroups,
   type Artifact, type Automation, type Obs, type Profile, type Project,
   type Scan, type Target, type VpnStatus,
 } from "./scanCenterModel";
 
-export default function ScanCenter({ embedded = false }: { embedded?: boolean } = {}) {
+export default function ScanCenter({ embedded = false, initialTargetId }: {
+  embedded?: boolean; initialTargetId?: number;
+} = {}) {
   const qc = useQueryClient();
-  const [targetId, setTargetId] = useState<number>(),
+  const {floatingScanId, floatScan} = useFloatingTerminal();
+  const pendingDock = (() => {
+    try { return JSON.parse(localStorage.getItem("oscp-scan-dock") || "null"); }
+    catch { return null; }
+  })();
+  const [targetId, setTargetId] = useState<number | undefined>(
+    pendingDock?.targetId || initialTargetId),
     [targetIp, setTargetIp] = useState(""),
-    [targetName, setTargetName] = useState(""),
     [targetError, setTargetError] = useState(""),
     [activeProjectId, setActiveProjectId] = useState<number | undefined>(() => {
       const saved = Number(localStorage.getItem("oscp-workspace-project"));
@@ -30,6 +39,8 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     [topPorts, setTopPorts] = useState("100"),
     [review, setReview] = useState(false),
     [scope, setScope] = useState(false),
+    [commandDraft, setCommandDraft] = useState(""),
+    [commandDirty, setCommandDirty] = useState(false),
     [output, setOutput] = useState("저장된 출력을 보려면 스캔을 선택하세요.\n"),
     [statusFilter, setStatusFilter] = useState("all"),
     [query, setQuery] = useState(""),
@@ -45,6 +56,9 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     [streamState, setStreamState] = useState<
       "idle" | "connecting" | "connected" | "disconnected"
     >("idle");
+  const transcript = useRef<HTMLPreElement>(null);
+  const transcriptPanel = useRef<HTMLDivElement>(null);
+  const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
   const projects = useQuery({
       queryKey: ["projects"],
       queryFn: () => get<Project[]>("/projects"),
@@ -115,8 +129,18 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
   }, [targetId]);
   useEffect(() => {
-    if (scans.data?.length && !scans.data.some((s) => s.id === scanId))
-      setScanId(scans.data[0].id);
+    if (!scans.data) return;
+    const pending = (() => {
+      try { return JSON.parse(localStorage.getItem("oscp-scan-dock") || "null"); }
+      catch { return null; }
+    })();
+    if (pending?.scanId && scans.data.some((scan) => scan.id === pending.scanId)) {
+      setScanId(pending.scanId);
+      localStorage.removeItem("oscp-scan-dock");
+      requestAnimationFrame(() => transcriptPanel.current?.scrollIntoView({block: "center"}));
+      return;
+    }
+    setScanId(selectVisibleScan(scanId, scans.data));
   }, [scans.data, scanId]);
   useEffect(() => {
     if (tool === "masscan" && masscanBlockedByVpn) setTool("nmap");
@@ -136,19 +160,21 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     selected = scans.data?.find((x) => x.id === scanId),
     payload = () => ({
       target_id: targetId,
+      target_ip: targetIp.trim(),
       profile_id: profileId,
       ports: profile?.arguments.includes("{ports}") ? ports : "",
       top_ports: Number(topPorts),
       extra_arguments: [],
+      command_override: commandDirty ? commandDraft : null,
     });
-  // Keep the IP/name inputs showing whichever target is current (picked from
-  // the dropdown, or auto-selected), so "review scan" reuses it by IP instead
+  // Keep the IP input showing whichever target is current (picked from the
+  // dropdown, or auto-selected), so "review scan" reuses it by IP instead
   // of always minting a new target.
   useEffect(() => {
-    if (target) { setTargetIp(target.ip); setTargetName(target.name); }
+    if (target) setTargetIp(target.ip);
   }, [target?.id]);
   const preview = useQuery({
-    queryKey: ["scanPreview", targetId, profileId, ports, topPorts],
+    queryKey: ["scanPreview", targetIp.trim(), profileId, ports, topPorts],
     queryFn: async () => {
       const r = await fetch("/api/scans/preview", {
         method: "POST",
@@ -159,13 +185,38 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       return r.json();
     },
     enabled:
-      !!targetId &&
+      !!targetIp.trim() &&
       !!profileId &&
       (!profile?.arguments.includes("{top_ports}") ||
         (Number(topPorts) >= 1 && Number(topPorts) <= 65535)),
   });
   useEffect(() => {
-    if (!scanId) return;
+    setCommandDraft(preview.data?.command || "");
+    setCommandDirty(false);
+    setScope(false);
+  }, [preview.data?.command]);
+  const commandContextBound = !!targetIp.trim() && commandDraft.trim().endsWith(targetIp.trim());
+  const commandEngineBound = (() => {
+    const words = commandDraft.trim().split(/\s+/);
+    return (words[0] === "sudo" ? words[1] : words[0]) === profile?.engine;
+  })();
+  const editCommand = (value: string) => {
+    setCommandDraft(value);
+    setCommandDirty(value.trim() !== (preview.data?.command || "").trim());
+    setScope(false);
+    setTargetError("");
+  };
+  const changeTargetIp = (value: string) => {
+    const previous = targetIp.trim();
+    setTargetIp(value);
+    setScope(false);
+    if (!previous || !commandDraft.trim().endsWith(previous)) return;
+    const injected = commandDraft.trimEnd().slice(0, -previous.length) + value.trim();
+    setCommandDraft(injected);
+    setCommandDirty(commandDirty);
+  };
+  useEffect(() => {
+    if (!scanId || floatingScanId === scanId) return;
     setStreamState("connecting");
     setLastEventAt(Date.now());
     setOutput("");
@@ -207,13 +258,41 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       events.close();
     };
     return () => events.close();
-  }, [scanId, targetId, qc]);
+  }, [scanId, targetId, qc, floatingScanId]);
   useEffect(() => {
     if (!selected || !["queued", "running", "processing"].includes(selected.status))
       return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [selected?.id, selected?.status]);
+  useEffect(() => {
+    const panel = transcript.current;
+    if (panel) panel.scrollTop = panel.scrollHeight;
+  }, [output]);
+  const beginDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selected || event.button !== 0) return;
+    detachDrag.current = {x: event.clientX, y: event.clientY, pointerId: event.pointerId};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = detachDrag.current;
+    if (!start || !selected || !target || !transcriptPanel.current) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) return;
+    floatScan({
+      scanId: selected.id, targetId: target.id, targetIp: target.ip,
+      command: selected.command, source: selected.source, status: selected.status,
+      exitCode: selected.exit_code, linkType: vpnStatus.data?.link_type || "local",
+      initialOutput: output,
+    }, transcriptPanel.current.getBoundingClientRect());
+    detachDrag.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const finishDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    detachDrag.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const visibleScans = useMemo(
       () =>
         (scans.data || []).filter(
@@ -312,10 +391,24 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
     const existing = targets.data?.find(
       (item) => item.ip === ip && item.project_id === effectiveProjectId,
     );
-    if (existing) {
-      setTargetId(existing.id);
+    const validateAndReview = async (id: number) => {
+      setTargetId(id);
+      const response = await fetch("/api/scans/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({...payload(), target_id: id}),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setTargetError(typeof data.detail === "string" ? data.detail : "명령을 검증할 수 없습니다.");
+        return;
+      }
+      setCommandDraft(data.command);
       setScope(false);
       setReview(true);
+    };
+    if (existing) {
+      await validateAndReview(existing.id);
       return;
     }
     const r = await fetch("/api/targets/ensure", {
@@ -323,7 +416,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ip,
-        name: targetName.trim(),
+        name: "",
         project_id: effectiveProjectId ?? null,
       }),
     });
@@ -341,9 +434,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
       qc.invalidateQueries({ queryKey: ["allTargets"] }),
       qc.invalidateQueries({ queryKey: ["projects"] }),
     ]);
-    setTargetId(created.id);
-    setScope(false);
-    setReview(true);
+    await validateAndReview(created.id);
   };
   const upload = async (f: File) => {
     if (!targetId) return;
@@ -394,6 +485,7 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
         setOutput(`[error] ${(await r.json()).detail}\n`);
         return;
       }
+      if (scanId === id) setScanId(undefined);
       await refresh();
     },
     saveMetadata = async () => {
@@ -458,19 +550,69 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
           onSelect={setTool} />
         <section className="scanCenter">
           <ScanProfileComposer tool={tool}
-            targetIp={targetIp} targetName={targetName} targetError={targetError}
-            onTargetIpChange={setTargetIp} onTargetNameChange={setTargetName}
+            targetIp={targetIp} targetError={targetError}
+            onTargetIpChange={changeTargetIp}
             profiles={profiles.data} profileId={profileId}
             onSelectProfile={setProfileId} profile={profile}
             ports={ports} topPorts={topPorts}
             onPortsChange={setPorts} onTopPortsChange={setTopPorts}
             onUpload={upload}
             previewCommand={preview.data?.command}
+            commandDraft={commandDraft} commandDirty={commandDirty}
+            commandContextBound={commandContextBound} commandEngineBound={commandEngineBound}
+            onCommandChange={editCommand}
+            onRestoreCommand={() => editCommand(preview.data?.command || "")}
+            vpnConnected={vpnStatus.data?.connected}
+            vpnAddress={vpnStatus.data?.tun0}
+            scopeConfirmed={scope}
             canReview={!!targetIp.trim() && !!profileId && (
               !profile?.arguments.includes("{top_ports}") ||
               (Number(topPorts) >= 1 && Number(topPorts) <= 65535)
             )}
             onReviewScan={beginReview} />
+          {!floatingScanId && <div key={selected?.id || "idle"} ref={transcriptPanel}
+            className={`terminal scanTerminal scanTranscript${selected ? " scanTranscript--attached" : ""}`}>
+            <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : "terminalStatus"}
+              onPointerDown={beginDetach} onPointerMove={moveDetach}
+              onPointerUp={finishDetach} onPointerCancel={finishDetach}>
+              <span className="termDots" aria-hidden="true">
+                <i className="termDot" /><i className="termDot termDot--yellow" />
+                <i className="termDot termDot--green" />
+              </span>
+              <div className="scanTranscript__identity">
+                <b>{selected ? `scan://${target?.ip}/session/${selected.id}` : "scan://session/idle"}</b>
+                <span>{selected ? selected.command : "stdout receiver"}</span>
+              </div>
+              <small role="status" aria-live="polite">
+                {selected
+                  ? `${statusLabel[selected.status] || selected.status} · ${elapsed(selected, clock)}`
+                  : "대기"}
+              </small>
+              {lastEventAt && selected && <i key={lastEventAt}
+                className="scanTranscript__rx" aria-hidden="true" />}
+            </div>
+            <div className="scanTranscript__route" aria-hidden="true">
+              <span>operator@kali</span><b>→</b>
+              <span>{vpnStatus.data?.link_type || "local"}</span><b>→</b>
+              <strong>{target?.ip || "no-target"}</strong>
+              <em>{selected && terminal.includes(selected.status)
+                ? "STREAM CLOSED"
+                : streamState === "connected" ? "RX LIVE"
+                : streamState === "connecting" ? "ATTACHING"
+                : streamState === "disconnected" ? "LINK LOST" : "IDLE"}</em>
+            </div>
+            <pre ref={transcript} tabIndex={0} aria-label="스캔 세션 출력">
+              <code>{output}</code>
+              {selected && ["queued", "running", "processing"].includes(selected.status) &&
+                <i className="scanTranscript__cursor" aria-hidden="true" />}
+            </pre>
+            <footer className="scanTranscript__footer">
+              <span>{selected ? `SESSION #${selected.id}` : "NO SESSION"}</span>
+              <span>{selected?.source || "LOCAL"}</span>
+              <span>{selected?.exit_code == null ? "stdout" : `EXIT ${selected.exit_code}`}</span>
+              <strong>{selected && terminal.includes(selected.status) ? "DETACHED" : selected ? "ATTACHED" : "IDLE"}</strong>
+            </footer>
+          </div>}
           <ScanJobStatus selected={selected} clock={clock} streamState={streamState}
             lastEventAt={lastEventAt} processAlive={processAlive}
             selectedProfile={selectedProfile} automation={automation.data}
@@ -536,6 +678,10 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
             </button>
           </div>
           <div className="scanTable">
+            <div className="scanObservationHeader">
+              <b>&gt; observations</b>
+              <span>{visibleObs.length} visible · {obs.data?.length || 0} captured</span>
+            </div>
             <div className="tableHead">
               <span>포트</span>
               <span>서비스</span>
@@ -591,21 +737,6 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
               ))}
             </div>
           )}
-          <div className="terminal scanTerminal">
-            <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : ""}>
-              <span className="termDots" aria-hidden="true">
-                <i className="termDot" /><i className="termDot termDot--yellow" />
-                <i className="termDot termDot--green" />
-              </span>
-              <b>저장 / 실시간 출력</b>
-              <small>
-                {selected
-                  ? `작업 #${selected.id} · ${statusLabel[selected.status] || selected.status} · ${elapsed(selected, clock)}`
-                  : "스캔 실행 대기"}
-              </small>
-            </div>
-            <pre>{output}</pre>
-          </div>
         </section>
         <ScanHistoryPanel
           visibleScans={visibleScans} allScans={scans.data} scanId={scanId}
@@ -616,45 +747,54 @@ export default function ScanCenter({ embedded = false }: { embedded?: boolean } 
           baseId={baseId} onSelectBase={setBaseId} diff={diff.data} />
       </main>
       {review && (
-        <div className="modal" role="presentation">
+        <div className="modal executionReviewOverlay" role="presentation">
           <div
+            className="executionReview"
             role="dialog"
             aria-modal="true"
             aria-labelledby="scan-review-title"
             aria-describedby="scan-review-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setReview(false);
+              if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && scope) void execute();
+            }}
           >
-            <span>스캔 Scope 검토</span>
-            <h2 id="scan-review-title">{profile?.name}</h2>
-            <p id="scan-review-description">
-              대상과 최종 명령을 확인하세요. 선택한 도구는 Kali 호스트에서
-              직접 실행됩니다.
-            </p>
-            <code><b style={{ color: "var(--term-cursor)" }}>$</b> {preview.data?.command}</code>
-            <p>
-              <b>대상:</b> {target?.name} · {target?.ip}
-            </p>
-            {vpnStatus.data && !vpnStatus.data.connected && (
-              <div className="warning" role="alert">
-                <b>VPN 미연결</b>
-                <p>
-                  대상이 VPN을 통해서만 접근 가능하다면 스캔이 출력 없이 멈춘
-                  것처럼 보일 수 있습니다.
-                </p>
+            <header className="executionReview__bar">
+              <span className="termDots" aria-hidden="true"><i className="termDot" />
+                <i className="termDot termDot--yellow" /><i className="termDot termDot--green" /></span>
+              <code>ow://scan/stage</code><strong><i /> SCOPE PENDING</strong>
+            </header>
+            <div className="executionReview__body">
+              <div className="executionReview__intro">
+                <span>SCAN DISPATCH · {profile?.engine?.toUpperCase()}</span>
+                <h2 id="scan-review-title">{profile?.name}</h2>
+                <p id="scan-review-description"># Kali 호스트에서 실행할 최종 명령과 경로를 검토하세요.</p>
               </div>
-            )}
-            <label>
-              <input
-                type="checkbox"
-                checked={scope}
-                onChange={(e) => setScope(e.target.checked)}
-              />{" "}
-              이 대상이 허가된 Scope에 포함됨을 확인합니다.
-            </label>
-            <footer>
-              <button onClick={() => setReview(false)}>취소</button>
-              <button className="danger" disabled={!scope} onClick={execute}>
-                스캔 대기열에 추가
-              </button>
+              <div className="executionRoute" aria-label={`실행 경로: operator, ${vpnStatus.data?.link_type || "local"}, ${target?.ip}`}>
+                <span>operator</span><b>→</b><span>{vpnStatus.data?.link_type || "local"}</span>
+                <b>→</b><strong>{target?.ip}</strong><i aria-hidden="true" />
+              </div>
+              <section className="executionCommand" aria-label="실행할 명령">
+                <header><span>ARGV / RENDERED</span><small>awaiting scope approval</small></header>
+                <code><b>$</b> {commandDraft}<i aria-hidden="true" /></code>
+              </section>
+              <dl className="executionFacts">
+                <div><dt>target</dt><dd>{target?.name} · {target?.ip}</dd></div>
+                <div><dt>interface</dt><dd>{vpnStatus.data?.link_type || "local"}{vpnStatus.data?.tun0 ? ` · ${vpnStatus.data.tun0}` : ""}</dd></div>
+                <div><dt>engine</dt><dd>{profile?.engine}</dd></div>
+              </dl>
+              {vpnStatus.data && !vpnStatus.data.connected && (
+                <p className="executionAlert" role="alert"><b>IFACE OFFLINE</b> VPN 전용 대상이면 출력 없이 멈춘 것처럼 보일 수 있습니다.</p>
+              )}
+              <label className="executionScope">
+                <input type="checkbox" checked={scope} autoFocus onChange={(e) => setScope(e.target.checked)} />
+                <span><b>SCOPE ACKNOWLEDGEMENT</b> 이 대상이 허가된 Scope에 포함됨을 확인합니다.</span>
+              </label>
+            </div>
+            <footer className="executionReview__footer">
+              <small><kbd>esc</kbd> cancel · <kbd>ctrl</kbd> + <kbd>↵</kbd> dispatch</small>
+              <div><button onClick={() => setReview(false)}>취소</button>
+                <button className="executionReview__execute" disabled={!scope} onClick={execute}>[ DISPATCH ↵ ]</button></div>
             </footer>
           </div>
         </div>

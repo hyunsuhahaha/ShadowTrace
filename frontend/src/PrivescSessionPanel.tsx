@@ -34,8 +34,9 @@ export default function PrivescSessionPanel({session, server, serverBusy,
     const poll = async () => {
       const listResponse = await fetch(`/api/interactive-sessions?target_id=${targetId}`);
       if (!listResponse.ok || cancelled) return;
-      const sessions: {id: number}[] = await listResponse.json();
-      const texts = await Promise.all(sessions.map(async (item) => {
+      const sessions: {id: number; log_path?: string}[] = await listResponse.json();
+      const texts = await Promise.all(sessions.filter((item) => item.log_path)
+        .map(async (item) => {
         const logResponse = await fetch(`/api/interactive-sessions/${item.id}/log`);
         return logResponse.ok ? await logResponse.text() : "";
       }));

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./styles.css";
+import "./execution-review.css";
 import "./scan.css";
 import "./scan-enhanced.css";
 import "./execution.css";

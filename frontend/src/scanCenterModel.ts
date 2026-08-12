@@ -1,6 +1,6 @@
 export type Project = { id: number; name: string };
 export type Target = { id: number; project_id: number; name: string; ip: string };
-export type VpnStatus = { connected: boolean; link_type: string };
+export type VpnStatus = { connected: boolean; link_type: string; tun0?: string };
 export type Profile = {
   id: number;
   name: string;
@@ -175,6 +175,9 @@ export const bytes = (n: number) =>
     : n < 1048576
       ? `${(n / 1024).toFixed(1)} KiB`
       : `${(n / 1048576).toFixed(1)} MiB`;
+
+export const selectVisibleScan = (currentId: number | undefined, scans: Scan[]) =>
+  currentId ?? scans[0]?.id;
 
 export function syncSelectedProject(projectId: number) {
   const value = String(projectId);

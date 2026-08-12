@@ -3,7 +3,6 @@ import {
   type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import ServiceIntelligencePanel from "./ServiceIntelligencePanel";
 import "./service-intelligence.css";
 import { statusCopy as statusLabel } from "./ui";
 import { getServiceGuidance } from "./serviceGuidance";
@@ -43,14 +42,15 @@ import ServiceWorkspace from "./ServiceWorkspace";
 import CommandReviewModal from "./CommandReviewModal";
 import EnumerationScope from "./EnumerationScope";
 import CredentialAuditPanel from "./CredentialAuditPanel";
-import ServiceDashboard from "./ServiceDashboard";
-import InvestigationCommandList from "./InvestigationCommandList";
 import ManualGuidance from "./ManualGuidance";
 import JobStatus from "./JobStatus";
 import CredentialStoreForm from "./CredentialStoreForm";
 import NetexecOutcome, {type NetexecProtocol} from "./NetexecOutcome";
 import PrivescSessionPanel from "./PrivescSessionPanel";
 import LiveOutputPanel from "./LiveOutputPanel";
+import OperatorContext from "./OperatorContext";
+import ServiceCommandSession, {type ServiceCommand} from "./ServiceCommandSession";
+import InteractiveTerminal from "./InteractiveTerminal";
 import {
   isDnsLikeService,
   isHttpLikeService,
@@ -114,6 +114,9 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [executionView, setExecutionView] = useState<"list" | "detail">("list");
   const [selectedExecutionId, setSelectedExecutionId] = useState<number>();
   const [executionDetail, setExecutionDetail] = useState<any>();
+  const [interactiveSession, setInteractiveSession] = useState<{
+    id: number; command: string;
+  }>();
   const [lastSpiderShare, setLastSpiderShare] = useState<string>();
   const [evidenceMsg, setEvidenceMsg] = useState("");
   const [saveHashMsg, setSaveHashMsg] = useState("");
@@ -186,7 +189,6 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     targets,
     services,
     commands,
-    intelligence,
     targetCommands,
     executions,
   } = useEnumerationQueries({projectId, targetId, serviceId});
@@ -269,6 +271,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     setExecutionView("list");
     setSelectedExecutionId(undefined);
     setExecutionDetail(undefined);
+    setInteractiveSession(undefined);
   }, [serviceId]);
   useEffect(() => {
     const selected = services.data?.find((x) => x.id === serviceId) as any;
@@ -481,8 +484,8 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     setOutputFilename("");
     if (c.execution_mode === "interactive") {
       try {
-        const variables: any = {};
-        if (c.command.includes("{username}")) {
+        const variables: any = {...(c.variables || {})};
+        if (c.command.includes("{username}") && !variables.username) {
           const username = prompt(
             "사용자 이름(인증 과정은 대화형으로 진행됩니다)",
             "",
@@ -490,10 +493,16 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           if (!username) return;
           variables.username = username;
         }
-        const session = await api<any>("/interactive-sessions", {
+        const session = await api<any>(
+          c.command_override ? "/interactive-sessions/manual" : "/interactive-sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          body: JSON.stringify(c.command_override ? {
+            target_id: targetId,
+            service_id: serviceId,
+            command: c.command_override,
+            run_as_root: runWithSudoRef.current,
+          } : {
             target_id: targetId,
             service_id: c.target_level ? null : serviceId,
             template_id: c.id,
@@ -501,15 +510,13 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             run_as_root: runWithSudoRef.current,
           }),
         });
-        await api<any>(`/interactive-sessions/${session.id}/desktop`, {
-          method: "POST",
-        });
+        setInteractiveSession({id: session.id, command: session.command});
         setOutput(
-          `$ ${session.command}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`,
+          `$ ${session.command}\n\n[PTY 세션 #${session.id}에 attach했습니다.]\n`,
         );
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : String(reason);
-        setOutput(`[데스크톱 터미널 실행 실패] ${message}\n`);
+        setOutput(`[PTY 터미널 실행 실패] ${message}\n`);
       }
       return;
     }
@@ -538,6 +545,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           variables: c.variables || {},
           run_as_root: runWithSudoRef.current,
           output_filename: requestedFilename,
+          command_override: c.command_override || null,
         }),
       });
     } catch (reason) {
@@ -1872,14 +1880,20 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           />}
         </aside>}
         <section className="work" ref={workRef}>
-          <div className="serviceHead">
-            <div>
-              <span>
-                {service?.protocol || "tcp"} / {service?.port || "—"}
-              </span>
-              <h1>{service?.name?.toUpperCase() || "서비스 선택"}</h1>
-            </div>
-            <div className="serviceHeadActions">
+          <OperatorContext scope="service / enumerate"
+            prompt={service
+              ? `[${target?.ip || "target"}:${service.port}/${service.protocol}] ${service.name || "unknown"} $`
+              : "[no-service] enumerate $"}
+            comment={service
+              ? [service.product, service.version].filter(Boolean).join(" ") || "정확한 제품과 버전을 확인하세요"
+              : "그래프에서 서비스 노드를 선택하세요"}
+            facts={service ? [
+              {label: "state", value: "open", tone: "ready"},
+              {label: "product", value: service.product || "unknown", tone: service.product ? "ready" : "warn"},
+              {label: "version", value: service.version || "unknown", tone: service.version ? "ready" : "warn"},
+              {label: "tls", value: service.tls ? "detected" : "not detected", tone: service.tls ? "ready" : undefined},
+            ] : [{label: "state", value: "waiting"}]}
+            actions={<>
               {isWebService&&(() => {
                 const applied = target?.hostname || "";
                 const hostnameCommand = targetCommands.data?.find(
@@ -1939,75 +1953,28 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
                   그래프에서 보기 ↗
                 </button>
               </div>}
-              <div className="risk">수동 확인 필요</div>
-            </div>
-          </div>
-          {service && (
-            <section className="serviceIdentitySummary" aria-label="식별된 서비스 정보">
-              <div><span>서비스</span><b>{service.name || "unknown"}</b></div>
-              <div><span>제품</span><b>{service.product || "미확인"}</b></div>
-              <div><span>버전</span><b>{service.version || "미제공"}</b></div>
-              <div><span>TLS</span><b>{service.tls ? "사용" : "미탐지"}</b></div>
-              <div className="serviceIdentitySummary__wide">
-                <span>CPE</span><b title={serviceCpes.join(", ")}>
-                  {serviceCpes.join(", ") || "미확인"}
-                </b>
-              </div>
-            </section>
-          )}
-          {service && !service.product && !service.version && (
-            <div className="warning">
-              <b>제품·버전 미확인</b>
-            </div>
-          )}
-          {service&&<ServiceIntelligencePanel data={intelligence.data}
-            loading={intelligence.isLoading} error={intelligence.isError}
-            executions={serviceExecutions}
-            onRun={(id)=>{const command=commands.data?.find(item=>item.id===id);
-              if(command)reviewCommand(command);}}/>}
-          <div className="tabs">
-            <b>서비스 대시보드</b>
-            <span>스캔 상세</span>
-            <span>이력</span>
-            <button
-              className="credentialShortcut"
-              disabled={!authenticationCommands.length}
-              onClick={() => credentialAuditRef.current?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              })}
-            >
-              {service?.name?.toLowerCase() === "ftp"
-                ? "익명 로그인 확인"
-                : "대입 공격"}
-              {authenticationCommands.length
-                ? ` (${authenticationCommands.length})`
-                : ""}
-            </button>
-            <button
-              disabled={!service}
-              onClick={() => {
-                if (!service) return;
-                localStorage.setItem(
-                  "oscp-workspace-exploit-service",
-                  String(service.id),
-                );
-                location.hash = "exploit-research";
-              }}
-            >
-              Exploit 후보 조사
-            </button>
-          </div>
-          <ServiceDashboard
-            service={service}
-            target={target}
-            commands={commands.data}
-            targetCommands={targetCommands.data}
-            executions={serviceExecutions}
-            runStates={runStates}
-            clock={clock}
-            onReview={reviewCommand}
-          />
+            </>} />
+          {!!serviceCpes.length && <p className="operatorCpe">cpe: {serviceCpes.join(" · ")}</p>}
+          {service && target && <ServiceCommandSession
+            commands={(commands.data || []) as ServiceCommand[]}
+            serviceKey={`${service.id}:${service.name}:${service.port}/${service.protocol}`}
+            targetIp={target.ip} targetHostname={target.hostname}
+            port={service.port} protocol={service.protocol}
+            onReview={reviewCommand} />}
+          <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
+          <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
+            outcome={currentOutcome} output={output} targetIp={target?.ip}
+            servicePort={service?.port} protocol={service?.protocol} />
+          {interactiveSession && <InteractiveTerminal
+            sessionId={interactiveSession.id}
+            title={`service://${target?.ip || "target"}/${service?.port || "-"}/${
+              service?.protocol || "tcp"} · ${interactiveSession.command}`}
+            onClose={() => setInteractiveSession(undefined)} />}
+          <ManualGuidance serviceName={service?.name} guidance={guidance} />
+          {!!service && <details className="protocolToolbox">
+            <summary><span>&gt; protocol toolbox</span>
+              <small>{service.name || "unknown"} · 필요할 때 확장</small></summary>
+            <div>
           <CredentialAuditPanel
             key={`credential-audit-${serviceId}`}
             ref={credentialAuditRef}
@@ -2020,16 +1987,6 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             onOpenTerminal={service?.name?.toLowerCase() === "mysql" ? openMysqlTerminal : undefined}
             onOpenTerminalMycli={service?.name?.toLowerCase() === "mysql" ? openMysqlTerminalMycli : undefined}
           />
-          <InvestigationCommandList
-            commands={commands.data || []}
-            executions={executions.data || []}
-            target={target}
-            service={service}
-            runStates={runStates}
-            clock={clock}
-            onReview={reviewCommand}
-          />
-          <ManualGuidance serviceName={service?.name} guidance={guidance} />
           {!!service && <ReverseShellPanel
             onStartListener={(port) => void openListenerShell(port)} />}
           {!!service && <ChiselPivotPanel
@@ -2043,7 +2000,6 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           {!!service && <PuttyKeyConverter />}
           {!!service && <PypykatzLsassPanel />}
           {!!service && <RecycleBinDecoder />}
-          <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
           <SmbShareResults key={`smb-share-${serviceId}`} targetId={targetId} serviceId={serviceId}
             shares={smbShares} shareAccess={smbShareAccess} activeShare={lastSpiderShare}
             runState={runStates["smb-share-spider"]}
@@ -2211,8 +2167,22 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             onClose={() => setPsexecSession(undefined)}
             onSendHashToCracking={(hash) => sendHashToCracking(hash, "PTY 세션 로그 캡처")}
             targetId={targetId} />
-          <LiveOutputPanel run={focusedRun} elapsed={runElapsed}
-            outcome={currentOutcome} output={output} />
+            </div>
+          </details>}
+          {embedded && service && <details className="protocolToolbox serviceContextEditor">
+            <summary><span>&gt; :edit service</span>
+              <small>product · version · tags · notes</small></summary>
+            <ServiceWorkspace target={target}
+              draft={{product: serviceProduct, version: serviceVersion,
+                tags: serviceTags, notes: serviceNotes}}
+              saveState={serviceSaveState} disabled={!serviceId} collapsed={false}
+              commandMode
+              onDraft={(draft) => {
+                setServiceProduct(draft.product); setServiceVersion(draft.version);
+                setServiceTags(draft.tags); setServiceNotes(draft.notes);
+              }}
+              onSave={saveService} onToggle={() => undefined} />
+          </details>}
         </section>
         {!embedded && <aside ref={notesRef} className={`notes${notesCollapsed ? " isCollapsed" : ""}`}
           style={{"--workspace-height": `${workspaceHeight}px`} as CSSProperties}>
@@ -2312,6 +2282,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
         }}
         onStop={(templateId) => void stopRun(templateId)} />
       <CommandReviewModal command={confirm} runWithSudo={runWithSudo}
+        targetLabel={target?.ip} routeLabel={service ? `${service.port}/${service.protocol}` : "kali / local"}
         onSudo={setRunWithSudo} outputFilename={outputFilename}
         onOutputFilename={setOutputFilename} onCancel={() => setConfirm(null)}
         onRun={() => void run()} />

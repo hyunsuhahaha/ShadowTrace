@@ -394,6 +394,9 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `NetexecOutcome.tsx` | NetExec 성공 후 psexec/wmiexec/evil-winrm 등 다음 행동 제안 |
 | `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링 |
 | `LiveOutputPanel.tsx` | 실시간 출력 패널(`D\|`/`F\|` 태그 출력은 파일 트리로 렌더) |
+| `OperatorContext.tsx` | 그래프의 root/host ScanCenter와 service Enumeration이 공유하는 대상 프롬프트·실제 상태 fact·작업 액션 헤더 |
+| `FloatingTerminal.tsx` | AppShell 전역 Scan 실행 터미널 — 헤더 드래그로 패널에서 분리하고 라우트와 무관하게 이동·크기 조절·복원·원위치 도킹 |
+| `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging |
 
 ### 10.2 `ScanCenter.tsx` — 기본(unmatched) 라우트
 
@@ -576,9 +579,10 @@ DB enum을 바꾸지 않고 UI에서 준비됨/선행 정보 부족/사용자 �
 `notes`/`pinned` 필드를 PATCH하므로 서버에 영속된다. Work Queue는 수동 technique과
 실행·실패 상태 작업을 모아 노드 이동 및 상태 전환을 제공한다. Canvas pan/zoom/노드 배치는
 프로젝트·보기 모드별 localStorage에 저장되며 선택 노드도 복원된다.
-GraphCanvas/OutlineView/Row/Inspector/AddNodeForm/
-OnboardingPane 등 모든 UI가 단일 파일에 인라인으로 정의되며 동작 회귀 테스트는
-`features/graph/GraphWorkspace.test.tsx`에 있다.
+GraphCanvas/OutlineView/Inspector/AddNodeForm/ProjectOperatorSession 등은
+`features/graph/` 하위 파일로 분리돼 있다. `ProjectOperatorSession.tsx`는 project-root를
+실행기가 아닌 Target·최근 세션 TUI 라우터로 렌더하며, host는 source_ref의 target id를
+`ScanCenter`에 직접 전달한다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
@@ -592,9 +596,10 @@ API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST
 Metasploit 잠금 배너), `ui.tsx`(Badge/Button/Card/EmptyState/ErrorState/LoadingState/
 PageHeader/statusCopy), `api.ts`(fetch 래퍼), `main.tsx`(Vite entry).
 
-`frontend/src/*.tsx` 전수 조사 결과 고아(아무 워크스페이스에서도 import하지 않는)
-컴포넌트는 없다 — 모든 top-level 컴포넌트가 14개 워크스페이스 중 하나의 직계 자식이거나
-손자(자식의 자식)다.
+`ServiceIntelligencePanel.tsx`는 이전 서비스 조사 카드 UI의 회귀 테스트를 위해 남겨 둔
+legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 않는다. 기본 서비스
+작업 경로는 `ServiceCommandSession.tsx`이고, 세부 프로토콜 도구는 접힌 toolbox 안에서만
+필요할 때 연다. 그 밖의 top-level 컴포넌트는 14개 워크스페이스 중 하나에 연결돼 있다.
 
 ## 11. 백엔드 모듈 파일 구성
 
@@ -713,6 +718,8 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-workspace-project` | project id(문자열) | 활성 프로젝트의 단일 source of truth. 거의 모든 워크스페이스가 마운트 시 읽고, 프로젝트 삭제 시 제거됨 |
 | `oscp-sidebar-width` | 사이드바 px(184–420 clamp) | `AppShell.tsx` 사이드바 리사이즈 유지 |
 | `oscp-sidebar-collapsed` | `"true"`/`"false"` | `AppShell.tsx` 사이드바 접힘 상태 |
+| `oscp-floating-scan-terminal` / `oscp-floating-terminal-frame` | JSON 세션 메타 / `{x,y,width,height}` | 워크스페이스 전역 플로팅 Scan 터미널과 배치·크기 복원 |
+| `oscp-scan-dock` | JSON `{scanId,targetId}` | 플로팅 터미널 원위치 복귀 시 Scan Center 1회성 선택 핸드오프 |
 | `oscp-graph-pane` | Progress Graph 우측 패널 px(최소 320) | `GraphWorkspace.tsx` 리사이즈 유지 |
 | `oscp-graph-view` / `oscp-graph-activity-panel` | 보기 모드 / JSON `{x,y,width,height,collapsed}` | Graph/Tree/Outline 선택과 Activity Stream 배치·크기·접힘 유지 |
 | `oscp-graph-selected` / `oscp-graph-camera:<root>:<mode>` | node id / JSON `{panX,panY,zoom,positions}` | 선택 노드와 프로젝트·레이아웃별 Canvas 작업 위치 복원 |
@@ -732,7 +739,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 
 ## 13. CSS 파일 구성
 
-`frontend/src/`의 22개 CSS 중 대부분은 `main.tsx`가 전역으로 불러오고, 일부만 소유
+`frontend/src/`의 25개 CSS 중 대부분은 `main.tsx`가 전역으로 불러오고, 일부만 소유
 컴포넌트가 직접 import한다.
 
 | 파일 | Import 위치 | 담당 영역 |
@@ -744,6 +751,9 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `scan-enhanced.css` | `main.tsx` | Scan Center 필터/작업 바 추가 스타일 |
 | `enumeration-enhanced.css` | `main.tsx` | Service Enumeration(`App.tsx`) 추가 위젯 |
 | `execution.css` | `main.tsx` | 실행/터미널 chrome(Enumeration과 공유) |
+| `execution-review.css` | `main.tsx` | Scan/서비스/도구 명령 실행 전 staging review 모달 |
+| `floating-terminal.css` | `FloatingTerminal.tsx` | AppShell 전역 플로팅 Scan 터미널 이동·크기 조절 chrome |
+| `features/graph/project-operator-session.css` | `ProjectOperatorSession.tsx` | project-root의 Target router·최근 세션 TUI |
 | `service-intelligence.css` | `App.tsx` | `ServiceIntelligencePanel` |
 | `web.css` | `main.tsx` | Web Testing 기본 레이아웃 |
 | `web-enhanced.css` | `main.tsx` | Web Testing 응답 이력/diff/클라우드 지문 |

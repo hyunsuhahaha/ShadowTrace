@@ -500,7 +500,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
         </section>
         <section className="crackMain">
           <div className="terminal crackTerminal">
-            <div className={displayStatus ? `terminalStatus terminalStatus--${displayStatus}` : ""}>
+            <div className={`terminalStatus${displayStatus ? ` terminalStatus--${displayStatus}` : ""}`}>
               <span className="termDots" aria-hidden="true">
                 <i className="termDot" /><i className="termDot termDot--yellow" />
                 <i className="termDot termDot--green" />

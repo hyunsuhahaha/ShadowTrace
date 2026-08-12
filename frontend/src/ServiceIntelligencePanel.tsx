@@ -1,5 +1,4 @@
-import {useEffect,useState} from "react";
-import {createPortal} from "react-dom";
+import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {api} from "./api";
 
@@ -43,12 +42,6 @@ export default function ServiceIntelligencePanel({data,loading,error,onRun,execu
     enabled:previewId!==undefined,
     staleTime:30_000,
   });
-  useEffect(()=>{
-    if(previewId===undefined)return;
-    const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setPreviewId(undefined);};
-    document.addEventListener("keydown",close);
-    return()=>document.removeEventListener("keydown",close);
-  },[previewId]);
   if(loading)return <section className="intelPanel intelPanel--loading">조사 단계 불러오는 중…</section>;
   if(error||!data)return <section className="intelPanel intelPanel--error">조사 단계를 불러오지 못했습니다.</section>;
   const completed=data.stages.filter(stage=>stage.completed).length;
@@ -59,11 +52,7 @@ export default function ServiceIntelligencePanel({data,loading,error,onRun,execu
   const previewText=preview.data?.stdout||preview.data?.stderr||preview.data?.error||"저장된 출력이 없습니다.";
   return <section className="intelPanel" aria-labelledby="service-intelligence-heading">
     <header className="intelHeader"><div><h2 id="service-intelligence-heading">
-      <span className="termDots" aria-hidden="true">
-        <i className="termDot" /><i className="termDot termDot--yellow" />
-        <i className="termDot termDot--green" />
-      </span>
-      조사 단계</h2>
+      operation queue</h2>
       <span>{profile}{identity&&` · ${identity}`}</span></div>
       <div className="intelProgress" aria-label={`${data.stages.length}단계 중 ${completed}단계 정보 확인`}>
         <b>{completed}/{data.stages.length}</b><small>정보 확인</small></div></header>
@@ -86,17 +75,15 @@ export default function ServiceIntelligencePanel({data,loading,error,onRun,execu
               </button>
               {execution&&!command.completed&&<button className="intelCommandRerun"
                 onClick={()=>onRun(command.id)}>다시 실행</button>}
-              {execution&&execution.id===previewId&&createPortal(<div className="intelOutputBackdrop"
-                onClick={()=>setPreviewId(undefined)}><section className="intelOutputPreview" role="dialog"
-                aria-modal="true" aria-label={`${command.name} 최근 실행 결과`}
-                onClick={(event)=>event.stopPropagation()}>
+              {execution&&execution.id===previewId&&<section className="intelInlineOutput"
+                aria-label={`${command.name} 최근 실행 결과`}>
                 <header><div><b>{command.name}</b><span>최근 실행 #{execution.id}</span></div><div>
                   <button onClick={()=>navigator.clipboard.writeText(previewText)}>전체 복사</button>
-                  <button autoFocus className="intelOutputClose" aria-label="결과 닫기"
+                  <button className="intelOutputClose" aria-label="결과 닫기"
                     onClick={()=>setPreviewId(undefined)}>×</button></div></header>
                 {preview.isPending?<p>결과 불러오는 중…</p>:preview.isError?<p>결과를 불러오지 못했습니다.</p>:
                   <pre>{previewText}</pre>}
-              </section></div>,document.body)}
+              </section>}
             </div>;
           })}</div>}
         </div></details>})}</div>

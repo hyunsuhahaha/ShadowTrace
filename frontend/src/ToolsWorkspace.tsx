@@ -299,11 +299,12 @@ export default function ToolsWorkspace() {
           {error && <ErrorState message={error} />}
           <CommandReviewModal
             command={reviewOpen && selected ? { name: selected.name, preview, risk: selected.risk } : undefined}
+            targetLabel={target?.ip} routeLabel="kali / local"
             runWithSudo={runWithSudo} onSudo={setRunWithSudo}
             outputFilename={outputFilename} onOutputFilename={setOutputFilename}
             onCancel={() => setReviewOpen(false)} onRun={() => void run()} />
           <div className="terminal lootTerminal">
-            <div className={selectedRun ? `terminalStatus terminalStatus--${selectedRun.status}` : ""}>
+            <div className={`terminalStatus${selectedRun ? ` terminalStatus--${selectedRun.status}` : ""}`}>
               <span className="termDots" aria-hidden="true">
                 <i className="termDot" /><i className="termDot termDot--yellow" />
                 <i className="termDot termDot--green" />

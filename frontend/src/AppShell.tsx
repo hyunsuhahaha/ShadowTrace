@@ -7,6 +7,7 @@ import { Badge, Button, ErrorState, LoadingState } from "./ui";
 import VpnControl from "./VpnControl";
 import MetasploitLock from "./MetasploitLock";
 import CommandPalette from "./CommandPalette";
+import {FloatingTerminalProvider} from "./FloatingTerminal";
 import "./layout-controls.css";
 
 type Project = { id: number; name: string; metasploit_target_id?: number | null };
@@ -263,7 +264,7 @@ export default function AppShell({
     }
   };
 
-  return (
+  return <FloatingTerminalProvider>
     <div
       className={`appShell${sidebarCollapsed ? " appShell--sidebarCollapsed" : ""}`}
       style={{
@@ -449,5 +450,5 @@ export default function AppShell({
         )}
       </div>
     </div>
-  );
+  </FloatingTerminalProvider>;
 }

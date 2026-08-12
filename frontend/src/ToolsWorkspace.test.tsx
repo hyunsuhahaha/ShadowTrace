@@ -126,7 +126,7 @@ it("runs the selected command against the chosen service after review confirmati
   await waitFor(() => expect((screen.getByText("실행 내용 검토") as HTMLButtonElement).disabled)
     .toBe(false));
   fireEvent.click(screen.getByText("실행 내용 검토"));
-  fireEvent.click(await screen.findByText("명령 실행"));
+  fireEvent.click(await screen.findByRole("button", {name: /EXECUTE/}));
 
   await waitFor(() => {
     const call = fetcher.mock.calls.find(([callUrl, callInit]) =>
@@ -164,7 +164,7 @@ it("launches an interactive-mode command in a desktop terminal instead of stream
   await waitFor(() => expect((screen.getByText("실행 내용 검토") as HTMLButtonElement).disabled)
     .toBe(false));
   fireEvent.click(screen.getByText("실행 내용 검토"));
-  fireEvent.click(await screen.findByText("명령 실행"));
+  fireEvent.click(await screen.findByRole("button", {name: /EXECUTE/}));
 
   await screen.findByText(/Kali 데스크톱 터미널에서 실행했습니다/);
   expect(fetcher.mock.calls.some(([callUrl, callInit]) =>

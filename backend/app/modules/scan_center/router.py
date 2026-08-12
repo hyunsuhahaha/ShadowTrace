@@ -70,17 +70,25 @@ def automation_summary(ident: int, db: Session = Depends(get_db)):
 
 @router.post("/preview")
 def preview(body: ScanPreviewIn, db: Session = Depends(get_db)):
+    if body.target_ip:
+        target = Target(project_id=0, name=body.target_ip, ip=body.target_ip)
+    elif body.target_id is not None:
+        target = need(db, Target, body.target_id)
+    else:
+        raise HTTPException(400, "A target IP is required")
     try:
         command, argv = render_scan(need(db, ScanProfile, body.profile_id),
-                                    need(db, Target, body.target_id),
+                                    target,
                                     body.ports, body.extra_arguments,
-                                    body.top_ports)
+                                    body.top_ports, body.command_override)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"command": command, "argv": argv}
 
 @router.post("/run", response_model=ScanJobOut, status_code=201)
 async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
+    if body.target_id is None:
+        raise HTTPException(400, "Save the target before running a scan")
     target, profile = need(db, Target, body.target_id), need(db, ScanProfile, body.profile_id)
     active = db.scalar(select(ScanJob.id).where(
         ScanJob.target_id == target.id,
@@ -89,7 +97,8 @@ async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
         raise HTTPException(409, "This target already has an active scan")
     try:
         command, argv = render_scan(
-            profile, target, body.ports, body.extra_arguments, body.top_ports
+            profile, target, body.ports, body.extra_arguments, body.top_ports,
+            body.command_override,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))

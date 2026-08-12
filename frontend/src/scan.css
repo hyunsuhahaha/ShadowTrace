@@ -28,13 +28,17 @@
 .toolRow b::before{content:"$ ";color:var(--term-cursor)}
 .toolRow.active b{color:#eef8f2}
 
-.scanCenter{padding:28px;overflow:auto}
+.scanCenter{padding:24px;overflow:auto}
+
+.scanSession{border:1px solid var(--term-border);background:var(--term-bg)}
+.scanSession__setup{padding:12px}
+.scanSession>.operatorContext{border:0;border-bottom:1px solid var(--term-border)}
 
 /* Each target field carries its own persistent IP/NAME tag instead of
    relying on placeholder text alone -- once both fields hold the same-
    looking IP-derived value, placeholder-only labels made them read as an
    accidental duplicate rather than two distinct fields. */
-.targetSetup{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}
+.targetSetup{display:block}
 .targetSetup .fieldError{grid-column:1/-1;color:#ff8e8e;font-size:11px}
 .fieldRow{display:flex;align-items:center;gap:8px;min-width:0}
 .fieldRow>span{flex:none;width:38px;font:10px ui-monospace,monospace;color:var(--term-cursor);letter-spacing:.04em;text-transform:uppercase}
@@ -45,21 +49,34 @@
    name is already visible in the <select>, and the command itself only
    needs to appear once (the authoritative preview lives in .scanComposer
    below, built from the server, not duplicated here from raw arguments). */
-.profilePicker{display:grid;grid-template-columns:110px minmax(260px,360px) 1fr;gap:10px;align-items:center;margin-top:14px;padding:12px;border:1px solid var(--term-border);background:var(--term-bg)}
+.profilePicker{display:grid;grid-template-columns:110px minmax(260px,360px) 1fr;gap:10px;align-items:center;margin-top:10px}
 .profilePicker>label{font-size:11px;color:#8fa39c;text-transform:uppercase;letter-spacing:.06em}
 .profilePicker>select{background:#0b1113;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px}
 .profilePicker>small{color:#5f7a72;font-size:10px;line-height:1.5}
 
-.scanHero{display:flex;justify-content:flex-end;margin-top:12px}
 .importScan{position:relative;border:1px solid var(--line-strong);background:var(--surface-raised);color:var(--text);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:.5rem .8rem;border-radius:var(--radius);cursor:pointer}
 .importScan::before{content:"[ ";}
 .importScan::after{content:" ]";}
 .importScan input{display:none}
 
-.scanComposer{display:flex;gap:8px;margin:14px 0 22px}
-.scanComposer input{background:var(--term-bg);border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px;font:12px ui-monospace,monospace}
+.scanCommandDeck{border-top:1px solid var(--term-border);background:#040708}
+.scanCommandDeck__label{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #172125;color:#71877f;font:9px ui-monospace,monospace;letter-spacing:.1em}
+.scanCommandDeck__label small{color:var(--term-cursor);font:inherit;letter-spacing:.04em}
+.scanCommandDeck__prompt{display:flex;gap:10px;min-height:72px;align-items:flex-start;padding:14px 12px;margin:0}
+.scanCommandDeck__prompt>b{flex:none;color:var(--term-cursor);font:600 11px ui-monospace,monospace}
+.scanCommandDeck__prompt>textarea{width:100%;min-height:44px;resize:vertical;padding:0;border:0;outline:0;background:transparent;color:var(--term-fg);font:12px/1.65 ui-monospace,monospace;caret-color:var(--term-cursor)}
+.scanCommandDeck__provenance{display:flex;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid #111b18;color:#596d66;font:8px ui-monospace,monospace;letter-spacing:.08em}.scanCommandDeck__provenance span::before{content:"· ";}.scanCommandDeck__provenance .is-bound{color:var(--term-cursor)}.scanCommandDeck__provenance .is-modified,.scanCommandDeck__provenance .is-pending{color:var(--warning)}.scanCommandDeck__provenance .is-drift{color:var(--danger)}.scanCommandDeck__provenance button{margin-left:auto;border:0;background:transparent;color:#71877f;padding:2px;font:inherit;letter-spacing:inherit}
+.scanCommandDeck__controls{display:flex;justify-content:flex-end;gap:8px;padding:0 12px 12px}
+.scanCommandDeck__controls input{min-width:180px;background:#080c0d;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:var(--radius);font:11px ui-monospace,monospace}
 .compare select{background:#0b1113;border:1px solid var(--term-border);color:var(--term-fg);padding:9px;border-radius:3px}
-.scanComposer code{flex:1;background:#040708;border:1px solid var(--term-border);color:var(--term-cursor);padding:10px;font-size:11px;overflow:auto;border-radius:3px}
+.scanTranscript{position:relative;margin:0 0 18px;border-color:#31453e;background:#030707;overflow:hidden}
+.scanTranscript>.terminalStatus{position:relative;height:48px;padding:0 13px;overflow:hidden}.scanTranscript__identity{display:grid;gap:3px;min-width:0}.scanTranscript__identity b{overflow:hidden;color:#c6d5d0;font:600 10px ui-monospace,monospace;text-overflow:ellipsis;white-space:nowrap}.scanTranscript__identity b::before{content:"> ";color:var(--term-cursor)}.scanTranscript__identity span{max-width:55ch;overflow:hidden;color:#52675f;font:8px ui-monospace,monospace;text-overflow:ellipsis;white-space:nowrap}.scanTranscript .terminalStatus>small{color:var(--term-cursor);font:8px ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase}
+.scanTranscript__rx{position:absolute;inset:auto 0 0;height:1px;background:var(--term-cursor);transform-origin:left;animation:scanRxSweep .6s ease-out both}@keyframes scanRxSweep{from{opacity:.9;transform:scaleX(0)}to{opacity:0;transform:scaleX(1)}}
+.scanTranscript__route{display:flex;align-items:center;gap:8px;height:28px;padding:0 13px;border-bottom:1px solid #14201c;background:#060b0a;color:#52665f;font:8px ui-monospace,monospace}.scanTranscript__route>b{color:#344a41}.scanTranscript__route>strong{color:#8cb9a4;font-weight:500}.scanTranscript__route>em{margin-left:auto;color:#58736a;font-style:normal;letter-spacing:.08em}.scanTranscript--attached .scanTranscript__route>em{color:var(--term-cursor)}
+.scanTranscript pre{height:210px;padding:15px 14px;outline:0;scrollbar-color:#294039 #050809}.scanTranscript pre:focus-visible{box-shadow:inset 2px 0 var(--term-cursor)}.scanTranscript pre code{font:inherit;color:inherit}.scanTranscript__cursor{display:inline-block;width:7px;height:1.15em;margin-left:3px;background:var(--term-cursor);vertical-align:-2px;animation:scanCursorBlink 1s steps(1,end) infinite}@keyframes scanCursorBlink{50%{opacity:0}}
+.scanTranscript__footer{display:flex;align-items:center;gap:14px;height:29px;padding:0 13px;border-top:1px solid #14201c;background:#080e0c;color:#4e625b;font:8px ui-monospace,monospace;letter-spacing:.06em}.scanTranscript__footer>strong{margin-left:auto;color:#78998b;font-weight:500}.scanTranscript--attached .scanTranscript__footer>strong{color:var(--term-cursor)}
+@media(prefers-reduced-motion:reduce){.scanTranscript__rx,.scanTranscript__cursor{animation:none}}
+.scanTranscript>.terminalStatus{cursor:grab;touch-action:none}
 
 .scanStats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
 .scanStats div{border:1px solid var(--line);background:#0c1315;padding:13px;display:grid;gap:4px}
@@ -67,6 +84,7 @@
 .scanStats b{font-size:22px}
 
 .scanTable{border:1px solid var(--line)}
+.scanObservationHeader{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--term-bg);font:9px ui-monospace,monospace}.scanObservationHeader b{color:var(--term-cursor);letter-spacing:.06em}.scanObservationHeader span{color:#617a71}.tableRow b::before{content:"+ ";color:var(--term-cursor)}
 .tableHead,.tableRow{display:grid;grid-template-columns:100px 130px 1fr 70px;padding:10px 12px;gap:10px;align-items:center}
 .tableHead{background:#10181b;color:#61767c;font-size:9px;letter-spacing:1px}
 .tableRow{border-top:1px solid #172125;font-size:11px}
@@ -92,7 +110,7 @@
   .targetSetup{display:grid;grid-template-columns:1fr}
   .targetSetup .fieldError{grid-column:auto}
   .profilePicker{grid-template-columns:1fr}
-  .scanComposer{display:grid}
+  .scanCommandDeck__controls{display:grid}
   .tableHead,.tableRow{grid-template-columns:80px 100px 1fr}
   .tableHead span:last-child,.tableRow em{display:none}
 }

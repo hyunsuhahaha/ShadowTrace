@@ -1,6 +1,5 @@
 import {useQuery} from "@tanstack/react-query";
 import {api} from "./api";
-import type {ServiceIntelligence} from "./ServiceIntelligencePanel";
 import type {Project, Service, Target} from "./enumerationModel";
 
 export function useEnumerationQueries({
@@ -31,13 +30,6 @@ export function useEnumerationQueries({
     queryFn: () => api<any[]>(`/services/${serviceId}/commands`),
     enabled: !!serviceId,
   });
-  const intelligence = useQuery({
-    queryKey: ["serviceIntelligence", serviceId],
-    queryFn: () => api<ServiceIntelligence>(
-      `/services/${serviceId}/intelligence`,
-    ),
-    enabled: !!serviceId,
-  });
   const targetCommands = useQuery({
     queryKey: ["targetIdentityCommands", targetId],
     queryFn: () => api<any[]>(`/targets/${targetId}/identity-commands`),
@@ -54,7 +46,6 @@ export function useEnumerationQueries({
     targets,
     services,
     commands,
-    intelligence,
     targetCommands,
     executions,
   };

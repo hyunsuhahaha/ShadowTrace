@@ -6,6 +6,7 @@
 .intelPanel{margin:18px 0;border:1px solid var(--term-border);border-radius:var(--radius);background:var(--term-bg);color:var(--term-fg);overflow:hidden}
 .intelHeader{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 16px;border-bottom:1px solid var(--term-border);background:var(--term-bar)}
 .intelHeader h2{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:15px}
+.intelHeader h2{font-family:ui-monospace,monospace;text-transform:lowercase}.intelHeader h2::before{content:"> ";color:var(--term-cursor)}
 .intelHeader span,.intelHeader small{color:#7d9992;font-size:11px}
 .intelProgress{text-align:right;min-width:68px}
 .intelProgress b{display:block;font:650 20px ui-monospace,monospace;color:var(--term-cursor)}
@@ -21,6 +22,7 @@
 .intelStage.isComplete summary>span{color:var(--term-cursor)}
 .intelStageBody{padding:0 12px 12px 46px;color:#9caaa5}
 .intelStageBody ul{margin:0 0 10px;padding-left:17px;font-size:11px;line-height:1.55}
+.intelInlineOutput{grid-column:1/-1;margin-top:8px;border:1px solid var(--term-border);background:#040708}.intelInlineOutput>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;border-bottom:1px solid var(--term-border)}.intelInlineOutput>header>div{display:flex;align-items:center;gap:8px}.intelInlineOutput header span{color:#617a71;font:9px ui-monospace,monospace}.intelInlineOutput button{border:1px solid var(--term-border);background:transparent;color:#8fa39c;padding:4px 7px;font-size:9px}.intelInlineOutput pre{max-height:260px;overflow:auto;margin:0;padding:10px;color:var(--term-fg);font:10px/1.6 ui-monospace,monospace;white-space:pre-wrap}.intelInlineOutput>p{margin:0;padding:12px;color:var(--muted);font-size:10px}
 .intelCommands{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}
 .intelCommands button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:9px 10px;border:1px solid var(--term-border);background:#0d1613;color:inherit;border-radius:var(--radius)}
 .intelCommands button:hover:not(:disabled){border-color:var(--term-cursor)}

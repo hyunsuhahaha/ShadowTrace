@@ -65,6 +65,7 @@ class ExecutionIn(BaseModel):
     variables: dict[str, str] = {}
     run_as_root: bool = True
     output_filename: str = Field(default="", max_length=120, pattern=r"^[\w .-]*$")
+    command_override: str | None = Field(default=None, max_length=4096)
 class ExecutionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; stdout: str; stderr: str; cwd: str
@@ -80,11 +81,18 @@ class ScanProfileOut(ORM):
     engine: str; chain_kind: str
 
 class ScanPreviewIn(BaseModel):
-    target_id: int
+    target_id: int | None = None
+    target_ip: str = ""
     profile_id: int
     ports: str = ""
     top_ports: int = Field(default=100, ge=1, le=65535)
     extra_arguments: list[str] = []
+    command_override: str | None = Field(default=None, max_length=4096)
+
+    @field_validator("target_ip")
+    @classmethod
+    def valid_target_ip(cls, value: str) -> str:
+        return str(IPvAnyAddress(value)) if value else ""
 
 class ScanJobOut(ORM):
     id: int; project_id: int; target_id: int; profile_id: int | None
@@ -143,6 +151,7 @@ class ManualTerminalIn(BaseModel):
     # types them into the PTY rather than storing them in a process's argv
     # or this row's command column.
     command: str = Field(default="", max_length=500)
+    run_as_root: bool = False
     @field_validator("command")
     @classmethod
     def no_inline_secrets(cls, v: str) -> str:

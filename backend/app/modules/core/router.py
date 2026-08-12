@@ -1,4 +1,5 @@
 import json
+import shlex
 import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -371,12 +372,20 @@ def commands(ident: int, db: Session = Depends(get_db)):
         service.name, service.port, service.protocol,
         product=service.product, cpe=json.loads(service.cpe or "[]"), tls=service.tls,
     ):
+        command_variables = {
+            **variables,
+            "host": target.hostname
+            if target.hostname and item.get("service_key") == "http"
+            else target.ip,
+        }
         try:
             preview = catalog.render(
-                item["id"], variables, item.get("execution_mode", "captured")
+                item["id"], command_variables, item.get("execution_mode", "captured")
             )[1]
         except ValueError:
             preview = item["command"]
+            for key, value in command_variables.items():
+                preview = preview.replace(f"{{{key}}}", shlex.quote(str(value)))
         result.append({**item, "preview": preview})
     return result
 
