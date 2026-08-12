@@ -26,6 +26,8 @@ def credentials(project_id: int, db: Session = Depends(get_db)):
         # to auto-fill command generation on this single-user workstation.
         "secret": row.secret, "has_secret": bool(row.secret),
         "source_kind": row.source_kind, "source_detail": row.source_detail,
+        "source_execution_kind": row.source_execution_kind,
+        "source_execution_id": row.source_execution_id,
         "domain": row.domain, "service_names": loads(row.service_names),
         "notes": row.notes, "created_at": row.created_at,
     } for row in rows]

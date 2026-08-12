@@ -103,11 +103,16 @@ Risk", "False Positive"]`로 제한된다(`backend/app/schemas.py:404`, bulk upd
 
 ### 3.3 Credential — 구조는 독립적이나 출처 추적이 느슨함
 
-`Credential`(`models.py:711-728`)은 자체 PK를 가진 독립 테이블이며 `target_id`/
-`service_id`가 nullable이라 project 전역에서 재사용 가능하다. 생성 지점은 두 곳뿐이다.
+> **2026-08-13 갱신**: 아래 서술 이후 §5-2(Credential 출처 구조화) 1단계를
+> 마이그레이션 `0035_credential_source_execution`으로 적용했다. 무엇이 바뀌었고
+> 무엇이 아직 안 바뀌었는지는 이 절 끝에 정리했다.
+
+`Credential`(`models.py:711-736`)은 자체 PK를 가진 독립 테이블이며 `target_id`/
+`service_id`가 nullable이라 project 전역에서 재사용 가능하다. **백엔드에서** Credential
+row를 만드는 지점은 두 곳뿐이다.
 
 - 수동 입력: `backend/app/modules/runbooks/credentials_router.py:47`
-- Hash Cracking 승격: `backend/app/modules/hash_cracking/router.py:266-269` —
+- Hash Cracking 승격: `backend/app/modules/hash_cracking/router.py:266-271` —
   `source_kind="hash_crack", source_detail=f"Hash crack #{row.id} · ..."`
 
 두 경우 모두 `source_kind`/`source_detail`(`models.py:723-724`)이 자유 텍스트다.
@@ -115,6 +120,30 @@ Risk", "False Positive"]`로 제한된다(`backend/app/schemas.py:404`, bulk upd
 실제 FK가 아니라 사람이 읽을 문자열(예: `"Hash crack #42 · ..."`)로만 남는다 —
 Evidence traceability 원칙(각 객체가 어떤 Command/Tool/Evidence에서 나왔는지 추적
 가능해야 함)이 Credential에는 소프트하게만 적용된다.
+
+프런트엔드에서 `POST /runbooks/credentials`를 호출하는 지점은 훨씬 많다
+(`App.tsx:1158` Responder 캡처, `App.tsx:1190` NetExec 빈/공유 계정 확인,
+`App.tsx:1552` DCSync, `PostExploitationWorkspace.tsx:216` post-exploitation 캡처,
+`features/graph/Inspector.tsx:119` Responder 그래프 핸드오프 등) — 이들은 모두
+`source_kind`에 사람이 읽을 라벨(`"responder"`, `"netexec_check"`, `"dcsync"`,
+`"post_exploitation"`)만 채워 넣고, 실행을 만든 실제 `Execution`/`RemoteExecution`
+row id를 알지도 못하고 넘기지도 않는다(Responder와 DCSync는 애초에 그 두 테이블
+어디에도 기록되지 않는 흐름이다 — Responder는 데스크톱 프로세스, DCSync는 impacket
+명령 실행 결과를 프런트가 파싱한 값이다).
+
+**실제로 적용한 것**: `Credential`에 nullable `source_execution_kind`/
+`source_execution_id` 컬럼을 추가하고(`models.py:723-730`,
+`Evidence.source_type`/`source_id`와 같은 어휘 사용), 유일하게 실제 내부 row를
+확실히 아는 생성 지점인 `hash_cracking/router.py:266-271`의 `promote()`만
+`source_execution_kind="hash_crack_job", source_execution_id=row.id`로 채우도록
+연결했다. 기존 `source_kind`/`source_detail` 자유 텍스트는 그대로 유지해 표시용으로
+쓴다(가산적 변경, 하위 호환).
+
+**아직 안 된 것**: 프런트엔드가 직접 만드는 나머지 생성 지점(Responder/NetExec/DCSync/
+Post-Exploitation)은 여전히 `source_kind`가 자유 텍스트뿐이다. 이걸 구조화하려면
+각 흐름이 참조할 만한 실제 row가 있는지부터 따로 판단해야 한다(DCSync/Responder는
+Execution 계열 테이블에 전혀 기록되지 않으므로 새 참조 대상 자체를 정의해야 할 수도
+있음) — 이번 변경 범위 밖으로 의도적으로 남겨뒀다.
 
 ### 3.4 Evidence — 실행 결과의 canonical store가 아님
 
@@ -250,12 +279,27 @@ Session/Privilege/Pivot/Attack Path, Faraday 연동은 Phase 2/3 범위이므로
    `InteractiveSession.log_path`/`Tunnel.log_path`는 같은 패턴을 그대로 적용할 수 없는
    구조(ANSI raw PTY 바이트, 대부분 빈 운영 로그)라 이번 항목에서 의도적으로 제외했다
    — 별도 후속 결정 필요.
+   **[2026-08-13 완료]** (a)/(b) 모두 적용됨 — `RemoteExecManager._run`/
+   `HashCrackManager._run`의 예외 경로가 이제 예외 메시지를 stderr로 캡처하고
+   `_capture_evidence`를 호출하며, `ExploitLocalRun`의 Evidence 파일이 `output.txt`로
+   바뀌어 실제 stdout/stderr를 담는다. 테스트 3개 추가(`test_post_exploitation.py`,
+   `test_hash_cracking.py`, `test_exploit_research.py`), 백엔드 434/프런트 424 전부
+   통과.
 
 2. **Credential 출처를 구조화(soft FK → 실제 FK 또는 구조화 필드).**
    `source_kind`/`source_detail` 문자열 대신 `source_execution_kind` +
    `source_execution_id` 같은 명시적 참조 쌍을 추가하고, 기존 자유 텍스트는 표시용
    `source_detail`로 남긴다(가산적 변경, 기존 데이터 깨지지 않음). 1번이 끝나야
    "이 Credential은 이 Evidence/Execution에서 나왔다"는 사슬이 실제로 의미를 가진다.
+   **[2026-08-13 부분 완료]** §3.3에 정리한 대로 컬럼 추가(마이그레이션
+   `0035_credential_source_execution`)와 `HashCrackJob.promote()` 연결까지 끝냈고
+   `GET /runbooks/credentials` 응답에도 노출했다. 백엔드에서 실제 소스 row를 아는
+   생성 지점이 이 하나뿐이라 나머지(Responder/NetExec/DCSync/Post-Exploitation의
+   프런트발 자유 텍스트 `source_kind`)는 의도적으로 손대지 않았다 — 각 흐름이 참조할
+   실제 row가 있는지부터 별도로 설계해야 하는 더 큰 작업이라, 이번 "가산적 변경" 범위를
+   넘어선다고 판단했다. 다음으로 이 항목을 다시 열 때는 Responder/DCSync처럼
+   Execution 계열 테이블에 전혀 기록되지 않는 흐름부터 "그 흐름의 결과를 무엇으로
+   참조할 것인가"를 먼저 정해야 한다.
 
 3. **Note를 독립 테이블로 분리.**
    신규 `Note` 테이블(`id`, `project_id`, 선택적 `target_id`/`service_id`/

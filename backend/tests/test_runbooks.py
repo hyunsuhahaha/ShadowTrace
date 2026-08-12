@@ -162,6 +162,16 @@ def test_instances_quarantine_rows_from_an_older_project_generation():
         raise AssertionError("stale runbook scope must not be returned")
 
 
+def test_credential_listing_exposes_the_structured_source_execution_pointer():
+    db = database()
+    project, target, service = scope(db)
+    credential = create_credential(CredentialIn(
+        project_id=project.id, target_id=target.id, service_id=service.id,
+        username="student", secret_hint="manually recorded"), db)
+    assert credential["source_execution_kind"] is None
+    assert credential["source_execution_id"] is None
+
+
 def test_credential_condition_and_recheck_recommendation():
     db = database()
     project, target, service = scope(db)

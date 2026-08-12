@@ -722,6 +722,13 @@ class Credential(Base):
     secret: Mapped[str] = mapped_column(Text, default="")
     source_kind: Mapped[str] = mapped_column(String(40), default="manual")
     source_detail: Mapped[str] = mapped_column(Text, default="")
+    # Structured pointer to the row that produced this credential (mirrors
+    # Evidence.source_type/source_id), set only by code paths that actually
+    # know it (e.g. hash-crack promotion). source_kind/source_detail above
+    # stay free text for display and remain the only source on flows that
+    # don't yet have a real row to point at.
+    source_execution_kind: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_execution_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     domain: Mapped[str] = mapped_column(String(253), default="")
     service_names: Mapped[str] = mapped_column(Text, default="[]")
     notes: Mapped[str] = mapped_column(Text, default="")

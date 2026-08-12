@@ -41,7 +41,7 @@ def test_migrate_repairs_tables_created_ahead_of_alembic(tmp_path):
     engine = create_engine(f"sqlite:///{env['OSCP_WORKSPACE_DB']}")
     with engine.connect() as connection:
         assert connection.scalar(text(
-            "select version_num from alembic_version")) == "0034_graph_events"
+            "select version_num from alembic_version")) == "0035_credential_source_execution"
     indexes = {item["name"] for item in inspect(engine).get_indexes(
         "runbook_template_versions")}
     assert "uq_runbook_template_version" in indexes
@@ -82,7 +82,7 @@ def test_migrate_repairs_hybrid_schema_from_repeated_create_all(tmp_path):
     assert "ix_runbook_step_instances_activation" in indexes
     with engine.connect() as connection:
         assert connection.scalar(text(
-            "select version_num from alembic_version")) == "0034_graph_events"
+            "select version_num from alembic_version")) == "0035_credential_source_execution"
 
 
 def test_alembic_database_accepts_direct_report_finding(tmp_path):

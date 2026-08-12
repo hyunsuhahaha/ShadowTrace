@@ -267,6 +267,7 @@ def promote(job_id: int, body: PromoteIn, db: Session = Depends(get_db)):
         project_id=row.project_id, target_id=row.target_id,
         username=body.username.strip(), secret_kind="password", secret=body.secret,
         source_kind="hash_crack", source_detail=f"Hash crack #{row.id} · {row.hash_type_name}",
+        source_execution_kind="hash_crack_job", source_execution_id=row.id,
         domain=body.domain, service_names="[]", notes=body.notes)
     db.add(credential); db.commit(); db.refresh(credential)
     return {

@@ -302,6 +302,8 @@ def test_promote_creates_credential_linked_to_job(wordlist, tmp_path, monkeypatc
     assert credential.source_kind == "hash_crack"
     assert credential.target_id == target.id
     assert f"Hash crack #{job.id}" in credential.source_detail
+    assert credential.source_execution_kind == "hash_crack_job"
+    assert credential.source_execution_id == job.id
 
 
 def upload(content: bytes, filename: str = "backup.zip") -> UploadFile:
