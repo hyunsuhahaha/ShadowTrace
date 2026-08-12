@@ -601,6 +601,17 @@ ferox/ffuf 폼으로 handoff한다. Candidate는 자동으로 Graph를 수정하
 Graph Time-Machine은 `GraphEvent` append-only snapshot을 사용한다. 동일 fingerprint의
 연속 상태는 저장하지 않고 과거 frame은 읽기 전용으로 렌더한다. 배포 이전 데이터는
 node/edge `created_at` 순서로 fallback 재생한다.
+`docs/UI_UX_REVIEW.md`의 추천 1~4에 따라 (2026-08-13) 다음이 추가됐다 — (1) host/
+service/credential 노드에도 finding처럼 `meta.evidenceCount`를 동기화(`graph/service.py`,
+credential은 `Credential.source_execution_kind`/`source_execution_id` 체인을 통해서만
+집계됨)하고 캔버스에 작은 초록 원형 배지로 표시("사람이 첨부한 Evidence가 있다"는
+뜻일 뿐 자동 검증 아님), (2) 🎯 PATH TO OBJECTIVE 토글 — 선택 노드에서 `objective`
+플래그가 켜진 가장 가까운 노드까지 BFS(엣지를 양방향으로 취급, `focusDepth`와 같은
+연결성 규칙)로 경로를 찾아 금색 halo로 강조, (3) 프로젝트 생성 이후 경과 시간을
+`⏱ H:MM:SS`로 툴바에 상시 표시(OSCP+ 23:45:00 제한 참고용, project-root 노드의
+`created_at` 기반 순수 클라이언트 계산), (4) `discovered`/`enumerated`/`attempted` 등
+구조적 엣지에도 방향 화살표 추가(이전엔 `captures-from`/Access Lineage 엣지에만 있었음).
+관련 순수 함수(`evidenceCount`, `pathToObjective`, `formatElapsed`)는 `graphModel.ts`에 있다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),

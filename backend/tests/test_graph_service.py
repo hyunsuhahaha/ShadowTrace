@@ -152,6 +152,65 @@ def test_sync_projects_findings_and_credentials():
     assert finding.label == "Anonymous SMB"
 
 
+def test_sync_sets_evidence_count_on_host_and_service_nodes():
+    from app.models import Evidence, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.9")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=445, protocol="tcp", name="smb")
+    db.add(svc); db.flush()
+    db.add(Evidence(project_id=p.id, target_id=t.id, title="host-level note",
+                    kind="markdown", source_type="note"))
+    db.add(Evidence(project_id=p.id, target_id=t.id, service_id=svc.id,
+                    title="smb banner", kind="command_output", source_type="upload"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
+    host = next(n for n in nodes if n.type == "host")
+    svc_node = next(n for n in nodes if n.type == "service")
+    assert json.loads(host.meta)["evidenceCount"] == 1
+    assert json.loads(svc_node.meta)["evidenceCount"] == 1
+
+
+def test_sync_sets_evidence_count_on_credential_via_hash_crack_source():
+    from app.models import Credential, Evidence, HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.9")
+    db.add(t); db.flush()
+    evidence = Evidence(project_id=p.id, target_id=t.id, title="cracked hashes",
+                        kind="command_output", source_type="hash_crack_job")
+    db.add(evidence); db.flush()
+    job = HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="ntlm",
+                       hash_mode="1000", status="completed", evidence_id=evidence.id)
+    db.add(job); db.flush()
+    db.add(Credential(project_id=p.id, target_id=t.id, username="administrator",
+                      secret_kind="password", source_kind="hash_crack",
+                      source_execution_kind="hash_crack_job",
+                      source_execution_id=job.id))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    cred = next(n for n in db.query(GraphNode).filter_by(project_id=p.id).all()
+               if n.type == "credential")
+    assert json.loads(cred.meta)["evidenceCount"] == 1
+
+
+def test_sync_credential_evidence_count_is_zero_without_a_traceable_source():
+    from app.models import Credential, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.9")
+    db.add(t); db.flush()
+    db.add(Credential(project_id=p.id, target_id=t.id, username="guest",
+                      secret_kind="password", source_kind="manual"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    cred = next(n for n in db.query(GraphNode).filter_by(project_id=p.id).all()
+               if n.type == "credential")
+    assert json.loads(cred.meta)["evidenceCount"] == 0
+
+
 def test_sync_projects_successful_credential_reuse_as_access_lineage():
     from app.models import Credential, RemoteExecution, Target
     db = database()
@@ -331,7 +390,8 @@ def test_sync_relabels_winrm_port_5985():
     svc = db.query(GraphNode).filter_by(type="service").one()
     assert svc.label == "5985/tcp winrm"
     assert json.loads(svc.meta) == {"port": 5985, "protocol": "tcp", "name": "winrm",
-                                    "product": "Microsoft HTTPAPI httpd", "version": "2.0"}
+                                    "product": "Microsoft HTTPAPI httpd", "version": "2.0",
+                                    "evidenceCount": 0}
 
 
 def test_sync_retroactively_relabels_existing_default_service_node():

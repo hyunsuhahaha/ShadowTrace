@@ -138,6 +138,15 @@ BloodHound의 다른 특징(Cypher 쿼리 검색, 노드 속성 패널의 "owned
 
 ## 6. 최종 추천 (우선순위 순, 3~5개)
 
+> **[2026-08-13 구현 완료]** 1~4번을 모두 적용했다 — `backend/app/modules/graph/service.py`
+> (evidenceCount 동기화), `frontend/src/features/graph/graphModel.ts`(`evidenceCount`/
+> `pathToObjective`/`formatElapsed` 순수 함수 + 테스트), `GraphCanvas.tsx`(배지·halo·화살표
+> 렌더), `GraphWorkspace.tsx`(🎯 PATH TO OBJECTIVE 토글), `graphLeaves.tsx`(`ElapsedTimer`).
+> 백엔드 449 / 프런트엔드 430 테스트 통과, 프로덕션 빌드 클린. 다만 이 세션에서는 공유
+> dev 백엔드(포트 8000)가 root 권한으로 떠 있고 응답이 없어(연결된 VPN을 보면 실제 대상
+> 스캔 중일 가능성이 있어 건드리지 않음) 브라우저 실사용 확인은 못 했다 — 직접 화면에서
+> 한 번 확인해 보는 걸 권장한다. 5번(아이콘 SVG 업그레이드)은 여전히 미착수.
+
 1. **Evidence-backed 배지를 모든 노드 타입으로 확장.** 보고서 작성과 가장 직접
    연결되고, host/service는 finding과 동일한 쿼리 패턴을 재사용하면 되며 credential은
    최근에 추가한 `source_execution_kind`/`source_execution_id` 체인이 그대로
@@ -149,8 +158,8 @@ BloodHound의 다른 특징(Cypher 쿼리 검색, 노드 속성 패널의 "owned
    이 프로젝트의 실제 사용 맥락에 직접 맞아떨어진다.
 4. **구조적 엣지에도 방향 화살표 추가.** 현재 대부분의 엣지에 방향 표시가 없다는
    구체적인 가독성 구멍을 낮은 비용으로 메운다.
-5. *(선택)* **타입별 아이콘을 소형 SVG로 업그레이드.** 순수 가독성 개선이라 우선순위는
-   낮지만, 4번과 묶어서 같은 PR에서 처리하면 비용이 크지 않다.
+5. *(선택, 미착수)* **타입별 아이콘을 소형 SVG로 업그레이드.** 순수 가독성 개선이라
+   우선순위는 낮지만, 4번과 묶어서 같은 PR에서 처리하면 비용이 크지 않다.
 
 좌→우 타임라인 레이아웃과 HOST COMPROMISE류 배지는 후보로 검토했지만 기존 기능과
 중복되거나 비용 대비 이득이 낮아 이번 추천에서 뺐다 — §4 표 참고.

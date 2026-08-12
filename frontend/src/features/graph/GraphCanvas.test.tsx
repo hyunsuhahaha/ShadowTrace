@@ -111,3 +111,47 @@ it("renders credential badges and directional access lineage without secrets", (
   expect(rendered).toContain("CORP\\administrator · WMIEXEC");
   expect(rendered).not.toContain("must-not-render");
 });
+
+it("marks nodes backed by human-attached evidence, not nodes without any", () => {
+  const ctx = stubCanvasContext();
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "svc", type: "service", status: "succeeded", label: "445/tcp smb",
+      objective: false, source_ref: "", hidden: false,
+      meta: JSON.stringify({evidenceCount: 4})},
+    {id: "svc2", type: "service", status: "untried", label: "80/tcp http",
+      objective: false, source_ref: "", hidden: false},
+  ], edges: [
+    {id: "rs", source: "root", target: "svc", relation: "discovered", status: "untried"},
+    {id: "rs2", source: "root", target: "svc2", relation: "discovered", status: "untried"},
+  ]};
+
+  render(<GraphCanvas data={data} hostCount={0} showHidden={false} credentialOverlay
+    selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+
+  const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
+  expect(rendered).toContain("4");
+});
+
+it("accepts an objective path to highlight without throwing", () => {
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "host", type: "host", status: "untried", label: "10.0.0.5",
+      objective: false, source_ref: "", hidden: false},
+    {id: "goal", type: "finding", status: "untried", label: "Domain Admin",
+      objective: true, source_ref: "", hidden: false},
+  ], edges: [
+    {id: "rh", source: "root", target: "host", relation: "discovered", status: "untried"},
+    {id: "hg", source: "host", target: "goal", relation: "enumerated", status: "untried"},
+  ]};
+
+  const { unmount } = render(<GraphCanvas data={data} hostCount={1} showHidden={false}
+    credentialOverlay selected="root" onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()}
+    objectivePath={{ nodeIds: ["root", "host", "goal"], edgeIds: ["rh", "hg"] }} />);
+  expect(document.querySelector("canvas")).toBeTruthy();
+  unmount();
+});

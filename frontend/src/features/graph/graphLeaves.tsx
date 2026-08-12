@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { ADD_TYPES, AddForm, defaultRelation, GraphNode, nodeStatusReason, RELATIONS,
-  STATUS_LABEL, STATUS_ORDER } from "./graphModel";
+import { useEffect, useState, type ReactNode } from "react";
+import { ADD_TYPES, AddForm, defaultRelation, formatElapsed, GraphNode, nodeStatusReason,
+  RELATIONS, STATUS_LABEL, STATUS_ORDER } from "./graphModel";
 import { S } from "./graphStyles";
 
 // Small presentational pieces shared across the graph feature.
@@ -106,6 +106,20 @@ export function AddNodeForm(props: {
       </div>
     </div>
   );
+}
+
+// Passive wall-clock display, not tied to any automated step -- purely a
+// convenience for OSCP+'s 23:45:00 exam window, updated once a second.
+export function ElapsedTimer(props: { startIso?: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!props.startIso) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [props.startIso]);
+  const elapsed = formatElapsed(props.startIso, now);
+  if (!elapsed) return null;
+  return <span style={S.graphControl} title="프로젝트 시작 이후 경과 시간">⏱ {elapsed}</span>;
 }
 
 export function Tab(props: { on: boolean; onClick: () => void; children: ReactNode }) {

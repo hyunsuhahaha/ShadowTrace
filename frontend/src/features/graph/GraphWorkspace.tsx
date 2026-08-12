@@ -6,7 +6,7 @@ import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 import { S } from "./graphStyles";
 import { OutlineView } from "./OutlineView";
-import { AddNodeForm, Empty, NodeQuickMenu, OnboardingPane, Tab, TaskQueue }
+import { AddNodeForm, ElapsedTimer, Empty, NodeQuickMenu, OnboardingPane, Tab, TaskQueue }
   from "./graphLeaves";
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
@@ -20,7 +20,7 @@ import { ActivityItem, ActivityKind, ActivityPanelState, ActivityStatusFilter,
   GLYPH, GraphEdge, GraphFilter, GraphNode, GraphOut, GraphPosition,
   GraphRequestDraft, initialGraphPosition, initialGraphPositionNearParent,
   isCrackableCredential, LINK_KIND_LABEL, LINK_KIND_ORDER, NodeActivity, nodeMeta, NodeType,
-  nodeStatusReason, nodeSummary, readActivityPanel, RELATIONS, Sim, STATUS_COLOR,
+  nodeStatusReason, nodeSummary, pathToObjective, readActivityPanel, RELATIONS, Sim, STATUS_COLOR,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON, TreeItem, TreeNode, TreeRef,
   useActiveProjectId } from "./graphModel";
 
@@ -55,6 +55,7 @@ export default function GraphWorkspace() {
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [credentialOverlay, setCredentialOverlay] = useState(true);
+  const [pathHighlight, setPathHighlight] = useState(false);
   const [replayAt, setReplayAt] = useState<number | null>(null);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -355,6 +356,9 @@ export default function GraphWorkspace() {
   const selectedNode = selected
     ? replayNodeById.get(selected)
     : undefined;
+  const objectivePath = useMemo(
+    () => pathHighlight && selected ? pathToObjective(replayData, selected) : null,
+    [pathHighlight, selected, replayData]);
   const selectedTargetId = selectedNode?.type === "host" && selectedNode.source_ref
     ? (() => { try {
       const ref = JSON.parse(selectedNode.source_ref);
@@ -383,6 +387,8 @@ export default function GraphWorkspace() {
             숨김 {hiddenCount}{showHidden ? " 표시중" : ""}
           </button>
         )}
+        {!noProject && <ElapsedTimer
+          startIso={data.nodes.find((n) => n.type === "project-root")?.created_at} />}
         <div style={S.legend}>
           {Object.entries(STATUS_REASON).map(([k, v]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -421,6 +427,15 @@ export default function GraphWorkspace() {
           onClick={() => setCredentialOverlay((value) => !value)}>
           🔑 ACCESS LINEAGE
         </button>
+        <button style={{ ...S.graphControl, ...(pathHighlight ? S.toolActive : {}) }}
+          aria-pressed={pathHighlight}
+          title={!data.nodes.some((n) => n.objective)
+            ? "목표로 표시된 노드가 없습니다 (노드 상세에서 🎯 목표로 지정)"
+            : !selected ? "먼저 시작할 노드를 선택하세요"
+            : objectivePath ? "" : "선택한 노드에서 목표까지 이어지는 경로가 없습니다"}
+          onClick={() => setPathHighlight((value) => !value)}>
+          🎯 PATH TO OBJECTIVE
+        </button>
         <button style={S.graphControl} onClick={() => setFilter({ query: "", type: "all", status: "all",
           focusDepth: 0, pinnedOnly: false })}>필터 초기화</button>
         <button style={S.graphControl} onClick={() => setQueueOpen((value) => !value)}>작업 큐</button>
@@ -429,7 +444,7 @@ export default function GraphWorkspace() {
       <div style={S.stage}>
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
-            credentialOverlay={credentialOverlay}
+            credentialOverlay={credentialOverlay} objectivePath={objectivePath}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }} />

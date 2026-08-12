@@ -14,9 +14,9 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (Credential, Execution, Finding, FindingEvidence, GraphEdge, GraphEvent,
-                       GraphNode, GraphProjectMeta, InteractiveSession, Project, RemoteExecution,
-                       ScanJob, Service, Target)
+from ...models import (Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
+                       GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
+                       Project, RemoteExecution, ScanJob, Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
 
@@ -49,6 +49,36 @@ def _operator_address() -> str:
     match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})/\d+",
                       vpn_status().get("tun0", ""))
     return match.group(1) if match else "tun0 offline"
+
+
+def _merge_meta(raw: str, patch: dict) -> str:
+    """Merge persistent fields (e.g. evidenceCount) into a node's meta JSON
+    without disturbing keys owned by other parts of sync (e.g. activity)."""
+    try:
+        meta = json.loads(raw) if raw else {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except (TypeError, json.JSONDecodeError):
+        meta = {}
+    meta.update(patch)
+    return json.dumps(meta)
+
+
+# Evidence has no credential_id -- a credential's evidence trail only exists
+# where source_execution_kind/id (Credential's structured provenance pointer,
+# see docs/DOMAIN_MODEL_GAP_ANALYSIS.md §3.3) points at a row that itself has
+# an evidence_id. Only hash-crack promotion sets that pointer today; other
+# sources (manual entry, Responder capture, DCSync, ...) correctly report 0
+# until they get the same structured provenance.
+_CREDENTIAL_EXECUTION_MODELS = {"hash_crack_job": HashCrackJob}
+
+
+def _credential_evidence_count(db: Session, cred: Credential) -> int:
+    model = _CREDENTIAL_EXECUTION_MODELS.get(cred.source_execution_kind or "")
+    if not model or not cred.source_execution_id:
+        return 0
+    run = db.get(model, cred.source_execution_id)
+    return 1 if run and run.evidence_id else 0
 
 
 def _activity_meta(raw: str, activity: dict | None) -> str:
@@ -397,18 +427,28 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             index[("target", target.id)] = host
             created["hosts"] += 1
         scan = active_scans.get(target.id)
-        host.meta = _activity_meta(host.meta, _runtime_activity(
-            "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
-        ) if scan else None)
+        # Host-level evidence only (service_id is None) -- evidence attached to
+        # one of the target's services is counted on that service node instead,
+        # so the two counts don't double up on the same underlying row.
+        host_evidence_count = db.scalar(select(func.count(Evidence.id)).where(
+            Evidence.target_id == target.id, Evidence.service_id.is_(None))) or 0
+        host.meta = _activity_meta(
+            _merge_meta(host.meta, {"evidenceCount": host_evidence_count}),
+            _runtime_activity(
+                "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
+            ) if scan else None)
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
             raw = f"{service.port}/{service.protocol} {service.name}".strip()
             refined = f"{service.port}/{service.protocol} {_service_display_name(service)}".strip()
+            service_evidence_count = db.scalar(select(func.count(Evidence.id)).where(
+                Evidence.service_id == service.id)) or 0
             service_meta = json.dumps({"port": service.port, "protocol": service.protocol,
                                        "name": _service_display_name(service),
                                        "product": service.product or "",
-                                       "version": service.version or ""})
+                                       "version": service.version or "",
+                                       "evidenceCount": service_evidence_count})
             if ("service", service.id) not in index:
                 svc = create_node(db, project_id, "service", label=refined,
                                   source_ref=_source_ref("scans", "service", service.id),
@@ -459,7 +499,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         meta = json.dumps({"username": cred.username or "",
                            "domain": cred.domain or "",
                            "credType": cred.secret_kind or "",
-                           "secretHint": cred.secret_hint or ""})
+                           "secretHint": cred.secret_hint or "",
+                           "evidenceCount": _credential_evidence_count(db, cred)})
         provenance = json.dumps({"source": cred.source_kind or "",
                                  "detail": cred.source_detail or ""})
         if ("credential", cred.id) in index:

@@ -102,6 +102,27 @@ export function nodeSummary(node: Pick<GraphNode, "type" | "status" | "label" | 
   return node.label;
 }
 
+export function evidenceCount(node: Pick<GraphNode, "meta">): number {
+  const value = nodeMeta(node).evidenceCount;
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value) : 0;
+}
+
+// NodeZero-style elapsed readout, reinterpreted for this project's manual
+// workflow: purely a passive wall-clock display against the project's own
+// creation time, not a counter tied to automated execution steps.
+export function formatElapsed(startIso: string | undefined, nowMs: number): string {
+  if (!startIso) return "";
+  const start = Date.parse(startIso);
+  if (!Number.isFinite(start)) return "";
+  const totalSeconds = Math.max(0, Math.floor((nowMs - start) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+}
+
 export function credentialBadge(node: Pick<GraphNode, "type" | "label" | "meta">) {
   if (node.type !== "credential") return null;
   const meta = nodeMeta(node);
@@ -243,6 +264,46 @@ export function initialGraphPositionNearParent(id: string, parent?: GraphPositio
   const seed = [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const angle = (seed % 360) * Math.PI / 180;
   return { x: parent.x + Math.cos(angle) * 74, y: parent.y + Math.sin(angle) * 74 };
+}
+
+// BloodHound-style "shortest path to the goal", scoped to this graph: BFS over
+// edges treated as undirected (same connectivity rule filterGraph's focusDepth
+// already uses), from `fromId` to the nearest node flagged `objective`. Not a
+// recommendation or an automated judgment -- purely a reachability trace over
+// relations a human already recorded.
+export type ObjectivePath = { nodeIds: string[]; edgeIds: string[] };
+export function pathToObjective(data: GraphOut, fromId: string): ObjectivePath | null {
+  if (!data.nodes.some((node) => node.id === fromId)) return null;
+  const objectiveIds = new Set(data.nodes.filter((node) => node.objective).map((node) => node.id));
+  if (!objectiveIds.size) return null;
+  if (objectiveIds.has(fromId)) return { nodeIds: [fromId], edgeIds: [] };
+  const cameFrom = new Map<string, { node: string; edge: string }>();
+  const visited = new Set([fromId]);
+  let frontier = [fromId];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const edge of data.edges) {
+        const neighbor = edge.source === id ? edge.target : edge.target === id ? edge.source : null;
+        if (neighbor == null || visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        cameFrom.set(neighbor, { node: id, edge: edge.id });
+        if (objectiveIds.has(neighbor)) {
+          const nodeIds = [neighbor], edgeIds: string[] = [];
+          let cursor = neighbor;
+          while (cursor !== fromId) {
+            const step = cameFrom.get(cursor)!;
+            edgeIds.unshift(step.edge); nodeIds.unshift(step.node);
+            cursor = step.node;
+          }
+          return { nodeIds, edgeIds };
+        }
+        next.push(neighbor);
+      }
+    }
+    frontier = next;
+  }
+  return null;
 }
 
 export const ADD_TYPES: NodeType[] = ["finding", "technique", "credential", "service", "host"];

@@ -1,7 +1,24 @@
 import { expect, it } from "vitest";
-import { buildActivityFeed, clampActivityPanel, credentialBadge, filterActivityFeed, filterGraph,
+import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
+  filterActivityFeed, filterGraph, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
-  isCrackableCredential, nodeStatusReason, nodeSummary } from "./graphModel";
+  isCrackableCredential, nodeStatusReason, nodeSummary, pathToObjective } from "./graphModel";
+
+it("reads a node's evidence count defensively", () => {
+  expect(evidenceCount({ meta: JSON.stringify({ evidenceCount: 3 }) })).toBe(3);
+  expect(evidenceCount({ meta: JSON.stringify({}) })).toBe(0);
+  expect(evidenceCount({ meta: "broken" })).toBe(0);
+  expect(evidenceCount({ meta: JSON.stringify({ evidenceCount: -1 }) })).toBe(0);
+  expect(evidenceCount({})).toBe(0);
+});
+
+it("formats elapsed wall-clock time since a project started", () => {
+  const start = "2026-08-13T10:00:00Z";
+  expect(formatElapsed(start, Date.parse("2026-08-13T13:42:10Z"))).toBe("3:42:10");
+  expect(formatElapsed(start, Date.parse("2026-08-14T11:00:05Z"))).toBe("25:00:05");
+  expect(formatElapsed(undefined, Date.now())).toBe("");
+  expect(formatElapsed(start, Date.parse("2026-08-13T09:00:00Z"))).toBe("0:00:00");
+});
 
 it("formats a credential overlay without exposing secret material", () => {
   expect(credentialBadge({type: "credential", label: "administrator",
@@ -85,4 +102,47 @@ it("filters and focuses a large graph without deleting the source topology", () 
     { query: "", type: "all", status: "all", focusDepth: 1, pinnedOnly: false }, "a");
   expect(focused.nodes.map((node) => node.id)).toEqual(["a", "b"]);
   expect(data.nodes).toHaveLength(3);
+});
+
+it("finds the shortest path from a node to the nearest objective", () => {
+  const nodes = [
+    { id: "root", type: "project-root", status: "untried", label: "root",
+      objective: false, source_ref: "", hidden: false },
+    { id: "host", type: "host", status: "untried", label: "host",
+      objective: false, source_ref: "", hidden: false },
+    { id: "svc", type: "service", status: "untried", label: "svc",
+      objective: false, source_ref: "", hidden: false },
+    { id: "finding", type: "finding", status: "untried", label: "finding",
+      objective: true, source_ref: "", hidden: false },
+    { id: "other", type: "technique", status: "untried", label: "other",
+      objective: false, source_ref: "", hidden: false },
+  ];
+  const data = { root_node_id: "root", nodes, edges: [
+    { id: "e1", source: "root", target: "host", relation: "discovered", status: "untried" },
+    { id: "e2", source: "host", target: "svc", relation: "discovered", status: "untried" },
+    { id: "e3", source: "svc", target: "finding", relation: "enumerated", status: "untried" },
+    { id: "e4", source: "svc", target: "other", relation: "attempted", status: "untried" },
+  ] } as Parameters<typeof pathToObjective>[0];
+
+  expect(pathToObjective(data, "root")).toEqual({
+    nodeIds: ["root", "host", "svc", "finding"], edgeIds: ["e1", "e2", "e3"],
+  });
+  expect(pathToObjective(data, "other")).toEqual({
+    nodeIds: ["other", "svc", "finding"], edgeIds: ["e4", "e3"],
+  });
+  expect(pathToObjective(data, "finding")).toEqual({ nodeIds: ["finding"], edgeIds: [] });
+});
+
+it("finds no path to an objective that doesn't exist or isn't reachable", () => {
+  const nodes = [
+    { id: "a", type: "host", status: "untried", label: "a", objective: false,
+      source_ref: "", hidden: false },
+    { id: "b", type: "host", status: "untried", label: "b", objective: true,
+      source_ref: "", hidden: false },
+    { id: "isolated", type: "host", status: "untried", label: "isolated",
+      objective: false, source_ref: "", hidden: false },
+  ];
+  const data = { root_node_id: "a", nodes, edges: [] } as Parameters<typeof pathToObjective>[0];
+  expect(pathToObjective(data, "a")).toBeNull();
+  expect(pathToObjective(data, "missing")).toBeNull();
 });

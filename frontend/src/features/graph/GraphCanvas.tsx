@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
-  buildActivityFeed, clampActivityPanel, color, filterActivityFeed, getNodeActivity,
-  credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition, initialGraphPosition,
-  initialGraphPositionNearParent, NodeActivity, nodeStatusReason, nodeSummary,
-  readActivityPanel, Sim } from "./graphModel";
+  buildActivityFeed, clampActivityPanel, color, evidenceCount, filterActivityFeed,
+  getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
+  initialGraphPosition, initialGraphPositionNearParent, NodeActivity, nodeStatusReason,
+  nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
 
 export function GraphCanvas(props: {
@@ -12,6 +12,7 @@ export function GraphCanvas(props: {
   focus: { id: string; nonce: number } | null;
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
   onContext: (id: string, x: number, y: number) => void;
+  objectivePath?: ObjectivePath | null;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -21,6 +22,8 @@ export function GraphCanvas(props: {
   useEffect(() => { focusReq.current = props.focus; }, [props.focus]);
   const selectedRef = useRef(props.selected);
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
+  const pathRef = useRef<ObjectivePath | null>(props.objectivePath ?? null);
+  useEffect(() => { pathRef.current = props.objectivePath ?? null; }, [props.objectivePath]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const positions = useRef({ graph: new Map<string, GraphPosition>(),
@@ -196,6 +199,9 @@ export function GraphCanvas(props: {
       ctx.clearRect(0, 0, W, H);
       ctx.translate(panX, panY);
       ctx.scale(zoomRef.current, zoomRef.current);  // camera zoom: sizes AND spacing
+      const activePath = pathRef.current;
+      const pathEdgeIds = activePath ? new Set(activePath.edgeIds) : null;
+      const pathNodeIds = activePath ? new Set(activePath.nodeIds) : null;
       if (props.layoutMode === "graph" && anchorId) {
         const anchor = index.get(anchorId);
         if (anchor) {
@@ -229,12 +235,41 @@ export function GraphCanvas(props: {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
         }
-        ctx.strokeStyle = lineageColor || (edgeKind
+        // A solid gold halo under the edge's own color/dash -- highlights the
+        // route to the selected objective without hiding what the edge itself
+        // already means (a reused-credential arrow on the path stays amber
+        // *and* gets the halo).
+        if (pathEdgeIds?.has(e.id)) {
+          ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 5;
+          ctx.strokeStyle = "rgba(245,197,24,.5)";
+          ctx.shadowColor = "#f5c518"; ctx.shadowBlur = 6;
+          ctx.stroke(); ctx.restore();
+        }
+        const strokeColor = lineageColor || (edgeKind
           ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
           : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45");
+        ctx.strokeStyle = strokeColor;
         ctx.lineWidth = lineageColor ? 1.8 : active ? 1.35 : hot ? 2 : 1;
-        ctx.globalAlpha = hover && !hot ? 0.25 : 0.9; ctx.stroke();
+        const edgeAlpha = hover && !hot ? 0.25 : 0.9;
+        ctx.globalAlpha = edgeAlpha; ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
+        // Structural edges (discovered/enumerated/attempted/...) previously had
+        // no direction marker at all, unlike captures-from/lineage below --
+        // a plain arrowhead closes that ambiguity without competing with the
+        // colored, labeled overlays those two special cases already draw.
+        if (struct && !lineageColor) {
+          const targetRadius = b.type === "project-root" ? 40 : b.id === anchorId ? 38
+            : b.type === "host" || b.type === "operator" ? 26 : 19;
+          const angle = Math.atan2(b.y - a.y, b.x - a.x);
+          const tipX = b.x - Math.cos(angle) * (targetRadius + 4);
+          const tipY = b.y - Math.sin(angle) * (targetRadius + 4);
+          ctx.beginPath(); ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX - Math.cos(angle - .45) * 6, tipY - Math.sin(angle - .45) * 6);
+          ctx.lineTo(tipX - Math.cos(angle + .45) * 6, tipY - Math.sin(angle + .45) * 6);
+          ctx.closePath();
+          ctx.globalAlpha = edgeAlpha; ctx.fillStyle = strokeColor; ctx.fill();
+          ctx.globalAlpha = 1;
+        }
         if (active && !reduceMotion) {
           const flow = ((now / 1250) + (e.id.charCodeAt(0) % 7) / 7) % 1;
           const fromA = !!activeA;
@@ -279,6 +314,21 @@ export function GraphCanvas(props: {
             labelX, labelY - 2, labelWidth - 8);
         }
       }
+      // A small corner badge marking "at least one human-attached Evidence
+      // backs this node" -- reinterprets NodeZero's auto-verified PROOF badge
+      // around this project's human-approved-only principle (evidenceCount is
+      // a plain Evidence-row count, never an automated correctness judgment).
+      const drawEvidenceBadge = (count: number, bx: number, by: number) => {
+        if (!count) return;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#0c1210"; ctx.fill();
+        ctx.strokeStyle = "#59f59a"; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = "#59f59a"; ctx.font = "600 8px ui-monospace,monospace";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(count > 9 ? "9+" : String(count), bx, by + 0.5);
+        ctx.restore();
+      };
       for (const n of nodes) {
         const current = latestNodes.current.get(n.id) ?? n;
         const activity = getNodeActivity(current);
@@ -317,6 +367,7 @@ export function GraphCanvas(props: {
             ? `${credential.identity.slice(0, 23)}…` : credential.identity, x + 30, n.y - 6);
           ctx.fillStyle = "#8f8157"; ctx.font = "7px ui-monospace,monospace";
           ctx.fillText(`${credential.kind} · CAPTURED`, x + 30, n.y + 8);
+          drawEvidenceBadge(evidenceCount(current), x + width - 8, y + 2);
           ctx.globalAlpha = 1;
           continue;
         }
@@ -377,6 +428,9 @@ export function GraphCanvas(props: {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = current.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
           ctx.lineWidth = 2.5; ctx.stroke();
+        } else if (pathNodeIds?.has(n.id)) {
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(245,197,24,.55)"; ctx.lineWidth = 1.5; ctx.stroke();
         }
         ctx.save();
         ctx.shadowColor = activity ? nodeSignal : awaitingReview ? color(current.status)
@@ -398,6 +452,7 @@ export function GraphCanvas(props: {
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
         ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
+        drawEvidenceBadge(evidenceCount(current), n.x + r * 0.7, n.y - r * 0.7);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
           ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top";
