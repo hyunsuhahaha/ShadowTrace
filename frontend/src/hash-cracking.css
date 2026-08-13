@@ -13,7 +13,8 @@
 .crackSelectors select{background:#0b1113;border:1px solid #29373b;color:#c9d5d8;padding:8px;border-radius:3px}
 .crackWarning{margin:0 28px;padding:10px 14px;border-left:2px solid var(--warning);background:#1d1813;color:#e3b47f;font-size:11px}
 .crackLayout{display:grid;grid-template-columns:var(--crack-form-width,300px) minmax(420px,1fr) var(--crack-history-width,260px);min-height:calc(100vh - 96px)}
-.crackForm{position:relative;background:#0a0f11;border-right:1px solid var(--line);overflow:auto;padding:16px;display:grid;gap:12px;align-content:start}
+.crackForm{position:relative;background:#0a0f11;border-right:1px solid var(--line);overflow:auto;padding:16px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-content:start}
+.crackForm *{min-width:0}
 .crackCredentialContext{display:grid;gap:4px;padding:11px 12px;border:1px solid #365743;background:#0d1812}
 .crackCredentialContext span{color:#59f59a;font:9px ui-monospace,monospace;letter-spacing:1px}
 .crackCredentialContext strong{color:#e4eee8;font-size:14px}

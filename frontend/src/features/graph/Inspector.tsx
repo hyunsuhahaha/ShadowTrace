@@ -302,9 +302,13 @@ export function Inspector(props: {
         </div>}
       </section>}
       <section style={S.nodeNotes}>
-        <div><span>작업 메모</span><button disabled={notes === (n.notes || "")}
-          onClick={() => props.onSetDetails?.(n.id, { notes })}>저장</button></div>
-        <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
+        <div style={S.nodeNotesHead}>
+          <span style={S.nodeNotesLabel}>작업 메모</span>
+          <button style={S.nodeNotesSave} disabled={notes === (n.notes || "")}
+            onClick={() => props.onSetDetails?.(n.id, { notes })}>저장</button>
+        </div>
+        <textarea style={S.nodeNotesArea} value={notes}
+          onChange={(event) => setNotes(event.target.value)}
           placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
       </section>
       {sessionId !== null && tool === "responder-listener" && <DetachableTerminal
