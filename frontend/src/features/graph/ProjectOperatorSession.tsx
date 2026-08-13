@@ -1,6 +1,7 @@
+import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {api} from "../../api";
-import {nodeMeta, type GraphNode} from "./graphModel";
+import {nodeMeta, useActiveProjectId, type GraphNode} from "./graphModel";
 import "./project-operator-session.css";
 
 const targetId = (node: GraphNode) => {
@@ -17,6 +18,10 @@ export default function ProjectOperatorSession({project, nodes, onSelect}: {
 }) {
   const vpn = useQuery({queryKey: ["vpnStatus"], queryFn: () => api<any>("/vpn/status"),
     refetchInterval: 3000});
+  const projectId = useActiveProjectId();
+  const [newTargetIp, setNewTargetIp] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [addError, setAddError] = useState("");
   const targets = nodes.filter((node) => node.type === "host" && targetId(node));
   const sessions = nodes.filter((node) => node.type === "technique");
   const findings = nodes.filter((node) => node.type === "finding");
@@ -24,6 +29,29 @@ export default function ProjectOperatorSession({project, nodes, onSelect}: {
   const recent = [...sessions].sort((a, b) =>
     String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")))
     .slice(0, 6);
+
+  // The root panel is a router, not a scanner (see footer) -- but with zero
+  // Targets there is nothing to route to. This is the one action it takes
+  // directly, via the same /targets/ensure endpoint Scan Center's own
+  // IP-first flow already uses, so a duplicate Target is never created.
+  const addTarget = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const ip = newTargetIp.trim();
+    if (!ip || !projectId) return;
+    setCreating(true); setAddError("");
+    try {
+      await api("/targets/ensure", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ip, name: "", project_id: projectId}),
+      });
+      setNewTargetIp("");
+      dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Target을 등록하지 못했습니다.");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return <section className="projectOperator" aria-label="프로젝트 오퍼레이터 세션">
     <header><span className="termDots" aria-hidden="true"><i className="termDot" />
@@ -44,7 +72,17 @@ export default function ProjectOperatorSession({project, nodes, onSelect}: {
         type="button" onClick={() => onSelect(target.id)}>
         <span>{String(index + 1).padStart(2, "0")}</span><b>&gt;</b>
         <strong>target://{target.label}</strong><em>{target.status}</em>
-      </button>) : <p>$ no target context · add or import a Target first</p>}
+      </button>) : (
+        <form className="projectOperator__addTarget" onSubmit={addTarget}>
+          <span>$</span>
+          <input aria-label="Target IP" placeholder="10.10.10.10 · add a Target to route to"
+            value={newTargetIp} onChange={(event) => setNewTargetIp(event.target.value)} />
+          <button type="submit" disabled={!newTargetIp.trim() || creating}>
+            {creating ? "등록 중…" : "+ Target 추가"}
+          </button>
+          {addError && <small role="alert">{addError}</small>}
+        </form>
+      )}
     </section>
     <section className="projectOperator__recent">
       <header><span>RECENT SESSION BUFFER</span><small>{recent.length} entries</small></header>
