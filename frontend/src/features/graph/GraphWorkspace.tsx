@@ -356,9 +356,8 @@ export default function GraphWorkspace() {
   const selectedNode = selected
     ? replayNodeById.get(selected)
     : undefined;
-  const objectivePath = useMemo(
-    () => pathHighlight && selected ? pathToObjective(replayData, selected) : null,
-    [pathHighlight, selected, replayData]);
+  const objectivePath = pathHighlight && selected
+    ? pathToObjective(replayData, selected) : null;
   const selectedTargetId = selectedNode?.type === "host" && selectedNode.source_ref
     ? (() => { try {
       const ref = JSON.parse(selectedNode.source_ref);
