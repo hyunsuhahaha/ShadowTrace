@@ -306,6 +306,35 @@ def test_promote_creates_credential_linked_to_job(wordlist, tmp_path, monkeypatc
     assert credential.source_execution_id == job.id
 
 
+def test_promote_updates_the_source_credential_instead_of_asking_for_identity(
+        wordlist, tmp_path, monkeypatch):
+    from app.modules.hash_cracking import router as router_module
+    monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    source = Credential(
+        project_id=project.id, target_id=target.id, username="Administrator",
+        secret_kind="hash", secret="Administrator::RESPONDER:aaa:bbb",
+        source_kind="responder", source_detail="SMB-NTLMv2-SSP")
+    db.add(source); db.flush()
+    job = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="netntlmv2",
+        hashes=source.secret, wordlist_id="test_list"), db)
+
+    result = router.promote(job.id, PromoteIn(
+        credential_id=source.id, secret="badminton"), db)
+
+    assert result["id"] == source.id
+    assert db.query(Credential).count() == 1
+    db.refresh(source)
+    assert source.username == "Administrator"
+    assert source.secret_kind == "password"
+    assert source.secret == "badminton"
+    assert source.source_kind == "responder"
+    assert source.source_execution_kind == "hash_crack_job"
+    assert source.source_execution_id == job.id
+
+
 def upload(content: bytes, filename: str = "backup.zip") -> UploadFile:
     spooled = tempfile.SpooledTemporaryFile()
     spooled.write(content)

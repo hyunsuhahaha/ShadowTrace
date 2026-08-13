@@ -22,7 +22,8 @@ class JobIn(BaseModel):
 
 
 class PromoteIn(BaseModel):
-    username: str = Field(min_length=1, max_length=200)
+    credential_id: int | None = None
+    username: str = Field(default="", max_length=200)
     secret: str = Field(min_length=1, max_length=4000)
     domain: str = Field(default="", max_length=253)
     notes: str = Field(default="", max_length=2000)

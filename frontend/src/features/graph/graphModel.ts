@@ -24,7 +24,7 @@ export type GraphRequestDraft = {
   projectId: number; targetId: number; serviceId: number; url: string;
 };
 export type CredentialHandoff = {
-  id: number; project_id: number; target_id?: number; secret: string;
+  id: number; project_id: number; target_id?: number; username: string; secret: string;
   secret_hint?: string; source_kind?: string;
 };
 export type NodeActivity = {
@@ -127,8 +127,10 @@ export function credentialBadge(node: Pick<GraphNode, "type" | "label" | "meta">
   if (node.type !== "credential") return null;
   const meta = nodeMeta(node);
   const identity = [meta.domain, meta.username || node.label].filter(Boolean).join("\\");
+  const cracked = meta.credType === "password" && meta.sourceExecutionKind === "hash_crack_job";
   return {identity: identity || "credential",
-    kind: String(meta.credType || "credential").toUpperCase()};
+    kind: String(meta.credType || "credential").toUpperCase(),
+    state: cracked ? "CRACKED" : meta.credType === "hash" ? "CAPTURED" : "READY"};
 }
 
 export type ActivityKind = "live" | "service" | "task" | "credential" | "finding" | "target";

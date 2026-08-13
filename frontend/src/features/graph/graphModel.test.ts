@@ -24,8 +24,11 @@ it("formats a credential overlay without exposing secret material", () => {
   expect(credentialBadge({type: "credential", label: "administrator",
     meta: JSON.stringify({domain: "CORP", username: "administrator",
       credType: "hash", secretHint: "NTLM …8f3a"})})).toEqual({
-    identity: "CORP\\administrator", kind: "HASH",
+    identity: "CORP\\administrator", kind: "HASH", state: "CAPTURED",
   });
+  expect(credentialBadge({type: "credential", label: "administrator",
+    meta: JSON.stringify({username: "administrator", credType: "password",
+      sourceExecutionKind: "hash_crack_job"})})?.state).toBe("CRACKED");
 });
 
 it("parses only live graph activity metadata", () => {

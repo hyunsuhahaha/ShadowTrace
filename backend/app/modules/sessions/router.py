@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ...config import CONFIG_DIR, WORKSPACE_DIR
 from ...database import SessionLocal, get_db
 from ...executor import queues, run_execution
-from ...models import Execution, InteractiveSession, Project, Service, Target
+from ...models import Credential, Execution, InteractiveSession, Project, Service, Target
 from ...pty_manager import pty_manager
 from ...schemas import (
     DesktopLaunchIn,
@@ -322,6 +322,29 @@ async def stop_interactive_session(ident: int):
     return {"stopped": await pty_manager.stop(ident)}
 
 
+@router.post(
+    "/api/interactive-sessions/{ident}/retry",
+    response_model=InteractiveSessionOut,
+    status_code=201,
+)
+def retry_interactive_session(ident: int, db: Session = Depends(get_db)):
+    previous = need(db, InteractiveSession, ident)
+    if previous.status not in {"failed", "stopped", "completed", "interrupted"}:
+        raise HTTPException(409, "Only ended sessions can be restarted")
+    if previous.template_id == "responder-listener":
+        running = subprocess.run(
+            ["pgrep", "-f", "Responder.py"], capture_output=True, text=True)
+        if running.returncode == 0:
+            raise HTTPException(409, "Responder is already running")
+    row = InteractiveSession(
+        target_id=previous.target_id, service_id=previous.service_id,
+        template_id=previous.template_id, command=previous.command,
+        cwd=previous.cwd, status="ready",
+    )
+    db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
 @router.get("/api/interactive-sessions/{ident}/log")
 def interactive_session_log(ident: int, db: Session = Depends(get_db)):
     row = need(db, InteractiveSession, ident)
@@ -393,3 +416,34 @@ def responder_captures(ident: int, db: Session = Depends(get_db)):
                 results.append(entry)
     results.sort(key=lambda item: item["captured_at"], reverse=True)
     return results
+
+
+@router.post("/api/projects/{project_id}/responder-captures/sync")
+def sync_project_responder_captures(project_id: int, db: Session = Depends(get_db)):
+    need(db, Project, project_id)
+    created = 0
+    targets = db.scalars(select(Target).where(Target.project_id == project_id)).all()
+    for target in targets:
+        for capture in responder_captures(target.id, db):
+            exists = db.scalar(select(Credential.id).where(
+                Credential.project_id == project_id,
+                Credential.target_id == target.id,
+                Credential.username == capture["username"],
+                Credential.source_kind == "responder",
+                Credential.source_detail == capture["label"],
+            ))
+            if exists is not None:
+                continue
+            db.add(Credential(
+                project_id=project_id, target_id=target.id,
+                username=capture["username"], secret=capture["value"],
+                secret_kind="password" if capture["cleartext"] else "hash",
+                secret_hint="Responder 평문 캡처" if capture["cleartext"]
+                    else "Responder NTLMv2-SSP 캡처",
+                source_kind="responder", source_detail=capture["label"],
+                service_names="[]", notes="",
+            ))
+            db.flush()
+            created += 1
+    db.commit()
+    return {"created": created}

@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {Terminal} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import {readTerminalFontSize, setTerminalFontSize, TERMINAL_FONT_EVENT} from "./terminalFont";
 
 export type PtyTerminalProps = {
   sessionId: number;
@@ -16,7 +17,10 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
   const container = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const targetErrorRef = useRef("");
+  const [fontSize, setFontSize] = useState(readTerminalFontSize);
   const [connection, setConnection] = useState<
     "connecting" | "pty" | "active" | "closed" | "error"
   >("connecting");
@@ -42,7 +46,7 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
         convertEol: false,
         customGlyphs: true,
         fontFamily: '"Liberation Mono", "DejaVu Sans Mono", monospace',
-        fontSize: 14,
+        fontSize,
         fontWeight: "normal",
         fontWeightBold: "bold",
         letterSpacing: 0,
@@ -53,6 +57,8 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
       const fit = new FitAddon();
       terminal.loadAddon(fit);
       terminal.open(container.current);
+      terminalRef.current = terminal;
+      fitRef.current = fit;
       fit.fit();
       terminal.writeln("\x1b[90m서버 PTY에 연결하는 중입니다…\x1b[0m");
       const resize = () => requestAnimationFrame(() => {
@@ -116,9 +122,21 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
       input?.dispose();
       socket?.close();
       socketRef.current = null;
+      terminalRef.current = null;
+      fitRef.current = null;
       terminal?.dispose();
     };
   }, [sessionId, initialInput]);
+  useEffect(() => {
+    const sync = (event: Event) => setFontSize((event as CustomEvent<number>).detail);
+    addEventListener(TERMINAL_FONT_EVENT, sync);
+    return () => removeEventListener(TERMINAL_FONT_EVENT, sync);
+  }, []);
+  useEffect(() => {
+    if (!terminalRef.current) return;
+    terminalRef.current.options.fontSize = fontSize;
+    requestAnimationFrame(() => fitRef.current?.fit());
+  }, [fontSize]);
   useEffect(() => {
     if (inputRequest && socketRef.current?.readyState === WebSocket.OPEN)
       socketRef.current.send(new TextEncoder().encode(inputRequest.data));
@@ -146,6 +164,13 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
         {connection === "closed" && "종료됨"}
         {connection === "error" && (targetErrorRef.current || "연결 실패")}
       </span>
+      <div className="ptyFontControls" aria-label="터미널 글자 크기">
+        <button type="button" title="글자 축소" aria-label="터미널 글자 축소"
+          onClick={() => setTerminalFontSize(fontSize - 1)}>-</button>
+        <output>{fontSize}</output>
+        <button type="button" title="글자 확대" aria-label="터미널 글자 확대"
+          onClick={() => setTerminalFontSize(fontSize + 1)}>+</button>
+      </div>
       <button onClick={stop}>{["closed", "error"].includes(connection)
         ? "터미널 닫기" : "연결 종료"}</button>
     </div>

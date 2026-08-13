@@ -214,6 +214,41 @@ it("puts the cracked password front and center, with the hash as secondary detai
     .toHaveBeenCalledWith("badminton");
 });
 
+it("updates the source credential without asking for its username again", async () => {
+  let promoted: any;
+  const fetcher = baseFetcher((url, init) => {
+    if (url.includes("/hash-cracking?target_id=")) return new Response(JSON.stringify([{
+      id: 4, project_id: 1, target_id: 2, label: "", hash_mode_id: "netntlmv2",
+      hash_mode: "5600", hash_type_name: "NetNTLMv2", attack_mode: "0",
+      wordlist_id: "rockyou", wordlist2_id: "", rule_id: "", mask: "", hash_count: 1,
+      command_display: "", status: "completed", exit_code: 0, cracked_count: 1,
+      cancelled: false, error: "", evidence_id: null, created_at: "2026-08-08T04:28:08Z",
+    }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (url.includes("/hash-cracking/4/output")) return new Response(JSON.stringify({
+      stdout: "", stderr: "", cracked: [{ hash: "Administrator::RESPONDER:a:b", plain: "badminton" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (url.endsWith("/api/hash-cracking/4/promote") && init?.method === "POST") {
+      promoted = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><HashCrackingWorkspace embedded
+    initialProjectId={1} initialTargetId={2} initialHash="Administrator::RESPONDER:a:b"
+    initialMode="netntlmv2" initialCredentialId={9} initialUsername="Administrator" />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("SOURCE CREDENTIAL")).toBeTruthy();
+  fireEvent.click(await screen.findByText("Administrator에 연결"));
+  await waitFor(() => expect(promoted).toBeTruthy());
+  expect(promoted).toMatchObject({ credential_id: 9, secret: "badminton" });
+  expect(screen.queryByText("이 평문 비밀번호가 속한 사용자명을 입력하세요.")).toBeNull();
+});
+
 it("persists the form panel width when resized with the scroll wheel", async () => {
   mount(baseFetcher(() => undefined));
   const handle = await screen.findByLabelText("입력 폼 너비 조절");

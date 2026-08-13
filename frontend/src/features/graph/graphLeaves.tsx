@@ -47,17 +47,32 @@ export function TaskQueue(props: { nodes: GraphNode[]; onClose: () => void;
 
 export function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; onClose: () => void;
   onOpen: () => void; onAdd: () => void; onPin: () => void; onHide: () => void;
-  onStatus: (status: string) => void }) {
+  onDelete: () => void; onStatus: (status: string) => void }) {
+  const item = (icon: string, label: string, onClick: () => void, danger = false) =>
+    <button style={{ ...S.quickMenuItem, ...(danger ? S.quickMenuDanger : {}) }} onClick={onClick}>
+      <span aria-hidden="true" style={{ ...S.quickMenuIcon,
+        ...(danger ? S.quickMenuDanger : {}) }}>{icon}</span><span>{label}</span>
+    </button>;
   return <div style={S.quickMenuBackdrop} onPointerDown={props.onClose}>
-    <menu style={{ ...S.quickMenu, left: Math.min(props.x, window.innerWidth - 210),
-      top: Math.min(props.y, window.innerHeight - 280) }} onPointerDown={(e) => e.stopPropagation()}>
-      <header><b>{props.node.label}</b><small>{nodeStatusReason(props.node)}</small></header>
-      <button onClick={props.onOpen}>상세·결과 열기</button>
-      <button onClick={props.onAdd}>연결 작업 추가</button>
-      <button onClick={props.onPin}>{props.node.pinned ? "★ 북마크 해제" : "☆ 북마크"}</button>
-      <button onClick={() => props.onStatus("in-progress")}>실행 중으로 표시</button>
-      <button onClick={() => props.onStatus("succeeded")}>완료로 표시</button>
-      <button onClick={props.onHide}>그래프에서 숨기기</button>
+    <menu aria-label={`${props.node.label} 노드 작업`} style={{ ...S.quickMenu,
+      left: Math.max(8, Math.min(props.x, window.innerWidth - 244)),
+      top: Math.max(8, Math.min(props.y, window.innerHeight - 340)) }}
+      onPointerDown={(e) => e.stopPropagation()}>
+      <header style={S.quickMenuHead}><b style={S.quickMenuTitle}>{props.node.label}</b>
+        <small style={S.quickMenuStatus}>{props.node.type} · {nodeStatusReason(props.node)}</small></header>
+      <div style={S.quickMenuGroup}>
+        {item("↗", "상세 및 결과 열기", props.onOpen)}
+        {item("+", "연결 작업 추가", props.onAdd)}
+        {item("★", props.node.pinned ? "북마크 해제" : "북마크", props.onPin)}
+      </div>
+      <div style={S.quickMenuGroup}>
+        {item("▶", "실행 중으로 표시", () => props.onStatus("in-progress"))}
+        {item("✓", "완료로 표시", () => props.onStatus("succeeded"))}
+      </div>
+      <div style={S.quickMenuGroup}>
+        {item("−", "그래프에서 숨기기", props.onHide)}
+        {props.node.type !== "project-root" && item("×", "노드 제거", props.onDelete, true)}
+      </div>
     </menu>
   </div>;
 }
@@ -125,9 +140,9 @@ export function ElapsedTimer(props: { startIso?: string }) {
 export function Tab(props: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <div onClick={props.onClick} style={{
-      padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontWeight: 500,
+      padding: "4px 11px", borderRadius: 3, cursor: "pointer", fontSize: 11, fontWeight: 600,
       color: props.on ? "#e7e7ee" : "#9a9aa6",
-      background: props.on ? "#1c1c24" : "transparent",
+      background: props.on ? "#1a211d" : "transparent",
     }}>{props.children}</div>
   );
 }

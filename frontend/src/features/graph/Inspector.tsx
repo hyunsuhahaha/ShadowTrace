@@ -3,12 +3,21 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api";
 import { DetachableTerminal } from "../../FloatingTerminal";
 import SmartTerminalOutput from "../../SmartTerminalOutput";
+import InteractiveTerminal from "../../InteractiveTerminal";
+import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults } from "../../serviceIntel";
+import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
 import { AddForm, color, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
 import { S } from "./graphStyles";
 import { AddNodeForm } from "./graphLeaves";
+
+type StoredCredential = {
+  id: number; username: string; domain?: string; secret: string; secret_kind: string;
+  secret_hint?: string; source_kind?: string; source_detail?: string;
+  source_execution_kind?: string;
+};
 
 export function Inspector(props: {
   node?: GraphNode; links?: DeepLink[]; busy: boolean;
@@ -37,6 +46,7 @@ export function Inspector(props: {
   })();
   const executionId = source?.kind === "execution" ? source.id : null;
   const sessionId = source?.kind === "session" ? source.id : null;
+  const credentialId = source?.kind === "credential" ? source.id : null;
   const executionOutput = useQuery({
     queryKey: ["executionOutput", executionId],
     enabled: executionId !== null,
@@ -57,7 +67,31 @@ export function Inspector(props: {
   });
   const [evidenceState, setEvidenceState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [revealedCapture, setRevealedCapture] = useState<string | null>(null);
+  const [credentialRevealed, setCredentialRevealed] = useState(false);
+  useEffect(() => setCredentialRevealed(false), [credentialId]);
   const [captureMessage, setCaptureMessage] = useState("");
+  const [retrySession, setRetrySession] = useState<{id: number; command: string} | null>(null);
+  const [retryError, setRetryError] = useState("");
+  const sessionQuery = useQuery({
+    queryKey: ["graphInteractiveSession", sessionId],
+    enabled: sessionId !== null,
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const rows = await api<Array<{id: number; command: string; status: string}>>(
+        `/interactive-sessions?target_id=${props.executionContext?.targetId || ""}`);
+      return rows.find((item) => item.id === sessionId) || null;
+    },
+  });
+  const sessionLog = useQuery({
+    queryKey: ["graphInteractiveSessionLog", sessionId],
+    enabled: sessionId !== null && tool === "responder-listener",
+    refetchInterval: sessionQuery.data?.status === "running" ? 1500 : false,
+    queryFn: async () => {
+      const response = await fetch(`/api/interactive-sessions/${sessionId}/log`);
+      if (!response.ok) return "세션 로그가 아직 생성되지 않았습니다.";
+      return response.text();
+    },
+  });
   const responderCaptures = useQuery({
     queryKey: ["responderCaptures", props.executionContext?.targetId],
     enabled: sessionId !== null && tool === "responder-listener"
@@ -66,6 +100,31 @@ export function Inspector(props: {
     queryFn: () => api<Array<{ label: string; username: string; value: string;
       cleartext: boolean; captured_at: string }>>(
       `/targets/${props.executionContext!.targetId}/responder-captures`),
+  });
+  const credentialQuery = useQuery({
+    queryKey: ["graphCredential", props.projectId, credentialId],
+    enabled: credentialId !== null && !!props.projectId,
+    queryFn: async () => {
+      const rows = await api<StoredCredential[]>(
+        `/runbooks/credentials?project_id=${props.projectId}`);
+      return rows.find((item) => item.id === credentialId) || null;
+    },
+  });
+  const isNetexecCheck = /credential-check-netexec$/i.test(tool || "");
+  const fileTreeRuns = useQuery({
+    queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
+    enabled: isNetexecCheck && !!props.executionContext?.targetId,
+    queryFn: () => api<Array<{ id: number; command_id: string; category: string;
+      status: string; created_at: string }>>(
+      `/post-exploitation?target_id=${props.executionContext!.targetId}`),
+  });
+  const latestFileTree = fileTreeRuns.data?.find((run) =>
+    run.category === "file_tree" && run.status === "completed");
+  const fileTreeOutput = useQuery({
+    queryKey: ["graphFileTreeOutput", latestFileTree?.id],
+    enabled: !!latestFileTree,
+    queryFn: () => api<{ stdout: string; stderr: string }>(
+      `/post-exploitation/${latestFileTree!.id}/output`),
   });
   const extractedLinks = parseLinkExtractResults(executionOutput.data?.stdout || "")
     .sort((a, b) => LINK_KIND_ORDER.indexOf(a.kind) - LINK_KIND_ORDER.indexOf(b.kind));
@@ -123,6 +182,17 @@ export function Inspector(props: {
       setCaptureMessage(`저장 실패: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   };
+  const retry = async () => {
+    if (sessionId === null) return;
+    setRetryError("");
+    try {
+      const next = await api<{id: number; command: string}>(
+        `/interactive-sessions/${sessionId}/retry`, {method: "POST"});
+      setRetrySession(next);
+    } catch (reason) {
+      setRetryError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
   if (!n)
     return <aside style={S.inspector}>
       <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
@@ -151,12 +221,112 @@ export function Inspector(props: {
           ))}
         </div>
       </div>
+      {credentialId !== null && <section style={S.credentialDetail} aria-label="저장된 인증정보">
+        <div style={S.credentialDetailHead}>
+          <div style={{ display: "grid", gap: 3 }}>
+            <span style={{ color: "#8f8157", fontSize: 9 }}>저장된 인증정보</span>
+            <strong>{credentialQuery.data?.source_execution_kind === "hash_crack_job"
+              ? "크래킹 완료 · 평문 사용 가능"
+              : credentialQuery.data?.secret_kind === "hash"
+                ? "크래킹 전 · 캡처된 해시" : "사용 가능한 인증정보"}</strong>
+          </div>
+          <b style={{ color: "#e3b341", font: "9px ui-monospace,monospace" }}>
+            {(credentialQuery.data?.secret_kind || nodeMeta(n).credType || "credential").toUpperCase()}
+          </b>
+        </div>
+        {credentialQuery.isLoading ? <div style={S.resultMessage}>인증정보 불러오는 중…</div>
+          : credentialQuery.isError || !credentialQuery.data
+            ? <div style={S.resultError}>저장된 인증정보를 불러오지 못했습니다.</div>
+            : <>
+              <dl style={S.credentialFacts}>
+                <div style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "7px 0" }}>
+                  <dt style={{ color: "#756f55", fontSize: 9 }}>계정</dt>
+                  <dd style={{ margin: 0, color: "#e8dfc7", fontSize: 11 }}>
+                    {[credentialQuery.data.domain, credentialQuery.data.username]
+                      .filter(Boolean).join("\\") || "이름 없음"}
+                  </dd>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "7px 0",
+                  borderTop: "1px solid #292719" }}>
+                  <dt style={{ color: "#756f55", fontSize: 9 }}>출처</dt>
+                  <dd style={{ margin: 0, color: "#aaa17d", fontSize: 10 }}>
+                    {credentialQuery.data.source_detail || credentialQuery.data.secret_hint
+                      || credentialQuery.data.source_kind || "기록 없음"}
+                  </dd>
+                </div>
+              </dl>
+              <code style={S.credentialSecret}>{credentialRevealed
+                ? credentialQuery.data.secret : "••••••••••••••••••••••••"}</code>
+              <div style={{ ...S.captureActions, padding: "0 12px 12px" }}>
+                <button style={S.resultAction} onClick={() => setCredentialRevealed((value) => !value)}>
+                  {credentialRevealed ? "숨기기"
+                    : credentialQuery.data.secret_kind === "hash" ? "해시 보기" : "평문 보기"}
+                </button>
+                <button style={S.resultAction}
+                  onClick={() => void navigator.clipboard.writeText(credentialQuery.data!.secret)}>
+                  {credentialQuery.data.secret_kind === "hash" ? "해시 복사" : "평문 복사"}
+                </button>
+              </div>
+            </>}
+      </section>}
+      {executionId !== null && isNetexecCheck && <section style={S.netexecNodeResult}
+        aria-label="NetExec 인증 결과">
+        <div style={S.netexecNodeResultHead}>
+          <span>NETEXEC</span>
+          <strong>{/^\[\+\]|pwn3d/im.test(executionOutput.data?.stdout || "")
+            ? "인증 성공" : executionOutput.isLoading ? "결과 확인 중" : "인증 결과 확인 필요"}</strong>
+        </div>
+        <dl style={S.credentialFacts}>
+          <div style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "7px 0" }}>
+            <dt style={{ color: "#677f71", fontSize: 9 }}>대상</dt>
+            <dd style={{ margin: 0, color: "#d6e5dc", fontSize: 11 }}>
+              {target?.hostname || target?.ip || "불러오는 중"}{service ? `:${service.port}` : ""}
+            </dd>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "7px 0",
+            borderTop: "1px solid #203028" }}>
+            <dt style={{ color: "#677f71", fontSize: 9 }}>실행</dt>
+            <dd style={{ margin: 0, color: "#9eb5a8", fontSize: 10 }}>{command || n.label}</dd>
+          </div>
+        </dl>
+        {latestFileTree && <div style={S.netexecTree}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "9px 12px" }}>
+            <b>폴더·파일 트리</b><span style={{ color: "#71867b", fontSize: 9 }}>
+              저장된 실행 #{latestFileTree.id} · {new Date(latestFileTree.created_at).toLocaleString()}
+            </span>
+          </div>
+          {fileTreeOutput.isLoading ? <div style={S.resultMessage}>트리 불러오는 중…</div>
+            : <FileTreeView node={buildFileTree(
+              parseTaggedTreeLines(fileTreeOutput.data?.stdout || ""),
+              latestFileTree.command_id.startsWith("windows_file_tree") ? "\\" : "/")} />}
+        </div>}
+      </section>}
       <section style={S.nodeNotes}>
         <div><span>작업 메모</span><button disabled={notes === (n.notes || "")}
           onClick={() => props.onSetDetails?.(n.id, { notes })}>저장</button></div>
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)}
           placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
       </section>
+      {sessionId !== null && tool === "responder-listener" && <DetachableTerminal
+        id={`responder-session-${sessionId}`} label={`Responder 세션 #${sessionId}`}>
+        <section className="graphSessionTerminal" aria-label="Responder 실시간 터미널">
+          <header data-terminal-drag-handle>
+            <span className="termDots" aria-hidden="true"><i className="termDot" />
+              <i className="termDot termDot--yellow" /><i className="termDot termDot--green" /></span>
+            <b>responder://session/{sessionId}</b>
+            <em>{sessionQuery.data?.status || "loading"}</em>
+          </header>
+          <XtermOutput output={sessionLog.data || "Responder 로그를 불러오는 중입니다."}
+            cursor={sessionQuery.data?.status === "running"} ariaLabel="Responder 세션 로그" />
+          {n.status === "attempt-failed" && <footer>
+            <button type="button" onClick={() => void retry()}>Responder 다시 시작</button>
+            {retryError && <span role="alert">{retryError}</span>}
+          </footer>}
+        </section>
+      </DetachableTerminal>}
+      {retrySession && <InteractiveTerminal sessionId={retrySession.id}
+        title={`Responder 재시작 · ${retrySession.command}`} autoFloat
+        onClose={() => setRetrySession(null)} />}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}
         commandContext={target && props.executionContext ? {

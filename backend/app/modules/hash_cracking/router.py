@@ -263,13 +263,30 @@ async def events(job_id: int, db: Session = Depends(get_db)):
 @router.post("/{job_id}/promote", status_code=201)
 def promote(job_id: int, body: PromoteIn, db: Session = Depends(get_db)):
     row = need(db, HashCrackJob, job_id)
-    credential = Credential(
-        project_id=row.project_id, target_id=row.target_id,
-        username=body.username.strip(), secret_kind="password", secret=body.secret,
-        source_kind="hash_crack", source_detail=f"Hash crack #{row.id} · {row.hash_type_name}",
-        source_execution_kind="hash_crack_job", source_execution_id=row.id,
-        domain=body.domain, service_names="[]", notes=body.notes)
-    db.add(credential); db.commit(); db.refresh(credential)
+    credential = db.get(Credential, body.credential_id) if body.credential_id else None
+    if body.credential_id:
+        if credential is None:
+            raise HTTPException(404, "credential not found")
+        if credential.project_id != row.project_id or credential.target_id != row.target_id:
+            raise HTTPException(400, "Credential belongs to another hash cracking scope")
+        credential.secret_kind = "password"
+        credential.secret = body.secret
+        credential.secret_hint = f"Cracked from {row.hash_type_name}"
+        credential.source_execution_kind = "hash_crack_job"
+        credential.source_execution_id = row.id
+        if body.notes:
+            credential.notes = "\n".join(filter(None, (credential.notes, body.notes)))
+    else:
+        if not body.username.strip():
+            raise HTTPException(422, "username is required without credential_id")
+        credential = Credential(
+            project_id=row.project_id, target_id=row.target_id,
+            username=body.username.strip(), secret_kind="password", secret=body.secret,
+            source_kind="hash_crack", source_detail=f"Hash crack #{row.id} · {row.hash_type_name}",
+            source_execution_kind="hash_crack_job", source_execution_id=row.id,
+            domain=body.domain, service_names="[]", notes=body.notes)
+        db.add(credential)
+    db.commit(); db.refresh(credential)
     return {
         "id": credential.id, "project_id": credential.project_id,
         "target_id": credential.target_id, "username": credential.username,

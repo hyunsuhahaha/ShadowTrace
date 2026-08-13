@@ -63,6 +63,12 @@ export default function GraphWorkspace() {
   const [hashPanel, setHashPanel] = useState<CredentialHandoff | null>(null);
   const [postPanel, setPostPanel] = useState<CredentialHandoff | null>(null);
   const [reportPanel, setReportPanel] = useState(false);
+  useEffect(() => {
+    setWebRequest(null);
+    setHashPanel(null);
+    setPostPanel(null);
+    setReportPanel(false);
+  }, [selected]);
   const [paneWidth, setPaneWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
     return saved >= 320 ? saved : 640;
@@ -129,6 +135,17 @@ export default function GraphWorkspace() {
     queryClient.invalidateQueries({ queryKey: ["graphTree", projectId] });
     queryClient.invalidateQueries({ queryKey: ["graphTimeline", projectId] });
   };
+  useQuery({
+    queryKey: ["responderCaptureSync", projectId],
+    enabled: !!projectId && replayAt == null,
+    refetchInterval: 4000,
+    queryFn: async () => {
+      const result = await api<{ created: number }>(
+        `/projects/${projectId}/responder-captures/sync`, { method: "POST" });
+      if (result.created) invalidateGraph();
+      return result;
+    },
+  });
   const setHidden = useMutation({
     mutationFn: (v: { id: string; hidden: boolean }) =>
       api(`/graph/nodes/${v.id}`, {
@@ -150,6 +167,13 @@ export default function GraphWorkspace() {
       api(`/graph/nodes/${v.id}`, { method: "PATCH",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) }),
     onSuccess: invalidateGraph,
+  });
+  const deleteNode = useMutation({
+    mutationFn: (id: string) => api(`/graph/nodes/${id}`, { method: "DELETE" }),
+    onSuccess: (_data, id) => {
+      if (selected === id) setSelected(null);
+      invalidateGraph();
+    },
   });
   // Manual recording: create a node and connect it to the selected one. This is
   // how artifacts the DB never captured (a stolen hash, an observed LFI) get
@@ -261,12 +285,14 @@ export default function GraphWorkspace() {
     if (kind === "session") {
       const capture = graph.data?.edges.find((item) =>
         item.source === id && item.relation === "captures-from");
-      const host = capture ? nodeById.get(capture.target) : undefined;
-      if (!host?.source_ref) return null;
-      try {
-        const ref = JSON.parse(host.source_ref);
-        return ref.kind === "target" ? { targetId: ref.id } : null;
-      } catch { return null; }
+      if (capture) {
+        const host = nodeById.get(capture.target);
+        if (!host?.source_ref) return null;
+        try {
+          const ref = JSON.parse(host.source_ref);
+          return ref.kind === "target" ? { targetId: ref.id } : null;
+        } catch { return null; }
+      }
     }
     const edge = graph.data?.edges.find((item) =>
       item.target === id && item.relation === "attempted");
@@ -458,8 +484,20 @@ export default function GraphWorkspace() {
             <div style={S.inspector}>
               <div className="graphReplayLock"><b>TIME-MACHINE · READ ONLY</b>
                 <span>{new Date(replayAt).toLocaleString("ko-KR")}</span>
-                <p>이 시점의 그래프를 복원했습니다. 명령 실행과 노드 편집은 LIVE로 돌아간 뒤 사용할 수 있습니다.</p>
-                {selectedNode && <code>{GLYPH[selectedNode.type]} {nodeSummary(selectedNode)}</code>}
+                <p>노드를 선택해 당시 상세를 확인할 수 있습니다. 명령 실행과 편집은 LIVE에서만 가능합니다.</p>
+                {selectedNode ? <section className="graphReplayNode" aria-label="선택한 과거 노드">
+                  <div><i>{GLYPH[selectedNode.type]}</i><span>
+                    <small>{selectedNode.type}</small><strong>{selectedNode.label}</strong>
+                  </span></div>
+                  <dl>
+                    <div><dt>상태</dt><dd>{nodeStatusReason(selectedNode)}</dd></div>
+                    <div><dt>요약</dt><dd>{nodeSummary(selectedNode)}</dd></div>
+                    {selectedNode.notes && <div><dt>메모</dt><dd>{selectedNode.notes}</dd></div>}
+                    <div><dt>기록 시각</dt><dd>{selectedNode.updated_at || selectedNode.created_at
+                      ? new Date(selectedNode.updated_at || selectedNode.created_at!).toLocaleString("ko-KR")
+                      : "기록 없음"}</dd></div>
+                  </dl>
+                </section> : <div className="graphReplayEmpty">확인할 노드를 선택하세요.</div>}
                 <button type="button" onClick={() => changeReplay(null)}>RETURN LIVE ↵</button>
               </div>
             </div>
@@ -472,6 +510,7 @@ export default function GraphWorkspace() {
             <div style={S.embedPane}><Suspense fallback={<Empty text="Hash Cracking 불러오는 중…" />}>
               <EmbeddedHashCracking embedded initialProjectId={hashPanel.project_id}
                 initialTargetId={hashPanel.target_id} initialHash={hashPanel.secret}
+                initialCredentialId={hashPanel.id} initialUsername={hashPanel.username}
                 initialMode={hashPanel.source_kind === "responder"
                   || /NTLMv2/i.test(hashPanel.secret_hint || "") ? "netntlmv2" : undefined}
                 onBack={() => setHashPanel(null)} />
@@ -504,6 +543,13 @@ export default function GraphWorkspace() {
                 <EmbeddedEnumeration embedded />
               </Suspense>
             </div>
+          ) : selectedNode?.type === "technique"
+              && nodeMeta(selectedNode).tool === "manual-shell"
+              && executionHandoff(selected) ? (
+            <div style={S.embedPane}><Suspense fallback={<Empty text="폴더·파일 트리 불러오는 중…" />}>
+              <EmbeddedPostExploitation embedded initialProjectId={projectId || undefined}
+                initialTargetId={executionHandoff(selected)!.targetId} initialCategory="file_tree" />
+            </Suspense></div>
           ) : (
             <Inspector node={selectedNode} projectId={projectId || undefined}
               links={selected ? deepLinks(selected) : []}
@@ -531,6 +577,9 @@ export default function GraphWorkspace() {
         onPin={() => { const node = nodeById.get(contextMenu.id)!;
           setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
         onHide={() => { setHidden.mutate({ id: contextMenu.id, hidden: true }); setContextMenu(null); }}
+        onDelete={() => { const node = nodeById.get(contextMenu.id)!;
+          if (confirm(`「${node.label}」 노드와 연결 관계를 제거할까요?`)) deleteNode.mutate(node.id);
+          setContextMenu(null); }}
         onStatus={(status) => { setStatus.mutate({ id: contextMenu.id, status }); setContextMenu(null); }} />}
       {replayAt == null && addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>

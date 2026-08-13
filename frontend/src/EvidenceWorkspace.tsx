@@ -7,6 +7,8 @@ type Evidence = {
   title: string;
   description: string;
   kind: string;
+  source_type: string;
+  source_id?: number;
   original_name: string;
   sha256: string;
   size: number;
@@ -20,6 +22,17 @@ type Evidence = {
   duplicate_of?: number;
   acquired_at: string;
 };
+type Preview = { content: string; truncated: boolean; language: string };
+export const formatEvidenceSize = (size: number) => size < 1024 ? `${size} B`
+  : size < 1024 * 1024 ? `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KiB`
+  : `${(size / 1024 / 1024).toFixed(1)} MiB`;
+const sourceLabel = (item: Evidence) => {
+  const source = item.source_type === "scan" ? "Scan"
+    : item.source_type === "hash_crack" || item.source_type === "hash_crack_job" ? "Hash cracking"
+    : item.source_type === "execution" ? "Execution"
+    : item.source_type === "upload" ? "직접 업로드" : item.source_type || "기록";
+  return `${source}${item.source_id ? ` #${item.source_id}` : ""}`;
+};
 const KINDS = [
   { id: "auto", label: "자동 감지" },
   { id: "screenshot", label: "스크린샷" },
@@ -30,6 +43,8 @@ const KINDS = [
   { id: "attachment", label: "첨부파일" },
   { id: "markdown", label: "마크다운" },
 ];
+const KIND_LABEL: Record<string, string> = Object.fromEntries(
+  KINDS.map((kind) => [kind.id, kind.label]));
 type Research = { id: number; title: string; target_id: number };
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + path, init);
@@ -53,6 +68,12 @@ export default function EvidenceWorkspace() {
     queryKey: ["evidence", targetId],
     queryFn: () => api<Evidence[]>(`/evidence?target_id=${targetId}`),
     enabled: !!targetId,
+  });
+  const preview = useQuery({
+    queryKey: ["evidencePreview", active?.id],
+    queryFn: () => api<Preview>(`/evidence/${active!.id}/preview`),
+    enabled: !!active && active.kind !== "screenshot",
+    retry: false,
   });
   const research = useQuery({
     queryKey: ["evidenceResearch", target?.project_id, targetId],
@@ -211,11 +232,11 @@ export default function EvidenceWorkspace() {
                 }
               />
               <button onClick={() => setActive(item)}>
-                <b>{item.title}</b>
-                <span>
-                  {item.kind}{item.username ? ` · ${item.username}${item.hostname ? `@${item.hostname}` : ""}` : ""} · {item.size} bytes
-                </span>
-                <code>{item.sha256}</code>
+                <span className="evidenceItemHead"><b>{item.title}</b>
+                  <em>{KIND_LABEL[item.kind] || item.kind}</em></span>
+                <span>{sourceLabel(item)} · {formatEvidenceSize(item.size)} · {new Date(item.acquired_at).toLocaleString()}</span>
+                <small>{item.original_name || "파일 없는 메모"}</small>
+                {item.description && <p>{item.description}</p>}
                 {item.duplicate_of && (
                   <em>#{item.duplicate_of}의 중복 파일</em>
                 )}
@@ -226,17 +247,33 @@ export default function EvidenceWorkspace() {
         <section className="evidencePreview">
           {active ? (
             <>
+              <header className="evidencePreviewHead">
+                <div><span>{KIND_LABEL[active.kind] || active.kind} · {sourceLabel(active)}</span>
+                  <h2>{active.title}</h2>
+                  <p>{active.original_name || "Markdown note"} · {formatEvidenceSize(active.size)} · {new Date(active.acquired_at).toLocaleString()}</p>
+                </div>
+                {active.original_name && <a href={`/api/evidence/${active.id}/file`}>다운로드</a>}
+              </header>
               <div className="previewFile">
                 {active.kind === "screenshot" ? (
                   <img src={`/api/evidence/${active.id}/file`} alt={active.title} />
-                ) : active.original_name ? (
-                  <a href={`/api/evidence/${active.id}/file`}>
-                    {active.original_name} 다운로드
-                  </a>
+                ) : preview.isLoading ? (
+                  <LoadingState label="내용 미리보기 불러오는 중" />
+                ) : preview.data ? (
+                  <><pre data-language={preview.data.language}>{preview.data.content}</pre>
+                    {preview.data.truncated && <small>앞 256 KiB만 표시합니다.</small>}</>
                 ) : (
-                  <pre>{active.markdown}</pre>
+                  <div className="previewUnavailable"><b>브라우저 미리보기를 지원하지 않는 파일입니다.</b>
+                    <span>원본 파일을 다운로드해 확인하세요.</span></div>
                 )}
               </div>
+              <div className="evidenceFacts">
+                <span><small>출처</small><b>{sourceLabel(active)}</b></span>
+                <span><small>SHA-256</small><code title={active.sha256}>{active.sha256.slice(0, 16)}…</code></span>
+                <span><small>민감도</small><b>{active.sensitivity}</b></span>
+                <span><small>보고서</small><b>{active.include_report ? "포함" : "제외"}</b></span>
+              </div>
+              <h3 className="evidenceMetaTitle">분류 및 메타데이터</h3>
               <label>
                 제목
                 <input

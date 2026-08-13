@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import {cleanup, fireEvent, render, screen} from "@testing-library/react";
-import {afterEach, expect, test, vi} from "vitest";
+import {cleanup, fireEvent, render, screen, within} from "@testing-library/react";
+import {afterEach, beforeEach, expect, test, vi} from "vitest";
 import {DetachableTerminal, FloatingTerminalProvider, useFloatingTerminal} from "./FloatingTerminal";
 
 class EventSourceStub {
@@ -9,6 +9,16 @@ class EventSourceStub {
   onerror = null;
   close = vi.fn();
 }
+
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({
+    matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    addListener: vi.fn(), removeListener: vi.fn(),
+  })));
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {} disconnect() {}
+  });
+});
 
 function DetachFromGraph() {
   const {floatScan} = useFloatingTerminal();
@@ -25,6 +35,16 @@ function GraphExecutionTerminal() {
       <pre>OpenSSH 8.0p1</pre>
     </section>
   </DetachableTerminal>;
+}
+
+function OpenTwoTerminals() {
+  const {floatTerminal} = useFloatingTerminal();
+  return <>
+    <button onClick={() => floatTerminal({id: "pty-1", label: "Responder",
+      content: <div>responder output</div>}, new DOMRect(40, 60, 600, 360))}>첫 번째</button>
+    <button onClick={() => floatTerminal({id: "pty-2", label: "evil-winrm",
+      content: <div>winrm output</div>}, new DOMRect(80, 90, 600, 360))}>두 번째</button>
+  </>;
 }
 
 afterEach(() => {
@@ -59,6 +79,17 @@ test("스캔 명령은 잘린 header preview 대신 출력 위에 표시된다",
   expect(screen.getByLabelText("플로팅 터미널 명령")).toBeTruthy();
 });
 
+test("스캔 터미널에서 모든 xterm의 글자 크기를 조절한다", () => {
+  vi.stubGlobal("EventSource", EventSourceStub);
+  render(<FloatingTerminalProvider><DetachFromGraph /></FloatingTerminalProvider>);
+
+  fireEvent.click(screen.getByRole("button", {name: "분리"}));
+  fireEvent.click(screen.getByRole("button", {name: "터미널 글자 확대"}));
+
+  expect(localStorage.getItem("oscp-terminal-font-size")).toBe("17");
+  expect(screen.getByLabelText("터미널 글자 크기").textContent).toContain("17");
+});
+
 test("크기 조절은 포인터가 grip 밖으로 나가도 계속된다", () => {
   vi.stubGlobal("EventSource", EventSourceStub);
   Object.defineProperties(HTMLElement.prototype, {
@@ -86,4 +117,17 @@ test("공용 터미널은 헤더 drag로 전역 floating 된다", () => {
 
   expect(screen.getByLabelText("플로팅 터미널 그래프 실행 결과")).toBeTruthy();
   expect(screen.getByText("OpenSSH 8.0p1")).toBeTruthy();
+});
+
+test("여러 xterm 창을 동시에 유지하고 각각 닫는다", () => {
+  render(<FloatingTerminalProvider><OpenTwoTerminals /></FloatingTerminalProvider>);
+  fireEvent.click(screen.getByText("첫 번째"));
+  fireEvent.click(screen.getByText("두 번째"));
+
+  const responder = screen.getByLabelText("플로팅 터미널 Responder");
+  expect(responder).toBeTruthy();
+  expect(screen.getByLabelText("플로팅 터미널 evil-winrm")).toBeTruthy();
+  fireEvent.click(within(responder).getByText("[ 원위치 ]"));
+  expect(screen.queryByLabelText("플로팅 터미널 Responder")).toBeNull();
+  expect(screen.getByLabelText("플로팅 터미널 evil-winrm")).toBeTruthy();
 });

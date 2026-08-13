@@ -330,6 +330,38 @@ def _index_by_source(nodes: list[GraphNode]) -> dict[tuple[str, int], GraphNode]
     return index
 
 
+def dismiss_source(db: Session, project_id: int, source_ref: str) -> None:
+    if not source_ref:
+        return
+    meta = db.get(GraphProjectMeta, project_id)
+    if meta is None:
+        return
+    try:
+        layout = json.loads(meta.layout or "{}")
+    except ValueError:
+        layout = {}
+    dismissed = set(layout.get("dismissedSourceRefs", []))
+    dismissed.add(source_ref)
+    layout["dismissedSourceRefs"] = sorted(dismissed)
+    meta.layout = json.dumps(layout, sort_keys=True)
+
+
+def _dismissed_sources(db: Session, project_id: int) -> set[tuple[str, int]]:
+    meta = db.get(GraphProjectMeta, project_id)
+    try:
+        refs = json.loads(meta.layout or "{}").get("dismissedSourceRefs", []) if meta else []
+    except ValueError:
+        refs = []
+    dismissed = set()
+    for value in refs:
+        try:
+            ref = json.loads(value)
+            dismissed.add((ref.get("kind"), ref.get("id")))
+        except (TypeError, ValueError):
+            continue
+    return dismissed
+
+
 def sync_from_project(db: Session, project_id: int) -> dict:
     """Project existing domain rows into graph nodes (idempotent, spec 6.1).
 
@@ -341,6 +373,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     root = ensure_project_root(db, project_id)
     nodes, edges = _load(db, project_id)
     index = _index_by_source(nodes)
+    dismissed = _dismissed_sources(db, project_id)
 
     # Heal orphans: a node projected from a domain row whose row no longer exists
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
@@ -391,8 +424,10 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         edges.append(edge)
         return edge
 
-    def operator_for() -> GraphNode:
+    def operator_for() -> GraphNode | None:
         operator = index.get(("operator", project_id))
+        if operator is None and ("operator", project_id) in dismissed:
+            return None
         address = _operator_address()
         label = f"Kali Operator · {address}"
         meta = json.dumps({"interface": "tun0", "ip": address})
@@ -420,6 +455,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         target_ids.append(target.id)
         host = host_for(target.id)
         if host is None:
+            if ("target", target.id) in dismissed:
+                continue
             label = target.ip + (f" ({target.hostname})" if target.hostname else "")
             host = create_node(db, project_id, "host", label=label,
                                source_ref=_source_ref("core", "target", target.id))
@@ -450,6 +487,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                                        "version": service.version or "",
                                        "evidenceCount": service_evidence_count})
             if ("service", service.id) not in index:
+                if ("service", service.id) in dismissed:
+                    continue
                 svc = create_node(db, project_id, "service", label=refined,
                                   source_ref=_source_ref("scans", "service", service.id),
                                   meta=service_meta)
@@ -472,6 +511,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     for finding in db.scalars(
             select(Finding).where(Finding.project_id == project_id)):
+        if ("finding", finding.id) in dismissed:
+            continue
         parent = parent_of(finding.service_id, finding.target_id)
         if parent is None:
             continue
@@ -492,6 +533,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     for cred in db.scalars(
             select(Credential).where(Credential.project_id == project_id)):
+        if ("credential", cred.id) in dismissed:
+            continue
         parent = parent_of(cred.service_id, cred.target_id)
         if parent is None:
             continue
@@ -500,6 +543,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                            "domain": cred.domain or "",
                            "credType": cred.secret_kind or "",
                            "secretHint": cred.secret_hint or "",
+                           "sourceKind": cred.source_kind or "",
+                           "sourceExecutionKind": cred.source_execution_kind or "",
                            "evidenceCount": _credential_evidence_count(db, cred)})
         provenance = json.dumps({"source": cred.source_kind or "",
                                  "detail": cred.source_detail or ""})
@@ -557,6 +602,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     if target_ids:
         for ex in db.scalars(
                 select(Execution).where(Execution.target_id.in_(target_ids))):
+            if ("execution", ex.id) in dismissed:
+                continue
             parent = parent_of(ex.service_id, ex.target_id)
             if parent is None:
                 continue
@@ -593,6 +640,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         for sess in db.scalars(
                 select(InteractiveSession).where(
                     InteractiveSession.target_id.in_(target_ids))):
+            if ("session", sess.id) in dismissed:
+                continue
             responder = sess.template_id == "responder-listener"
             parent = operator_for() if responder else parent_of(sess.service_id, sess.target_id)
             if parent is None:

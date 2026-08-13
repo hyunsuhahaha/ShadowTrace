@@ -114,9 +114,14 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [executionView, setExecutionView] = useState<"list" | "detail">("list");
   const [selectedExecutionId, setSelectedExecutionId] = useState<number>();
   const [executionDetail, setExecutionDetail] = useState<any>();
-  const [interactiveSession, setInteractiveSession] = useState<{
-    id: number; command: string;
-  }>();
+  const [interactiveSessions, setInteractiveSessions] = useState<Array<{
+    id: number; command: string; initialInput?: string; autoFloat?: boolean;
+  }>>([]);
+  const addInteractiveSession = (session: {
+    id: number; command: string; initialInput?: string; autoFloat?: boolean;
+  }) => setInteractiveSessions((current) => [
+    ...current.filter((item) => item.id !== session.id), session,
+  ]);
   const [lastSpiderShare, setLastSpiderShare] = useState<string>();
   const [evidenceMsg, setEvidenceMsg] = useState("");
   const [saveHashMsg, setSaveHashMsg] = useState("");
@@ -271,7 +276,6 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     setExecutionView("list");
     setSelectedExecutionId(undefined);
     setExecutionDetail(undefined);
-    setInteractiveSession(undefined);
   }, [serviceId]);
   useEffect(() => {
     const selected = services.data?.find((x) => x.id === serviceId) as any;
@@ -392,16 +396,12 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
         run_as_root: false,
       }),
     });
-    await api<any>(
-      `/interactive-sessions/${session.id}/desktop?ftp_anonymous=true`,
-      {method: "POST"},
-    );
+    addInteractiveSession({id: session.id, command: session.command,
+      initialInput: "anonymous\ranonymous@\r", autoFloat: true});
     setOutput((value) =>
-      `${value}\n[Kali QTerminal에서 anonymous FTP 로그인 세션을 열었습니다.]\n`
+      `${value}\n[xterm PTY에서 anonymous FTP 로그인 세션을 열었습니다.]\n`
     );
-    // The desktop-launch endpoint itself now auto-runs an anonymous
-    // ftp-directory-tree crawl for every ftp-client session it opens, so
-    // this path no longer needs its own call.
+    autoRunFtpTree("anonymous", "anonymous@");
   };
   const openMysqlTerminal = async (username: string) => {
     if (!targetId || !serviceId) return;
@@ -417,8 +417,8 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           run_as_root: false,
         }),
       });
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
-      setOutput((value) => `${value}\n[Kali QTerminal에서 MySQL 세션을 열었습니다.]\n`);
+      addInteractiveSession({id: session.id, command: session.command, autoFloat: true});
+      setOutput((value) => `${value}\n[xterm PTY에서 MySQL 세션을 열었습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[MySQL 터미널을 열지 못했습니다] ${message}\n`);
@@ -438,8 +438,8 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           run_as_root: false,
         }),
       });
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
-      setOutput((value) => `${value}\n[Kali QTerminal에서 mycli 세션을 열었습니다.]\n`);
+      addInteractiveSession({id: session.id, command: session.command, autoFloat: true});
+      setOutput((value) => `${value}\n[xterm PTY에서 mycli 세션을 열었습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[MySQL 터미널을 열지 못했습니다] ${message}\n`);
@@ -510,7 +510,7 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             run_as_root: runWithSudoRef.current,
           }),
         });
-        setInteractiveSession({id: session.id, command: session.command});
+        addInteractiveSession({id: session.id, command: session.command});
         setOutput(
           `$ ${session.command}\n\n[PTY 세션 #${session.id}에 attach했습니다.]\n`,
         );
@@ -1011,11 +1011,8 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
       target_level: true, variables: {},
     });
   };
-  // Responder needs to keep running while the tester works in other tabs
-  // (Web Testing, to trigger the auth coercion) without losing its view on
-  // every SPA navigation, so unlike the manual-shell panels next to this
-  // one it launches in a real Kali desktop terminal window instead of the
-  // in-page xterm panel.
+  // Responder is auto-floated through the AppShell-level xterm provider, so
+  // it stays mounted while the user switches nodes and workspaces.
   const startResponderDesktop = async (interfaceName: string) => {
     if (!targetId || !interfaceName.trim()) return;
     try {
@@ -1027,9 +1024,9 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
           variables: {interface: interfaceName.trim()}, run_as_root: true,
         }),
       });
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {method: "POST"});
+      addInteractiveSession({id: session.id, command: session.command, autoFloat: true});
       setOutput((value) =>
-        `${value}\n$ sudo responder -I ${interfaceName.trim()} -v\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+        `${value}\n$ sudo responder -I ${interfaceName.trim()} -v\n\n[xterm PTY에서 실행했습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[Responder 실행 실패] ${message}\n`);
@@ -1044,13 +1041,8 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     });
     setPsexecSession({id: session.id, command});
   };
-  // Same "keeps running across tab switches" reasoning as Responder — but
-  // unlike openManualShell (which types a secret into an already-connected
-  // PTY, never touching the backend), a desktop-launched terminal runs
-  // whatever command it's given directly, so this is only safe for a
-  // command with no -p/-H/password baked in. The backend rejects one
-  // anyway, but the real safeguard is: never build a command with a secret
-  // in it and hand it to this function.
+  // The command is stored without a secret; typeAfter is sent only over the
+  // PTY websocket as initial input and never enters the command row or argv.
   const openDesktopShell = async (command: string, typeAfter?: string) => {
     if (!targetId || !serviceId) return;
     try {
@@ -1059,16 +1051,9 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({target_id: targetId, service_id: serviceId, command}),
       });
-      // typeAfter never reaches the session row above — it's only sent to
-      // this one-shot desktop-launch call, which hands it to the spawned
-      // command's own password prompt through a named pipe on the backend,
-      // never this command string or a process's argv.
-      await api<any>(`/interactive-sessions/${session.id}/desktop`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({type_after: typeAfter ?? ""}),
-      });
-      setOutput((value) => `${value}\n$ ${command}\n\n[Kali 데스크톱 터미널에서 실행했습니다.]\n`);
+      addInteractiveSession({id: session.id, command,
+        initialInput: typeAfter ? `${typeAfter}\r` : undefined, autoFloat: true});
+      setOutput((value) => `${value}\n$ ${command}\n\n[xterm PTY에서 실행했습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[실행 실패] ${message}\n`);
@@ -1759,11 +1744,50 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
   } as const)[netexecProtocol];
   const netexecCredentialResult = netexecCredCommandId
     ? runStates[netexecCredCommandId] : undefined;
+  const latestSavedNetexec = netexecCredCommandId
+    ? serviceExecutions.find((item) => item.template_id === netexecCredCommandId) : undefined;
+  useEffect(() => {
+    if (!netexecCredCommandId || !latestSavedNetexec || runStates[netexecCredCommandId]) return;
+    let cancelled = false;
+    api<any>(`/executions/${latestSavedNetexec.id}/output`).then((result) => {
+      if (cancelled) return;
+      setRunStates((current) => current[netexecCredCommandId] ? current : {
+        ...current,
+        [netexecCredCommandId]: {
+          id: latestSavedNetexec.id, templateId: netexecCredCommandId,
+          name: commands.data?.find((item) => item.id === netexecCredCommandId)?.name
+            || netexecCredCommandId,
+          status: result.status, startedAt: Date.parse(latestSavedNetexec.started_at) || Date.now(),
+          exitCode: result.exit_code, message: result.error,
+          stdout: result.stdout || "", stderr: result.stderr || "",
+        },
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [netexecCredCommandId, latestSavedNetexec?.id, serviceId]);
+  const savedFileTrees = useQuery({
+    queryKey: ["savedFileTrees", targetId],
+    enabled: !!targetId && (netexecProtocol === "ssh" || netexecProtocol === "winrm"),
+    queryFn: () => api<Array<{ id: number; command_id: string; category: string;
+      status: string }>>(`/post-exploitation?target_id=${targetId}`),
+  });
+  const latestSavedFileTree = savedFileTrees.data?.find((run) =>
+    run.category === "file_tree" && run.status === "completed");
+  useEffect(() => {
+    if (!latestSavedFileTree || !targetId || autoFileTreeRunId) return;
+    const key = `${targetId}-${netexecProtocol}-${credStore.username}`;
+    autoFileTreeFiredRef.current = key;
+    let cancelled = false;
+    api<{ stdout: string }>(`/post-exploitation/${latestSavedFileTree.id}/output`).then((result) => {
+      if (!cancelled) setAutoFileTree({ status: "completed", output: result.stdout || "" });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [latestSavedFileTree?.id, targetId, netexecProtocol, credStore.username, autoFileTreeRunId]);
   useEffect(() => {
     if (netexecProtocol !== "ssh" && netexecProtocol !== "winrm") return;
     const success = netexecCredentialResult?.status === "completed"
       && /^\[\+\]|pwn3d/im.test(netexecCredentialResult.stdout || "");
-    if (!success || !targetId) return;
+    if (!success || !targetId || savedFileTrees.isLoading || latestSavedFileTree) return;
     const key = `${targetId}-${netexecProtocol}-${credStore.username}`;
     if (autoFileTreeFiredRef.current === key) return;
     autoFileTreeFiredRef.current = key;
@@ -1969,11 +1993,13 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
             outcome={currentOutcome} output={output} targetIp={target?.ip}
             projectId={projectId} targetId={target?.id} serviceId={service?.id}
             servicePort={service?.port} protocol={service?.protocol} />
-          {interactiveSession && <InteractiveTerminal
-            sessionId={interactiveSession.id}
+          {interactiveSessions.map((interactiveSession) => <InteractiveTerminal
+            key={interactiveSession.id} sessionId={interactiveSession.id}
+            initialInput={interactiveSession.initialInput} autoFloat={interactiveSession.autoFloat}
             title={`service://${target?.ip || "target"}/${service?.port || "-"}/${
               service?.protocol || "tcp"} · ${interactiveSession.command}`}
-            onClose={() => setInteractiveSession(undefined)} />}
+            onClose={() => setInteractiveSessions((current) =>
+              current.filter((item) => item.id !== interactiveSession.id))} />)}
           <ManualGuidance serviceName={service?.name} guidance={guidance} />
           {!!service && <details className="protocolToolbox">
             <summary><span>&gt; protocol toolbox</span>

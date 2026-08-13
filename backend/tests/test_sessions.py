@@ -6,14 +6,14 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
 from app.database import Base
-from app.models import InteractiveSession, Project, Service, Target
+from app.models import Credential, InteractiveSession, Project, Service, Target
 from app.schemas import DesktopLaunchIn, InteractiveSessionIn, ManualTerminalIn
 from types import SimpleNamespace
 
 import app.modules.sessions.router as sessions_router
 from app.modules.sessions.router import (
     create_interactive_session, create_manual_terminal, responder_captures,
-    launch_interactive_session_in_desktop,
+    launch_interactive_session_in_desktop, retry_interactive_session,
 )
 
 
@@ -59,6 +59,23 @@ def test_responder_is_allowed_when_nothing_is_running(tmp_path, monkeypatch):
 
     assert row.template_id == "responder-listener"
     assert row.command == "sudo responder -I tun0 -v"
+
+
+def test_failed_interactive_session_can_be_restarted(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    previous = InteractiveSession(
+        target_id=box.id, template_id="responder-listener",
+        command="sudo responder -I tun0 -v", cwd=str(tmp_path), status="failed")
+    db.add(previous); db.commit()
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=""))
+
+    restarted = retry_interactive_session(previous.id, db)
+
+    assert restarted.id != previous.id
+    assert restarted.status == "ready"
+    assert restarted.command == previous.command
 
 
 def test_the_running_process_check_only_applies_to_responder(tmp_path, monkeypatch):
@@ -125,6 +142,31 @@ def test_responder_captures_is_empty_when_nothing_was_captured_for_this_target(
     db.add(box); db.commit()
 
     assert responder_captures(box.id, db) == []
+
+
+def test_sync_project_responder_captures_creates_one_credential_idempotently(
+        tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    monkeypatch.setattr(sessions_router, "RESPONDER_LOGS_DIR", logs_dir)
+    (logs_dir / "SMB-NTLMv2-SSP-10.129.95.234.txt").write_text(
+        "Administrator::RESPONDER:aaa:bbb:ccc\n", encoding="utf-8")
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    db.add(Target(project_id=project.id, name="Box", ip="10.129.95.234"))
+    db.commit()
+
+    first = sessions_router.sync_project_responder_captures(project.id, db)
+    second = sessions_router.sync_project_responder_captures(project.id, db)
+
+    assert first == {"created": 1}
+    assert second == {"created": 0}
+    rows = db.query(Credential).all()
+    assert len(rows) == 1
+    assert rows[0].username == "Administrator"
+    assert rows[0].secret_kind == "hash"
+    assert rows[0].source_kind == "responder"
 
 
 def test_manual_terminal_rejects_a_command_with_an_inline_secret_flag():

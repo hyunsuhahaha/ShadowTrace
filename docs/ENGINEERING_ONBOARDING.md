@@ -182,7 +182,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 | Project, Target, Service | `modules/core/router.py` | `models.py`, workspace target directories |
 | Scan | `modules/scan_center/router.py` | `service.py`, `manager.py`, scan artifacts |
 | Captured command | `modules/executions/router.py` | `executor.py`, output files |
-| Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs |
+| Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs, 종료 세션 `/retry` 재시작 |
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
 | Evidence | `modules/evidence/router.py` | Evidence files와 ZIP export |
@@ -397,7 +397,9 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링 |
 | `LiveOutputPanel.tsx` | 실시간 출력 패널(`D\|`/`F\|` 태그 출력은 파일 트리로 렌더) |
 | `OperatorContext.tsx` | 그래프의 root/host ScanCenter와 service Enumeration이 공유하는 대상 프롬프트·실제 상태 fact·작업 액션 헤더 |
-| `FloatingTerminal.tsx` | AppShell 전역 터미널 창 관리자와 `DetachableTerminal` seam — Scan, Graph Execution, Service output, Tools, Hash Cracking, Post-Exploitation, PTY를 헤더 드래그로 분리하고 라우트와 무관하게 이동·3방향 크기 조절·원위치 도킹 |
+| `FloatingTerminal.tsx` | AppShell 전역 다중 터미널 창 관리자와 `DetachableTerminal` seam — Scan, Graph Execution, Service output, Tools, Hash Cracking, Post-Exploitation, PTY를 ID별 독립 창으로 분리하고 라우트와 무관하게 이동·3방향 크기 조절·원위치 도킹 |
+| `XtermOutput.tsx` | 완료/스트리밍 명령 출력을 xterm.js 읽기 전용 버퍼로 렌더하는 전역 플로팅 로그 뷰 |
+| `terminalFont.ts` | 모든 xterm PTY와 읽기 전용 출력의 공용 글자 크기(12-24px) 저장 및 실시간 동기화 |
 | `FloatingCommandSession.tsx` | 플로팅 결과의 전체 실행 명령·target/service-bound 하단 prompt; 입력 시 bare Bash interactive session을 만들고 실제 PTY로 전환 |
 | `PtyTerminal.tsx` | xterm.js + WebSocket으로 실제 서버 PTY를 렌더하고 입력·resize·종료를 중계하는 raw 터미널 뷰 |
 | `SmartTerminalOutput.tsx` | raw stdout의 IP/URL/open service 후보를 파싱하고 승인형 Graph/browser/fuzz smart action을 제공 |
@@ -442,8 +444,10 @@ API: `/targets`, `/web/requests*`(CRUD, duplicate, exchanges, send), `/web/excha
 
 대상별 파일/스크린샷/플래그/마크다운 업로드(드래그앤드롭), 메타데이터 편집(제목,
 사용자명/호스트명/획득 권한, 민감도, 보고서 포함 여부, 태그), Exploit Research 후보
-연결, 선택적 ZIP export. 하위 컴포넌트 없음.
-API: `/targets`, `/evidence?target_id=`, `/evidence/{id}`, `/evidence/upload`,
+연결, 선택적 ZIP export. 목록은 종류·원본 파일·출처·획득 시각·크기를 표시하고,
+command output/Nmap XML/HTTP/Markdown 등 텍스트 파일은 최대 256 KiB까지 오른쪽에서
+미리본을 제공한다. 하위 컴포넌트 없음.
+API: `/targets`, `/evidence?target_id=`, `/evidence/{id}`, `/evidence/{id}/preview`, `/evidence/upload`,
 `/evidence/export`, `/projects/{id}/exploit-research?target_id=`.
 
 ### 10.5 `DirectoryWorkspace.tsx` — AD 정보 (`#directory`)
@@ -491,7 +495,7 @@ API: `/projects`, `/targets`, `/services/{id}/searchsploit`, `/targets/{id}/wes-
 
 | 하위 컴포넌트 | 역할 |
 |---|---|
-| `InteractiveTerminal.tsx` | `PtyTerminal`을 `DetachableTerminal`에 연결하는 wrapper; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용 |
+| `InteractiveTerminal.tsx` | `PtyTerminal`을 `DetachableTerminal`에 연결하는 wrapper; `autoFloat` 세션은 AppShell 전역 xterm으로 즉시 분리되어 노드·워크스페이스 전환에도 유지됨; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용 |
 
 ### 10.10 `RunbookWorkspace.tsx` — Runbooks (`#runbooks`)
 
@@ -552,14 +556,30 @@ technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stder
 `http-link-extract`는 여기에 유형순 링크 목록, Evidence 파생 저장과 Web Testing Request
 handoff를 추가로 제공하며, handoff 시 그래프를 벗어나지 않고 우측 GraphRequestPanel에서
 편집·저장·전송·응답 검토까지 수행한다. GraphRequestPanel은 `/vpn/status`의 tun0 IPv4를
-UNC 경로로 URL 커서 또는 `page=` 값에 삽입하는 Responder IP 단축 기능도 제공한다.
+UNC 경로로 URL 커서 또는 `page=` 값에 삽입하는 SMB Direct Injection 단축과 존재하지 않는
+호스트명의 UNC 경로를 삽입하는 LLMNR 시도 단축도 제공한다.
 Finding과 credential 작업도 라우트를 바꾸지 않는다. Finding은 `ReportWorkspace.tsx`,
 credential은 `HashCrackingWorkspace.tsx`와 `PostExploitationWorkspace.tsx`를 각각
 `embedded` 인터페이스로 우측 패널에 lazy-load한다. 이 어댑터는 프로젝트·대상·해시·모드·
-credential을 초기값으로 넘기되 원본 폼, 실행 터미널, 결과, Evidence 저장, 이력 기능을
-그대로 재사용한다. 패널 폭이 좁으면 container query로 이력을 아래로 재배치하며 숨기지 않는다.
+credential ID와 사용자명을 초기값으로 넘긴다. Credential에서 시작한 크랙 결과는 사용자명을
+다시 묻지 않고 기존 Credential에 평문과 HashCrackJob 출처를 연결한다. 원본 폼, 실행 터미널,
+결과, Evidence 저장, 이력 기능은 그대로 재사용한다. 패널 폭이 좁으면 container query로
+이력을 아래로 재배치하며 숨기지 않는다.
+Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출처를 먼저 표시하고, 평문 또는
+해시를 명시적으로 확인·복사할 수 있게 한다. Canvas 라벨도 `CAPTURED`, `CRACKED`, `READY`로
+상태를 구분한다.
+`manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하며, 선택 즉시
+해당 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 임베드한다.
+Windows 폴더·파일 트리 명령은 `C:\\` 루트를 명시적으로 포함해 드라이브 전체를 조회한다.
+완료된 트리는 실시간 shell 상태가 아니라 해당 실행 시각의 저장된 조회 결과로 표시한다.
+Time Machine 재생 중에도 Canvas/Outline 노드 선택은 허용하며, 우측 읽기 전용 패널에서 당시
+노드의 유형·상태·요약·메모·기록 시각을 확인한다. 실행과 편집만 LIVE 복귀 전까지 막는다.
+NetExec execution 노드 Inspector는 저장된 실행 출력에서 인증 결과를 복원하고 대상의 최신
+Post-Exploitation `file_tree` 결과도 함께 표시한다. Enumeration 패널은 서비스 재진입 시 최신
+NetExec 실행과 저장된 파일 트리를 API에서 다시 hydrate하므로 컴포넌트 state 소멸에 의존하지 않는다.
 Responder session 노드는 대상의 캡처 로그를
-4초마다 조회해 해시 보기·복사·Credential 저장을 제공한다. `credential` 노드는 기본적으로
+4초마다 프로젝트 단위로 조회해 새 캡처를 중복 없이 Credential로 저장하고 그래프에
+반영하며, 해시 보기·복사를 제공한다. `credential` 노드는 기본적으로
 Post-Exploitation handoff를 제공하고, `credType=hash`이면 실제 secret/target을 채우는 Hash
 Cracking handoff도 함께 제공한다. 실행 중인 스캔은 host 노드, 실행 중인 명령·세션은
 technique 노드의 `meta.activity`에 투영되어 Canvas에서 녹색 레이더 파동·스윕·엣지
@@ -580,7 +600,12 @@ DB enum을 바꾸지 않고 UI에서 준비됨/선행 정보 부족/사용자 �
 적용 불가로 번역한다. 선택한 그래프·트리·Outline 모드는 `oscp-graph-view`에 유지한다.
 그래프 작업 바는 label/메타/메모/태그 검색, 유형·상태 필터, 선택 노드 기준 1~3-hop 집중,
 북마크 전용 보기와 필터 초기화를 제공한다. 노드 우클릭 메뉴는 상세 열기, 연결 작업 추가,
-북마크, 상태 변경, 숨기기를 제공한다. Inspector의 메모와 북마크는 GraphNode의 기존
+전역 컨텍스트 바와 Time Machine·그래프 필터 바는 캔버스 세로 공간을 확보하는 compact
+desktop chrome을 사용하며 VPN 상세 주소와 DNS 입력은 전역 헤더에서 축약한다.
+북마크, 상태 변경, 숨기기와 노드 제거를 제공한다. 노드 제거는 project-root를 제외한
+GraphNode와 연결된 GraphEdge를 삭제한다. 원본 데이터에서 자동 투영된 노드는
+`GraphProjectMeta.layout.dismissedSourceRefs`에 삭제 표식을 남겨 이후 sync에서도 다시
+생성되지 않는다. Inspector의 메모와 북마크는 GraphNode의 기존
 `notes`/`pinned` 필드를 PATCH하므로 서버에 영속된다. Work Queue는 수동 technique과
 실행·실패 상태 작업을 모아 노드 이동 및 상태 전환을 제공한다. Canvas pan/zoom/노드 배치는
 프로젝트·보기 모드별 localStorage에 저장되며 선택 노드도 복원된다.
@@ -616,7 +641,7 @@ API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
-`/targets`, `/targets/{id}/services`.
+`/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST).
 
 ### 10.15 인프라/공용 파일 (특정 워크스페이스에 속하지 않음)
 

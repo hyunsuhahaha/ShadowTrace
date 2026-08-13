@@ -1,7 +1,38 @@
 .appShell {
+  --context-height: 3.25rem;
   grid-template-columns: var(--sidebar-width, var(--sidebar)) minmax(0, 1fr);
   transition: grid-template-columns 160ms ease;
 }
+
+.contextBar {
+  height: var(--context-height);
+  min-height: 0;
+  padding: .4rem 1rem;
+  gap: .65rem;
+}
+
+.contextBar > div { gap: .08rem; }
+.contextBar span { font-size: .56rem; }
+.contextBar strong { font-size: .66rem; }
+.contextBar > i { height: 1.35rem; }
+.pageStage { height: calc(100dvh - var(--context-height)); }
+
+.contextBar > .vpn {
+  display: grid;
+  grid-template-columns: 8px auto auto;
+  align-items: center;
+  min-width: auto;
+  gap: 0 6px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.contextBar > .vpn > small,
+.contextBar > .vpn > .vpnDns { display: none; }
+.contextBar > .vpn > .dot { width: 6px; height: 6px; margin: 0; }
+.contextBar > .vpn > .vpnActions { grid-column: 3; display: flex; }
+.contextBar > .vpn .vpnActions label,
+.contextBar > .vpn .vpnActions button { padding: 2px 5px; font-size: 8px; }
 
 .appSidebar {
   position: sticky;
@@ -65,11 +96,11 @@
 }
 
 .appSidebar__resizeHandle {
-  right: -5px;
+  right: 0;
 }
 
 .appSidebar__resizeHandle::after {
-  right: 4px;
+  right: 0;
 }
 
 .appShell--sidebarCollapsed .appSidebar {
@@ -113,6 +144,9 @@
   .appShell {
     grid-template-columns: 1fr !important;
   }
+
+  .contextBar { height: auto; }
+  .pageStage { height: auto; }
 
   .appSidebar__head .panelCollapseButton,
   .appSidebar__resizeHandle {

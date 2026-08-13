@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Project, Target
-from app.modules.evidence.router import export_evidence, upload_evidence
+from app.modules.evidence.router import evidence_preview, export_evidence, upload_evidence
 
 
 def database():
@@ -47,3 +47,26 @@ def test_evidence_hash_duplicate_and_zip_manifest(tmp_path, monkeypatch):
         manifest = json.loads(archive.read("manifest.json"))
         assert len(manifest) == 2
         assert any(name.endswith("proof.txt") for name in archive.namelist())
+
+
+def test_text_evidence_preview_is_readable_and_bounded(tmp_path, monkeypatch):
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    uploaded = tempfile.SpooledTemporaryFile()
+    uploaded.write(b"PORT   STATE SERVICE\n80/tcp open  http\n")
+    uploaded.seek(0)
+    row = asyncio.run(upload_evidence(
+        project_id=project.id, target_id=target.id, title="Nmap stdout",
+        kind="command_output", description="", service_id=None,
+        source_type="scan", source_id=9, sensitivity="normal",
+        include_report=False, file=UploadFile(filename="stdout.txt", file=uploaded), db=db))
+
+    preview = evidence_preview(row.id, db)
+
+    assert preview == {"content": "PORT   STATE SERVICE\n80/tcp open  http\n",
+                       "truncated": False, "language": "text"}

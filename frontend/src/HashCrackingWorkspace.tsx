@@ -80,9 +80,10 @@ const post = async <T,>(path: string, body: unknown): Promise<T> => {
 };
 
 export default function HashCrackingWorkspace({ embedded = false, initialProjectId,
-  initialTargetId, initialHash = "", initialMode, onBack }: {
+  initialTargetId, initialHash = "", initialMode, initialCredentialId, initialUsername, onBack }: {
   embedded?: boolean; initialProjectId?: number; initialTargetId?: number;
-  initialHash?: string; initialMode?: string; onBack?: () => void;
+  initialHash?: string; initialMode?: string; initialCredentialId?: number;
+  initialUsername?: string; onBack?: () => void;
 } = {}) {
   const qc = useQueryClient();
   const [projectId, setProjectId] = useState<number | undefined>(initialProjectId);
@@ -268,14 +269,14 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
     await post(`/hash-cracking/${id}/cancel`, {});
     await qc.invalidateQueries({ queryKey: ["hashCrackingJobs", targetId] });
   };
-  const promote = async () => {
-    if (!jobId || !promoteFor || !promoteUsername.trim()) return;
+  const promote = async (cracked = promoteFor) => {
+    if (!jobId || !cracked || (!initialCredentialId && !promoteUsername.trim())) return;
     try {
       await post(`/hash-cracking/${jobId}/promote`, {
-        username: promoteUsername.trim(), secret: promoteFor.plain,
+        credential_id: initialCredentialId, username: promoteUsername.trim(), secret: cracked.plain,
         notes: `hashcat -m ${selected?.hash_mode ?? ""} 크랙 결과`,
       });
-      setPromoteMsg(`${promoteUsername} 계정으로 Credential Store에 저장됨`);
+      setPromoteMsg(`${initialUsername || promoteUsername} Credential에 평문이 연결됨`);
       setPromoteFor(undefined); setPromoteUsername("");
     } catch (reason) { setPromoteMsg(String(reason)); }
   };
@@ -375,6 +376,11 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
         "--crack-history-width": `${historyWidth}px`,
       } as CSSProperties}>
         <section className="crackForm">
+          {initialCredentialId && <div className="crackCredentialContext">
+            <span>SOURCE CREDENTIAL</span>
+            <strong>{initialUsername || "Credential"}</strong>
+            <small>크랙 결과는 이 Credential에 자동 연결됩니다.</small>
+          </div>}
           <label>
             라벨 (선택)
             <input value={label} onChange={(e) => setLabel(e.target.value)}
@@ -537,8 +543,9 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
                       {copiedPlain === item.plain ? "복사됨" : "복사"}
                     </button>
                     <button type="button"
-                      onClick={() => { setPromoteFor(item); setPromoteUsername(""); }}>
-                      Credential로 저장
+                      onClick={() => initialCredentialId
+                        ? void promote(item) : (setPromoteFor(item), setPromoteUsername(""))}>
+                      {initialCredentialId ? `${initialUsername || "기존"}에 연결` : "Credential로 저장"}
                     </button>
                   </div>
                 </div>
@@ -558,7 +565,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
                   onChange={(e) => setPromoteUsername(e.target.value)} />
                 <footer>
                   <button onClick={() => setPromoteFor(undefined)}>취소</button>
-                  <button disabled={!promoteUsername.trim()} onClick={promote}>저장</button>
+                  <button disabled={!promoteUsername.trim()} onClick={() => void promote()}>저장</button>
                 </footer>
               </div>
             </div>

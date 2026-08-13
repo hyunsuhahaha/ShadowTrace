@@ -3,7 +3,7 @@ import {
   useEffect, useRef, useState,
   type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode,
 } from "react";
-import { Badge, Button, ErrorState, LoadingState } from "./ui";
+import { Button, ErrorState, LoadingState } from "./ui";
 import VpnControl from "./VpnControl";
 import MetasploitLock from "./MetasploitLock";
 import CommandPalette from "./CommandPalette";
@@ -45,30 +45,30 @@ const pages = [
   {
     label: "Discover",
     items: [
-      { route: "scans", step: "01", label: "Scan Center", detail: "대상 등록과 서비스 발견" },
-      { route: "enumeration", step: "02", label: "Service Enumeration", detail: "서비스 조사와 명령 실행" },
-      { route: "web", step: "03", label: "Web Testing · Intruder", detail: "HTTP 요청 변형과 응답 비교" },
-      { route: "exploit-research", step: "04", label: "Exploit Research", detail: "후보와 PoC 기록" },
-      { route: "runbooks", step: "", label: "Runbooks", detail: "방법론과 수행 진행률" },
-      { route: "post-exploitation", step: "", label: "Post-Exploitation", detail: "자격 증명 헌팅" },
-      { route: "hash-cracking", step: "", label: "Hash Cracking", detail: "탈취한 해시 크래킹" },
-      { route: "tools", step: "", label: "Tools", detail: "미탐지·오분류 서비스의 전체 명령 탐색" },
+      { route: "scans", step: "01", label: "Scan Center" },
+      { route: "enumeration", step: "02", label: "Service Enumeration" },
+      { route: "web", step: "03", label: "Web Testing · Intruder" },
+      { route: "exploit-research", step: "04", label: "Exploit Research" },
+      { route: "runbooks", step: "", label: "Runbooks" },
+      { route: "post-exploitation", step: "", label: "Post-Exploitation" },
+      { route: "hash-cracking", step: "", label: "Hash Cracking" },
+      { route: "tools", step: "", label: "Tools" },
     ],
   },
   {
     label: "Document",
     items: [
-      { route: "evidence", step: "05", label: "Evidence", detail: "증거 저장과 분류" },
-      { route: "reports", step: "06", label: "Reports", detail: "누락 확인과 보고서 작성" },
-      { route: "graph", step: "", label: "Progress Graph", detail: "진행 그래프 · Outline" },
+      { route: "evidence", step: "05", label: "Evidence" },
+      { route: "reports", step: "06", label: "Reports" },
+      { route: "graph", step: "", label: "Progress Graph" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { route: "directory", step: "", label: "AD Information", detail: "관찰 객체와 관계" },
-      { route: "sessions", step: "", label: "Sessions", detail: "터널과 PTY 상태" },
-      { route: "operations", step: "", label: "Operations", detail: "검색, 감사, 백업" },
+      { route: "directory", step: "", label: "AD Information" },
+      { route: "sessions", step: "", label: "Sessions" },
+      { route: "operations", step: "", label: "Operations" },
     ],
   },
 ];
@@ -276,7 +276,7 @@ export default function AppShell({
         <div className="appSidebar__head">
           <a className="appBrand" href="#scans" aria-label="OSCP Workspace 홈">
             <span>OW</span>
-            <strong>OSCP Workspace<small>local assessment desk</small></strong>
+            <strong>OSCP Workspace</strong>
           </a>
           <button
             className="panelCollapseButton"
@@ -298,16 +298,12 @@ export default function AppShell({
                   aria-current={route === item.route ? "page" : undefined}
                 >
                   <span>{item.step || "·"}</span>
-                  <strong>{item.label}<small>{item.detail}</small></strong>
+                  <strong>{item.label}</strong>
                 </a>
               ))}
             </section>
           ))}
         </nav>
-        <div className="policyNote">
-          <Badge status="connected">Local only</Badge>
-          <p>명령은 검토와 명시적 승인을 거친 뒤 실행됩니다.</p>
-        </div>
         {!sidebarCollapsed && <div
           className="layoutResizeHandle appSidebar__resizeHandle"
           role="separator"

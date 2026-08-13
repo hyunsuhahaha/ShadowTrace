@@ -366,7 +366,7 @@ export function GraphCanvas(props: {
           ctx.fillText(credential.identity.length > 24
             ? `${credential.identity.slice(0, 23)}…` : credential.identity, x + 30, n.y - 6);
           ctx.fillStyle = "#8f8157"; ctx.font = "7px ui-monospace,monospace";
-          ctx.fillText(`${credential.kind} · CAPTURED`, x + 30, n.y + 8);
+          ctx.fillText(`${credential.kind} · ${credential.state}`, x + 30, n.y + 8);
           drawEvidenceBadge(evidenceCount(current), x + width - 8, y + 2);
           ctx.globalAlpha = 1;
           continue;

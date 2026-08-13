@@ -137,6 +137,7 @@ def delete_node(node_id: str, db: Session = Depends(get_db)):
     if node.type == "project-root":
         raise HTTPException(422, "project-root cannot be deleted")
     project_id = node.project_id
+    service.dismiss_source(db, project_id, node.source_ref)
     db.query(GraphEdge).filter(
         (GraphEdge.source == node_id) | (GraphEdge.target == node_id)).delete(
         synchronize_session=False)

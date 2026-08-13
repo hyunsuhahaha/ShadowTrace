@@ -16,8 +16,10 @@ from ..scan_center.service import _safe
 
 router = APIRouter(prefix="/api/evidence", tags=["Evidence"])
 MAX_FILE = 50 * 1024 * 1024
+MAX_PREVIEW = 256 * 1024
 KINDS = {"screenshot", "command_output", "http", "nmap", "flag",
          "attachment", "markdown"}
+TEXT_EXTENSIONS = {".txt", ".log", ".xml", ".json", ".md", ".csv", ".yaml", ".yml"}
 
 
 def need(db: Session, model, ident: int):
@@ -130,6 +132,27 @@ def evidence_file(ident: int, db: Session = Depends(get_db)):
         raise HTTPException(410, "Evidence file is no longer available")
     return FileResponse(path, filename=row.original_name,
                         media_type="application/octet-stream")
+
+
+@router.get("/{ident}/preview")
+def evidence_preview(ident: int, db: Session = Depends(get_db)):
+    row = need(db, Evidence, ident)
+    if row.kind == "markdown" and row.markdown:
+        return {"content": row.markdown, "truncated": False, "language": "markdown"}
+    path = Path(row.file_path)
+    if not row.file_path or not path.is_file():
+        raise HTTPException(410, "Evidence file is no longer available")
+    extension = Path(row.original_name).suffix.lower()
+    if row.kind not in {"command_output", "http", "nmap", "flag"} \
+            and extension not in TEXT_EXTENSIONS:
+        raise HTTPException(415, "Evidence is not a previewable text file")
+    content = path.read_bytes()[:MAX_PREVIEW + 1]
+    if b"\x00" in content:
+        raise HTTPException(415, "Evidence is not a previewable text file")
+    truncated = len(content) > MAX_PREVIEW
+    text = content[:MAX_PREVIEW].decode("utf-8", errors="replace")
+    language = "xml" if extension == ".xml" else "json" if extension == ".json" else "text"
+    return {"content": text, "truncated": truncated, "language": language}
 
 
 @router.post("/export")
