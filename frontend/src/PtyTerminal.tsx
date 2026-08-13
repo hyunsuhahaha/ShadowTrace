@@ -99,8 +99,10 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
       socket.onclose = (event) => {
         if (!terminal) return;
         setConnection(event.code === 1000 && !targetErrorRef.current ? "closed" : "error");
-        terminal.write(`\r\n\x1b[90m[세션 종료${event.code === 1000 ? "" :
-          ` · WebSocket 연결 코드 ${event.code} · 개발 서버와 백엔드 상태를 확인하세요`}]\x1b[0m\r\n`);
+        const reason = event.code === 1000 ? "" :
+          event.code === 4409 ? " · 세션이 이미 종료되어 다시 시작해야 합니다" :
+          ` · WebSocket 연결 코드 ${event.code} · 개발 서버와 백엔드 상태를 확인하세요`;
+        terminal.write(`\r\n\x1b[90m[세션 종료${reason}]\x1b[0m\r\n`);
         terminal.refresh(0, Math.max(0, terminal.rows - 1));
       };
       socket.onerror = () => {

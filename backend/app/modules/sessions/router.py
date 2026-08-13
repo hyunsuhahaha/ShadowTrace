@@ -160,6 +160,12 @@ async def interactive_session_socket(websocket: WebSocket, ident: int):
     with SessionLocal() as db:
         row = db.get(InteractiveSession, ident)
         if not row or row.status != "ready":
+            # uvicorn's websockets implementation only sends a real WS close
+            # frame after accept() -- closing beforehand gets downgraded to a
+            # bare HTTP 403, which browsers surface as a generic 1006
+            # "connection failed" with no indication this was a deliberate
+            # rejection.
+            await websocket.accept()
             await websocket.close(code=4409)
             return
         argv = shlex.split(row.command)
