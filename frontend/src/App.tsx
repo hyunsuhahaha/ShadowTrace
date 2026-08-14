@@ -76,6 +76,7 @@ import {api} from "./api";
 import {useEnumerationQueries} from "./useEnumerationQueries";
 import {consumePendingServiceNav, type PendingServiceNav} from "./pendingServiceNav";
 import {focusInGraph} from "./pendingGraphFocus";
+import type {GraphRequestDraft} from "./features/graph/graphModel";
 
 const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
   const anchor = document.getElementById(anchorId);
@@ -87,7 +88,10 @@ const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
     window.setTimeout(() => scrollToAnchorSoon(anchorId, attemptsLeft - 1), 150);
 };
 
-export default function App({ embedded = false }: { embedded?: boolean } = {}) {
+export default function App({ embedded = false, onOpenRequestInGraph }: {
+  embedded?: boolean;
+  onOpenRequestInGraph?: (draft: GraphRequestDraft) => void;
+} = {}) {
   const qc = useQueryClient();
   // Keyed by template_id: nothing backend-side serializes executions (each
   // is its own asyncio task/subprocess), so the UI tracks as many
@@ -1360,6 +1364,10 @@ export default function App({ embedded = false }: { embedded?: boolean } = {}) {
     });
   };
   const openLinkInRequest = (url: string) => {
+    if (embedded && onOpenRequestInGraph && projectId && target && service) {
+      onOpenRequestInGraph({projectId, targetId: target.id, serviceId: service.id, url});
+      return;
+    }
     localStorage.setItem("oscp-web-launch", JSON.stringify({
       targetId: target?.id, serviceId: service?.id, url,
     }));

@@ -103,7 +103,7 @@ export function GraphRequestPanel(props: {
   return <section style={S.requestPanel} aria-label="Graph Web Request">
     <div style={S.requestPanelHead}>
       <div><small style={S.requestEyebrow}>WEB REQUEST</small>
-        <h3 style={{ margin: "4px 0 0" }}>그래프에서 요청 검사</h3></div>
+        <h3 style={{ margin: "4px 0 0" }}>요청 편집기</h3></div>
       <button style={S.requestBack} onClick={props.onBack}>← 실행 결과</button>
     </div>
     <div style={S.requestLine}>

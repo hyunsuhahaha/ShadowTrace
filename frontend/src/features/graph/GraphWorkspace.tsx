@@ -540,7 +540,9 @@ export default function GraphWorkspace() {
           ) : selectedNode?.type === "service" ? (
             <div style={S.embedPane}>
               <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
-                <EmbeddedEnumeration embedded />
+                <EmbeddedEnumeration embedded onOpenRequestInGraph={(draft) => {
+                  setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
+                }} />
               </Suspense>
             </div>
           ) : selectedNode?.type === "technique"
