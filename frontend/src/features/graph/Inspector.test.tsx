@@ -409,3 +409,26 @@ it("offers to open redis-cli once redis-unauthenticated-info confirms no AUTH is
 
   await waitFor(() => expect(screen.getByText("PTY #99")).toBeTruthy());
 });
+
+it("offers a direct download for a finding's attached files instead of only the graph itself", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: backup.zip",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "파일 다운로드: backup.zip",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const link = await screen.findByText("다운로드");
+  expect(link.closest("a")?.getAttribute("href")).toBe("/api/evidence/124/file");
+});

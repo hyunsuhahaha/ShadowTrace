@@ -560,6 +560,36 @@ def test_promote_download_creates_a_draft_finding_from_a_locally_downloaded_file
     assert link.evidence_id == evidence.id and link.is_primary is True
 
 
+def test_promote_download_attaches_the_finding_to_the_given_technique_node(tmp_path, monkeypatch):
+    # Same idea as post_exploitation's promote_file test: passing the
+    # technique node the download happened in attaches the finding node
+    # right there via "yielded" instead of waiting on sync()'s own bare-host
+    # fallback -- and its meta must be set up front, not left for a resync a
+    # later-dismissed source_ref could skip forever.
+    import json
+    from app.models import GraphNode
+    from app.modules.graph import service as graph_service
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    (tmp_path / "backup.zip").write_bytes(b"loot")
+    row = InteractiveSession(
+        target_id=box.id, template_id="ftp-client", command="ftp 10.10.10.60 21",
+        cwd=str(tmp_path), status="stopped")
+    db.add(row); db.commit()
+    technique = graph_service.create_node(
+        db, box.project_id, "technique", label="FTP 수동 접속")
+    db.commit()
+
+    result = promote_download(row.id, PromoteDownloadIn(
+        filename="backup.zip", graph_node_id=technique.id), db=db)
+
+    finding_node = db.query(GraphNode).filter_by(
+        project_id=box.project_id, type="finding").one()
+    assert json.loads(finding_node.source_ref) == {
+        "module": "findings", "kind": "finding", "id": result["finding_id"]}
+    assert json.loads(finding_node.meta)["evidenceCount"] == 1
+
+
 def test_promote_download_rejects_a_file_that_is_not_actually_there(tmp_path, monkeypatch):
     db = database()
     box = target(db, tmp_path, monkeypatch)

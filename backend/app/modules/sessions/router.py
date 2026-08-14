@@ -481,7 +481,15 @@ def promote_download(ident: int, body: PromoteDownloadIn, db: Session = Depends(
             db, project.id, "finding", label=finding.title,
             source_ref=json.dumps(
                 {"module": "findings", "kind": "finding", "id": finding.id},
-                sort_keys=True))
+                sort_keys=True),
+            # Same shape sync_from_project() computes on every later resync
+            # (see modules/graph/service.py) -- set it up front so the
+            # canvas' evidence badge is right from the very first render
+            # instead of waiting on a resync that may never come (a
+            # dismissed/removed-then-recreated source_ref makes that
+            # resync skip this node forever).
+            meta=json.dumps({"severity": finding.severity, "category": finding.category,
+                             "evidenceCount": 1}))
         graph_service.create_edge(
             db, project.id, source_node.id, finding_node.id, "yielded")
     db.commit()

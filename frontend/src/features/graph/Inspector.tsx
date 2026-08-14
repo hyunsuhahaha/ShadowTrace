@@ -83,8 +83,8 @@ export function Inspector(props: {
   const findingQuery = useQuery({
     queryKey: ["graphFinding", findingId],
     enabled: findingId !== null,
-    queryFn: () => api<{ evidence: Array<{ evidence_id: number; kind: string; is_primary: boolean }> }>(
-      `/findings/${findingId}`),
+    queryFn: () => api<{ evidence: Array<{ id: number; evidence_id: number; title: string;
+      kind: string; is_primary: boolean }> }>(`/findings/${findingId}`),
   });
   // Only findings promoted from a file-tree drag (promote-file always sets
   // this exact kind+is_primary combination) get their content shown here --
@@ -548,6 +548,29 @@ export function Inspector(props: {
               : <pre style={S.terminalOutput}>{findingFilePreview.data?.content || "(빈 파일)"}</pre>}
         </div>
       </section>}
+      {/* Zip, pcap, pdf, ... never get an inline preview -- Evidence 레일도
+          screenshot 종류에만 편집 버튼을 붙여주지 다운로드 링크는 어디에도
+          없었으므로, 그래프를 벗어나 별도 증적 탭을 뒤지지 않아도 원본
+          파일을 받을 수 있게 여기서 바로 노출한다. */}
+      {findingId !== null && !!findingQuery.data?.evidence.length && (
+        <section style={S.executionResults} aria-label="연결된 Evidence">
+          <div style={S.executionResultsHead}><strong>연결된 Evidence</strong></div>
+          <div style={S.linkList}>
+            {findingQuery.data.evidence.map((item) => (
+              <div key={item.id} style={S.linkRow}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {item.title}
+                </span>
+                <span style={S.linkKind}>{item.kind}</span>
+                <a href={`/api/evidence/${item.evidence_id}/file`}
+                  style={{ ...S.resultAction, textDecoration: "none" }}>
+                  다운로드
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {credentialId !== null && <section style={S.credentialDetail} aria-label="저장된 인증정보">
         <div style={S.credentialDetailHead}>
           <div style={{ display: "grid", gap: 3 }}>
