@@ -573,6 +573,63 @@ it("summarizes a service-version identification instead of leaving the operator 
   expect(screen.getByText(/서비스에 자동 반영됨/)).toBeTruthy();
 });
 
+it("also summarizes telnet/database identification, not just service-version -- same auto-save promise", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/71/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "PORT   STATE SERVICE VERSION\n23/tcp open  telnet  Linksys telnetd\n",
+      stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 8, project_id: 9, ip: "10.129.6.219" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/8/services")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 23, port: 23, name: "telnet", product: "Linksys telnetd", version: "", extra_info: "" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 8, serviceId: 23 }} node={{
+      id: "execution-71", type: "technique", status: "succeeded", objective: false, hidden: false,
+      label: "Telnet 상세 정보 확인",
+      meta: JSON.stringify({ tool: "telnet-info" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 71 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("Linksys telnetd")).toBeTruthy();
+  expect(screen.getByText(/서비스에 자동 반영됨/)).toBeTruthy();
+});
+
+it("summarizes a target-level hostname/OS identification the same way, reading the persisted Target row", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/72/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "Nmap scan report for 10.129.6.219\nOS details: Linux 5.0 - 5.4\n",
+      stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 8, project_id: 9, ip: "10.129.6.219", hostname: "vain.htb", os_guess: "Linux 5.0 - 5.4" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 8 }} node={{
+      id: "execution-72", type: "technique", status: "succeeded", objective: false, hidden: false,
+      label: "운영체제·호스트명 식별",
+      meta: JSON.stringify({ tool: "target-os-identity" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 72 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("vain.htb · Linux 5.0 - 5.4")).toBeTruthy();
+  expect(screen.getByText(/Target에 자동 반영됨/)).toBeTruthy();
+});
+
 it("lets an unencrypted archive entry be dragged onto the canvas, same drag payload the file tree uses", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const url = String(input);

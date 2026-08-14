@@ -649,9 +649,18 @@ finding Inspector는 연결된 Evidence마다 다운로드 링크를 보여주�
 (`CredentialHandoff.hash_mode_id`). archive 멤버(암호 없는 것만)와 FTP 다운로드 목록 항목도
 post-exploitation 파일 트리와 같은 `FILE_DRAG_MIME` 페이로드(`fileTree.tsx`의
 `FileDragPayload` — `kind`로 구분되는 discriminated union)로 Canvas에 드래그해 그래프
-노드로 추가할 수 있다. `service-version`/
-`service-version-udp` technique 실행은 완료 시 `executor.py`가 이미 서비스 행에 제품/버전을
-자동 반영하므로, Inspector도 raw stdout 대신 반영된 값을 바로 요약해 보여준다.
+노드로 추가할 수 있다. `-oX`로 결과를 저장하는 catalog 명령(`service-version`/
+`service-version-udp`/`telnet-info`/`telnet-version-trace`/`database-info`는 Service 행에,
+`target-hostname-redirect`/`target-hostname-identity`/`target-os-identity`는 Target 행에) 은
+완료 시 `executor.py`가 이미 관찰값을 자동 반영하므로, Inspector도 raw stdout 대신 반영된
+값을 바로 요약해 보여준다(`target-hostname-ntlm`은 이 목록에서 제외 — 참고용일 뿐 자동
+저장되지 않는다고 catalog 설명에 명시돼 있다). 반대로 ftp/imap/nfs/rsync/redis-key-tree/
+mssql/postgres/docker/git-dumper의 "성공하면 후속 tree 명령을 자동 실행" 페어는 아직 이
+요약 패널이 없다 — mongo/snmp/mysql/webdav/ldap/svn(모두 Phase 2에서 포팅됨)와 정확히 같은
+`App.tsx`의 `autoRun*Tree` 패턴이지만, 이 트리들은 credStore 폼 입력으로 트리거되거나(ftp/
+imap/postgres) 별도 confirm 커맨드가 없어 아직 Inspector 쪽 `isXCheck` 짝이 없다. 다만
+raw stdout이 거짓을 말하는 건 아니다 — 트리 자체의 그래프 노드를 직접 선택하면 결과를 볼 수
+있으니, 위 auto-save 케이스처럼 "약속과 다르게 동작"하는 버그는 아니고 미완성 UX 롤아웃이다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),

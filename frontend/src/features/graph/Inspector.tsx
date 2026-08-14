@@ -109,7 +109,8 @@ export function Inspector(props: {
   const targets = useQuery({
     queryKey: ["graphLinkTargets"],
     enabled: (executionId !== null || sessionId !== null) && !!props.executionContext,
-    queryFn: () => api<Array<{ id: number; project_id: number; ip: string; hostname?: string }>>("/targets"),
+    queryFn: () => api<Array<{ id: number; project_id: number; ip: string;
+      hostname?: string; os_guess?: string }>>("/targets"),
   });
   const services = useQuery({
     queryKey: ["graphLinkServices", props.executionContext?.targetId],
@@ -281,13 +282,19 @@ export function Inspector(props: {
   const ldapAnonSuccess = /^\[\+\]/im.test(executionOutput.data?.stdout || "");
   const isSvnCheck = tool === "svn-wcdb-check";
   const svnSuccess = /^HTTP\/[\d.]+ 200/im.test(executionOutput.data?.stdout || "");
-  // service-version's own catalog description already promises this: "관찰된
-  // 값을 이 서비스에 자동 저장합니다" -- and the backend genuinely does that
-  // (executor.py's update_execution_observations, on every -oX completion).
-  // What was missing was ever showing that here -- without it this panel is
-  // just raw nmap stdout the operator has to parse by hand to learn what the
-  // service row already has.
-  const isServiceVersionCheck = tool === "service-version" || tool === "service-version-udp";
+  // Every one of these catalog commands' own description promises the same
+  // thing service-version's does: "관찰된 값을 자동 저장합니다" -- and the
+  // backend genuinely does that for all of them (executor.py's
+  // update_execution_observations runs against any completed execution
+  // whose argv has -oX, not just service-version specifically). What was
+  // missing was ever showing that here -- without it this panel is just raw
+  // nmap stdout the operator has to parse by hand to learn what the service
+  // row already has. (target-hostname-ntlm is deliberately excluded -- its
+  // own description says it's reference-only and never auto-saved.)
+  const isServiceVersionCheck = ["service-version", "service-version-udp",
+    "telnet-info", "telnet-version-trace", "database-info"].includes(tool || "");
+  const isTargetIdentityCheck = ["target-hostname-redirect", "target-hostname-identity",
+    "target-os-identity"].includes(tool || "");
   const fileTreeRuns = useQuery({
     queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
     enabled: isNetexecCheck && !!props.executionContext?.targetId,
@@ -845,6 +852,29 @@ export function Inspector(props: {
             </> : (
               <div style={{ color: "#9a9aa6", fontSize: 11 }}>
                 이 probe로는 제품·버전을 식별하지 못했습니다. 아래 실행 결과에서 원문을 확인하세요.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+      {executionId !== null && isTargetIdentityCheck && executionOutput.data?.status === "completed"
+        && target && (
+        <section style={S.netexecNodeResult} aria-label="Hostname·운영체제 식별 결과">
+          <div style={S.netexecNodeResultHead}>
+            <span>Hostname·운영체제 식별</span>
+            <strong>{target.hostname || target.os_guess ? "확인됨" : "식별 안 됨"}</strong>
+          </div>
+          <div style={{ padding: "0 12px 12px", display: "grid", gap: 4 }}>
+            {target.hostname || target.os_guess ? <>
+              <div style={{ color: "#e7e7ee", fontSize: 12 }}>
+                {[target.hostname, target.os_guess].filter(Boolean).join(" · ")}
+              </div>
+              <div style={{ color: "#59f59a", fontSize: 10 }}>
+                {target.ip} Target에 자동 반영됨 — 별도 등록 필요 없음
+              </div>
+            </> : (
+              <div style={{ color: "#9a9aa6", fontSize: 11 }}>
+                이 probe로는 hostname·운영체제를 식별하지 못했습니다. 아래 실행 결과에서 원문을 확인하세요.
               </div>
             )}
           </div>
