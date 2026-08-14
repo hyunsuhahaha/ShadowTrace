@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
 // Reads one file a file-tree run already discovered, over that run's own
@@ -7,14 +8,18 @@ import { api } from "./api";
 export default function FileContentModal({ runId, path, onClose }: {
   runId: number; path: string; onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [promote, setPromote] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [promoteError, setPromoteError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setState("loading"); setContent(""); setError(""); setCopied(false);
+    setPromote("idle"); setPromoteError("");
     api<{ content: string }>(`/post-exploitation/${runId}/read-file`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path }),
@@ -29,6 +34,24 @@ export default function FileContentModal({ runId, path, onClose }: {
     return () => { cancelled = true; };
   }, [runId, path]);
 
+  const promoteToFinding = async () => {
+    setPromote("saving"); setPromoteError("");
+    try {
+      await api(`/post-exploitation/${runId}/promote-file`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      setPromote("saved");
+      // Findings sync into "finding" graph nodes on every graph fetch --
+      // invalidate every graph query (any project id) so it happens on
+      // the next one instead of waiting for some unrelated refetch.
+      void qc.invalidateQueries({ queryKey: ["graph"] });
+    } catch (reason) {
+      setPromoteError(reason instanceof Error ? reason.message : String(reason));
+      setPromote("error");
+    }
+  };
+
   return (
     <div className="modal" role="dialog" aria-label={`파일 내용 · ${path}`} onClick={onClose}>
       <div onClick={(event) => event.stopPropagation()}>
@@ -39,7 +62,18 @@ export default function FileContentModal({ runId, path, onClose }: {
         {state === "ready" && (
           <pre className="fileContentBody">{content || "(빈 파일)"}</pre>
         )}
+        {promote === "saved" && (
+          <p style={{ color: "var(--green, #59f59a)" }}>
+            Finding(Draft)으로 저장됨 — 그래프에 노드로 표시됩니다.
+          </p>
+        )}
+        {promote === "error" && <p style={{ color: "var(--danger)" }}>{promoteError}</p>}
         <footer>
+          {state === "ready" && promote !== "saved" && (
+            <button disabled={promote === "saving"} onClick={() => void promoteToFinding()}>
+              {promote === "saving" ? "저장 중…" : "그래프에 남기기 (Finding)"}
+            </button>
+          )}
           {state === "ready" && (
             <button onClick={() => {
               void navigator.clipboard.writeText(content);
