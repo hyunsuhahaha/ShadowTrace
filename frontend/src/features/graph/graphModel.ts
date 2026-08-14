@@ -67,6 +67,19 @@ export const GLYPH: Record<NodeType, string> = {
 };
 export const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
 
+// A found flag deserves to look like one instead of blending into every
+// other Draft finding at the same dull gray "untried" status -- matches
+// promote-file's "파일 발견: <path>" title (and any plain path, for
+// findings created another way) against the usual OSCP/HTB deliverable
+// filenames.
+const FLAG_FILENAME = /^(flag\d*|local|proof|root|user)\.txt$/i;
+export function isFlagFinding(node: Pick<GraphNode, "type" | "label">): boolean {
+  if (node.type !== "finding") return false;
+  const path = /파일 발견: (.+)$/.exec(node.label)?.[1] ?? node.label;
+  const filename = path.split(/[\\/]/).pop()?.trim() ?? "";
+  return FLAG_FILENAME.test(filename);
+}
+
 export function nodeMeta(node: Pick<GraphNode, "meta">): Record<string, any> {
   try { return JSON.parse(node.meta || "{}"); } catch { return {}; }
 }

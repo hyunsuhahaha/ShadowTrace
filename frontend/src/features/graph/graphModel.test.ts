@@ -2,7 +2,22 @@ import { expect, it } from "vitest";
 import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
   filterActivityFeed, filterGraph, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
-  isCrackableCredential, nodeStatusReason, nodeSummary, pathToObjective } from "./graphModel";
+  isCrackableCredential, isFlagFinding, nodeStatusReason, nodeSummary,
+  pathToObjective } from "./graphModel";
+
+it("recognizes OSCP/HTB deliverable filenames as flag findings, case- and path-insensitively", () => {
+  expect(isFlagFinding({type: "finding",
+    label: String.raw`파일 발견: C:\Users\mike\Desktop\flag.txt`})).toBe(true);
+  expect(isFlagFinding({type: "finding", label: "파일 발견: /root/proof.txt"})).toBe(true);
+  expect(isFlagFinding({type: "finding", label: "파일 발견: /home/user/local.TXT"})).toBe(true);
+  expect(isFlagFinding({type: "finding", label: "파일 발견: C:\\loot\\flag2.txt"})).toBe(true);
+  // a plain path with no "파일 발견: " prefix still matches on the filename
+  expect(isFlagFinding({type: "finding", label: "/home/bob/root.txt"})).toBe(true);
+  // not every discovered file is a flag, and only finding-type nodes count
+  expect(isFlagFinding({type: "finding", label: "파일 발견: /etc/passwd"})).toBe(false);
+  expect(isFlagFinding({type: "finding", label: "파일 발견: notes-flag-ideas.txt"})).toBe(false);
+  expect(isFlagFinding({type: "credential", label: "파일 발견: /root/flag.txt"})).toBe(false);
+});
 
 it("reads a node's evidence count defensively", () => {
   expect(evidenceCount({ meta: JSON.stringify({ evidenceCount: 3 }) })).toBe(3);

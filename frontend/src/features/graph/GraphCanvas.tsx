@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "r
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, evidenceCount, filterActivityFeed,
   getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
-  initialGraphPosition, initialGraphPositionNearParent, NodeActivity, nodeStatusReason,
-  nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
+  initialGraphPosition, initialGraphPositionNearParent, isFlagFinding, NodeActivity,
+  nodeStatusReason, nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
 
@@ -233,7 +233,11 @@ export function GraphCanvas(props: {
         const lateral = e.relation === "pivoted-to" && edge.status === "succeeded";
         const lineageColor = credentialUse ? "#e3b341" : lateral ? "#55d6e8" : "";
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
-        if (struct) { ctx.lineTo(b.x, b.y); ctx.setLineDash([]); }
+        // reused-credential is a confirmed "I logged in here with this"
+        // fact, same weight as pivoted-to (already structural/solid) --
+        // it shouldn't read as the same tentative dashed maybe-relation
+        // every other non-structural edge gets.
+        if (struct || credentialUse) { ctx.lineTo(b.x, b.y); ctx.setLineDash([]); }
         else {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
@@ -294,10 +298,9 @@ export function GraphCanvas(props: {
           ctx.fillText("AUTH CAPTURE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 7);
         }
         if (lineageColor) {
-          const controlX = (a.x + b.x) / 2, controlY = (a.y + b.y) / 2 - 34;
-          const angle = credentialUse
-            ? Math.atan2(b.y - controlY, b.x - controlX)
-            : Math.atan2(b.y - a.y, b.x - a.x);
+          // Both are straight lines now (see the credentialUse check above),
+          // so both get the same straight-line arrow angle.
+          const angle = Math.atan2(b.y - a.y, b.x - a.x);
           const tipX = b.x - Math.cos(angle) * 30;
           const tipY = b.y - Math.sin(angle) * 30;
           ctx.beginPath(); ctx.moveTo(tipX, tipY);
@@ -347,6 +350,7 @@ export function GraphCanvas(props: {
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
+        const isFlag = isFlagFinding(current);
         const r = isRoot ? 40 : isAnchor ? 38 : isHost || isOperator ? 26 : 19;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         const credential = credentialBadge(current);
@@ -435,17 +439,41 @@ export function GraphCanvas(props: {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
           ctx.strokeStyle = "rgba(245,197,24,.55)"; ctx.lineWidth = 1.5; ctx.stroke();
         }
+        if (isFlag) {
+          // A found flag doesn't just get the graph's usual dull "untried"
+          // gray -- three slow rings breathing outward in gold, the same
+          // way a live scan pulses in its own signal color, so the one
+          // node in the whole graph that actually matters keeps drawing
+          // the eye back to it instead of reading as just another Draft.
+          if (!activityStarted.current.has(`flag:${n.id}`))
+            activityStarted.current.set(`flag:${n.id}`, now);
+          const fade = Math.min(1, (now - activityStarted.current.get(`flag:${n.id}`)!) / 320);
+          ctx.save(); ctx.shadowColor = "#f5c518"; ctx.shadowBlur = 20;
+          const period = 2200;
+          for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
+            const p = reduceMotion ? .4 : ((now % period) / period + i / 3) % 1;
+            const ease = 1 - Math.pow(1 - p, 3);
+            ctx.beginPath(); ctx.arc(n.x, n.y, r + 8 + ease * 34, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(245,197,24,${(1 - ease) * .55 * fade})`;
+            ctx.lineWidth = 1.5; ctx.stroke();
+          }
+          ctx.restore();
+        } else activityStarted.current.delete(`flag:${n.id}`);
         ctx.save();
-        ctx.shadowColor = activity ? nodeSignal : awaitingReview ? color(current.status)
-          : isAnchor ? "#6aa9ff" : color(current.status);
-        ctx.shadowBlur = activity ? 28 : isAnchor ? 30 : isSel ? 24 : awaitingReview ? 10 : 12;
+        ctx.shadowColor = isFlag ? "#f5c518" : activity ? nodeSignal
+          : awaitingReview ? color(current.status) : isAnchor ? "#6aa9ff" : color(current.status);
+        ctx.shadowBlur = isFlag ? 26 : activity ? 28 : isAnchor ? 30 : isSel ? 24
+          : awaitingReview ? 10 : 12;
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = awaitingReview ? "rgba(0,0,0,0)" : signalKind ? FILL_BG[signalKind]
-          : isOperator ? "#123038" : color(current.status); ctx.fill();
+        ctx.fillStyle = isFlag ? "#3a2e08" : awaitingReview ? "rgba(0,0,0,0)"
+          : signalKind ? FILL_BG[signalKind] : isOperator ? "#123038" : color(current.status);
+        ctx.fill();
         ctx.restore();
         ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.lineWidth = isSel ? 2.5 : isAnchor || isHost ? 2 : awaitingReview ? 1.6 : 1;
-        ctx.strokeStyle = activity ? nodeSignal : awaitingReview ? color(current.status)
+        ctx.lineWidth = isFlag ? 2.5 : isSel ? 2.5 : isAnchor || isHost ? 2
+          : awaitingReview ? 1.6 : 1;
+        ctx.strokeStyle = isFlag ? "#f5c518" : activity ? nodeSignal
+          : awaitingReview ? color(current.status)
           : isSel ? "#fff" : isOperator ? "#55d6e8"
           : isAnchor ? "#6aa9ff"
           : isHost ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.35)";
@@ -454,7 +482,7 @@ export function GraphCanvas(props: {
         ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-        ctx.fillText(GLYPH[current.type], n.x, n.y + 0.5);
+        ctx.fillText(isFlag ? "🚩" : GLYPH[current.type], n.x, n.y + 0.5);
         drawEvidenceBadge(evidenceCount(current), n.x + r * 0.7, n.y - r * 0.7);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
