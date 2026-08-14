@@ -453,11 +453,16 @@ export function Inspector(props: {
   const openFtpAnonSession = async () => {
     if (!ftpAnonMatch || findingQuery.data?.target_id === undefined) return;
     const [, host, port] = ftpAnonMatch;
-    const session = await api<{id: number}>("/interactive-sessions/manual", {
+    // Goes through the same catalog template (ftp-client) a manual "FTP 수동
+    // 접속" run does -- not the generic /manual endpoint -- so the resulting
+    // graph node is labeled and found the same way any other manual FTP
+    // session is, with the same "다운로드한 파일" promote panel once a `get`
+    // succeeds in it, instead of surfacing as an unrecognizable "manual-shell".
+    const session = await api<{id: number}>("/interactive-sessions", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         target_id: findingQuery.data.target_id, service_id: null,
-        command: `ftp ${host} ${port}`,
+        template_id: "ftp-client", variables: {port}, run_as_root: false,
       }),
     });
     setManualSession({id: session.id, title: `FTP ${host}:${port}`,

@@ -698,9 +698,10 @@ it("offers a one-click anonymous FTP session on an auto-detected ftp-anon findin
     if (url.endsWith("/api/findings/14")) return Promise.resolve(new Response(JSON.stringify({
       target_id: 8, evidence: [],
     }), { headers: { "Content-Type": "application/json" } }));
-    if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST") {
+    if (url.endsWith("/api/interactive-sessions") && init?.method === "POST") {
       expect(JSON.parse(init.body as string)).toEqual({
-        target_id: 8, service_id: null, command: "ftp 10.129.7.93 21",
+        target_id: 8, service_id: null,
+        template_id: "ftp-client", variables: {port: "21"}, run_as_root: false,
       });
       return Promise.resolve(new Response(JSON.stringify({ id: 55 }), {
         status: 201, headers: { "Content-Type": "application/json" },
