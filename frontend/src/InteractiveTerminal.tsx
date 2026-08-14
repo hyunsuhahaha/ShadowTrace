@@ -36,7 +36,14 @@ export default function InteractiveTerminal(props: PtyTerminalProps & {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.autoFloat, props.sessionId, isFloating]);
   if (props.floating) return terminal;
-  if (props.autoFloat && (isFloating || wasFloating.current)) return null;
+  // Renders null on every pass for an autoFloat session, including the very
+  // first one (not just once isFloating/wasFloating catches up) -- falling
+  // through to <DetachableTerminal> for even one render would mount a real
+  // PtyTerminal, opening a real WebSocket the backend fully accepts and
+  // spawns a process for, before the effect above has floated this session
+  // and swapped it out. That race let a brand-new listener die within
+  // milliseconds of starting, well before a second terminal ever opened.
+  if (props.autoFloat) return null;
   return <DetachableTerminal id={floatingId}
     label={`${props.title || "대화형 터미널"} #${props.sessionId}`}
     floatingContent={<InteractiveTerminal {...props} floating />}>

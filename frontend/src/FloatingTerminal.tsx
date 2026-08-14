@@ -36,10 +36,8 @@ type FloatingContent = {
   // and the backend kills the process the instant that socket closes.
   keepOnDock?: boolean;
 };
-type FloatingState = {kind: "scan"; session: ScanSession} | FloatingContent;
 type FloatingTerminalContextValue = {
   floatingScanId?: number;
-  floatingTerminalId?: string;
   isTerminalFloating: (id: string) => boolean;
   floatScan: (session: ScanSession, rect: DOMRect) => void;
   floatTerminal: (terminal: Omit<FloatingContent, "kind" | "returnHash">, rect: DOMRect) => void;
@@ -75,15 +73,12 @@ export function useFloatingTerminalState() {
 }
 
 export function FloatingTerminalProvider({children}: {children: ReactNode}) {
-  const [floating, setFloating] = useState<FloatingState | null>(() => {
+  const [floating, setFloating] = useState<{session: ScanSession} | null>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
-      return saved?.scanId
-        ? {kind: "scan", session: {...saved, initialOutput: ""}}
-        : null;
+      return saved?.scanId ? {session: {...saved, initialOutput: ""}} : null;
     } catch { return null; }
   });
-  const floatingRef = useRef<FloatingState | null>(floating);
   const [frame, setFrame] = useState<Frame>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(frameKey) || "null");
@@ -91,7 +86,18 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
     } catch { /* use default */ }
     return clampFrame({x: innerWidth - 720, y: 72, width: 680, height: 420});
   });
-  const [extraFloating, setExtraFloating] = useState<Array<{
+  // Every floated PTY (Responder, evil-winrm, an auto-floated manual shell,
+  // ...) lives in this one list, rendered from a single .map() call site --
+  // deliberately not split into a "primary" slot plus an "extras" list the
+  // way an earlier version did. That split meant the terminal holding the
+  // primary slot moved to a structurally different JSX position the moment
+  // a second one was floated, which React can't reconcile in place: it
+  // unmounts the old <PtyTerminal>, which closes its WebSocket, which the
+  // backend reads as "the operator hung up" and SIGTERMs the still-running
+  // process (Responder, in particular) even though nobody asked for that.
+  // A single list keyed by terminal id never moves a mounted terminal
+  // across JSX positions just because another one opened.
+  const [floatingTerminals, setFloatingTerminals] = useState<Array<{
     terminal: FloatingContent; frame: Frame;
   }>>([]);
   const [output, setOutput] = useState("");
@@ -99,7 +105,7 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   const [fontSize, setFontSize] = useState(readTerminalFontSize);
   const frameRef = useRef(frame);
   const dragCleanup = useRef<() => void>();
-  const session = floating?.kind === "scan" ? floating.session : null;
+  const session = floating?.session ?? null;
 
   useEffect(() => {
     if (!session) return;
@@ -113,9 +119,8 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
       if (item.stream === "stdout") setOutput((value) => value + item.data);
       if (item.stream === "stderr") setOutput((value) => value + `[stderr] ${item.data}`);
       if (item.stream === "status") {
-        setFloating((current) => current?.kind === "scan"
-          && current.session.scanId === session.scanId
-          ? {kind: "scan", session: {...current.session,
+        setFloating((current) => current && current.session.scanId === session.scanId
+          ? {session: {...current.session,
             status: item.status, exitCode: item.exit_code ?? undefined}}
           : current);
         if (["completed", "failed", "stopped", "interrupted"].includes(item.status)) {
@@ -152,43 +157,30 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   };
   const floatScan = (next: ScanSession, rect: DOMRect) => {
     const docked = {...next, returnHash: location.hash || "#graph"};
-    const stored = {...docked, initialOutput: ""};
-    localStorage.setItem(storageKey, JSON.stringify(stored));
-    floatingRef.current = {kind: "scan", session: docked};
-    setFloating(floatingRef.current);
+    localStorage.setItem(storageKey, JSON.stringify({...docked, initialOutput: ""}));
+    setFloating({session: docked});
     persistFrame({x: rect.x, y: rect.y, width: rect.width, height: rect.height});
   };
   const floatTerminal = (next: Omit<FloatingContent, "kind" | "returnHash">, rect: DOMRect) => {
-    localStorage.removeItem(storageKey);
     const terminal: FloatingContent = {kind: "content", ...next,
       returnHash: location.hash || "#graph"};
-    const current = floatingRef.current;
-    if (current?.kind === "content" && current.id !== next.id)
-      setExtraFloating((items) => items.some((item) => item.terminal.id === current.id)
-        ? items : [...items, {terminal: current, frame: frameRef.current}]);
-    floatingRef.current = terminal;
-    setFloating(terminal);
-    const offset = (extraFloating.length % 5) * 24;
-    persistFrame({x: rect.x + offset, y: rect.y + offset,
-      width: rect.width, height: rect.height});
+    setFloatingTerminals((items) => {
+      if (items.some((item) => item.terminal.id === terminal.id))
+        return items.map((item) => item.terminal.id === terminal.id ? {...item, terminal} : item);
+      const offset = (items.length % 5) * 24;
+      return [...items, {terminal, frame: clampFrame({
+        x: rect.x + offset, y: rect.y + offset, width: rect.width, height: rect.height})}];
+    });
   };
   const updateTerminal = (id: string, content: ReactNode) => {
-    setFloating((current) => current?.kind === "content" && current.id === id
-      ? {...current, content} : current);
-    setExtraFloating((items) => items.map((item) => item.terminal.id === id
+    setFloatingTerminals((items) => items.map((item) => item.terminal.id === id
       ? {...item, terminal: {...item.terminal, content}} : item));
   };
   const closeTerminal = (id: string) => {
-    setFloating((current) => {
-      const next = current?.kind === "content" && current.id === id ? null : current;
-      floatingRef.current = next;
-      return next;
-    });
-    setExtraFloating((items) => items.filter((item) => item.terminal.id !== id));
+    setFloatingTerminals((items) => items.filter((item) => item.terminal.id !== id));
   };
   const isTerminalFloating = (id: string) =>
-    (floating?.kind === "content" && floating.id === id)
-    || extraFloating.some((item) => item.terminal.id === id);
+    floatingTerminals.some((item) => item.terminal.id === id);
   const begin = (kind: "move" | "resize-x" | "resize-y" | "resize") =>
     (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
@@ -220,24 +212,16 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   };
   const dock = () => {
     if (!floating) return;
-    if (floating.kind === "content" && floating.keepOnDock) {
-      persistFrame({x: Math.max(8, innerWidth - 760), y: 72, width: 720, height: 460});
-      return;
-    }
-    if (floating.kind === "scan") localStorage.setItem("oscp-scan-dock", JSON.stringify({
+    localStorage.setItem("oscp-scan-dock", JSON.stringify({
       scanId: floating.session.scanId, targetId: floating.session.targetId,
     }));
-    localStorage.removeItem(storageKey);
-    floatingRef.current = null;
     setFloating(null);
-    location.hash = floating.kind === "scan"
-      ? floating.session.returnHash || "#scans"
-      : floating.returnHash;
+    location.hash = floating.session.returnHash || "#scans";
   };
-  const beginExtra = (id: string, kind: "move" | "resize-x" | "resize-y" | "resize") =>
+  const beginTerminalDrag = (id: string, kind: "move" | "resize-x" | "resize-y" | "resize") =>
     (event: ReactPointerEvent<HTMLElement>) => {
       if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
-      const active = extraFloating.find((item) => item.terminal.id === id);
+      const active = floatingTerminals.find((item) => item.terminal.id === id);
       if (!active) return;
       dragCleanup.current?.();
       const start = {kind, x: event.clientX, y: event.clientY, frame: active.frame};
@@ -248,7 +232,7 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
           : {...start.frame,
             width: start.frame.width + (start.kind === "resize-y" ? 0 : dx),
             height: start.frame.height + (start.kind === "resize-x" ? 0 : dy)});
-        setExtraFloating((items) => items.map((item) => item.terminal.id === id
+        setFloatingTerminals((items) => items.map((item) => item.terminal.id === id
           ? {...item, frame: next} : item));
         pointer.preventDefault();
       };
@@ -260,14 +244,14 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
       addEventListener("pointercancel", finish); dragCleanup.current = finish;
       event.preventDefault();
     };
-  const dockExtra = (terminal: FloatingContent) => {
+  const dockTerminal = (terminal: FloatingContent) => {
     if (terminal.keepOnDock) {
-      setExtraFloating((items) => items.map((item) => item.terminal.id === terminal.id
+      setFloatingTerminals((items) => items.map((item) => item.terminal.id === terminal.id
         ? {...item, frame: clampFrame({x: Math.max(8, innerWidth - 760), y: 72, width: 720, height: 460})}
         : item));
       return;
     }
-    setExtraFloating((items) => items.filter((item) => item.terminal.id !== terminal.id));
+    setFloatingTerminals((items) => items.filter((item) => item.terminal.id !== terminal.id));
     location.hash = terminal.returnHash;
   };
 
@@ -281,28 +265,27 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   </>;
 
   return <Context.Provider value={{floatingScanId: session?.scanId,
-    floatingTerminalId: floating?.kind === "content" ? floating.id : undefined,
     isTerminalFloating, floatScan, floatTerminal, updateTerminal, closeTerminal}}>
     {children}
-    {extraFloating.map(({terminal, frame: extraFrame}) => createPortal(
+    {floatingTerminals.map(({terminal, frame: itemFrame}) => createPortal(
       <section key={terminal.id} className="floatingTerminal floatingTerminal--content" style={{
-        "--float-x": `${extraFrame.x}px`, "--float-y": `${extraFrame.y}px`,
-        "--float-width": `${extraFrame.width}px`, "--float-height": `${extraFrame.height}px`,
+        "--float-x": `${itemFrame.x}px`, "--float-y": `${itemFrame.y}px`,
+        "--float-width": `${itemFrame.width}px`, "--float-height": `${itemFrame.height}px`,
       } as CSSProperties} aria-label={`플로팅 터미널 ${terminal.label}`}
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement;
           if (target.closest("[data-terminal-drag-handle],.terminalStatus,.ptyBar"))
-            beginExtra(terminal.id, "move")(event);
+            beginTerminalDrag(terminal.id, "move")(event);
         }}>
         <FloatingCommandSession context={terminal.commandContext}
           executedCommand={terminal.executedCommand}>
           <div className="floatingTerminal__content">{terminal.content}</div>
         </FloatingCommandSession>
         <button className="floatingTerminal__dock" type="button"
-          onClick={() => dockExtra(terminal)}>[ 원위치 ]</button>
-        {resizeHandles((kind) => beginExtra(terminal.id, kind))}
+          onClick={() => dockTerminal(terminal)}>[ 원위치 ]</button>
+        {resizeHandles((kind) => beginTerminalDrag(terminal.id, kind))}
       </section>, document.body))}
-    {floating?.kind === "scan" && session && createPortal(
+    {floating && session && createPortal(
       <section className="floatingTerminal floatingTerminal--scan" style={{
         "--float-x": `${frame.x}px`, "--float-y": `${frame.y}px`,
         "--float-width": `${frame.width}px`, "--float-height": `${frame.height}px`,
@@ -333,23 +316,6 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
             <span>{session.exitCode == null ? "stdout" : `EXIT ${session.exitCode}`}</span>
             <strong>FLOATING</strong></footer>
         </FloatingCommandSession>
-        {resizeHandles(begin)}
-      </section>, document.body)}
-    {floating?.kind === "content" && createPortal(
-      <section className="floatingTerminal floatingTerminal--content" style={{
-        "--float-x": `${frame.x}px`, "--float-y": `${frame.y}px`,
-        "--float-width": `${frame.width}px`, "--float-height": `${frame.height}px`,
-      } as CSSProperties} aria-label={`플로팅 터미널 ${floating.label}`}
-        onPointerDownCapture={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest("[data-terminal-drag-handle],.terminalStatus,.ptyBar"))
-            begin("move")(event);
-        }}>
-        <FloatingCommandSession context={floating.commandContext}
-          executedCommand={floating.executedCommand}>
-          <div className="floatingTerminal__content">{floating.content}</div>
-        </FloatingCommandSession>
-        <button className="floatingTerminal__dock" type="button" onClick={dock}>[ 원위치 ]</button>
         {resizeHandles(begin)}
       </section>, document.body)}
   </Context.Provider>;

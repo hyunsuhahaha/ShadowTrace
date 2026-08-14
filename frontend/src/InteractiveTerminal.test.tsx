@@ -34,6 +34,22 @@ test("단일 호출 위치에서 새 PTY를 열어도 기존 플로팅 PTY를 �
   });
 });
 
+test("첫 autoFloat는 PtyTerminal을 인라인으로 먼저 마운트했다가 다시 마운트하지 않는다", async () => {
+  mountCount = 0;
+  render(<FloatingTerminalProvider>
+    <InteractiveTerminal sessionId={7} title="responder" autoFloat onClose={vi.fn()} />
+  </FloatingTerminalProvider>);
+  await screen.findByLabelText(/플로팅 터미널 .* #7/);
+
+  // A second mount here means the session flashed inline via
+  // <DetachableTerminal> for one render before the float effect swapped it
+  // out. That inline mount opens a real WebSocket the backend fully
+  // accepts and spawns a process for, so unmounting it a moment later
+  // reads as the operator hanging up and kills the listener within
+  // milliseconds of starting -- before a second terminal is ever opened.
+  expect(mountCount).toBe(1);
+});
+
 test("autoFloat 터미널은 원위치를 눌러도 세션이 끊기지 않는다", async () => {
   mountCount = 0;
   const onClose = vi.fn();

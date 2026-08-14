@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import {useEffect, type ReactNode} from "react";
 import {cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import {afterEach, beforeEach, expect, test, vi} from "vitest";
 import {DetachableTerminal, FloatingTerminalProvider, useFloatingTerminal} from "./FloatingTerminal";
@@ -44,6 +45,23 @@ function OpenTwoTerminals() {
       content: <div>responder output</div>}, new DOMRect(40, 60, 600, 360))}>첫 번째</button>
     <button onClick={() => floatTerminal({id: "pty-2", label: "evil-winrm",
       content: <div>winrm output</div>}, new DOMRect(80, 90, 600, 360))}>두 번째</button>
+  </>;
+}
+
+function MountSpy({onMount, children}: {onMount: () => void; children: ReactNode}) {
+  useEffect(() => { onMount(); }, []);
+  return <>{children}</>;
+}
+
+function OpenTwoTerminalsWithMountSpies({onMount}: {onMount: (id: string) => void}) {
+  const {floatTerminal} = useFloatingTerminal();
+  return <>
+    <button onClick={() => floatTerminal({id: "pty-1", label: "Responder",
+      content: <MountSpy onMount={() => onMount("pty-1")}><div>responder output</div></MountSpy>},
+      new DOMRect(40, 60, 600, 360))}>첫 번째</button>
+    <button onClick={() => floatTerminal({id: "pty-2", label: "evil-winrm",
+      content: <MountSpy onMount={() => onMount("pty-2")}><div>winrm output</div></MountSpy>},
+      new DOMRect(80, 90, 600, 360))}>두 번째</button>
   </>;
 }
 
@@ -130,4 +148,20 @@ test("여러 xterm 창을 동시에 유지하고 각각 닫는다", () => {
   fireEvent.click(within(responder).getByText("[ 원위치 ]"));
   expect(screen.queryByLabelText("플로팅 터미널 Responder")).toBeNull();
   expect(screen.getByLabelText("플로팅 터미널 evil-winrm")).toBeTruthy();
+});
+
+test("두 번째 터미널을 띄워도 첫 번째 터미널의 PTY 컴포넌트가 재마운트되지 않는다", () => {
+  const mounts: string[] = [];
+  render(<FloatingTerminalProvider>
+    <OpenTwoTerminalsWithMountSpies onMount={(id) => mounts.push(id)} />
+  </FloatingTerminalProvider>);
+
+  fireEvent.click(screen.getByText("첫 번째"));
+  expect(mounts).toEqual(["pty-1"]);
+
+  fireEvent.click(screen.getByText("두 번째"));
+  // A remount here would close pty-1's real WebSocket, which the backend
+  // reads as the operator hanging up and SIGTERMs a still-running listener
+  // like Responder -- exactly the bug this list-based layout fixes.
+  expect(mounts).toEqual(["pty-1", "pty-2"]);
 });
