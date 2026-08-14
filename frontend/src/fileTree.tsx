@@ -1,25 +1,56 @@
+import { useState } from "react";
+
 // Shared by every "show a remote host's directory structure automatically"
 // feature (post-exploitation file listings, SMB share spidering, NFS
 // exports, ...) so each one only has to turn its own protocol-specific
 // output into {path, isDir}[] and hand it here.
-export type TreeNode = { name: string; isDir: boolean; children: Map<string, TreeNode> };
+export type TreeNode = {
+  name: string; path: string; isDir: boolean; children: Map<string, TreeNode>;
+};
 
 export function buildFileTree(entries: { path: string; isDir: boolean }[], sep: string): TreeNode {
-  const root: TreeNode = { name: "", isDir: true, children: new Map() };
+  const root: TreeNode = { name: "", path: "", isDir: true, children: new Map() };
   for (const entry of entries) {
+    // A leading separator ("/home/bob") reconstructs with one back; a drive
+    // letter ("C:\Users") has no leading separator to restore -- filter()
+    // below strips it either way, so this is the only place that knows
+    // whether the root itself needs one put back.
+    const rootNeedsSep = entry.path.startsWith(sep);
     const parts = entry.path.split(sep).filter(Boolean);
     let node = root;
     parts.forEach((part, i) => {
       const isLast = i === parts.length - 1;
       let child = node.children.get(part);
       if (!child) {
-        child = { name: part, isDir: !isLast || entry.isDir, children: new Map() };
+        const path = node === root
+          ? (rootNeedsSep ? sep + part : part)
+          : `${node.path}${sep}${part}`;
+        child = { name: part, path, isDir: !isLast || entry.isDir, children: new Map() };
         node.children.set(part, child);
       }
       node = child;
     });
   }
   return root;
+}
+
+// Keeps a folder if its own name matches, or if any descendant does (with
+// that descendant's own ancestor chain filtered the same way); a matching
+// folder keeps its whole subtree untouched below it rather than filtering
+// further, since finding "Desktop" should show everything on it.
+export function filterTree(node: TreeNode, query: string): TreeNode {
+  const q = query.trim().toLowerCase();
+  if (!q) return node;
+  const children = new Map<string, TreeNode>();
+  for (const [key, child] of node.children) {
+    if (child.name.toLowerCase().includes(q)) {
+      children.set(key, child);
+    } else if (child.isDir) {
+      const filtered = filterTree(child, q);
+      if (filtered.children.size) children.set(key, filtered);
+    }
+  }
+  return { ...node, children };
 }
 
 // Lines tagged "D|<path>" / "F|<path>" (used by the linux/windows post-
@@ -57,31 +88,56 @@ function FileIcon() {
 // depth 0 is the scrollable root box (.fileTree); every nested level renders
 // .fileTreeChildren instead so indentation compounds per level rather than
 // every recursive call re-applying the root's own height/overflow/padding.
-export function FileTreeView({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
-  const entries = [...node.children.values()].sort((a, b) =>
+//
+// `searchable` only has an effect at depth 0 -- it owns the query input and
+// filters `node` before the first render, so every recursive call below
+// just walks the already-filtered subtree. A query also force-opens every
+// <details> on the way down, since a match three folders deep is useless
+// hidden behind three collapsed twisties.
+export function FileTreeView({ node, depth = 0, searchable, onOpenFile, query = "" }: {
+  node: TreeNode; depth?: number; searchable?: boolean;
+  onOpenFile?: (path: string) => void; query?: string;
+}) {
+  const [ownQuery, setOwnQuery] = useState("");
+  const activeQuery = depth === 0 && searchable ? ownQuery : query;
+  const displayNode = activeQuery ? filterTree(node, activeQuery) : node;
+  const entries = [...displayNode.children.values()].sort((a, b) =>
     a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1);
-  if (!entries.length) return null;
-  return (
-    <ul className={depth === 0 ? "fileTree" : "fileTreeChildren"}>
-      {entries.map((child) => (
-        <li key={child.name}>
-          {child.isDir ? (
-            <details>
-              <summary>
-                <span className="fileTreeChevron" />
-                <FolderIcon />
+  return (<>
+    {depth === 0 && searchable && (
+      <input className="fileTreeSearch" type="search" value={ownQuery}
+        onChange={(event) => setOwnQuery(event.target.value)}
+        placeholder="이름으로 검색…" aria-label="파일 트리 검색" />
+    )}
+    {!!entries.length && (
+      <ul className={depth === 0 ? "fileTree" : "fileTreeChildren"}>
+        {entries.map((child) => (
+          <li key={child.name}>
+            {child.isDir ? (
+              <details open={!!activeQuery}>
+                <summary>
+                  <span className="fileTreeChevron" />
+                  <FolderIcon />
+                  {child.name}
+                </summary>
+                <FileTreeView node={child} depth={depth + 1}
+                  onOpenFile={onOpenFile} query={activeQuery} />
+              </details>
+            ) : onOpenFile ? (
+              <button type="button" className="fileTreeFile fileTreeFile--clickable"
+                onClick={() => onOpenFile(child.path)}>
+                <FileIcon />
                 {child.name}
-              </summary>
-              <FileTreeView node={child} depth={depth + 1} />
-            </details>
-          ) : (
-            <span className="fileTreeFile">
-              <FileIcon />
-              {child.name}
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
+              </button>
+            ) : (
+              <span className="fileTreeFile">
+                <FileIcon />
+                {child.name}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
+  </>);
 }

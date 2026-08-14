@@ -7,6 +7,7 @@ import InteractiveTerminal from "../../InteractiveTerminal";
 import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
+import FileContentModal from "../../FileContentModal";
 import { AddForm, color, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
@@ -74,6 +75,7 @@ export function Inspector(props: {
   const [winrmSession, setWinrmSession] = useState<
     {id: number; title: string; initialInput?: string} | null
   >(null);
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [retryError, setRetryError] = useState("");
   const sessionQuery = useQuery({
     queryKey: ["graphInteractiveSession", sessionId],
@@ -330,10 +332,12 @@ export function Inspector(props: {
             </span>
           </div>
           {fileTreeOutput.isLoading ? <div style={S.resultMessage}>트리 불러오는 중…</div>
-            : <FileTreeView node={buildFileTree(
+            : <FileTreeView searchable onOpenFile={setOpenFilePath} node={buildFileTree(
               parseTaggedTreeLines(fileTreeOutput.data?.stdout || ""),
               latestFileTree.command_id.startsWith("windows_file_tree") ? "\\" : "/")} />}
         </div>}
+        {latestFileTree && openFilePath !== null && <FileContentModal
+          runId={latestFileTree.id} path={openFilePath} onClose={() => setOpenFilePath(null)} />}
       </section>}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>
