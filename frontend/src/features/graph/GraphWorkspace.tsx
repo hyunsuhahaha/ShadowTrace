@@ -598,6 +598,7 @@ export default function GraphWorkspace() {
               <EmbeddedHashCracking embedded initialProjectId={hashPanel.project_id}
                 initialTargetId={hashPanel.target_id} initialHash={hashPanel.secret}
                 initialCredentialId={hashPanel.id} initialUsername={hashPanel.username}
+                initialGraphNodeId={hashPanel.graph_node_id}
                 initialMode={hashPanel.hash_mode_id ?? (hashPanel.source_kind === "responder"
                   || /NTLMv2/i.test(hashPanel.secret_hint || "") ? "netntlmv2" : undefined)}
                 onBack={() => setHashPanel(null)} />

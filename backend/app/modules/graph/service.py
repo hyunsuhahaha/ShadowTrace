@@ -767,7 +767,20 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 select(HashCrackJob).where(HashCrackJob.target_id.in_(target_ids))):
             if ("hash_crack_job", job.id) in dismissed:
                 continue
-            parent = host_for(job.target_id)
+            # A job started from a specific finding (e.g. a zip2john'd
+            # archive) belongs under that node, not the generic host
+            # placement -- "attempted" only permits finding/service/host as
+            # a source, so a credential-sourced handoff (not currently
+            # possible from the frontend, but not guaranteed to stay that
+            # way) falls back to host rather than violating the schema.
+            explicit_parent = (
+                db.get(GraphNode, job.graph_parent_node_id)
+                if job.graph_parent_node_id else None)
+            if explicit_parent is not None and (
+                    explicit_parent.project_id != project_id
+                    or explicit_parent.type not in {"finding", "service", "host"}):
+                explicit_parent = None
+            parent = explicit_parent or host_for(job.target_id)
             if parent is None:
                 continue
             activity = _runtime_activity(

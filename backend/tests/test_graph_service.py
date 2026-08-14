@@ -591,6 +591,64 @@ def test_sync_projects_hash_crack_jobs_as_technique_nodes():
     assert ("attempted", host.id, tech.id) in relations
 
 
+def test_hash_crack_job_parents_under_the_finding_its_hash_came_from():
+    # A job launched by sending a zip2john hash from a specific finding
+    # (e.g. a promoted backup.zip) belongs under that finding, not the bare
+    # host every job falls back to by default.
+    from app.models import Finding, HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.24")
+    db.add(t); db.flush()
+    finding = Finding(project_id=p.id, target_id=t.id, title="파일 다운로드: backup.zip")
+    db.add(finding); db.flush()
+    service.sync_from_project(db, p.id)
+    finding_node = db.query(GraphNode).filter_by(type="finding").one()
+
+    db.add(HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="pkzip",
+                        hash_mode="17200", hash_type_name="PKZIP", status="running",
+                        graph_parent_node_id=finding_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", finding_node.id, tech.id) in relations
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert ("attempted", host.id, tech.id) not in relations
+
+
+def test_hash_crack_job_falls_back_to_host_when_the_explicit_parent_is_a_credential():
+    # credential is always a structural leaf (SPEC_GRAPH_TRACKER §1.4) and
+    # can never be a valid `attempted` source -- even if some future caller
+    # passes one, this must not violate the schema.
+    from app.models import Credential, HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.25")
+    db.add(t); db.flush()
+    db.add(Credential(project_id=p.id, target_id=t.id, username="bob", secret="hash",
+                      secret_kind="hash", service_names="[]", notes=""))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    cred_node = db.query(GraphNode).filter_by(type="credential").one()
+
+    db.add(HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="ntlm",
+                        hash_mode="1000", hash_type_name="NTLM", status="running",
+                        graph_parent_node_id=cred_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    host = db.query(GraphNode).filter_by(type="host").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", host.id, tech.id) in relations
+
+
 def test_sync_clears_hash_crack_activity_once_the_job_finishes():
     from app.models import HashCrackJob, Target
     db = database()

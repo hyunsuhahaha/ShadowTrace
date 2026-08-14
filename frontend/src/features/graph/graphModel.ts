@@ -30,6 +30,10 @@ export type CredentialHandoff = {
   // optional for exactly this case.
   id?: number; project_id: number; target_id?: number; username?: string; secret: string;
   secret_hint?: string; source_kind?: string; hash_mode_id?: string;
+  // The finding/evidence node this hash came from (e.g. a zip2john'd
+  // archive) -- lets the resulting crack job parent under it instead of
+  // the bare host.
+  graph_node_id?: string;
 };
 export type NodeActivity = {
   kind: "scan" | "execution" | "listener" | "crack";

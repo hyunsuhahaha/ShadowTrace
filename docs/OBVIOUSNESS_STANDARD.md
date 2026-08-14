@@ -69,6 +69,23 @@
    노드를 한 번 벗어났다 다시 선택하면(즉 마운트 시 최초 fetch가 다시 실행되면) 정상
    표시됐다 — "화면에 안 보인다"고 바로 버그로 단정하지 말고, 최초 마운트 fetch로
    재현되는지 먼저 확인해야 폴링 타이밍 이슈와 진짜 버그를 구분할 수 있다.
+10. 사례 9를 고친 바로 그 세션 안에서, `HashCrackJob`을 그래프에 새로 동기화하면서
+    똑같은 실수를 반복했다 — zip2john으로 backup.zip에서 해시를 뽑아 크래킹을 보내는데도
+    항상 host 바로 밑에 붙었다. 원인도 똑같았다: `CredentialHandoff`(zip2john 결과를
+    Hash Cracking 패널로 넘기는 타입)에 애초에 `graph_node_id`가 없어서, 어느 finding에서
+    보낸 건지 정보 자체가 만들어지는 순간부터 유실됐다. 사용자가 스크린샷으로 지적하고
+    나서야 발견 — 사례 9를 고치면서 "이 패턴을 다른 곳에도 적용해야 하나"를 스스로
+    점검했어야 했는데(원칙 2) 하지 않았다. 같은 턴에 사용자가 "크래킹 중인 노드를 눌러도
+    터미널/결과가 안 뜬다"고 추가로 지적했다 — Execution/Session 노드는 클릭하면 실시간
+    출력 패널이 뜨는데, 새로 만든 hash_crack_job 노드 타입만 Inspector에 그 case가 아예
+    없었다(사례 3과 같은 유형: 있는 패턴이 새 노드 타입에는 안 갖춰짐). 별개로, 새 컬럼을
+    `database.py`의 `ensure_compatible_schema()`(구식 pre-Alembic DB 전용 땜질 경로)에
+    추가했다가 `hash_crack_jobs`처럼 나중에 생긴 테이블에서 "구버전 alembic 리비전에는
+    테이블 자체가 없다"는 테스트(`test_importing_app_does_not_create_unmigrated_tables`)를
+    깨뜨렸다 — 이 프로젝트는 진짜 Alembic 마이그레이션 체계가 있고(`alembic/versions/`,
+    `app/migrations.py`), 새 컬럼은 항상 새 마이그레이션 파일로 추가해야 하며
+    `ensure_compatible_schema()`는 그 체계보다 먼저 있던 소수의 원시 테이블에만 쓰는
+    레거시 경로라는 걸 문서를 읽지 않고 추측만으로 판단해서 생긴 실수였다.
 
 ## 원칙
 

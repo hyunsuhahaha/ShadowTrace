@@ -685,16 +685,28 @@ service로 찾아와 "폴더·파일 트리" 섹션에 바로 렌더하므로, �
 별도의 "폴더·파일 트리 조회" 실행 노드를 따로 찾아갈 필요가 없다.
 `HashCrackJob`도 Execution/InteractiveSession과 같은 패턴으로 `technique` 노드로 동기화된다
 (`sync_from_project`) — service 차원이 없어(크래킹은 로컬 실행) host에 바로 `attempted`로
-붙고, `Credential.source_execution_kind=="hash_crack_job"`인 credential이 있으면 그
-credential 노드로 `yielded` 엣지를 긋는다(Responder 리스너가 캡처한 credential을 잇는 것과
-동일 패턴 — credential은 SPEC_GRAPH_TRACKER §1.4상 항상 구조적 리프라 `attempted`의 source가
-될 수 없고, job에도 애초에 "어떤 기존 hash를 크래킹 중인지" 연결하는 컬럼이 없다). 완료돼도
-`cracked_count>0`이면 자동으로 성공 판정하지 않는다(다른 technique와 같은 원칙) — 단
-워드리스트를 다 써도 하나도 못 깨면(`completed`+`cracked_count==0`) `attempt-failed`로
-자동 강등한다. 프런트엔드 `GraphCanvas.tsx`의 activity 신호는 `scan`/`execution`/`listener`
-3종에 `crack`이 추가돼 4종이며, `crack`은 다른 kind가 공유하는 breathing-ring 펄스나
-회전 sweep을 그리지 않고 대신 노드 주위로 이진수(0/1)가 위에서 아래로 흘러내리는 전용
-"디코딩" 이펙트를 그린다(보라색 `#b388ff`로 다른 세 신호와 구분).
+붙는 게 기본값이지만, `HashCrackJob.graph_parent_node_id`가 설정돼 있으면(zip2john처럼
+특정 finding에서 해시를 뽑아 보낸 경우) 그 finding 밑에 붙는다 — `InteractiveSession`과
+동일한 override 패턴(`JobIn.graph_node_id` → `CredentialHandoff.graph_node_id` →
+`HashCrackingWorkspace`의 `initialGraphNodeId` prop으로 이어짐). credential 노드는
+SPEC_GRAPH_TRACKER §1.4상 항상 구조적 리프라 `attempted`의 source가 될 수 없으므로,
+override 대상이 credential 타입이면 host로 폴백한다. `Credential.source_execution_kind==
+"hash_crack_job"`인 credential이 있으면 그 job 노드에서 그 credential 노드로 `yielded`
+엣지를 긋는다(Responder 리스너 → credential과 동일 패턴). 완료돼도 `cracked_count>0`이면
+자동으로 성공 판정하지 않는다(다른 technique와 같은 원칙) — 단 워드리스트를 다 써도
+하나도 못 깨면(`completed`+`cracked_count==0`) `attempt-failed`로 자동 강등한다.
+`hash_crack_job` 노드를 Inspector에서 선택하면 Execution 노드와 같은 실시간 출력 패널이
+뜬다(`GET /hash-cracking/{id}`+`/output`을 실행 중일 때 2초 간격으로 폴링) — 크랙된
+항목이 있으면 사용자명을 입력해 `/hash-cracking/{id}/promote`로 Credential로 승격하는
+카드도 같이 뜨고, 승격되면 다음 sync에서 자동으로 `yielded` 엣지가 생긴다. 프런트엔드
+`GraphCanvas.tsx`의 activity 신호는 `scan`/`execution`/`listener` 3종에 `crack`이 추가돼
+4종이며, `crack`은 다른 kind가 공유하는 breathing-ring 펄스나 회전 sweep을 그리지 않고
+대신 노드 주위로 이진수(0/1)가 위에서 아래로 흘러내리는 전용 "디코딩" 이펙트를 그린다
+(보라색 `#b388ff`로 다른 세 신호와 구분). `interactive_sessions`/`hash_crack_jobs`의
+`graph_parent_node_id` 컬럼은 둘 다 Alembic 마이그레이션(`0037_graph_parent_node_id`)으로
+추가됐다 — `database.py`의 `ensure_compatible_schema()`는 Alembic 이전부터 있던 소수의
+원시 테이블(`scan_jobs`/`services`/`executions`)에만 쓰는 레거시 경로이므로, 새 컬럼은
+이 경로가 아니라 `alembic/versions/`에 새 리비전 파일을 추가하는 것이 맞다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),

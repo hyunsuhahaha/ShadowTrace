@@ -539,7 +539,7 @@ it("hands a password-protected zip straight to Hash Cracking instead of leaving 
   ));
   await waitFor(() => expect(onOpenHashCrack).toHaveBeenCalledWith({
     project_id: 3, target_id: 8, secret: "$pkzip$1*...*$/pkzip$",
-    hash_mode_id: "pkzip", source_kind: "zip2john",
+    hash_mode_id: "pkzip", source_kind: "zip2john", graph_node_id: "finding-11",
   }));
 });
 
@@ -843,4 +843,46 @@ it("auto-populates a folder/file tree on an ftp-client session's own node", asyn
   await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
     "/api/executions/91/promote-ftp-file", expect.objectContaining({ method: "POST" }),
   ));
+});
+
+it("shows a hash-crack job's live output and lets a cracked hash be promoted", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/hash-cracking/42")) return Promise.resolve(new Response(JSON.stringify({
+      status: "running", exit_code: null, cracked_count: 1, hash_count: 1,
+      command_display: "hashcat -m 17200 ...",
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/hash-cracking/42/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "hashcat (v7.1.2) starting...", stderr: "",
+      cracked: [{ hash: "$pkzip$1*...*$/pkzip$", plain: "hunter2" }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/hash-cracking/42/promote") && init?.method === "POST") {
+      expect(JSON.parse(init.body as string)).toEqual({ username: "admin", secret: "hunter2" });
+      return Promise.resolve(new Response(JSON.stringify({ id: 5 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "crack-42", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "해시 크래킹 · PKZIP/ZipCrypto",
+      source_ref: JSON.stringify({ module: "hash_cracking", kind: "hash_crack_job", id: 42 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText(/hashcat \(v7\.1\.2\) starting/)).toBeTruthy();
+  expect(await screen.findByText("hunter2")).toBeTruthy();
+
+  fireEvent.change(screen.getByPlaceholderText("사용자명"), { target: { value: "admin" } });
+  fireEvent.click(screen.getByText("그래프에 남기기"));
+
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/hash-cracking/42/promote", expect.objectContaining({ method: "POST" }),
+  ));
+  expect(await screen.findByText(/admin 그래프에 남겼습니다/)).toBeTruthy();
 });

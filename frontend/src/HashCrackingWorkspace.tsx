@@ -80,10 +80,11 @@ const post = async <T,>(path: string, body: unknown): Promise<T> => {
 };
 
 export default function HashCrackingWorkspace({ embedded = false, initialProjectId,
-  initialTargetId, initialHash = "", initialMode, initialCredentialId, initialUsername, onBack }: {
+  initialTargetId, initialHash = "", initialMode, initialCredentialId, initialUsername,
+  initialGraphNodeId, onBack }: {
   embedded?: boolean; initialProjectId?: number; initialTargetId?: number;
   initialHash?: string; initialMode?: string; initialCredentialId?: number;
-  initialUsername?: string; onBack?: () => void;
+  initialUsername?: string; initialGraphNodeId?: string; onBack?: () => void;
 } = {}) {
   const qc = useQueryClient();
   const [projectId, setProjectId] = useState<number | undefined>(initialProjectId);
@@ -272,6 +273,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
         wordlist2_id: selectedAttackMode.needsWordlist2 ? wordlist2Id : undefined,
         rule_id: selectedAttackMode.needsRule ? (ruleId || undefined) : undefined,
         mask: selectedAttackMode.needsMask ? mask.trim() : undefined,
+        graph_node_id: initialGraphNodeId,
       });
       await post<Job>(`/hash-cracking/${created.id}/start`, {});
       skipHistoryFallbackRef.current = true;

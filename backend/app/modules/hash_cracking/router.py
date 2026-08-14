@@ -203,7 +203,7 @@ def create_job(body: JobIn, db: Session = Depends(get_db)):
         hash_mode_id=hash_mode["id"], hash_mode=hash_mode["mode"],
         hash_type_name=hash_mode["name"], attack_mode=body.attack_mode,
         wordlist_id=wordlist_id, wordlist2_id=wordlist2_id, rule_id=rule_id,
-        mask=mask, hash_count=len(hash_lines))
+        mask=mask, hash_count=len(hash_lines), graph_parent_node_id=body.graph_node_id)
     db.add(row); db.flush()
     argv[6:6] = ["--session", str(row.id)]  # after the fixed base, before the mode-specific tail
     folder = job_directory(project, target, row.id)

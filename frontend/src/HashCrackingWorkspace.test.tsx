@@ -84,12 +84,12 @@ class FakeEventSource {
   close() {}
 }
 
-function mount(fetcher: ReturnType<typeof vi.fn>) {
+function mount(fetcher: ReturnType<typeof vi.fn>, props: Record<string, unknown> = {}) {
   vi.stubGlobal("fetch", fetcher);
   vi.stubGlobal("EventSource", FakeEventSource);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   return render(
-    <QueryClientProvider client={client}><HashCrackingWorkspace /></QueryClientProvider>,
+    <QueryClientProvider client={client}><HashCrackingWorkspace {...props} /></QueryClientProvider>,
   );
 }
 
@@ -152,6 +152,32 @@ it("omits the wordlist and sends the mask when starting a brute-force job", asyn
   expect(created.attack_mode).toBe("3");
   expect(created.mask).toBe("?u?l?l?l?d?d?d");
   expect(created.wordlist_id).toBeUndefined();
+});
+
+it("parents a job under the finding its hash was handed off from", async () => {
+  let created: any;
+  const fetcher = baseFetcher((url, init) => {
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      created = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: 9, ...created }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher, { initialGraphNodeId: "finding-11" });
+  await screen.findByLabelText("공격 모드");
+
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0" },
+  });
+  fireEvent.click(screen.getByText("크랙 시작"));
+
+  await waitFor(() => expect(created).toBeTruthy());
+  expect(created.graph_node_id).toBe("finding-11");
 });
 
 it("shows the job as running immediately after starting, without waiting for the next history poll", async () => {

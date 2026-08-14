@@ -83,6 +83,7 @@ export function Inspector(props: {
   const sessionId = source?.kind === "session" ? source.id : null;
   const credentialId = source?.kind === "credential" ? source.id : null;
   const findingId = source?.kind === "finding" ? source.id : null;
+  const hashCrackJobId = source?.kind === "hash_crack_job" ? source.id : null;
   const findingQuery = useQuery({
     queryKey: ["graphFinding", findingId],
     enabled: findingId !== null,
@@ -107,6 +108,20 @@ export function Inspector(props: {
     enabled: executionId !== null,
     queryFn: () => api<{ stdout?: string; stderr?: string; status: string;
       error?: string; exit_code?: number | null }>(`/executions/${executionId}/output`),
+  });
+  const hashCrackJob = useQuery({
+    queryKey: ["graphHashCrackJob", hashCrackJobId],
+    enabled: hashCrackJobId !== null,
+    refetchInterval: (query) => query.state.data?.status === "running" ? 2000 : false,
+    queryFn: () => api<{ status: string; exit_code: number | null; cracked_count: number;
+      hash_count: number; command_display: string }>(`/hash-cracking/${hashCrackJobId}`),
+  });
+  const hashCrackOutput = useQuery({
+    queryKey: ["graphHashCrackOutput", hashCrackJobId],
+    enabled: hashCrackJobId !== null,
+    refetchInterval: hashCrackJob.data?.status === "running" ? 2000 : false,
+    queryFn: () => api<{ stdout: string; stderr: string;
+      cracked: Array<{ hash: string; plain: string }> }>(`/hash-cracking/${hashCrackJobId}/output`),
   });
   const targets = useQuery({
     queryKey: ["graphLinkTargets"],
@@ -189,6 +204,29 @@ export function Inspector(props: {
       setCaptureMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   };
+  // Promoting here just creates the Credential row -- sync_from_project()
+  // already links any credential with source_execution_kind=="hash_crack_job"
+  // back to this job node via a `yielded` edge on its own, the same as
+  // promote-download/promote-file elsewhere, so no graph_node_id is needed.
+  const [crackUsernames, setCrackUsernames] = useState<Record<string, string>>({});
+  const [promotedCracks, setPromotedCracks] = useState<Set<string>>(new Set());
+  const [crackPromoteMessage, setCrackPromoteMessage] = useState("");
+  const promoteCracked = async (hash: string, plain: string) => {
+    const username = (crackUsernames[hash] || "").trim();
+    if (hashCrackJobId === null || !username) return;
+    setCrackPromoteMessage("");
+    try {
+      await api(`/hash-cracking/${hashCrackJobId}/promote`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username, secret: plain}),
+      });
+      setPromotedCracks((current) => new Set(current).add(hash));
+      setCrackPromoteMessage(`${username} 그래프에 남겼습니다`);
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setCrackPromoteMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
   // A promoted zip was previously a dead end past its own "download" link --
   // this lets an entry inside it become its own graph node too, the same
   // way promote-download turns a file sitting in a session's cwd into one.
@@ -229,6 +267,7 @@ export function Inspector(props: {
       props.onOpenHashCrack?.({
         project_id: props.projectId!, target_id: findingQuery.data?.target_id,
         secret: result.hashes, hash_mode_id: result.hash_mode_id, source_kind: "zip2john",
+        graph_node_id: n?.id,
       });
     } catch (reason) {
       setArchiveMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
@@ -1081,6 +1120,70 @@ export function Inspector(props: {
         </div>
         </section>
       </DetachableTerminal>}
+      {hashCrackJobId !== null && <DetachableTerminal id={`graph-hashcrack-${hashCrackJobId}`}
+        label={`${n.label} 실행 결과`}>
+        <section style={S.executionResults} aria-label="해시 크래킹 실행 결과">
+        <div style={S.terminalTitlebar} data-terminal-drag-handle
+          title="드래그하여 터미널 분리">
+          <span style={S.terminalDots}>
+            <i style={{ ...S.terminalDot, background: "#ff5f57" }} />
+            <i style={{ ...S.terminalDot, background: "#febc2e" }} />
+            <i style={{ ...S.terminalDot, background: "#28c840" }} />
+          </span>
+          <span style={S.terminalTitle}>hashcat — {n.label}</span>
+          <span style={{ font: "10px ui-monospace,monospace", color: "#7fae8f", flexShrink: 0 }}>
+            {hashCrackJob.data?.status || n.status}
+            {hashCrackJob.data?.exit_code == null ? "" : ` · exit ${hashCrackJob.data.exit_code}`}
+          </span>
+        </div>
+        <div style={S.terminalBody}>
+          {hashCrackOutput.isLoading ? <div style={S.resultMessage}>결과 불러오는 중…</div>
+            : hashCrackOutput.isError ? <div style={S.resultError}>실행 결과를 불러오지 못했습니다.</div>
+            : <>
+              {hashCrackOutput.data?.stdout && <details open>
+                <summary style={S.terminalComment}># stdout</summary>
+                <pre style={S.terminalOutput}>{hashCrackOutput.data.stdout}</pre>
+              </details>}
+              {hashCrackOutput.data?.stderr && <details>
+                <summary style={S.terminalComment}># stderr</summary>
+                <pre style={S.terminalOutputError}>{hashCrackOutput.data.stderr}</pre>
+              </details>}
+              {!hashCrackOutput.data?.stdout && !hashCrackOutput.data?.stderr
+                && <div style={S.resultMessage}>저장된 출력이 없습니다.</div>}
+            </>}
+        </div>
+        </section>
+      </DetachableTerminal>}
+      {hashCrackJobId !== null && !!hashCrackOutput.data?.cracked.length && (
+        <section style={S.executionResults} aria-label="크랙된 자격 증명">
+          <div style={S.executionResultsHead}>
+            <div><strong>크랙된 자격 증명</strong>{" "}
+              <span>{hashCrackOutput.data.cracked.length}개</span></div>
+          </div>
+          {crackPromoteMessage && <div style={S.resultNotice}>{crackPromoteMessage}</div>}
+          <div style={S.captureList}>
+            {hashCrackOutput.data.cracked.map((item) => {
+              const promoted = promotedCracks.has(item.hash);
+              return <article key={item.hash} style={S.captureCard}>
+                <div style={S.captureHead}><b>{item.plain}</b></div>
+                <div style={S.captureMeta}>{item.hash}</div>
+                <div style={S.captureActions}>
+                  <input placeholder="사용자명" value={crackUsernames[item.hash] || ""}
+                    disabled={promoted}
+                    onChange={(event) => setCrackUsernames(
+                      (current) => ({...current, [item.hash]: event.target.value}))}
+                    style={{ border: "1px solid #2a2a34", borderRadius: 6, padding: "5px 8px",
+                      background: "#0e0e12", color: "#e7e7ee", fontSize: 11, flex: 1, minWidth: 0 }} />
+                  <button disabled={promoted || !(crackUsernames[item.hash] || "").trim()}
+                    onClick={() => void promoteCracked(item.hash, item.plain)}>
+                    {promoted ? "그래프에 남김" : "그래프에 남기기"}
+                  </button>
+                </div>
+              </article>;
+            })}
+          </div>
+        </section>
+      )}
       {executionId !== null && tool === "http-link-extract" && (
         <section style={S.executionResults} aria-label="링크 추출 결과">
           <div style={S.executionResultsHead}>

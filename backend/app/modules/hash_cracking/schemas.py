@@ -19,6 +19,10 @@ class JobIn(BaseModel):
     wordlist2_id: str = Field(default="", max_length=80)
     rule_id: str = Field(default="", max_length=80)
     mask: str = Field(default="", max_length=64)
+    # The finding/evidence node this hash was pulled from (e.g. a zip2john'd
+    # archive) -- sync_from_project() parents the job's own node here instead
+    # of falling back to the bare host.
+    graph_node_id: str | None = Field(default=None, max_length=40)
 
 
 class PromoteIn(BaseModel):

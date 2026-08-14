@@ -584,6 +584,10 @@ class HashCrackJob(Base):
     evidence_id: Mapped[int | None] = mapped_column(
         ForeignKey("evidence.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Which graph node (e.g. the finding this hash was pulled from, such as a
+    # zip2john'd archive) this job should be parented under on sync, instead
+    # of sync_from_project()'s default host placement -- see graph/service.py.
+    graph_parent_node_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
 
 
 class RunbookTemplate(Base):
