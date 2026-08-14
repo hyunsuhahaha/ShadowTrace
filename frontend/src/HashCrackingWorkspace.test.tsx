@@ -88,9 +88,12 @@ function mount(fetcher: ReturnType<typeof vi.fn>, props: Record<string, unknown>
   vi.stubGlobal("fetch", fetcher);
   vi.stubGlobal("EventSource", FakeEventSource);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  return render(
-    <QueryClientProvider client={client}><HashCrackingWorkspace {...props} /></QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={client}><HashCrackingWorkspace {...props} /></QueryClientProvider>,
+    ),
+    client,
+  };
 }
 
 afterEach(() => {
@@ -178,6 +181,35 @@ it("parents a job under the finding its hash was handed off from", async () => {
 
   await waitFor(() => expect(created).toBeTruthy());
   expect(created.graph_node_id).toBe("finding-11");
+});
+
+it("invalidates the graph query on start, so the canvas doesn't need an unrelated refetch to notice the new job", async () => {
+  // The graph query's own refetchInterval only re-arms once some node
+  // already has activity (see GraphWorkspace) -- a brand-new job's node
+  // doesn't exist in the canvas yet, so without an explicit invalidation
+  // here the violet crack-pulse effect just never shows up until the
+  // operator happens to trigger an unrelated graph refetch.
+  const fetcher = baseFetcher((url, init) => {
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  const { client } = mount(fetcher);
+  const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+  await screen.findByLabelText("공격 모드");
+
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0" },
+  });
+  fireEvent.click(screen.getByText("크랙 시작"));
+
+  await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["graph"] }));
 });
 
 it("shows the job as running immediately after starting, without waiting for the next history poll", async () => {

@@ -281,6 +281,12 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
       setLiveStatus("running");
       setHashes(""); setLabel(""); setHashModeAuto(false);
       await qc.invalidateQueries({ queryKey: ["hashCrackingJobs", targetId] });
+      // The graph query only auto-polls once some node already has activity
+      // (see GraphWorkspace's refetchInterval) -- a brand-new job's node
+      // doesn't exist yet, so without this the canvas has no reason to ever
+      // refetch and pick up the new node/pulse until something unrelated
+      // happens to trigger it.
+      void qc.invalidateQueries({ queryKey: ["graph"] });
     } catch (reason) { setError(String(reason)); }
   };
   const cancelJob = async (id: number) => {
@@ -296,6 +302,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
       });
       setPromoteMsg(`${initialUsername || promoteUsername} Credential에 평문이 연결됨`);
       setPromoteFor(undefined); setPromoteUsername("");
+      void qc.invalidateQueries({ queryKey: ["graph"] });
     } catch (reason) { setPromoteMsg(String(reason)); }
   };
   const copyPlain = async (plain: string) => {
