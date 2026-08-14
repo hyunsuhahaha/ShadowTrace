@@ -24,8 +24,12 @@ export type GraphRequestDraft = {
   projectId: number; targetId: number; serviceId: number; url: string;
 };
 export type CredentialHandoff = {
-  id: number; project_id: number; target_id?: number; username: string; secret: string;
-  secret_hint?: string; source_kind?: string;
+  // id/username are unset for a handoff with no Credential row behind it
+  // yet (e.g. a zip2john hash pulled straight from an archive) -- Hash
+  // Cracking's own initialCredentialId/initialUsername props are already
+  // optional for exactly this case.
+  id?: number; project_id: number; target_id?: number; username?: string; secret: string;
+  secret_hint?: string; source_kind?: string; hash_mode_id?: string;
 };
 export type NodeActivity = {
   kind: "scan" | "execution" | "listener";

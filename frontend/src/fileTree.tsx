@@ -1,9 +1,15 @@
 import { useState } from "react";
 
-// Shared with GraphCanvas.tsx's drop handler, so a file dragged out of the
-// tree and a graph waiting to accept a drop agree on what payload to expect.
+// Shared with GraphCanvas.tsx's drop handler, so anything dragged out of a
+// list -- this tree, a zip's own member listing, an ftp session's download
+// log -- and a graph waiting to accept a drop agree on what payload to
+// expect. `kind` picks which promote endpoint GraphWorkspace's dropFile
+// calls; the rest of each variant is that endpoint's own request shape.
 export const FILE_DRAG_MIME = "application/x-oscp-tree-file";
-export type FileDragPayload = { runId: number; path: string };
+export type FileDragPayload =
+  | { kind: "post-exploitation"; runId: number; path: string }
+  | { kind: "archive"; evidenceId: number; entry: string }
+  | { kind: "ftp-download"; sessionId: number; filename: string; graphNodeId: string | null };
 
 // Shared by every "show a remote host's directory structure automatically"
 // feature (post-exploitation file listings, SMB share spidering, NFS
@@ -132,7 +138,7 @@ export function FileTreeView({ node, depth = 0, searchable, onOpenFile, runId, q
               <button type="button" className="fileTreeFile fileTreeFile--clickable"
                 draggable={runId != null}
                 onDragStart={runId == null ? undefined : (event) => {
-                  const payload: FileDragPayload = { runId, path: child.path };
+                  const payload: FileDragPayload = { kind: "post-exploitation", runId, path: child.path };
                   event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(payload));
                   event.dataTransfer.effectAllowed = "copy";
                 }}

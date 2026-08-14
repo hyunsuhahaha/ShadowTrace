@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
+import type { FileDragPayload } from "../../fileTree";
 import { parseLinkExtractResults } from "../../serviceIntel";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
@@ -75,9 +76,25 @@ export default function GraphWorkspace() {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
     return saved >= 320 ? saved : 640;
   });
+  const stageRef = useRef<HTMLDivElement>(null);
+  const clampPaneWidth = (width: number) => {
+    const sidebarWidth = document.querySelector(".appSidebar")
+      ?.getBoundingClientRect().width || 0;
+    const stageWidth = stageRef.current?.getBoundingClientRect().width
+      || window.innerWidth - sidebarWidth;
+    return Math.max(320, Math.min(width, stageWidth - 426));
+  };
   useEffect(() => {
     localStorage.setItem("oscp-graph-pane", String(paneWidth));
   }, [paneWidth]);
+  useEffect(() => {
+    const resize = () => setPaneWidth((width) => clampPaneWidth(width));
+    const observer = new ResizeObserver(resize);
+    if (stageRef.current) observer.observe(stageRef.current);
+    addEventListener("resize", resize);
+    resize();
+    return () => { observer.disconnect(); removeEventListener("resize", resize); };
+  }, []);
   useEffect(() => {
     if (!projectId) { setReplayAt(null); return; }
     const saved = Number(localStorage.getItem(`oscp-graph-replay:${projectId}`));
@@ -109,8 +126,7 @@ export default function GraphWorkspace() {
   const onSplitMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
     const delta = dragRef.current.startX - e.clientX;  // drag left => wider pane
-    setPaneWidth(Math.max(320,
-      Math.min(window.innerWidth - 380, dragRef.current.startWidth + delta)));
+    setPaneWidth(clampPaneWidth(dragRef.current.startWidth + delta));
   };
   const onSplitUp = (e: React.PointerEvent) => {
     dragRef.current = null;
@@ -362,24 +378,36 @@ export default function GraphWorkspace() {
     return [];
   };
 
-  // Same effect as the file-content modal's "그래프에 남기기" button --
+  // Same effect as each list's own "노드로 추가"/"그래프에 남기기" button --
   // dragging onto the canvas is just an alternative trigger for it, not a
   // second code path (the graph's force-directed layout has no meaningful
   // "drop position" to honor, see GraphCanvas's own comment on this).
-  const dropFile = async (payload: {runId: number; path: string}) => {
+  const dropFile = async (payload: FileDragPayload) => {
     setDropFileError("");
     setDropFileBusy(true);
     try {
-      // promote-file re-reads the file over the run's live connection
-      // (WinRM/SSH), which routinely takes several seconds -- graph_node_id
-      // is the technique node the tree was opened from (i.e. whatever's
-      // selected right now, since that's what's rendering the tree the
-      // drag came out of), so the finding attaches there instead of the
-      // bare host sync()'s own projection would otherwise fall back to.
-      await api(`/post-exploitation/${payload.runId}/promote-file`, {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({path: payload.path, graph_node_id: selected}),
-      });
+      if (payload.kind === "post-exploitation") {
+        // promote-file re-reads the file over the run's live connection
+        // (WinRM/SSH), which routinely takes several seconds -- graph_node_id
+        // is the technique node the tree was opened from (i.e. whatever's
+        // selected right now, since that's what's rendering the tree the
+        // drag came out of), so the finding attaches there instead of the
+        // bare host sync()'s own projection would otherwise fall back to.
+        await api(`/post-exploitation/${payload.runId}/promote-file`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({path: payload.path, graph_node_id: selected}),
+        });
+      } else if (payload.kind === "archive") {
+        await api(`/evidence/${payload.evidenceId}/extract`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({entry: payload.entry}),
+        });
+      } else {
+        await api(`/interactive-sessions/${payload.sessionId}/promote-download`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({filename: payload.filename, graph_node_id: payload.graphNodeId}),
+        });
+      }
       void queryClient.invalidateQueries({queryKey: ["graph"]});
     } catch (reason) {
       setDropFileError(reason instanceof Error ? reason.message : String(reason));
@@ -500,7 +528,7 @@ export default function GraphWorkspace() {
           <button style={S.resultAction} onClick={() => setDropFileError("")}>✕</button>
         </div>
       )}
-      <div style={S.stage}>
+      <div style={S.stage} ref={stageRef}>
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
@@ -546,8 +574,8 @@ export default function GraphWorkspace() {
               <EmbeddedHashCracking embedded initialProjectId={hashPanel.project_id}
                 initialTargetId={hashPanel.target_id} initialHash={hashPanel.secret}
                 initialCredentialId={hashPanel.id} initialUsername={hashPanel.username}
-                initialMode={hashPanel.source_kind === "responder"
-                  || /NTLMv2/i.test(hashPanel.secret_hint || "") ? "netntlmv2" : undefined}
+                initialMode={hashPanel.hash_mode_id ?? (hashPanel.source_kind === "responder"
+                  || /NTLMv2/i.test(hashPanel.secret_hint || "") ? "netntlmv2" : undefined)}
                 onBack={() => setHashPanel(null)} />
             </Suspense></div>
           ) : postPanel ? (
@@ -593,6 +621,9 @@ export default function GraphWorkspace() {
               executionContext={executionHandoff(selected)}
               onOpenRequest={(draft) => {
                 setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
+              }}
+              onOpenHashCrack={(handoff) => {
+                setPostPanel(null); setReportPanel(false); setWebRequest(null); setHashPanel(handoff);
               }}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}

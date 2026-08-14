@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { Inspector } from "./Inspector";
+import { FILE_DRAG_MIME } from "../../fileTree";
 
 vi.mock("../../XtermOutput", () => ({default: ({output}: {output: string}) =>
   <pre aria-label="Responder 세션 로그">{output}</pre>}));
@@ -499,6 +500,49 @@ it("marks a password-protected archive member as needing a crack first, disabled
   expect((button as HTMLButtonElement).disabled).toBe(true);
 });
 
+it("hands a password-protected zip straight to Hash Cracking instead of leaving the operator stuck", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      target_id: 8,
+      evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: protected.zip",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/archive")) return Promise.resolve(new Response(JSON.stringify({
+      entries: [{ name: "secret.txt", size: 12, encrypted: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/zip2john") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({
+        hashes: "$pkzip$1*...*$/pkzip$", hash_mode_id: "pkzip",
+      }), { headers: { "Content-Type": "application/json" } }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const onOpenHashCrack = vi.fn();
+
+  render(<QueryClientProvider client={client}>
+    <Inspector projectId={3} node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "파일 다운로드: protected.zip",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()}
+      onOpenHashCrack={onOpenHashCrack} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("압축 해제"));
+  fireEvent.click(await screen.findByText("🔓 Hash Cracking으로 보내기 (zip2john)"));
+
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/evidence/124/zip2john", expect.objectContaining({ method: "POST" }),
+  ));
+  await waitFor(() => expect(onOpenHashCrack).toHaveBeenCalledWith({
+    project_id: 3, target_id: 8, secret: "$pkzip$1*...*$/pkzip$",
+    hash_mode_id: "pkzip", source_kind: "zip2john",
+  }));
+});
+
 it("summarizes a service-version identification instead of leaving the operator to parse raw nmap stdout", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
@@ -527,4 +571,66 @@ it("summarizes a service-version identification instead of leaving the operator 
 
   expect(await screen.findByText("vsftpd 3.0.3")).toBeTruthy();
   expect(screen.getByText(/서비스에 자동 반영됨/)).toBeTruthy();
+});
+
+it("lets an unencrypted archive entry be dragged onto the canvas, same drag payload the file tree uses", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: backup.zip",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/archive")) return Promise.resolve(new Response(JSON.stringify({
+      entries: [{ name: "index.php", size: 2560, encrypted: false }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "파일 다운로드: backup.zip",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("압축 해제"));
+  const row = (await screen.findByText("index.php")).closest("div")!;
+
+  const setData = vi.fn();
+  fireEvent.dragStart(row, { dataTransfer: {setData, effectAllowed: ""} });
+
+  expect(setData).toHaveBeenCalledWith(FILE_DRAG_MIME, JSON.stringify(
+    { kind: "archive", evidenceId: 124, entry: "index.php" }));
+});
+
+it("lets a downloaded ftp file be dragged onto the canvas the same way", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 37, command: "ftp 10.10.10.60 21", status: "stopped" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/37/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [{ filename: "backup.zip", size: 2593 }] }),
+        { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-37", type: "technique", status: "succeeded", objective: false, hidden: false,
+      label: "FTP 수동 접속",
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 37 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const card = (await screen.findByText("backup.zip")).closest("article")!;
+
+  const setData = vi.fn();
+  fireEvent.dragStart(card, { dataTransfer: {setData, effectAllowed: ""} });
+
+  expect(setData).toHaveBeenCalledWith(FILE_DRAG_MIME, JSON.stringify(
+    { kind: "ftp-download", sessionId: 37, filename: "backup.zip", graphNodeId: "session-37" }));
 });

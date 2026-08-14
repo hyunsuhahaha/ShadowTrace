@@ -60,17 +60,17 @@ def get_catalog():
     }
 
 
-@router.post("/zip2john")
-async def zip2john(file: UploadFile = File(...)):
-    """Runs zip2john against an uploaded password-protected zip so the hash
-    can flow straight into the job form below instead of requiring a
+def run_zip2john(content: bytes) -> dict:
+    """Runs zip2john against a password-protected zip's raw bytes so the
+    hash can flow straight into the job form below instead of requiring a
     separate terminal. Covers both legacy ZipCrypto ($pkzip$, the common
     `zip -e` case) and WinZip AES ($zip2$) archives — whichever zip2john
-    emits decides which catalog hash mode gets pre-selected."""
+    emits decides which catalog hash mode gets pre-selected. Shared by the
+    upload endpoint below and evidence's own zip2john handoff (an evidence
+    row already has the archive on disk, no re-upload needed)."""
     binary = shutil.which("zip2john")
     if not binary:
         raise HTTPException(409, "zip2john is not installed (part of the 'john' package)")
-    content = await file.read(ZIP_MAX_BYTES + 1)
     if len(content) > ZIP_MAX_BYTES:
         raise HTTPException(413, f"Zip exceeds the {ZIP_MAX_BYTES // (1024 * 1024)}MB limit")
     with tempfile.TemporaryDirectory() as tmp:
@@ -92,6 +92,12 @@ async def zip2john(file: UploadFile = File(...)):
         "hashes": "\n".join(hash_lines), "hash_mode_id": hash_mode_id,
         "stderr": completed.stderr[:5_000],
     }
+
+
+@router.post("/zip2john")
+async def zip2john(file: UploadFile = File(...)):
+    content = await file.read(ZIP_MAX_BYTES + 1)
+    return run_zip2john(content)
 
 
 @router.get("", response_model=list[JobOut])

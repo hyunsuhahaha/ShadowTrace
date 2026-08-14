@@ -8,7 +8,7 @@ import { FILE_DRAG_MIME } from "../../fileTree";
 // jsdom's DataTransfer doesn't implement setData/getData usefully across
 // dragstart/drop, so tests build the minimal fake the component actually
 // reads: `types` (dragover's "do I accept this?" check) and `getData`.
-function fileDragTransfer(payload: {runId: number; path: string} | null) {
+function fileDragTransfer(payload: {kind: string; runId: number; path: string} | null) {
   const data = payload ? JSON.stringify(payload) : "";
   return {
     types: payload ? [FILE_DRAG_MIME] : ["text/plain"],
@@ -175,13 +175,15 @@ it("dropping a dragged tree file calls onDropFile with its runId and path", () =
     credentialOverlay selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
   const stage = container.firstElementChild as HTMLElement;
-  const dataTransfer = fileDragTransfer({ runId: 12, path: "/home/bob/flag.txt" });
+  const dataTransfer = fileDragTransfer(
+    { kind: "post-exploitation", runId: 12, path: "/home/bob/flag.txt" });
 
   fireEvent.dragOver(stage, { dataTransfer });
   expect(stage.textContent).toContain("Finding 노드로 추가됩니다");
 
   fireEvent.drop(stage, { dataTransfer });
-  expect(onDropFile).toHaveBeenCalledWith({ runId: 12, path: "/home/bob/flag.txt" });
+  expect(onDropFile).toHaveBeenCalledWith(
+    { kind: "post-exploitation", runId: 12, path: "/home/bob/flag.txt" });
   expect(stage.textContent).not.toContain("Finding 노드로 추가됩니다");
 });
 

@@ -643,7 +643,13 @@ finding Inspector는 연결된 Evidence마다 다운로드 링크를 보여주�
 멤버 목록을 펼쳐 각각을 새 Evidence+Draft Finding으로 그래프에 다시 올릴 수 있다(`/evidence/
 {id}/archive`, `/evidence/{id}/extract` — 항상 `archive.read()`만 쓰고 엔트리 이름을 파일
 경로로 쓰지 않아 zip-slip에 안전하며, 암호로 보호된 멤버는 목록에서부터 🔒로 표시하고
-추출을 막는다 — Hash Cracking의 zip2john으로 먼저 풀어야 한다). `service-version`/
+추출을 막는다). 암호 보호된 zip은 "Hash Cracking으로 보내기"로 `/evidence/{id}/zip2john`을
+호출해(hash_cracking 모듈의 `run_zip2john`을 재사용, 재업로드 없이 evidence의 디스크 파일을
+직접 읽음) 추출한 해시·모드를 embedded Hash Cracking 패널에 바로 채워 넣는다
+(`CredentialHandoff.hash_mode_id`). archive 멤버(암호 없는 것만)와 FTP 다운로드 목록 항목도
+post-exploitation 파일 트리와 같은 `FILE_DRAG_MIME` 페이로드(`fileTree.tsx`의
+`FileDragPayload` — `kind`로 구분되는 discriminated union)로 Canvas에 드래그해 그래프
+노드로 추가할 수 있다. `service-version`/
 `service-version-udp` technique 실행은 완료 시 `executor.py`가 이미 서비스 행에 제품/버전을
 자동 반영하므로, Inspector도 raw stdout 대신 반영된 값을 바로 요약해 보여준다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
@@ -651,7 +657,7 @@ API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
 `/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST),
-`/evidence/{id}/archive`, `/evidence/{id}/extract`(POST).
+`/evidence/{id}/archive`, `/evidence/{id}/extract`(POST), `/evidence/{id}/zip2john`(POST).
 
 ### 10.15 인프라/공용 파일 (특정 워크스페이스에 속하지 않음)
 

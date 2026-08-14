@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Evidence, Finding, FindingEvidence, Project, Target
 from app.modules.evidence.router import (evidence_archive, evidence_preview,
-    export_evidence, extract_archive_entry, upload_evidence)
+    evidence_zip2john, export_evidence, extract_archive_entry, upload_evidence)
 from app.schemas import ArchiveExtractIn
 
 
@@ -166,22 +166,8 @@ def test_evidence_archive_rejects_a_non_zip_file(tmp_path, monkeypatch):
     assert exc.value.status_code == 415
 
 
-def test_extract_archive_entry_sends_a_password_protected_member_to_hash_cracking_instead_of_500ing(
-        tmp_path, monkeypatch):
-    # zipfile can list a ZipCrypto-encrypted member's name/size without its
-    # password, but .read() on it raises a bare RuntimeError -- this used to
-    # surface as an unhandled 500 (confirmed live against a real vulnerable
-    # app's protected source zip). It should read as a clear next step
-    # instead, since this app already has zip2john (HashCrackingWorkspace)
-    # for exactly this.
+def _protected_zip_evidence(db, project, target, tmp_path):
     import subprocess
-    import app.modules.evidence.router as router
-    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
-    db = database()
-    project = Project(name="Evidence Lab", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
-    db.add(target); db.commit()
     secret_txt = tmp_path / "secret.txt"
     secret_txt.write_text("root:hunter2")
     zip_path = tmp_path / "protected.zip"
@@ -190,11 +176,29 @@ def test_extract_archive_entry_sends_a_password_protected_member_to_hash_crackin
     uploaded = tempfile.SpooledTemporaryFile()
     uploaded.write(zip_path.read_bytes())
     uploaded.seek(0)
-    row = asyncio.run(upload_evidence(
+    return asyncio.run(upload_evidence(
         project_id=project.id, target_id=target.id, title="파일 다운로드: protected.zip",
         kind="attachment", description="", service_id=None,
         source_type="interactive_session", source_id=1, sensitivity="normal",
         include_report=False, file=UploadFile(filename="protected.zip", file=uploaded), db=db))
+
+
+def test_extract_archive_entry_sends_a_password_protected_member_to_hash_cracking_instead_of_500ing(
+        tmp_path, monkeypatch):
+    # zipfile can list a ZipCrypto-encrypted member's name/size without its
+    # password, but .read() on it raises a bare RuntimeError -- this used to
+    # surface as an unhandled 500 (confirmed live against a real vulnerable
+    # app's protected source zip). It should read as a clear next step
+    # instead, since this app already has zip2john (HashCrackingWorkspace)
+    # for exactly this.
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    row = _protected_zip_evidence(db, project, target, tmp_path)
 
     listing = evidence_archive(row.id, db)
     assert listing == {"entries": [{"name": "secret.txt", "size": 12, "encrypted": True}]}
@@ -203,3 +207,45 @@ def test_extract_archive_entry_sends_a_password_protected_member_to_hash_crackin
         extract_archive_entry(row.id, ArchiveExtractIn(entry="secret.txt"), db=db)
     assert exc.value.status_code == 422
     assert "zip2john" in exc.value.detail
+
+
+def test_evidence_zip2john_hands_the_archive_straight_to_hash_cracking_without_a_re_upload(
+        tmp_path, monkeypatch):
+    # No "download it, then re-upload the same file to Hash Cracking" round
+    # trip -- the archive is already on disk from the promote/extract flow,
+    # so this reads it straight off there.
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    row = _protected_zip_evidence(db, project, target, tmp_path)
+
+    result = evidence_zip2john(row.id, db)
+
+    assert result["hash_mode_id"] == "pkzip"
+    assert result["hashes"].startswith("$pkzip$")
+
+
+def test_evidence_zip2john_rejects_a_non_zip_file(tmp_path, monkeypatch):
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    uploaded = tempfile.SpooledTemporaryFile()
+    uploaded.write(b"not a zip")
+    uploaded.seek(0)
+    row = asyncio.run(upload_evidence(
+        project_id=project.id, target_id=target.id, title="notes",
+        kind="attachment", description="", service_id=None,
+        source_type="upload", source_id=None, sensitivity="normal",
+        include_report=False, file=UploadFile(filename="notes.zip", file=uploaded), db=db))
+
+    with pytest.raises(HTTPException) as exc:
+        evidence_zip2john(row.id, db)
+    assert exc.value.status_code == 415

@@ -10,7 +10,8 @@ import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTre
 import FileContentModal from "../../FileContentModal";
 import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
 import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
-import { AddForm, color, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
+import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
+import { AddForm, color, CredentialHandoff, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
 import { S } from "./graphStyles";
@@ -56,6 +57,7 @@ export function Inspector(props: {
   projectId?: number;
   executionContext?: { targetId: number; serviceId?: number } | null;
   onOpenRequest?: (draft: GraphRequestDraft) => void;
+  onOpenHashCrack?: (handoff: CredentialHandoff) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
   onSetDetails?: (id: string, details: { notes?: string; pinned?: boolean }) => void;
@@ -83,8 +85,8 @@ export function Inspector(props: {
   const findingQuery = useQuery({
     queryKey: ["graphFinding", findingId],
     enabled: findingId !== null,
-    queryFn: () => api<{ evidence: Array<{ id: number; evidence_id: number; title: string;
-      kind: string; is_primary: boolean }> }>(`/findings/${findingId}`),
+    queryFn: () => api<{ target_id?: number; evidence: Array<{ id: number; evidence_id: number;
+      title: string; kind: string; is_primary: boolean }> }>(`/findings/${findingId}`),
   });
   // Only findings promoted from a file-tree drag (promote-file always sets
   // this exact kind+is_primary combination) get their content shown here --
@@ -212,6 +214,23 @@ export function Inspector(props: {
       void queryClient.invalidateQueries({queryKey: ["graph"]});
     } catch (reason) {
       setArchiveMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
+  const [zip2johnBusy, setZip2johnBusy] = useState(false);
+  const sendToHashCracking = async (evidenceId: number) => {
+    setArchiveMessage("");
+    setZip2johnBusy(true);
+    try {
+      const result = await api<{ hashes: string; hash_mode_id: string }>(
+        `/evidence/${evidenceId}/zip2john`, {method: "POST"});
+      props.onOpenHashCrack?.({
+        project_id: props.projectId!, target_id: findingQuery.data?.target_id,
+        secret: result.hashes, hash_mode_id: result.hash_mode_id, source_kind: "zip2john",
+      });
+    } catch (reason) {
+      setArchiveMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    } finally {
+      setZip2johnBusy(false);
     }
   };
   const credentialQuery = useQuery({
@@ -620,6 +639,14 @@ export function Inspector(props: {
                   {archiveOpen && (
                     <div style={S.netexecTree}>
                       {archiveMessage && <div style={S.resultNotice}>{archiveMessage}</div>}
+                      {!!archiveQuery.data?.entries.some((entry) => entry.encrypted) && (
+                        <div style={{ padding: "9px 12px" }}>
+                          <button style={S.resultAction} disabled={zip2johnBusy}
+                            onClick={() => void sendToHashCracking(item.evidence_id)}>
+                            {zip2johnBusy ? "zip2john 실행 중…" : "🔓 Hash Cracking으로 보내기 (zip2john)"}
+                          </button>
+                        </div>
+                      )}
                       {archiveQuery.isLoading ? (
                         <div style={S.resultMessage}>압축 목록 불러오는 중…</div>
                       ) : archiveQuery.isError ? (
@@ -630,7 +657,14 @@ export function Inspector(props: {
                         const key = `${item.evidence_id}:${entry.name}`;
                         const done = extractedEntries.has(key);
                         return (
-                          <div key={entry.name} style={S.linkRow}>
+                          <div key={entry.name} style={S.linkRow}
+                            draggable={!entry.encrypted}
+                            onDragStart={entry.encrypted ? undefined : (event) => {
+                              const payload: FileDragPayload = {
+                                kind: "archive", evidenceId: item.evidence_id, entry: entry.name };
+                              event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(payload));
+                              event.dataTransfer.effectAllowed = "copy";
+                            }}>
                             <code style={S.linkCode}>{entry.encrypted && "🔒 "}{entry.name}</code>
                             <span style={S.linkKind}>{(entry.size / 1024).toFixed(1)} KB</span>
                             <button style={S.rowAction} disabled={done || entry.encrypted}
@@ -980,7 +1014,15 @@ export function Inspector(props: {
           <div style={S.captureList}>
             {ftpDownloads.data.files.map((file) => {
               const promoted = promotedDownloads.has(file.filename);
-              return <article key={file.filename} style={S.captureCard}>
+              return <article key={file.filename} style={S.captureCard}
+                draggable={!promoted}
+                onDragStart={promoted ? undefined : (event) => {
+                  const payload: FileDragPayload = {
+                    kind: "ftp-download", sessionId: sessionId!,
+                    filename: file.filename, graphNodeId: n?.id ?? null };
+                  event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(payload));
+                  event.dataTransfer.effectAllowed = "copy";
+                }}>
                 <div style={S.captureHead}><b>{file.filename}</b>
                   <span>{(file.size / 1024).toFixed(1)} KB</span></div>
                 <div style={S.captureActions}>

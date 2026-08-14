@@ -14,6 +14,7 @@ from ...database import get_db
 from ...models import Evidence, ExploitResearch, Finding, FindingEvidence, Project, Service, Target
 from ...schemas import ArchiveExtractIn, EvidenceOut, EvidenceUpdate
 from ..core.support import safe_part
+from ..hash_cracking.router import run_zip2john
 from ..scan_center.service import _safe
 
 router = APIRouter(prefix="/api/evidence", tags=["Evidence"])
@@ -183,6 +184,22 @@ def evidence_archive(ident: int, db: Session = Depends(get_db)):
             if len(entries) >= 500:  # a huge listing is no longer a quick pick
                 break
     return {"entries": entries}
+
+
+@router.post("/{ident}/zip2john")
+def evidence_zip2john(ident: int, db: Session = Depends(get_db)):
+    """Runs zip2john against an evidence row's own archive on disk -- the
+    zip already made the trip into this app once (download or extraction),
+    so cracking its password is a straight handoff into Hash Cracking
+    instead of asking the operator to download the same file again just to
+    re-upload it there by hand."""
+    row = need(db, Evidence, ident)
+    path = Path(row.file_path)
+    if not row.file_path or not path.is_file():
+        raise HTTPException(410, "Evidence file is no longer available")
+    if not zipfile.is_zipfile(path):
+        raise HTTPException(415, "Evidence is not a zip archive")
+    return run_zip2john(path.read_bytes())
 
 
 @router.post("/{ident}/extract", status_code=201)

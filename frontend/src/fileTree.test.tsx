@@ -63,7 +63,8 @@ test("dragging a file sets the shared drag payload with its runId and path", () 
     dataTransfer: {setData, effectAllowed: ""},
   });
   expect(setData).toHaveBeenCalledWith(
-    FILE_DRAG_MIME, JSON.stringify({runId: 7, path: "/home/bob/Desktop/flag.txt"}));
+    FILE_DRAG_MIME, JSON.stringify(
+      {kind: "post-exploitation", runId: 7, path: "/home/bob/Desktop/flag.txt"}));
 });
 
 test("a file isn't draggable without a runId (no drag target to promote it into)", () => {
