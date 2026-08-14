@@ -752,4 +752,58 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             else:
                 ensure_edge(parent, node, "attempted")
 
+        # hash-crack jobs -> technique nodes. No service dimension (cracking
+        # is local, not against a specific network service), so this parents
+        # straight under the host rather than trying parent_of()'s service
+        # lookup. Credential can't itself be a valid `attempted` source (it's
+        # always a structural leaf, see SPEC_GRAPH_TRACKER §1.4) and a job
+        # has no column recording which existing hash it targeted anyway
+        # (free-pasted hashes are supported too) -- so the link to whatever
+        # this job actually cracked is the same "technique yielded credential"
+        # edge Responder's listener already gets, found via the same
+        # source_execution_kind/id provenance pointer _credential_evidence_count
+        # above already reads.
+        for job in db.scalars(
+                select(HashCrackJob).where(HashCrackJob.target_id.in_(target_ids))):
+            if ("hash_crack_job", job.id) in dismissed:
+                continue
+            parent = host_for(job.target_id)
+            if parent is None:
+                continue
+            activity = _runtime_activity(
+                "crack", job.status, job.hash_type_name or job.label or "HASHCAT", job.started_at)
+            existing = index.get(("hash_crack_job", job.id))
+            runtime = {"tool": "hashcat", "hashType": job.hash_type_name or "",
+                       "crackedCount": job.cracked_count, "hashCount": job.hash_count,
+                       "jobStatus": job.status, "exitCode": job.exit_code, "error": job.error or "",
+                       "startedAt": job.started_at.isoformat() if job.started_at else None,
+                       "endedAt": job.ended_at.isoformat() if job.ended_at else None}
+            if existing is not None:
+                existing.meta = _activity_meta(json.dumps(runtime), activity)
+                if ((job.status in {"failed", "cancelled"}
+                     or (job.status == "completed" and job.cracked_count == 0))
+                        and existing.status == "in-progress"):
+                    existing.status = "attempt-failed"
+                node = existing
+            else:
+                meta = _activity_meta(json.dumps(runtime), activity)
+                provenance = json.dumps({"jobRef": {"module": "hash_cracking", "id": job.id},
+                                         "tool": "hashcat"})
+                status = ("attempt-failed"
+                          if job.status in {"failed", "cancelled"} else "in-progress")
+                node = create_node(
+                    db, project_id, "technique",
+                    label=job.label or f"해시 크래킹 · {job.hash_type_name or job.hash_mode}",
+                    status=status, source_ref=_source_ref("hash_cracking", "hash_crack_job", job.id),
+                    meta=meta, provenance=provenance)
+                create_edge(db, project_id, parent.id, node.id, "attempted", status=node.status)
+                index[("hash_crack_job", job.id)] = node
+                created["techniques"] += 1
+            for cred in db.scalars(select(Credential).where(
+                    Credential.source_execution_kind == "hash_crack_job",
+                    Credential.source_execution_id == job.id)):
+                cred_node = index.get(("credential", cred.id))
+                if cred_node is not None:
+                    ensure_edge(node, cred_node, "yielded")
+
     return {"rootNodeId": root.id, "created": created}

@@ -565,6 +565,104 @@ def test_sync_links_a_responder_captured_credential_to_the_listener_that_caught_
     assert len(yielded) == 1
 
 
+def test_sync_projects_hash_crack_jobs_as_technique_nodes():
+    from app.models import HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.20")
+    db.add(t); db.flush()
+    db.add(HashCrackJob(project_id=p.id, target_id=t.id, label="DC01 kerberoast",
+                        hash_mode_id="13100", hash_mode="16800", hash_type_name="Kerberos TGS-REP",
+                        status="running"))
+    db.flush()
+
+    result = service.sync_from_project(db, p.id)
+
+    assert result["created"]["techniques"] == 1
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.label == "DC01 kerberoast"
+    assert tech.status == "in-progress"
+    activity = json.loads(tech.meta)["activity"]
+    assert activity["kind"] == "crack"
+    assert activity["status"] == "running"
+    host = db.query(GraphNode).filter_by(type="host").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", host.id, tech.id) in relations
+
+
+def test_sync_clears_hash_crack_activity_once_the_job_finishes():
+    from app.models import HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.21")
+    db.add(t); db.flush()
+    job = HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="1000",
+                       hash_mode="1000", hash_type_name="NTLM", status="running")
+    db.add(job); db.flush()
+
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert "activity" in json.loads(tech.meta)
+
+    job.status, job.cracked_count = "completed", 3
+    service.sync_from_project(db, p.id)
+    db.refresh(tech)
+    assert "activity" not in json.loads(tech.meta)
+    # a completed run isn't auto-judged a security success just because
+    # something cracked -- same restraint as a completed Execution's exit 0
+    assert tech.status == "in-progress"
+
+
+def test_sync_downgrades_a_hash_crack_job_that_exhausts_its_wordlist_with_no_hits():
+    from app.models import HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.22")
+    db.add(t); db.flush()
+    job = HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="1000",
+                       hash_mode="1000", hash_type_name="NTLM", status="running")
+    db.add(job); db.flush()
+    service.sync_from_project(db, p.id)
+
+    job.status, job.cracked_count = "completed", 0
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.status == "attempt-failed"
+
+
+def test_hash_crack_job_yields_the_credential_it_cracked():
+    from app.models import Credential, HashCrackJob, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.23")
+    db.add(t); db.flush()
+    job = HashCrackJob(project_id=p.id, target_id=t.id, hash_mode_id="1000",
+                       hash_mode="1000", hash_type_name="NTLM", status="completed",
+                       cracked_count=1)
+    db.add(job); db.flush()
+    db.add(Credential(project_id=p.id, target_id=t.id, username="bob", secret="hunter2",
+                      secret_kind="password", source_kind="hash_crack",
+                      source_execution_kind="hash_crack_job", source_execution_id=job.id,
+                      service_names="[]", notes=""))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    cred = db.query(GraphNode).filter_by(type="credential").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("yielded", tech.id, cred.id) in relations
+
+    # idempotent re-run must not duplicate the edge
+    service.sync_from_project(db, p.id)
+    yielded = [e for e in db.query(GraphEdge).all()
+               if e.relation == "yielded" and e.source == tech.id and e.target == cred.id]
+    assert len(yielded) == 1
+
+
 def test_sync_prunes_orphaned_nodes_when_target_deleted():
     from app.models import Service, Target
     db = database()

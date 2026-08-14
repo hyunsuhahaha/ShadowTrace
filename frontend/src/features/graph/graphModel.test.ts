@@ -70,6 +70,9 @@ it("parses only live graph activity metadata", () => {
   expect(getNodeActivity({ meta: JSON.stringify({ activity: {
     kind: "listener", status: "launched", label: "RESPONDER",
   } }) })?.kind).toBe("listener");
+  expect(getNodeActivity({ meta: JSON.stringify({ activity: {
+    kind: "crack", status: "running", label: "NTLM",
+  } }) })?.kind).toBe("crack");
 });
 
 it("routes hash credentials to cracking instead of post-exploitation", () => {

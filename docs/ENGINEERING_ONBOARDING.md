@@ -683,6 +683,18 @@ commands와 같은 형식"이라고 명시) raw stdout 대신 `FileTreeView`로 
 target+service에 이미 실행이 있으면 건너뜀) — 세션 자신의 Inspector가 그 결과를 target+
 service로 찾아와 "폴더·파일 트리" 섹션에 바로 렌더하므로, 그 세션에서 발견된 파일을 보려고
 별도의 "폴더·파일 트리 조회" 실행 노드를 따로 찾아갈 필요가 없다.
+`HashCrackJob`도 Execution/InteractiveSession과 같은 패턴으로 `technique` 노드로 동기화된다
+(`sync_from_project`) — service 차원이 없어(크래킹은 로컬 실행) host에 바로 `attempted`로
+붙고, `Credential.source_execution_kind=="hash_crack_job"`인 credential이 있으면 그
+credential 노드로 `yielded` 엣지를 긋는다(Responder 리스너가 캡처한 credential을 잇는 것과
+동일 패턴 — credential은 SPEC_GRAPH_TRACKER §1.4상 항상 구조적 리프라 `attempted`의 source가
+될 수 없고, job에도 애초에 "어떤 기존 hash를 크래킹 중인지" 연결하는 컬럼이 없다). 완료돼도
+`cracked_count>0`이면 자동으로 성공 판정하지 않는다(다른 technique와 같은 원칙) — 단
+워드리스트를 다 써도 하나도 못 깨면(`completed`+`cracked_count==0`) `attempt-failed`로
+자동 강등한다. 프런트엔드 `GraphCanvas.tsx`의 activity 신호는 `scan`/`execution`/`listener`
+3종에 `crack`이 추가돼 4종이며, `crack`은 다른 kind가 공유하는 breathing-ring 펄스나
+회전 sweep을 그리지 않고 대신 노드 주위로 이진수(0/1)가 위에서 아래로 흘러내리는 전용
+"디코딩" 이펙트를 그린다(보라색 `#b388ff`로 다른 세 신호와 구분).
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),

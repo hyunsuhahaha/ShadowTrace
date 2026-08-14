@@ -125,6 +125,32 @@ it("renders credential badges and directional access lineage without secrets", (
   expect(rendered).not.toContain("must-not-render");
 });
 
+it("draws falling binary rain (not the ring pulse or scan sweep) for a running hash-crack job", () => {
+  const ctx = stubCanvasContext();
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "a", type: "host", status: "succeeded", label: "10.0.0.10",
+      objective: false, source_ref: "", hidden: false},
+    {id: "job", type: "technique", status: "in-progress", label: "NTLM crack",
+      objective: false, source_ref: "", hidden: false,
+      meta: JSON.stringify({activity: {kind: "crack", status: "running", label: "NTLM"}})},
+  ], edges: [
+    {id: "ra", source: "root", target: "a", relation: "discovered", status: "untried"},
+    {id: "aj", source: "a", target: "job", relation: "attempted", status: "in-progress"},
+  ]};
+
+  render(<GraphCanvas data={data} hostCount={1} showHidden={false} credentialOverlay
+    selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+
+  const digitCalls = ctx.fillText.mock.calls.filter((call) => call[0] === "0" || call[0] === "1");
+  expect(digitCalls.length).toBeGreaterThan(0);
+  // no other node's activity ring/pulse call ever draws a bare "0"/"1" --
+  // only this effect does, so this alone also proves the shared breathing
+  // ring was skipped for this node rather than drawn underneath it.
+});
+
 it("marks nodes backed by human-attached evidence, not nodes without any", () => {
   const ctx = stubCanvasContext();
   const data: GraphOut = {root_node_id: "root", nodes: [

@@ -97,31 +97,37 @@ export function GraphCanvas(props: {
       levels.set(depth, [...(levels.get(depth) || []), node]);
     });
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // Three activity languages, one per meaning: green = actively searching
+    // Four activity languages, one per meaning: green = actively searching
     // (scan output still streaming, outcome unknown), red = armed and
     // waiting on something external (Responder), blue = already connected
-    // and settled -- reuses the app's existing anchor/selection blue rather
-    // than inventing a fourth hue.
+    // and settled (reuses the app's existing anchor/selection blue rather
+    // than inventing a hue), violet = hashcat grinding a wordlist -- distinct
+    // from the other three so it doesn't read as "just another scan."
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
     const connectedSignal = "#6aa9ff";
-    type SignalKind = "scan" | "listener" | "connected";
+    const crackSignal = "#b388ff";
+    type SignalKind = "scan" | "listener" | "connected" | "crack";
     const SIGNAL_RGB: Record<SignalKind, string> = {
-      scan: "89,245,154", listener: "255,77,103", connected: "106,169,255",
+      scan: "89,245,154", listener: "255,77,103", connected: "106,169,255", crack: "179,136,255",
     };
     const signalKindOf = (a: NodeActivity | null): SignalKind | null => !a ? null
-      : a.kind === "listener" ? "listener" : a.status === "launched" ? "connected" : "scan";
+      : a.kind === "listener" ? "listener" : a.kind === "crack" ? "crack"
+      : a.status === "launched" ? "connected" : "scan";
     const signalHex = (kind: SignalKind) =>
-      kind === "listener" ? listenerSignal : kind === "connected" ? connectedSignal : signal;
+      kind === "listener" ? listenerSignal : kind === "connected" ? connectedSignal
+      : kind === "crack" ? crackSignal : signal;
     const signalRgba = (kind: SignalKind, alpha: number) => `rgba(${SIGNAL_RGB[kind]},${alpha})`;
     const FILL_BG: Record<SignalKind, string> = {
-      scan: "#10251a", listener: "#2a1016", connected: "#0e1a2a",
+      scan: "#10251a", listener: "#2a1016", connected: "#0e1a2a", crack: "#1c1430",
     };
     const BADGE_BG: Record<SignalKind, string> = {
       scan: "rgba(5,18,12,.9)", listener: "rgba(25,5,10,.92)", connected: "rgba(6,14,26,.92)",
+      crack: "rgba(20,12,30,.92)",
     };
     const signalLabel = (a: NodeActivity, kind: SignalKind) => kind === "listener" ? "LISTENING"
-      : kind === "connected" ? "CONNECTED" : a.kind === "scan" ? "SCANNING" : a.status.toUpperCase();
+      : kind === "connected" ? "CONNECTED" : kind === "crack" ? "CRACKING"
+      : a.kind === "scan" ? "SCANNING" : a.status.toUpperCase();
 
     const resize = () => {
       const r = canvas.getBoundingClientRect(); W = r.width; H = r.height;
@@ -415,15 +421,48 @@ export function GraphCanvas(props: {
           const phase = (now % 2400) / 2400;
           const kind = signalKind!;
           ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 18;
-          for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
-            const p = reduceMotion ? .38 : (phase + i / 3) % 1;
-            ctx.beginPath(); ctx.arc(n.x, n.y, r + 14 + p * 52, 0, Math.PI * 2);
-            const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
-            ctx.strokeStyle = signalRgba(kind, kind === "listener" ? alpha * 1.15 : alpha);
-            ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
-            ctx.stroke();
+          if (kind !== "crack") {
+            for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
+              const p = reduceMotion ? .38 : (phase + i / 3) % 1;
+              ctx.beginPath(); ctx.arc(n.x, n.y, r + 14 + p * 52, 0, Math.PI * 2);
+              const alpha = (reduceMotion ? .38 : (1 - p) * .42) * fade;
+              ctx.strokeStyle = signalRgba(kind, kind === "listener" ? alpha * 1.15 : alpha);
+              ctx.lineWidth = reduceMotion ? 1.5 : Math.max(.5, 1.8 - p);
+              ctx.stroke();
+            }
           }
-          if (!reduceMotion && activity.status !== "queued") {
+          if (kind === "crack") {
+            // No breathing-ring pulse and no rotating sweep here -- hashcat
+            // grinding a wordlist reads as falling matrix-style binary rain
+            // instead, the one effect this node gets. Each column trails
+            // several digits behind its head (dimming toward the tail) so
+            // it reads as a dense stream, not a few scattered dots.
+            const DIGITS = "01";
+            const columns = 8, trail = 3, step = 8, band = r + 34;
+            let seed = 0;
+            for (let i = 0; i < n.id.length; i++) seed = (seed * 31 + n.id.charCodeAt(i)) | 0;
+            ctx.font = "600 9px ui-monospace,monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            for (let c = 0; c < columns; c++) {
+              const colX = n.x + (c - (columns - 1) / 2) * 7.5;
+              const colPhase = (seed + c * 733) % 997;
+              const headPos = reduceMotion ? .5
+                : (((now * .06) + colPhase) % (band * 2)) / (band * 2);
+              const headY = n.y - band + headPos * band * 2;
+              for (let t = 0; t <= trail; t++) {
+                const ty = headY - t * step;
+                const relPos = (ty - (n.y - band)) / (band * 2);
+                if (relPos < 0 || relPos > 1) continue;
+                const edgeFade = Math.min(1, Math.min(relPos, 1 - relPos) * 4);
+                const tailFade = 1 - t / (trail + 1);
+                const tick = reduceMotion ? 0 : Math.floor(now / 160) + c;
+                let h = (seed + c * 97 + t * 41 + tick * 2654435761) | 0;
+                h = (h ^ (h >>> 13)) | 0;
+                ctx.fillStyle = signalRgba("crack", (.2 + .6 * edgeFade) * tailFade * fade);
+                ctx.fillText(DIGITS[Math.abs(h) % 2], colX, ty);
+              }
+            }
+          } else if (!reduceMotion && activity.status !== "queued") {
             const angle = now / 720;
             ctx.beginPath(); ctx.moveTo(n.x, n.y);
             ctx.arc(n.x, n.y, r + 41, angle - .42, angle);
