@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GraphCanvas } from "./GraphCanvas";
 import type { GraphOut } from "./graphModel";
+import { FILE_DRAG_MIME } from "../../fileTree";
+
+// jsdom's DataTransfer doesn't implement setData/getData usefully across
+// dragstart/drop, so tests build the minimal fake the component actually
+// reads: `types` (dragover's "do I accept this?" check) and `getData`.
+function fileDragTransfer(payload: {runId: number; path: string} | null) {
+  const data = payload ? JSON.stringify(payload) : "";
+  return {
+    types: payload ? [FILE_DRAG_MIME] : ["text/plain"],
+    getData: () => data,
+    dropEffect: "none",
+  };
+}
 
 // jsdom has no real Canvas 2D implementation, so the render loop's drawing
 // calls need a no-op stub -- this only proves the component mounts/unmounts
@@ -154,4 +167,35 @@ it("accepts an objective path to highlight without throwing", () => {
     objectivePath={{ nodeIds: ["root", "host", "goal"], edgeIds: ["rh", "hg"] }} />);
   expect(document.querySelector("canvas")).toBeTruthy();
   unmount();
+});
+
+it("dropping a dragged tree file calls onDropFile with its runId and path", () => {
+  const onDropFile = vi.fn();
+  const { container } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
+    credentialOverlay selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
+  const stage = container.firstElementChild as HTMLElement;
+  const dataTransfer = fileDragTransfer({ runId: 12, path: "/home/bob/flag.txt" });
+
+  fireEvent.dragOver(stage, { dataTransfer });
+  expect(stage.textContent).toContain("Finding 노드로 추가됩니다");
+
+  fireEvent.drop(stage, { dataTransfer });
+  expect(onDropFile).toHaveBeenCalledWith({ runId: 12, path: "/home/bob/flag.txt" });
+  expect(stage.textContent).not.toContain("Finding 노드로 추가됩니다");
+});
+
+it("ignores a drop that isn't a tree-file drag", () => {
+  const onDropFile = vi.fn();
+  const { container } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
+    credentialOverlay selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
+  const stage = container.firstElementChild as HTMLElement;
+  const dataTransfer = fileDragTransfer(null);
+
+  fireEvent.dragOver(stage, { dataTransfer });
+  expect(stage.textContent).not.toContain("Finding 노드로 추가됩니다");
+
+  fireEvent.drop(stage, { dataTransfer });
+  expect(onDropFile).not.toHaveBeenCalled();
 });

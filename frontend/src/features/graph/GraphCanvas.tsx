@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, evidenceCount, filterActivityFeed,
   getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
   initialGraphPosition, initialGraphPositionNearParent, NodeActivity, nodeStatusReason,
   nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
+import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
 
 export function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean; credentialOverlay: boolean;
@@ -13,6 +14,7 @@ export function GraphCanvas(props: {
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
   onContext: (id: string, x: number, y: number) => void;
   objectivePath?: ObjectivePath | null;
+  onDropFile?: (payload: FileDragPayload) => void;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -583,14 +585,46 @@ export function GraphCanvas(props: {
     props.credentialOverlay, props.layoutMode]);
 
   const activity = buildActivityFeed(data);
+  const [fileDragOver, setFileDragOver] = useState(false);
+  // The graph's own layout is a force-directed sim pulling every node to a
+  // ring by type/stage (see Sim above) -- there's no meaningful "place it
+  // at this pixel" position to honor, so a drop anywhere just triggers the
+  // same promote-to-finding as the file modal's button; only the file's own
+  // drag data decides what happens, not where on the canvas it lands.
+  const acceptsFileDrag = (event: ReactDragEvent) =>
+    event.dataTransfer.types.includes(FILE_DRAG_MIME);
 
   return (
-    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}
+      onDragOver={(event) => {
+        if (!props.onDropFile || !acceptsFileDrag(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (!fileDragOver) setFileDragOver(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+        setFileDragOver(false);
+      }}
+      onDrop={(event) => {
+        setFileDragOver(false);
+        if (!props.onDropFile || !acceptsFileDrag(event)) return;
+        event.preventDefault();
+        const raw = event.dataTransfer.getData(FILE_DRAG_MIME);
+        if (!raw) return;
+        try { props.onDropFile(JSON.parse(raw) as FileDragPayload); }
+        catch { /* malformed payload -- ignore */ }
+      }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <ActivityStream items={activity} onSelect={props.onActivitySelect} />
       <div style={S.hint}>
         초록 신호 = 실행 중 · 파란 신호 = 연결됨 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
       </div>
+      {fileDragOver && (
+        <div style={S.fileDropOverlay} aria-hidden="true">
+          여기에 놓으면 Finding 노드로 추가됩니다
+        </div>
+      )}
     </div>
   );
 }
@@ -674,7 +708,8 @@ function ActivityStream({ items, onSelect }: { items: ActivityItem[]; onSelect: 
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return <section ref={ref} style={{ ...S.activityStream, ...positioned,
-    minWidth: panel.collapsed ? 184 : 360,
+    minWidth: panel.collapsed ? 184 : 0,
+    maxWidth: "calc(100% - 28px)", maxHeight: "calc(100% - 28px)",
     width: panel.collapsed ? 184 : panel.width,
     height: panel.collapsed ? 34 : panel.height,
   }} aria-label="최근 활동">

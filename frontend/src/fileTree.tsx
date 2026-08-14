@@ -1,5 +1,10 @@
 import { useState } from "react";
 
+// Shared with GraphCanvas.tsx's drop handler, so a file dragged out of the
+// tree and a graph waiting to accept a drop agree on what payload to expect.
+export const FILE_DRAG_MIME = "application/x-oscp-tree-file";
+export type FileDragPayload = { runId: number; path: string };
+
 // Shared by every "show a remote host's directory structure automatically"
 // feature (post-exploitation file listings, SMB share spidering, NFS
 // exports, ...) so each one only has to turn its own protocol-specific
@@ -94,9 +99,9 @@ function FileIcon() {
 // just walks the already-filtered subtree. A query also force-opens every
 // <details> on the way down, since a match three folders deep is useless
 // hidden behind three collapsed twisties.
-export function FileTreeView({ node, depth = 0, searchable, onOpenFile, query = "" }: {
+export function FileTreeView({ node, depth = 0, searchable, onOpenFile, runId, query = "" }: {
   node: TreeNode; depth?: number; searchable?: boolean;
-  onOpenFile?: (path: string) => void; query?: string;
+  onOpenFile?: (path: string) => void; runId?: number; query?: string;
 }) {
   const [ownQuery, setOwnQuery] = useState("");
   const activeQuery = depth === 0 && searchable ? ownQuery : query;
@@ -121,10 +126,16 @@ export function FileTreeView({ node, depth = 0, searchable, onOpenFile, query = 
                   {child.name}
                 </summary>
                 <FileTreeView node={child} depth={depth + 1}
-                  onOpenFile={onOpenFile} query={activeQuery} />
+                  onOpenFile={onOpenFile} runId={runId} query={activeQuery} />
               </details>
             ) : onOpenFile ? (
               <button type="button" className="fileTreeFile fileTreeFile--clickable"
+                draggable={runId != null}
+                onDragStart={runId == null ? undefined : (event) => {
+                  const payload: FileDragPayload = { runId, path: child.path };
+                  event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(payload));
+                  event.dataTransfer.effectAllowed = "copy";
+                }}
                 onClick={() => onOpenFile(child.path)}>
                 <FileIcon />
                 {child.name}

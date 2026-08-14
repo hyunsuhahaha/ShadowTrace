@@ -63,6 +63,7 @@ export default function GraphWorkspace() {
   const [hashPanel, setHashPanel] = useState<CredentialHandoff | null>(null);
   const [postPanel, setPostPanel] = useState<CredentialHandoff | null>(null);
   const [reportPanel, setReportPanel] = useState(false);
+  const [dropFileError, setDropFileError] = useState("");
   useEffect(() => {
     setWebRequest(null);
     setHashPanel(null);
@@ -360,6 +361,23 @@ export default function GraphWorkspace() {
     return [];
   };
 
+  // Same effect as the file-content modal's "그래프에 남기기" button --
+  // dragging onto the canvas is just an alternative trigger for it, not a
+  // second code path (the graph's force-directed layout has no meaningful
+  // "drop position" to honor, see GraphCanvas's own comment on this).
+  const dropFile = async (payload: {runId: number; path: string}) => {
+    setDropFileError("");
+    try {
+      await api(`/post-exploitation/${payload.runId}/promote-file`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: payload.path}),
+      });
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setDropFileError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
   const noProject = !projectId;
   if (!noProject && graph.isLoading) return <Empty text="그래프 동기화 중…" />;
   if (!noProject && graph.isError)
@@ -466,13 +484,20 @@ export default function GraphWorkspace() {
         <button style={S.graphControl} onClick={() => setQueueOpen((value) => !value)}>작업 큐</button>
         <span style={S.filterCount}>{visibleData.nodes.length}/{data.nodes.length} nodes</span>
       </div>
+      {dropFileError && (
+        <div style={S.dropFileError}>
+          파일을 Finding으로 추가하지 못했습니다: {dropFileError}
+          <button style={S.resultAction} onClick={() => setDropFileError("")}>✕</button>
+        </div>
+      )}
       <div style={S.stage}>
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
-            onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }} />
+            onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
+            onDropFile={(payload) => void dropFile(payload)} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}

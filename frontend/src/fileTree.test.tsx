@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { buildFileTree, FileTreeView, filterTree, parseTaggedTreeLines } from "./fileTree";
+import {
+  buildFileTree, FILE_DRAG_MIME, FileTreeView, filterTree, parseTaggedTreeLines,
+} from "./fileTree";
 
 afterEach(() => cleanup());
 
@@ -45,6 +47,33 @@ test("clicking a file in the tree opens it via onOpenFile with its full path", (
   fireEvent.click(screen.getByText("Desktop"));
   fireEvent.click(screen.getByText("flag.txt"));
   expect(onOpenFile).toHaveBeenCalledWith("/home/bob/Desktop/flag.txt");
+});
+
+test("dragging a file sets the shared drag payload with its runId and path", () => {
+  const tree = buildFileTree(parseTaggedTreeLines(
+    "D|/home\nD|/home/bob\nD|/home/bob/Desktop\nF|/home/bob/Desktop/flag.txt"
+  ), "/");
+  render(<FileTreeView node={tree} onOpenFile={vi.fn()} runId={7} />);
+  fireEvent.click(screen.getByText("home"));
+  fireEvent.click(screen.getByText("bob"));
+  fireEvent.click(screen.getByText("Desktop"));
+
+  const setData = vi.fn();
+  fireEvent.dragStart(screen.getByText("flag.txt"), {
+    dataTransfer: {setData, effectAllowed: ""},
+  });
+  expect(setData).toHaveBeenCalledWith(
+    FILE_DRAG_MIME, JSON.stringify({runId: 7, path: "/home/bob/Desktop/flag.txt"}));
+});
+
+test("a file isn't draggable without a runId (no drag target to promote it into)", () => {
+  const tree = buildFileTree(parseTaggedTreeLines(
+    "D|/home\nD|/home/bob\nF|/home/bob/flag.txt"
+  ), "/");
+  render(<FileTreeView node={tree} onOpenFile={vi.fn()} />);
+  fireEvent.click(screen.getByText("home"));
+  fireEvent.click(screen.getByText("bob"));
+  expect(screen.getByText("flag.txt").closest("button")!.draggable).toBe(false);
 });
 
 test("searching auto-expands folders down to the match", () => {

@@ -332,7 +332,8 @@ export function Inspector(props: {
             </span>
           </div>
           {fileTreeOutput.isLoading ? <div style={S.resultMessage}>트리 불러오는 중…</div>
-            : <FileTreeView searchable onOpenFile={setOpenFilePath} node={buildFileTree(
+            : <FileTreeView searchable onOpenFile={setOpenFilePath} runId={latestFileTree.id}
+              node={buildFileTree(
               parseTaggedTreeLines(fileTreeOutput.data?.stdout || ""),
               latestFileTree.command_id.startsWith("windows_file_tree") ? "\\" : "/")} />}
         </div>}
