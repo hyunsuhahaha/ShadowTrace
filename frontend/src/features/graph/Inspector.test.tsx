@@ -246,3 +246,92 @@ it("restores a NetExec outcome and the latest saved file tree on its graph node"
   expect(await screen.findByText("flag.txt")).toBeTruthy();
   expect(screen.getByText(/저장된 실행 #51/)).toBeTruthy();
 });
+
+it("offers SSH/MSSQL/RDP connect actions for their own NetExec checks, not just WinRM", async () => {
+  // Confirms the graph Inspector's NetExec panel generalized to every
+  // protocol NetexecOutcome supports (App.tsx's own copy already did),
+  // instead of only ever having WinRM's "evil-winrm 명령 준비하기" wired up.
+  const posted: Array<{url: string; body: unknown}> = [];
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/70/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "[+] MSSQL 10.129.7.10 sa:hunter2 (Pwn3d!)", stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 12, project_id: 3, ip: "10.129.7.10" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/12/services")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 22, port: 1433, name: "ms-sql-s" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST") {
+      posted.push({url, body: JSON.parse(init.body as string)});
+      return Promise.resolve(new Response(JSON.stringify({ id: 77 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 12, serviceId: 22 }} node={{
+      id: "execution-70", type: "technique", status: "succeeded",
+      label: "MS SQL 자격증명 확인 (NetExec)", objective: false, hidden: false,
+      meta: JSON.stringify({ tool: "mssql-credential-check-netexec",
+        command: "nxc mssql 10.129.7.10 --port 1433 -u sa -p hunter2" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 70 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("MS SQL 인증 성공")).toBeTruthy();
+  fireEvent.click(screen.getByText("impacket-mssqlclient 명령 준비하기"));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  expect(posted[0].body).toEqual({
+    target_id: 12, service_id: 22,
+    command: "impacket-mssqlclient 'sa:hunter2@10.129.7.10' -port 1433",
+  });
+});
+
+it("offers to open redis-cli once redis-unauthenticated-info confirms no AUTH is needed", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/15/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "PORT     STATE SERVICE\n6379/tcp open  redis\n| redis-info: \n|   Version: 5.0.7\n"
+        + "redis_version:5.0.7\n",
+      stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 6, project_id: 7, ip: "10.129.6.199" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/6/services")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 16, port: 6379, name: "redis" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST") {
+      expect(JSON.parse(init.body as string)).toEqual({
+        target_id: 6, service_id: 16, command: "redis-cli -h 10.129.6.199 -p 6379",
+      });
+      return Promise.resolve(new Response(JSON.stringify({ id: 99 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 6, serviceId: 16 }} node={{
+      id: "execution-15", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "Redis 무인증 접근 확인",
+      meta: JSON.stringify({ tool: "redis-unauthenticated-info" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 15 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("인증 없이 접속 가능")).toBeTruthy();
+  fireEvent.click(screen.getByText("redis-cli로 접속하기"));
+
+  await waitFor(() => expect(screen.getByText("PTY #99")).toBeTruthy());
+});

@@ -17,7 +17,13 @@ type Actions = {
 export default function NetexecOutcome({protocol, result, username, domain, target,
   service, evidenceMsg, actions, fileTree}: {
   protocol: NetexecProtocol; result?: RunState; username: string; domain: string;
-  target?: Target; service?: Service; evidenceMsg: string; actions: Actions;
+  // Narrowed to what this component actually reads (target.ip, service.port/
+  // name) rather than the full Target/Service shape -- the graph Inspector's
+  // own target/service queries only fetch a handful of fields, and a Pick<>
+  // here lets it pass those straight through instead of needing to fake up
+  // full objects just to satisfy this prop type.
+  target?: Pick<Target, "ip">; service?: Pick<Service, "port" | "name">;
+  evidenceMsg: string; actions: Actions;
   fileTree?: AutoFileTreeState;
 }) {
   const success = result?.status === "completed"

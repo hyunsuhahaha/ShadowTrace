@@ -8,6 +8,8 @@ import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
 import FileContentModal from "../../FileContentModal";
+import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
+import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
 import { AddForm, color, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
@@ -91,7 +93,7 @@ export function Inspector(props: {
   useEffect(() => setCredentialRevealed(false), [credentialId]);
   const [captureMessage, setCaptureMessage] = useState("");
   const [retrySession, setRetrySession] = useState<{id: number; command: string} | null>(null);
-  const [winrmSession, setWinrmSession] = useState<
+  const [manualSession, setManualSession] = useState<
     {id: number; title: string; initialInput?: string} | null
   >(null);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
@@ -134,7 +136,17 @@ export function Inspector(props: {
       return rows.find((item) => item.id === credentialId) || null;
     },
   });
-  const isNetexecCheck = /credential-check-netexec$/i.test(tool || "");
+  // Every NetExec single-account check template renders the exact same
+  // "nxc {protocol} {host} --port {port} -u {username} -p {password}" shape
+  // (services.yaml), so the protocol and the account it was tried with are
+  // both recoverable straight from the command string this node already
+  // has -- no separate credStore needed the way App.tsx's copy of this same
+  // panel has, since this view has no per-workspace credential input of its
+  // own to draw from.
+  const netexecProtocol = /^(smb|ssh|winrm|rdp|mssql|ldap)-credential-check-netexec$/
+    .exec(tool || "")?.[1] as NetexecProtocol | undefined;
+  const isNetexecCheck = !!netexecProtocol;
+  const isRedisUnauthCheck = tool === "redis-unauthenticated-info";
   const fileTreeRuns = useQuery({
     queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
     enabled: isNetexecCheck && !!props.executionContext?.targetId,
@@ -157,6 +169,8 @@ export function Inspector(props: {
   const command = (() => {
     try { return JSON.parse(n?.meta || "{}").command || ""; } catch { return ""; }
   })();
+  const netexecUsername = /-u\s+(\S+)/.exec(command)?.[1] || "";
+  const netexecPassword = /-p\s+(\S+)/.exec(command)?.[1] || "";
   const base = target && service
     ? `${service.tls || /https|ssl/i.test(service.name) ? "https" : "http"}`
       + `://${target.hostname || target.ip}:${service.port}/`
@@ -237,10 +251,163 @@ export function Inspector(props: {
     const session = await api<{id: number}>("/interactive-sessions/manual", {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
     });
-    setWinrmSession(hashMatch
+    setManualSession(hashMatch
       ? {id: session.id, title: `${base} -H … · 검토 후 Enter`,
         initialInput: `${base} -H ${hashMatch[1]}`}
       : {id: session.id, title: base, initialInput: `${passMatch![1]}\r`});
+  };
+  // redis-unauthenticated-info already proved INFO runs with no AUTH -- one
+  // click opens the same interactive client a manual "redis-client" catalog
+  // run would, instead of the operator having to go find it themselves.
+  const openManualSession = async (cmd: string, title?: string) => {
+    if (!props.executionContext) return;
+    const session = await api<{id: number}>("/interactive-sessions/manual", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        target_id: props.executionContext.targetId,
+        service_id: props.executionContext.serviceId || null,
+        command: cmd,
+      }),
+    });
+    setManualSession({id: session.id, title: title || cmd});
+  };
+  const openRedisShell = async () => {
+    if (!target) return;
+    await openManualSession(`redis-cli -h ${target.ip} -p ${service?.port || 6379}`);
+  };
+  // Same shape as App.tsx's own copy of each of these (openSshShell,
+  // openMssqlShell, openPsexecShell, openLateralShell, copyXfreerdpCommand,
+  // openHashcatShell, runLookupsid, runMssqlRidBrute, captureEvidence,
+  // promoteToFinding) -- this view has no credStore of its own, so username/
+  // password come from the check command itself (see netexecUsername/
+  // netexecPassword above) rather than a separately-typed form field.
+  const openSsh = async () => {
+    if (!target || !service || !netexecUsername) return;
+    await openManualSession(`ssh ${shellQuote(`${netexecUsername}@${target.ip}`)} -p ${service.port}`);
+  };
+  const openMssql = async () => {
+    if (!target || !service || !netexecUsername) return;
+    const auth = impacketAuthArgs("", netexecUsername, netexecPassword, target.ip);
+    await openManualSession(`impacket-mssqlclient ${auth} -port ${service.port}`);
+  };
+  const openPsexec = async () => {
+    if (!target || !netexecUsername) return;
+    const auth = impacketAuthArgs("", netexecUsername, netexecPassword, target.ip);
+    await openManualSession(`impacket-psexec ${auth}`);
+  };
+  const openLateral = async (kind: "wmiexec" | "smbexec" | "atexec") => {
+    if (!target || !netexecUsername) return;
+    const auth = impacketAuthArgs("", netexecUsername, netexecPassword, target.ip);
+    await openManualSession(`impacket-${kind} ${auth}`);
+  };
+  const copyRdp = async () => {
+    if (!target || !netexecUsername) return;
+    await navigator.clipboard.writeText(`xfreerdp /v:${target.ip} /u:${shellQuote(netexecUsername)}` +
+      ` /p:${shellQuote(netexecPassword)} /cert:ignore`);
+    setCaptureMessage("xfreerdp 명령을 클립보드로 복사했습니다 — RDP는 GUI라 별도 터미널에서 붙여넣어 실행하세요");
+  };
+  const openHashcat = () => {
+    if (!props.executionContext) return;
+    localStorage.setItem("oscp-workspace-hash-target", String(props.executionContext.targetId));
+    localStorage.setItem("oscp-workspace-hash-mode", "kerberoast");
+    location.hash = "hash-cracking";
+  };
+  // lookupsid/rid-brute are recon follow-ups, not a "connect" action, so
+  // unlike the shell-opening actions above this only has to fire the
+  // execution and let the graph's own auto-refresh pick up the new
+  // technique node -- no need to duplicate App.tsx's live-output tracking
+  // (runStates/EventSource) here just for this.
+  const runFollowUpExecution = async (
+    templateId: string, variables: Record<string, string>, label: string, targetLevel: boolean,
+  ) => {
+    if (!props.executionContext) return;
+    try {
+      const e = await api<{id: number}>("/executions", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          target_id: props.executionContext.targetId,
+          service_id: targetLevel ? null : (props.executionContext.serviceId || null),
+          template_id: templateId, variables, run_as_root: false,
+          output_filename: "", command_override: null,
+        }),
+      });
+      dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+      setCaptureMessage(`${label} 실행 요청됨 (#${e.id}) — 그래프에서 곧 새 노드로 보입니다`);
+    } catch (reason) {
+      setCaptureMessage(`${label} 실행 실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
+  const openLookupsid = () => {
+    if (!netexecUsername) return;
+    void runFollowUpExecution("ad-lookupsid-impacket",
+      {username: netexecUsername, password: netexecPassword, domain: "WORKGROUP"},
+      "SID 순환 사용자 열거", true);
+  };
+  const openMssqlRidBrute = () => {
+    if (!netexecUsername) return;
+    void runFollowUpExecution("mssql-rid-brute-netexec",
+      {username: netexecUsername, password: netexecPassword}, "RID 순환 사용자 열거", false);
+  };
+  const netexecCaptureEvidence = async (
+    execution: {id: number; stdout?: string; stderr?: string}, title: string,
+  ): Promise<number | undefined> => {
+    if (!props.projectId || !props.executionContext) return undefined;
+    setCaptureMessage("");
+    try {
+      const body = `$ ${command}\n\n${execution.stdout || ""}` +
+        `${execution.stderr ? `\n[stderr]\n${execution.stderr}` : ""}`;
+      const data = new FormData();
+      data.append("project_id", String(props.projectId));
+      data.append("target_id", String(props.executionContext.targetId));
+      if (props.executionContext.serviceId)
+        data.append("service_id", String(props.executionContext.serviceId));
+      data.append("title", title);
+      data.append("description", `자동 캡처 · ${new Date().toLocaleString()}`);
+      data.append("kind", "command_output");
+      data.append("source_type", "command_output");
+      data.append("source_id", String(execution.id));
+      data.append("sensitivity", "normal");
+      data.append("file", new File([body], `execution-${execution.id}.txt`, {type: "text/plain"}));
+      const response = await fetch("/api/evidence/upload", {method: "POST", body: data});
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.detail || response.statusText);
+      setCaptureMessage(`Evidence로 저장됨: ${title}`);
+      return created.id as number;
+    } catch (reason) {
+      setCaptureMessage(`Evidence 저장 실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+      return undefined;
+    }
+  };
+  const netexecPromoteFinding = async (
+    execution: {id: number; stdout?: string; stderr?: string}, title: string, reproduction: string,
+  ) => {
+    const evidenceId = await netexecCaptureEvidence(execution, title);
+    if (!evidenceId || !props.projectId || !props.executionContext) return;
+    try {
+      await api("/findings", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          project_id: props.projectId, target_id: props.executionContext.targetId,
+          service_id: props.executionContext.serviceId,
+          title, status: "Draft", reproduction_steps: reproduction,
+          evidence: [{evidence_id: evidenceId, is_primary: true}],
+        }),
+      });
+      setCaptureMessage(`Finding(Draft)으로 승격됨: ${title}`);
+    } catch (reason) {
+      setCaptureMessage(`Finding 승격 실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
+  const netexecActions = {
+    openPsexec: () => void openPsexec(), openLateral: (kind: "wmiexec" | "smbexec" | "atexec") =>
+      void openLateral(kind),
+    openSsh: () => void openSsh(), openWinrm: () => void openEvilWinrm(),
+    copyRdp: () => void copyRdp(), openMssql: () => void openMssql(), openHashcat,
+    openLookupsid, openMssqlRidBrute,
+    captureEvidence: (execution: {id: number; stdout?: string; stderr?: string}, title: string) =>
+      void netexecCaptureEvidence(execution, title),
+    promoteFinding: (execution: {id: number; stdout?: string; stderr?: string},
+      title: string, description: string) => void netexecPromoteFinding(execution, title, description),
   };
   if (!n)
     return <aside style={S.inspector}>
@@ -351,12 +518,16 @@ export function Inspector(props: {
             <dd style={{ margin: 0, color: "#9eb5a8", fontSize: 10 }}>{command || n.label}</dd>
           </div>
         </dl>
-        {/^\[\+\]|pwn3d/im.test(executionOutput.data?.stdout || "") && /\bwinrm\b/i.test(command)
-          && <div style={{ padding: "0 12px 12px" }}>
-            <button style={S.resultAction} onClick={() => void openEvilWinrm()}>
-              evil-winrm 명령 준비하기
-            </button>
-          </div>}
+        {netexecProtocol && executionId !== null && (
+          <div style={{ padding: "0 12px 12px" }}>
+            <NetexecOutcome protocol={netexecProtocol}
+              result={{id: executionId, templateId: tool || "", name: n.label,
+                status: executionOutput.data?.status === "completed" ? "completed" : "running",
+                startedAt: 0, stdout: executionOutput.data?.stdout, stderr: executionOutput.data?.stderr}}
+              username={netexecUsername} domain="" target={target} service={service}
+              evidenceMsg={captureMessage} actions={netexecActions} />
+          </div>
+        )}
         {latestFileTree && <div style={S.netexecTree}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "9px 12px" }}>
             <b>폴더·파일 트리</b><span style={{ color: "#71867b", fontSize: 9 }}>
@@ -372,6 +543,28 @@ export function Inspector(props: {
         {latestFileTree && openFilePath !== null && <FileContentModal
           runId={latestFileTree.id} path={openFilePath} graphNodeId={n.id}
           onClose={() => setOpenFilePath(null)} />}
+      </section>}
+      {executionId !== null && isRedisUnauthCheck && <section style={S.netexecNodeResult}
+        aria-label="Redis 무인증 접근 결과">
+        <div style={S.netexecNodeResultHead}>
+          <span>REDIS</span>
+          <strong>{/redis_version/i.test(executionOutput.data?.stdout || "")
+            ? "인증 없이 접속 가능" : executionOutput.isLoading ? "결과 확인 중" : "인증 결과 확인 필요"}</strong>
+        </div>
+        <dl style={S.credentialFacts}>
+          <div style={{ display: "grid", gridTemplateColumns: "54px 1fr", padding: "7px 0" }}>
+            <dt style={{ color: "#677f71", fontSize: 9 }}>대상</dt>
+            <dd style={{ margin: 0, color: "#d6e5dc", fontSize: 11 }}>
+              {target?.hostname || target?.ip || "불러오는 중"}{service ? `:${service.port}` : ""}
+            </dd>
+          </div>
+        </dl>
+        {/redis_version/i.test(executionOutput.data?.stdout || "")
+          && <div style={{ padding: "0 12px 12px" }}>
+            <button style={S.resultAction} onClick={() => void openRedisShell()}>
+              redis-cli로 접속하기
+            </button>
+          </div>}
       </section>}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>
@@ -403,9 +596,9 @@ export function Inspector(props: {
       {retrySession && <InteractiveTerminal sessionId={retrySession.id}
         title={`Responder 재시작 · ${retrySession.command}`} autoFloat
         onClose={() => setRetrySession(null)} />}
-      {winrmSession && <InteractiveTerminal sessionId={winrmSession.id}
-        title={winrmSession.title} initialInput={winrmSession.initialInput} autoFloat
-        onClose={() => setWinrmSession(null)} />}
+      {manualSession && <InteractiveTerminal sessionId={manualSession.id}
+        title={manualSession.title} initialInput={manualSession.initialInput} autoFloat
+        onClose={() => setManualSession(null)} />}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}
         commandContext={target && props.executionContext ? {

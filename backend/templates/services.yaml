@@ -146,6 +146,7 @@ database:
     - {id: redis-unauthenticated-info, name: Redis 무인증 접근 확인, description: 인증 없이 INFO 명령이 허용되는지 확인합니다., command: "nmap -Pn -p{port} --script redis-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed, match: {services: [redis], ports: [6379]}}
     - {id: redis-default-audit, name: Redis 기본 비밀번호 제한 점검, description: Redis 인증에 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script redis-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=4,brute.firstonly=true,brute.retries=0,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed, match: {services: [redis], ports: [6379]}}
     - {id: redis-key-tree, name: 키 네임스페이스 트리 조회, description: "KEYS *로 전체 키 목록을 가져와 콜론(:)으로 구분된 네임스페이스 관례를 트리로 보여줍니다. password를 비워두면 인증 없이 접속합니다.", command: "bash {repo_dir}/backend/scripts/redis_tree.sh {host} {port} {password}", execution_mode: captured, risk: low, tool: redis-cli, sudo: false, output: text, policy: allowed, match: {services: [redis], ports: [6379]}}
+    - {id: redis-client, name: Redis 수동 접속, description: "대화형 redis-cli를 엽니다. 인증이 필요하면 접속 후 AUTH <password>를 직접 입력하세요.", command: "redis-cli -h {host} -p {port}", execution_mode: interactive, risk: low, tool: redis-cli, sudo: false, output: pty-log, policy: allowed, match: {services: [], ports: []}}
 rdp:
   display_name: RDP and WinRM
   match: {services: [ms-wbt-server, wsman, wsmans], ports: [3389, 5985, 5986]}

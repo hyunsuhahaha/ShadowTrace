@@ -150,6 +150,14 @@ def test_redis_key_tree_renders_with_an_optional_password():
     ]
 
 
+def test_redis_client_opens_an_interactive_shell_with_no_credentials_required():
+    item, command, argv = catalog.render("redis-client", {
+        "host": "10.10.10.10", "port": "6379",
+    }, "interactive")
+    assert argv == ["redis-cli", "-h", "10.10.10.10", "-p", "6379"]
+    assert item["execution_mode"] == "interactive"
+
+
 def test_imap_mailbox_tree_renders_with_credentials():
     item, command, argv = catalog.render("imap-mailbox-tree", {
         "host": "10.10.10.10", "port": "993", "username": "bob", "password": "hunter2",
