@@ -75,6 +75,33 @@ def test_text_evidence_preview_is_readable_and_bounded(tmp_path, monkeypatch):
                        "truncated": False, "language": "text"}
 
 
+def test_downloaded_web_app_source_is_also_previewable_as_text(tmp_path, monkeypatch):
+    # A .php/.py/.env/... pulled off a target (LFI, exposed .git, anon FTP,
+    # ...) is plain text same as any command-output extension already on
+    # this list -- reading it for hardcoded DB creds or a password hash is
+    # standard whitebox review, previously blocked by nothing but a
+    # narrower extension allowlist.
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    uploaded = tempfile.SpooledTemporaryFile()
+    uploaded.write(b"<?php $db = new mysqli('localhost','root','P@ssw0rd123'); ?>")
+    uploaded.seek(0)
+    row = asyncio.run(upload_evidence(
+        project_id=project.id, target_id=target.id, title="dashboard.php",
+        kind="attachment", description="", service_id=None,
+        source_type="execution", source_id=90, sensitivity="normal",
+        include_report=False, file=UploadFile(filename="dashboard.php", file=uploaded), db=db))
+
+    preview = evidence_preview(row.id, db)
+
+    assert "P@ssw0rd123" in preview["content"]
+
+
 def _zip_evidence(db, project, target):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:

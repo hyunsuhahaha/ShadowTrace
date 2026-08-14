@@ -22,7 +22,17 @@ MAX_FILE = 50 * 1024 * 1024
 MAX_PREVIEW = 256 * 1024
 KINDS = {"screenshot", "command_output", "http", "nmap", "flag",
          "attachment", "markdown"}
-TEXT_EXTENSIONS = {".txt", ".log", ".xml", ".json", ".md", ".csv", ".yaml", ".yml"}
+TEXT_EXTENSIONS = {
+    ".txt", ".log", ".xml", ".json", ".md", ".csv", ".yaml", ".yml",
+    # Web app/config source pulled off a target (LFI, exposed .git, anon
+    # FTP/SMB share, ...) is plain text too -- reading it for hardcoded DB
+    # creds or a password hash is standard whitebox review, not something
+    # this list was ever trying to exclude, it just never grew past the
+    # command-output-shaped extensions above.
+    ".php", ".phtml", ".asp", ".aspx", ".jsp", ".py", ".rb", ".js", ".ts",
+    ".java", ".go", ".pl", ".c", ".cpp", ".h", ".sh", ".sql",
+    ".html", ".htm", ".conf", ".cnf", ".ini", ".env", ".ps1",
+}
 
 
 def need(db: Session, model, ident: int):
