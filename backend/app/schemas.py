@@ -141,6 +141,13 @@ class InteractiveSessionIn(BaseModel):
     # stuck with whatever the template's default flags happen to be.
     command_override: str | None = Field(default=None, max_length=500)
 
+class PromoteDownloadIn(BaseModel):
+    # A single path segment only -- this names a file that must already sit
+    # directly in the session's own cwd (see interactive_session_ftp_downloads),
+    # never a path to walk into.
+    filename: str = Field(min_length=1, max_length=255, pattern=r"^[^/\\\x00]+$")
+    graph_node_id: str | None = Field(default=None, max_length=40)
+
 class InteractiveSessionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; cwd: str; status: str; pid: int | None

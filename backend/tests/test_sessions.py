@@ -10,9 +10,12 @@ from app.models import Credential, InteractiveSession, Project, Service, Target
 from app.schemas import DesktopLaunchIn, InteractiveSessionIn, ManualTerminalIn
 from types import SimpleNamespace
 
+from app.schemas import PromoteDownloadIn
+
 import app.modules.sessions.router as sessions_router
 from app.modules.sessions.router import (
-    create_interactive_session, create_manual_terminal, responder_captures,
+    _detect_ftp_downloads, create_interactive_session, create_manual_terminal,
+    interactive_session_ftp_downloads, promote_download, responder_captures,
     launch_interactive_session_in_desktop, retry_interactive_session,
 )
 
@@ -489,3 +492,82 @@ def test_desktop_launch_requires_expect_when_a_secret_needs_typing(tmp_path, mon
         launch_interactive_session_in_desktop(
             row.id, BackgroundTasks(), body=DesktopLaunchIn(type_after="hunter2"), db=db)
     assert exc.value.status_code == 409
+
+
+def test_detect_ftp_downloads_only_counts_transfers_that_actually_completed():
+    log = (
+        "ftp> get backup.zip\n"
+        "local: backup.zip remote: backup.zip\n"
+        "229 Entering Extended Passive Mode (|||10888|)\n"
+        "150 Opening BINARY mode data connection for backup.zip (2533 bytes).\n"
+        "226 Transfer complete.\n"
+        "2533 bytes received in 00:00 (3.60 KiB/s)\n"
+        "ftp> get notes.txt\n"
+        "local: notes.txt remote: notes.txt\n"
+        "550 Failed to open file.\n"
+        "ftp> get creds.txt\n"
+        "local: creds.txt remote: creds.txt\n"
+        "226 Transfer complete.\n"
+    )
+    assert _detect_ftp_downloads(log) == ["backup.zip", "creds.txt"]
+
+
+def test_promote_download_in_rejects_a_filename_that_tries_to_escape_the_directory():
+    with pytest.raises(ValidationError):
+        PromoteDownloadIn(filename="../../etc/passwd")
+
+
+def test_ftp_downloads_endpoint_lists_only_files_still_actually_on_disk(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    log_path = tmp_path / "session.log"
+    log_path.write_text(
+        "local: backup.zip remote: backup.zip\n226 Transfer complete.\n"
+        "local: gone.txt remote: gone.txt\n226 Transfer complete.\n",
+        encoding="utf-8")
+    (tmp_path / "backup.zip").write_bytes(b"PK\x03\x04fake-zip-contents")
+    row = InteractiveSession(
+        target_id=box.id, template_id="ftp-client", command="ftp 10.10.10.60 21",
+        cwd=str(tmp_path), log_path=str(log_path), status="stopped")
+    db.add(row); db.commit()
+
+    result = interactive_session_ftp_downloads(row.id, db=db)
+
+    assert result == {"files": [{"filename": "backup.zip", "size": 21}]}
+
+
+def test_promote_download_creates_a_draft_finding_from_a_locally_downloaded_file(
+        tmp_path, monkeypatch):
+    from app.models import Evidence, Finding, FindingEvidence
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    (tmp_path / "backup.zip").write_bytes(b"loot")
+    row = InteractiveSession(
+        target_id=box.id, template_id="ftp-client", command="ftp 10.10.10.60 21",
+        cwd=str(tmp_path), status="stopped")
+    db.add(row); db.commit()
+
+    result = promote_download(row.id, PromoteDownloadIn(filename="backup.zip"), db=db)
+
+    finding = db.get(Finding, result["finding_id"])
+    assert finding is not None and finding.status == "Draft"
+    assert "backup.zip" in finding.title
+    evidence = db.get(Evidence, result["evidence_id"])
+    assert evidence is not None and evidence.kind == "attachment"
+    from pathlib import Path as _Path
+    assert _Path(evidence.file_path).read_bytes() == b"loot"
+    link = db.query(FindingEvidence).filter_by(finding_id=finding.id).one()
+    assert link.evidence_id == evidence.id and link.is_primary is True
+
+
+def test_promote_download_rejects_a_file_that_is_not_actually_there(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    row = InteractiveSession(
+        target_id=box.id, template_id="ftp-client", command="ftp 10.10.10.60 21",
+        cwd=str(tmp_path), status="stopped")
+    db.add(row); db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        promote_download(row.id, PromoteDownloadIn(filename="never-downloaded.txt"), db=db)
+    assert exc.value.status_code == 404

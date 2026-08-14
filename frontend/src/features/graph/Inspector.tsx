@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import { DetachableTerminal } from "../../FloatingTerminal";
 import SmartTerminalOutput from "../../SmartTerminalOutput";
@@ -127,6 +127,34 @@ export function Inspector(props: {
       cleartext: boolean; captured_at: string }>>(
       `/targets/${props.executionContext!.targetId}/responder-captures`),
   });
+  // A manual FTP session has no structured "this file was downloaded" API
+  // call the way the post-exploitation file tree does -- the client's own
+  // transcript (already logged) is the only record, so this reads that log
+  // back rather than watching the PTY live.
+  const ftpDownloads = useQuery({
+    queryKey: ["graphFtpDownloads", sessionId],
+    enabled: sessionId !== null,
+    refetchInterval: sessionQuery.data?.status === "running" ? 3000 : false,
+    queryFn: () => api<{ files: Array<{ filename: string; size: number }> }>(
+      `/interactive-sessions/${sessionId}/ftp-downloads`),
+  });
+  const [promotedDownloads, setPromotedDownloads] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
+  const promoteDownload = async (filename: string) => {
+    if (sessionId === null) return;
+    setCaptureMessage("");
+    try {
+      await api(`/interactive-sessions/${sessionId}/promote-download`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({filename, graph_node_id: n?.id}),
+      });
+      setPromotedDownloads((current) => new Set(current).add(filename));
+      setCaptureMessage(`${filename} 그래프에 남겼습니다`);
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setCaptureMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
   const credentialQuery = useQuery({
     queryKey: ["graphCredential", props.projectId, credentialId],
     enabled: credentialId !== null && !!props.projectId,
@@ -718,6 +746,29 @@ export function Inspector(props: {
             </div> : <div style={S.resultMessage}>
               아직 이 대상에서 캡처된 자격증명이 없습니다. 새 캡처는 자동으로 표시됩니다.
             </div>}
+        </section>
+      )}
+      {sessionId !== null && !!ftpDownloads.data?.files.length && (
+        <section style={S.executionResults} aria-label="다운로드한 파일">
+          <div style={S.executionResultsHead}>
+            <div><strong>다운로드한 파일</strong>{" "}
+              <span>{ftpDownloads.data.files.length}개</span></div>
+          </div>
+          {captureMessage && <div style={S.resultNotice}>{captureMessage}</div>}
+          <div style={S.captureList}>
+            {ftpDownloads.data.files.map((file) => {
+              const promoted = promotedDownloads.has(file.filename);
+              return <article key={file.filename} style={S.captureCard}>
+                <div style={S.captureHead}><b>{file.filename}</b>
+                  <span>{(file.size / 1024).toFixed(1)} KB</span></div>
+                <div style={S.captureActions}>
+                  <button disabled={promoted} onClick={() => void promoteDownload(file.filename)}>
+                    {promoted ? "그래프에 남김" : "그래프에 남기기"}
+                  </button>
+                </div>
+              </article>;
+            })}
+          </div>
         </section>
       )}
       {props.links?.map((link) => (

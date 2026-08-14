@@ -1,7 +1,10 @@
 import asyncio
+import hashlib
+import json
 import os
 import pwd
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -18,18 +21,21 @@ from sqlalchemy.orm import Session
 from ...config import CONFIG_DIR, WORKSPACE_DIR
 from ...database import SessionLocal, get_db
 from ...executor import queues, run_execution
-from ...models import Credential, Execution, InteractiveSession, Project, Service, Target
+from ...models import (Credential, Evidence, Execution, Finding, FindingEvidence,
+                       GraphNode, InteractiveSession, Project, Service, Target)
 from ...pty_manager import pty_manager
 from ...schemas import (
     DesktopLaunchIn,
     InteractiveSessionIn,
     InteractiveSessionOut,
     ManualTerminalIn,
+    PromoteDownloadIn,
 )
 from ...templates import catalog
 from ...time import utcnow
 from ..core.support import need, safe_part
 from ..executions.router import _output_path
+from ..graph import service as graph_service
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
@@ -386,6 +392,100 @@ def interactive_session_log(ident: int, db: Session = Depends(get_db)):
     if not path.is_file():
         raise HTTPException(410, "Session log is not available")
     return FileResponse(path, filename=path.name, media_type="text/plain")
+
+
+# A classic ftp client's own transcript is the only structured record of
+# what the operator actually pulled down while typing commands by hand into
+# the PTY -- unlike the post-exploitation file tree (a backend-orchestrated,
+# re-fetchable command), there is no API call marking "this file was
+# downloaded", just this exact pair of lines the client always prints
+# around a successful get/mget.
+_FTP_LOCAL_LINE = re.compile(r"^local:\s+(\S+)\s+remote:\s+\S+", re.MULTILINE)
+
+
+def _detect_ftp_downloads(log_text: str) -> list[str]:
+    names: list[str] = []
+    pos = 0
+    for match in _FTP_LOCAL_LINE.finditer(log_text):
+        rest = log_text[match.end():]
+        next_match = _FTP_LOCAL_LINE.search(rest)
+        window = rest[:next_match.start()] if next_match else rest
+        if "226 Transfer complete" in window:
+            names.append(match.group(1))
+    return names
+
+
+@router.get("/api/interactive-sessions/{ident}/ftp-downloads")
+def interactive_session_ftp_downloads(ident: int, db: Session = Depends(get_db)):
+    row = need(db, InteractiveSession, ident)
+    if not row.log_path or not Path(row.log_path).is_file():
+        return {"files": []}
+    log_text = Path(row.log_path).read_text(encoding="utf-8", errors="replace")
+    cwd = Path(row.cwd)
+    seen: set[str] = set()
+    files = []
+    for name in _detect_ftp_downloads(log_text):
+        # Still has to actually be there -- a later "clear" / rm, an lcd to
+        # somewhere else mid-session, or the operator deleting it themselves
+        # all mean the log claiming a download happened doesn't guarantee
+        # there's still anything on disk to promote.
+        if name in seen or re.search(r"[/\\\x00]", name):
+            continue
+        seen.add(name)
+        path = cwd / name
+        if path.is_file():
+            files.append({"filename": name, "size": path.stat().st_size})
+    return {"files": files}
+
+
+@router.post("/api/interactive-sessions/{ident}/promote-download", status_code=201)
+def promote_download(ident: int, body: PromoteDownloadIn, db: Session = Depends(get_db)):
+    """Same idea as post_exploitation's promote-file, for a file the operator
+    already pulled down by hand into a manual PTY session (ftp get, etc.)
+    instead of one a structured backend command re-fetched. The file is
+    read straight off local disk -- it already made the trip over the wire
+    when the operator downloaded it themselves."""
+    row = need(db, InteractiveSession, ident)
+    target = need(db, Target, row.target_id)
+    project = need(db, Project, target.project_id)
+    path = Path(row.cwd) / body.filename
+    if not path.is_file():
+        raise HTTPException(404, "That file is not in this session's working directory")
+    content = path.read_bytes()
+    folder = Path(row.cwd) / "outputs"
+    folder.mkdir(parents=True, exist_ok=True)
+    output_path = folder / f"promoted-{secrets.token_hex(6)}-{safe_part(body.filename)}"
+    output_path.write_bytes(content)
+    evidence = Evidence(
+        project_id=project.id, target_id=target.id,
+        title=f"파일 다운로드: {body.filename}",
+        description=f"대화형 세션 #{row.id}에서 다운로드함 · {row.command}",
+        kind="attachment", source_type="interactive_session",
+        source_id=row.id, file_path=str(output_path),
+        original_name=body.filename,
+        sha256=hashlib.sha256(content).hexdigest(),
+        size=len(content), hostname=target.hostname or target.ip,
+        include_report=False,
+    )
+    db.add(evidence); db.flush()
+    finding = Finding(
+        project_id=project.id, target_id=target.id, title=f"파일 다운로드: {body.filename}",
+        status="Draft", reproduction_steps=f"세션 #{row.id}에서 다운로드\n\n{row.command}")
+    db.add(finding); db.flush()
+    db.add(FindingEvidence(finding_id=finding.id, evidence_id=evidence.id, is_primary=True))
+    source_node = (db.get(GraphNode, body.graph_node_id)
+                   if body.graph_node_id else None)
+    if (source_node and source_node.project_id == project.id
+            and source_node.type == "technique"):
+        finding_node = graph_service.create_node(
+            db, project.id, "finding", label=finding.title,
+            source_ref=json.dumps(
+                {"module": "findings", "kind": "finding", "id": finding.id},
+                sort_keys=True))
+        graph_service.create_edge(
+            db, project.id, source_node.id, finding_node.id, "yielded")
+    db.commit()
+    return {"finding_id": finding.id, "evidence_id": evidence.id}
 
 
 RESPONDER_LOGS_DIR = Path("/usr/share/responder/logs")
