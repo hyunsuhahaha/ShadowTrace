@@ -58,7 +58,8 @@ def interactive_sessions(
     status_code=201,
 )
 def create_interactive_session(
-    body: InteractiveSessionIn, db: Session = Depends(get_db)
+    body: InteractiveSessionIn, background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
 ):
     target = need(db, Target, body.target_id)
     service = need(db, Service, body.service_id) if body.service_id else None
@@ -138,11 +139,27 @@ def create_interactive_session(
     row = InteractiveSession(
         target_id=target.id, service_id=body.service_id,
         template_id=item["id"], command=command, cwd=str(target_dir),
-        status="ready",
+        status="ready", graph_parent_node_id=body.graph_node_id,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
+    if body.template_id == "ftp-client":
+        # Every way an ftp-client session gets opened -- desktop terminal,
+        # floating web terminal, from a plain FTP finding's "익명으로
+        # 접속하기" button -- deserves the same auto-populated folder/file
+        # tree the operator would otherwise have to fetch by hand via a
+        # separate "폴더·파일 트리 조회" run. service_id may not have been
+        # passed in (the ftp-anon button only knows target+port), so it's
+        # recovered from the rendered port variable instead.
+        tree_service = service
+        if tree_service is None and variables.get("port", "").isdigit():
+            tree_service = db.scalar(select(Service).where(
+                Service.target_id == target.id, Service.port == int(variables["port"])))
+        if tree_service is not None and not db.scalar(select(Execution.id).where(
+                Execution.target_id == target.id, Execution.service_id == tree_service.id,
+                Execution.template_id == "ftp-directory-tree")):
+            background_tasks.add_task(_auto_run_ftp_tree, target.id, tree_service.id)
     return row
 
 
@@ -210,10 +227,9 @@ async def interactive_session_socket(websocket: WebSocket, ident: int):
 async def _auto_run_ftp_tree(target_id: int, service_id: int) -> None:
     # ftp-directory-tree's script doubles as the login check (a wrong
     # password fails before any listing starts), so an anonymous crawl here
-    # is safe to fire for every way an ftp-client session gets opened --
-    # not just the anonymous-exposure and typed-credential paths the
-    # frontend already wires up -- since this endpoint is the one choke
-    # point all of them launch a desktop session through.
+    # is safe to fire for every ftp-client session -- create_interactive_session
+    # is the one choke point all of them (desktop terminal, floating web
+    # terminal, the ftp-anon finding's connect button) are created through.
     with SessionLocal() as db:
         target = db.get(Target, target_id)
         service = db.get(Service, service_id)
@@ -350,8 +366,6 @@ def launch_interactive_session_in_desktop(
     row.started_at = utcnow()
     db.commit()
     db.refresh(row)
-    if row.template_id == "ftp-client" and row.service_id:
-        background_tasks.add_task(_auto_run_ftp_tree, row.target_id, row.service_id)
     return row
 
 

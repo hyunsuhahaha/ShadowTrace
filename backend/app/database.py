@@ -51,6 +51,8 @@ def ensure_compatible_schema() -> None:
         ("executions", "status", "VARCHAR(20) NOT NULL DEFAULT 'queued'", execution_columns),
         ("executions", "error", "TEXT NOT NULL DEFAULT ''", execution_columns),
         ("executions", "output_path", "TEXT NOT NULL DEFAULT ''", execution_columns),
+        ("interactive_sessions", "graph_parent_node_id", "VARCHAR(26)",
+         {column["name"] for column in tables.get_columns("interactive_sessions")}),
     ]
     with engine.begin() as connection:
         for table, name, definition, existing in additions:

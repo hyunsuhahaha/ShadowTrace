@@ -321,7 +321,22 @@ export default function GraphWorkspace() {
     if (!parent?.source_ref) return null;
     try {
       const ref = JSON.parse(parent.source_ref);
-      return ref.kind === "target" ? { targetId: ref.id } : null;
+      if (ref.kind === "target") return { targetId: ref.id };
+    } catch { return null; }
+    // A session opened from a finding (e.g. "익명으로 접속하기") is parented
+    // one level deeper than the usual host/service -- walk up once more to
+    // whatever enumerated/yielded that finding, same as the host/service
+    // case above.
+    if (parent.type !== "finding") return null;
+    const findingEdge = graph.data?.edges.find((item) => item.target === parent.id);
+    if (!findingEdge) return null;
+    const findingService = serviceHandoff(findingEdge.source);
+    if (findingService) return findingService;
+    const grandparent = nodeById.get(findingEdge.source);
+    if (!grandparent?.source_ref) return null;
+    try {
+      const gref = JSON.parse(grandparent.source_ref);
+      return gref.kind === "target" ? { targetId: gref.id } : null;
     } catch { return null; }
   };
 
@@ -401,6 +416,15 @@ export default function GraphWorkspace() {
         await api(`/evidence/${payload.evidenceId}/extract`, {
           method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify({entry: payload.entry}),
+        });
+      } else if (payload.kind === "ftp-tree") {
+        // Reconnects over FTP itself (same as the click-to-promote path) --
+        // the dragged file may never have been `get`-ed into the session's
+        // own cwd, so there's nothing local to read the way promote-download
+        // reads back an operator-typed `get`.
+        await api(`/executions/${payload.executionId}/promote-ftp-file`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({path: payload.path, graph_node_id: payload.graphNodeId}),
         });
       } else {
         await api(`/interactive-sessions/${payload.sessionId}/promote-download`, {

@@ -646,10 +646,12 @@ finding Inspector는 연결된 Evidence마다 다운로드 링크를 보여주�
 추출을 막는다). 암호 보호된 zip은 "Hash Cracking으로 보내기"로 `/evidence/{id}/zip2john`을
 호출해(hash_cracking 모듈의 `run_zip2john`을 재사용, 재업로드 없이 evidence의 디스크 파일을
 직접 읽음) 추출한 해시·모드를 embedded Hash Cracking 패널에 바로 채워 넣는다
-(`CredentialHandoff.hash_mode_id`). archive 멤버(암호 없는 것만)와 FTP 다운로드 목록 항목도
-post-exploitation 파일 트리와 같은 `FILE_DRAG_MIME` 페이로드(`fileTree.tsx`의
+(`CredentialHandoff.hash_mode_id`). archive 멤버(암호 없는 것만), FTP 다운로드 목록 항목,
+`ftp-directory-tree` 트리(실행 노드 자신의 것과 세션 Inspector에 인라인으로 뜨는 것 둘 다)의
+파일도 post-exploitation 파일 트리와 같은 `FILE_DRAG_MIME` 페이로드(`fileTree.tsx`의
 `FileDragPayload` — `kind`로 구분되는 discriminated union)로 Canvas에 드래그해 그래프
-노드로 추가할 수 있다. `-oX`로 결과를 저장하는 catalog 명령(`service-version`/
+노드로 추가할 수 있다(`FileTreeView`는 `runId`뿐 아니라 임의의 `dragPayload` factory를
+받으므로, 새 tree 종류를 드래그 가능하게 만들 때 이 prop만 넘기면 된다). `-oX`로 결과를 저장하는 catalog 명령(`service-version`/
 `service-version-udp`/`telnet-info`/`telnet-version-trace`/`database-info`는 Service 행에,
 `target-hostname-redirect`/`target-hostname-identity`/`target-os-identity`는 Target 행에) 은
 완료 시 `executor.py`가 이미 관찰값을 자동 반영하므로, Inspector도 raw stdout 대신 반영된
@@ -665,19 +667,28 @@ scan_center의 `capture_scan_evidence()`가 nmap NSE 긍정 결과(예: ftp-anon
 "Needs Review" finding 후보 중, 제목이 `Ftp Anon on {ip}:{port}` 형태인 것은 Inspector가
 정규식으로 host/port를 그대로 읽어 "익명으로 접속하기" 버튼 하나로 anonymous/anonymous@를
 미리 입력한 대화형 FTP 세션을 띄운다(`docs/FINDING_REPORTING.md` §Automatic scan evidence
-참고 — 이 자동 Finding 자체는 Phase 1부터 있던 기존 동작). `ftp-directory-tree`/
-`git-dump-tree`/`http-webdav-tree`/`nfs-export-tree`/`rsync-module-tree` 다섯 개는 전부
-post-exploitation 파일 트리와 같은 `D|`/`F|` 태그 형식을 쓰므로(각 스크립트 자체 주석에
-"other tree commands와 같은 형식"이라고 명시) raw stdout 대신 `FileTreeView`로 렌더한다.
-`ftp-directory-tree`는 추가로 파일 클릭 시 `/executions/{id}/promote-ftp-file`로 같은
-호스트/포트/자격증명으로 재접속해 그 파일 하나만 다시 받아 Evidence+Draft Finding으로
+참고 — 이 자동 Finding 자체는 Phase 1부터 있던 기존 동작). 이때 `InteractiveSessionIn.
+graph_node_id`로 그 finding 노드를 함께 넘겨서, 세션 동기화(`sync_from_project`)가 그
+세션을 host/service가 아니라 그 finding의 자식(`attempted` 관계)으로 붙인다
+(`InteractiveSession.graph_parent_node_id` 컬럼). `ftp-directory-tree`/`git-dump-tree`/
+`http-webdav-tree`/`nfs-export-tree`/`rsync-module-tree` 다섯 개는 전부 post-exploitation
+파일 트리와 같은 `D|`/`F|` 태그 형식을 쓰므로(각 스크립트 자체 주석에 "other tree
+commands와 같은 형식"이라고 명시) raw stdout 대신 `FileTreeView`로 렌더한다.
+`ftp-directory-tree`는 추가로 파일 클릭/드래그 시 `/executions/{id}/promote-ftp-file`로
+같은 호스트/포트/자격증명으로 재접속해 그 파일 하나만 다시 받아 Evidence+Draft Finding으로
 승격한다(`ftp_tree.py` 자체는 목록만 만들고 내려받지 않으므로 조회와 다운로드가 분리돼
-있음). 나머지 네 개는 아직 이 재다운로드 짝이 없다 — 트리 렌더링만 개선됐다.
+있음). 나머지 네 개는 아직 이 재다운로드 짝이 없다 — 트리 렌더링만 개선됐다. `ftp-client`
+템플릿의 대화형 세션은 (데스크톱/웹 터미널, 익명 접속 버튼 구분 없이) 생성되는 순간
+`create_interactive_session`이 익명 `ftp-directory-tree` 크롤을 자동으로 큐에 넣는다(같은
+target+service에 이미 실행이 있으면 건너뜀) — 세션 자신의 Inspector가 그 결과를 target+
+service로 찾아와 "폴더·파일 트리" 섹션에 바로 렌더하므로, 그 세션에서 발견된 파일을 보려고
+별도의 "폴더·파일 트리 조회" 실행 노드를 따로 찾아갈 필요가 없다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
-`/executions/{id}/promote-ftp-file`(POST), `/interactive-sessions/manual`(POST),
+`/executions/{id}/promote-ftp-file`(POST), `/interactive-sessions`(POST),
+`/interactive-sessions/manual`(POST),
 `/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST),
 `/evidence/{id}/archive`, `/evidence/{id}/extract`(POST), `/evidence/{id}/zip2john`(POST).
 

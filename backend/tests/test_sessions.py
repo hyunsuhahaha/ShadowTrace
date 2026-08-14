@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
 from app.database import Base
-from app.models import Credential, InteractiveSession, Project, Service, Target
+from app.models import Credential, Execution, InteractiveSession, Project, Service, Target
 from app.schemas import DesktopLaunchIn, InteractiveSessionIn, ManualTerminalIn
 from types import SimpleNamespace
 
@@ -44,7 +44,7 @@ def test_responder_is_blocked_while_an_instance_is_already_running(tmp_path, mon
     with pytest.raises(HTTPException) as exc:
         create_interactive_session(InteractiveSessionIn(
             target_id=box.id, template_id="responder-listener",
-            variables={"interface": "tun0"}), db=db)
+            variables={"interface": "tun0"}), background_tasks=BackgroundTasks(), db=db)
 
     assert exc.value.status_code == 409
     assert "144448" in exc.value.detail
@@ -58,7 +58,7 @@ def test_responder_is_allowed_when_nothing_is_running(tmp_path, monkeypatch):
 
     row = create_interactive_session(InteractiveSessionIn(
         target_id=box.id, template_id="responder-listener",
-        variables={"interface": "tun0"}), db=db)
+        variables={"interface": "tun0"}), background_tasks=BackgroundTasks(), db=db)
 
     assert row.template_id == "responder-listener"
     assert row.command == "sudo responder -I tun0 -v"
@@ -73,7 +73,7 @@ def test_responder_command_override_replaces_the_template_default(tmp_path, monk
     row = create_interactive_session(InteractiveSessionIn(
         target_id=box.id, template_id="responder-listener",
         variables={"interface": "tun0"},
-        command_override="responder -I tun0 -A -v"), db=db)
+        command_override="responder -I tun0 -A -v"), background_tasks=BackgroundTasks(), db=db)
 
     # run_as_root still wraps whatever argv the operator ended up with
     assert row.command == "sudo responder -I tun0 -A -v"
@@ -90,7 +90,7 @@ def test_responder_command_override_still_goes_through_the_single_instance_guard
         create_interactive_session(InteractiveSessionIn(
             target_id=box.id, template_id="responder-listener",
             variables={"interface": "tun0"},
-            command_override="responder -I tun0 --lm"), db=db)
+            command_override="responder -I tun0 --lm"), background_tasks=BackgroundTasks(), db=db)
 
     assert exc.value.status_code == 409
 
@@ -104,7 +104,7 @@ def test_responder_command_override_rejects_an_empty_command(tmp_path, monkeypat
     with pytest.raises(HTTPException) as exc:
         create_interactive_session(InteractiveSessionIn(
             target_id=box.id, template_id="responder-listener",
-            variables={"interface": "tun0"}, command_override="   "), db=db)
+            variables={"interface": "tun0"}, command_override="   "), background_tasks=BackgroundTasks(), db=db)
 
     assert exc.value.status_code == 400
 
@@ -120,7 +120,7 @@ def test_command_override_is_ignored_for_templates_other_than_responder(tmp_path
 
     row = create_interactive_session(InteractiveSessionIn(
         target_id=box.id, template_id="smbserver-listener",
-        variables={}, command_override="whoami"), db=db)
+        variables={}, command_override="whoami"), background_tasks=BackgroundTasks(), db=db)
 
     assert "impacket-smbserver" in row.command
     assert "whoami" not in row.command
@@ -134,7 +134,7 @@ def test_smbserver_is_blocked_while_an_instance_is_already_running(tmp_path, mon
 
     with pytest.raises(HTTPException) as exc:
         create_interactive_session(InteractiveSessionIn(
-            target_id=box.id, template_id="smbserver-listener", variables={}), db=db)
+            target_id=box.id, template_id="smbserver-listener", variables={}), background_tasks=BackgroundTasks(), db=db)
 
     assert exc.value.status_code == 409
     assert "222333" in exc.value.detail
@@ -148,7 +148,7 @@ def test_smbserver_is_allowed_when_nothing_is_running_and_gets_its_own_share_dir
         SimpleNamespace(returncode=1, stdout=""))
 
     row = create_interactive_session(InteractiveSessionIn(
-        target_id=box.id, template_id="smbserver-listener", variables={}), db=db)
+        target_id=box.id, template_id="smbserver-listener", variables={}), background_tasks=BackgroundTasks(), db=db)
 
     assert row.template_id == "smbserver-listener"
     share_dir = tmp_path / "projects" / "Lab" / "targets" / "10.10.10.60" / "outputs" / "smb-share"
@@ -190,7 +190,7 @@ def test_the_running_process_check_only_applies_to_responder(tmp_path, monkeypat
 
     row = create_interactive_session(InteractiveSessionIn(
         target_id=box.id, service_id=service.id, template_id="ftp-client",
-        variables={}), db=db)
+        variables={}), background_tasks=BackgroundTasks(), db=db)
 
     assert row.template_id == "ftp-client"
     assert called["count"] == 0
@@ -418,13 +418,79 @@ def test_desktop_launch_wraps_the_command_in_expect_when_a_secret_needs_typing(
     assert "hunter2" not in inner_command
 
 
-def test_desktop_launch_of_ftp_client_queues_an_automatic_directory_tree(
+def test_create_interactive_session_queues_an_automatic_directory_tree_for_ftp_client(
         tmp_path, monkeypatch):
     # ftp-client sessions can be opened several ways (anonymous-exposure
-    # auto-open, typed credentials, or picking the command straight from a
-    # catalog/workflow) -- only some of which the frontend wires up to an
-    # auto-crawl. This endpoint is the one choke point every path launches
-    # a desktop session through, so it's where the auto-crawl belongs.
+    # auto-open, typed credentials, the ftp-anon finding's "익명으로 접속하기"
+    # button, or picking the command straight from a catalog/workflow) --
+    # only some of which used to go through the /desktop launch endpoint.
+    # create_interactive_session is the one choke point every one of them
+    # actually creates a session through, so that's where the auto-crawl
+    # belongs.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                       name="ftp", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    background_tasks = BackgroundTasks()
+
+    create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, service_id=service.id, template_id="ftp-client",
+        variables={}), background_tasks=background_tasks, db=db)
+
+    assert len(background_tasks.tasks) == 1
+    task = background_tasks.tasks[0]
+    assert task.func is sessions_router._auto_run_ftp_tree
+    assert task.args == (box.id, service.id)
+
+
+def test_ftp_client_auto_tree_resolves_service_by_port_when_service_id_is_not_given(
+        tmp_path, monkeypatch):
+    # The ftp-anon finding's connect button only knows target+port (its
+    # session is intentionally opened with service_id=null) -- the auto-crawl
+    # still has to find the right service row to key its Execution to.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                       name="ftp", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    background_tasks = BackgroundTasks()
+
+    create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, service_id=None, template_id="ftp-client",
+        variables={"port": "21"}), background_tasks=background_tasks, db=db)
+
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].args == (box.id, service.id)
+
+
+def test_ftp_client_auto_tree_is_not_queued_twice_for_the_same_target_and_service(
+        tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                       name="ftp", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    db.add(Execution(target_id=box.id, service_id=service.id, template_id="ftp-directory-tree",
+                      command="ftp_tree", cwd=str(tmp_path), status="completed"))
+    db.commit()
+    background_tasks = BackgroundTasks()
+
+    create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, service_id=service.id, template_id="ftp-client",
+        variables={}), background_tasks=background_tasks, db=db)
+
+    assert len(background_tasks.tasks) == 0
+
+
+def test_desktop_launch_of_ftp_client_does_not_queue_a_second_directory_tree(
+        tmp_path, monkeypatch):
+    # The auto-crawl already fired once at session creation (see above) --
+    # /desktop launching that same session afterwards must not fire a
+    # second, duplicate Execution/graph node.
     db = database()
     box = target(db, tmp_path, monkeypatch)
     service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
@@ -443,10 +509,7 @@ def test_desktop_launch_of_ftp_client_queues_an_automatic_directory_tree(
 
     launch_interactive_session_in_desktop(row.id, background_tasks, db=db)
 
-    assert len(background_tasks.tasks) == 1
-    task = background_tasks.tasks[0]
-    assert task.func is sessions_router._auto_run_ftp_tree
-    assert task.args == (box.id, service.id)
+    assert len(background_tasks.tasks) == 0
 
 
 def test_desktop_launch_of_a_non_ftp_session_does_not_queue_a_directory_tree(

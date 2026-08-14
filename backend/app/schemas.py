@@ -148,6 +148,10 @@ class InteractiveSessionIn(BaseModel):
     # (add -A, --lm, -w, drop -v, ...) before it runs, instead of being
     # stuck with whatever the template's default flags happen to be.
     command_override: str | None = Field(default=None, max_length=500)
+    # A finding/technique node this session was opened from (e.g. "익명으로
+    # 접속하기" on an Ftp Anon finding) -- sync_from_project() parents the
+    # session's own node here instead of falling back to the bare host/service.
+    graph_node_id: str | None = Field(default=None, max_length=40)
 
 class PromoteDownloadIn(BaseModel):
     # A single path segment only -- this names a file that must already sit

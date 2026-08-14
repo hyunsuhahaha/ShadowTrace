@@ -11,6 +11,7 @@ import FileContentModal from "../../FileContentModal";
 import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
 import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
+import { setPendingGraphFocus } from "../../pendingGraphFocus";
 import { AddForm, color, CredentialHandoff, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
   GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
@@ -85,7 +86,8 @@ export function Inspector(props: {
   const findingQuery = useQuery({
     queryKey: ["graphFinding", findingId],
     enabled: findingId !== null,
-    queryFn: () => api<{ target_id?: number; evidence: Array<{ id: number; evidence_id: number;
+    queryFn: () => api<{ target_id?: number; service_id?: number | null;
+      evidence: Array<{ id: number; evidence_id: number;
       title: string; kind: string; is_primary: boolean }> }>(`/findings/${findingId}`),
   });
   // Only findings promoted from a file-tree drag (promote-file always sets
@@ -262,6 +264,12 @@ export function Inspector(props: {
   const unauthChecks = useQuery({
     queryKey: ["graphUnauthCheckExecutions", props.executionContext?.targetId],
     enabled: !!props.executionContext?.targetId,
+    // A session's own auto-triggered ftp-directory-tree crawl is usually
+    // still running (or hasn't even been picked up by the background task
+    // queue yet) at the moment its node first gets selected -- unlike the
+    // other checks this query also serves, which have always already
+    // finished by the time their own execution/technique node is selected.
+    refetchInterval: (tool === "ftp-client" && sessionId !== null) ? 3000 : false,
     queryFn: () => api<Array<{ id: number; template_id: string; service_id: number | null;
       status: string; stdout: string }>>(
       `/executions?target_id=${props.executionContext!.targetId}`),
@@ -316,6 +324,28 @@ export function Inspector(props: {
       void queryClient.invalidateQueries({queryKey: ["graph"]});
     } catch (reason) {
       setFtpPromoteMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
+  // Every ftp-client session (desktop, floating terminal, or the ftp-anon
+  // finding's connect button) already gets an anonymous ftp-directory-tree
+  // crawl auto-started at session creation (sessions/router.py) -- this just
+  // reads that run back by target+service instead of making the operator
+  // fetch a separate "폴더·파일 트리 조회" by hand for something they're
+  // already sitting inside.
+  const sessionFtpTree = tool === "ftp-client" ? latestExecutionFor("ftp-directory-tree") : undefined;
+  const [sessionTreePromoteMessage, setSessionTreePromoteMessage] = useState("");
+  const promoteSessionTreeFile = async (path: string) => {
+    if (!sessionFtpTree) return;
+    setSessionTreePromoteMessage("");
+    try {
+      await api(`/executions/${sessionFtpTree.id}/promote-ftp-file`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path, graph_node_id: n?.id}),
+      });
+      setSessionTreePromoteMessage(`${path} 그래프에 남겼습니다`);
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setSessionTreePromoteMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   };
   const fileTreeRuns = useQuery({
@@ -458,15 +488,25 @@ export function Inspector(props: {
     // graph node is labeled and found the same way any other manual FTP
     // session is, with the same "다운로드한 파일" promote panel once a `get`
     // succeeds in it, instead of surfacing as an unrecognizable "manual-shell".
+    // graph_node_id parents the new session node under this finding (not the
+    // bare host sync() would otherwise fall back to); passing the finding's
+    // own service_id (not null) is what lets the auto folder/file tree crawl
+    // and this session share the same target+service correlation.
     const session = await api<{id: number}>("/interactive-sessions", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        target_id: findingQuery.data.target_id, service_id: null,
+        target_id: findingQuery.data.target_id, service_id: findingQuery.data.service_id ?? null,
         template_id: "ftp-client", variables: {port}, run_as_root: false,
+        graph_node_id: n?.id ?? null,
       }),
     });
     setManualSession({id: session.id, title: `FTP ${host}:${port}`,
       initialInput: "anonymous\ranonymous@\r"});
+    // Jump the canvas to the new session's node once it's synced in, instead
+    // of leaving the operator on this finding with no way to find where the
+    // session they just opened (and whatever they `get` inside it) shows up.
+    setPendingGraphFocus({kind: "session", id: session.id});
+    void queryClient.invalidateQueries({queryKey: ["graph"]});
   };
   const openRedisShell = async () => {
     if (!target) return;
@@ -1012,13 +1052,16 @@ export function Inspector(props: {
                   <div style={S.terminalOutput}>
                     {tool === "ftp-directory-tree" && (
                       <div style={{ color: "#71868c", fontSize: 9, marginBottom: 6 }}>
-                        파일을 클릭하면 다시 접속해 받아온 뒤 그래프 노드로 추가합니다.
+                        파일을 클릭하거나 드래그하면 다시 접속해 받아온 뒤 그래프 노드로 추가합니다.
                       </div>
                     )}
                     <FileTreeView searchable
                       node={buildFileTree(parseTaggedTreeLines(executionOutput.data.stdout), "/")}
                       onOpenFile={tool === "ftp-directory-tree"
-                        ? (path) => void promoteFtpTreeFile(path) : undefined} />
+                        ? (path) => void promoteFtpTreeFile(path) : undefined}
+                      dragPayload={tool === "ftp-directory-tree" && executionId !== null
+                        ? (path) => ({ kind: "ftp-tree", executionId, path, graphNodeId: n?.id ?? null })
+                        : undefined} />
                     {ftpPromoteMessage && <div style={S.resultNotice}>{ftpPromoteMessage}</div>}
                   </div>
                 ) : (
@@ -1107,6 +1150,30 @@ export function Inspector(props: {
             </div> : <div style={S.resultMessage}>
               아직 이 대상에서 캡처된 자격증명이 없습니다. 새 캡처는 자동으로 표시됩니다.
             </div>}
+        </section>
+      )}
+      {sessionId !== null && tool === "ftp-client" && (
+        <section style={S.executionResults} aria-label="폴더·파일 트리">
+          <div style={S.executionResultsHead}>
+            <div><strong>폴더·파일 트리</strong></div>
+          </div>
+          {!sessionFtpTree ? (
+            <div style={S.resultMessage}>
+              자동으로 조회하는 중… (익명 로그인이 안 되면 표시되지 않습니다)
+            </div>
+          ) : (
+            <div style={S.terminalOutput}>
+              <div style={{ color: "#71868c", fontSize: 9, marginBottom: 6 }}>
+                파일을 클릭하거나 드래그하면 다시 접속해 받아온 뒤 그래프 노드로 추가합니다.
+              </div>
+              <FileTreeView searchable
+                node={buildFileTree(parseTaggedTreeLines(sessionFtpTree.stdout || ""), "/")}
+                onOpenFile={(path) => void promoteSessionTreeFile(path)}
+                dragPayload={(path) => ({ kind: "ftp-tree", executionId: sessionFtpTree.id,
+                  path, graphNodeId: n?.id ?? null })} />
+              {sessionTreePromoteMessage && <div style={S.resultNotice}>{sessionTreePromoteMessage}</div>}
+            </div>
+          )}
         </section>
       )}
       {sessionId !== null && !!ftpDownloads.data?.files.length && (

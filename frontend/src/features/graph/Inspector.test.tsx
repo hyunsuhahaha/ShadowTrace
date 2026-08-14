@@ -696,12 +696,13 @@ it("offers a one-click anonymous FTP session on an auto-detected ftp-anon findin
   const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/api/findings/14")) return Promise.resolve(new Response(JSON.stringify({
-      target_id: 8, evidence: [],
+      target_id: 8, service_id: 3, evidence: [],
     }), { headers: { "Content-Type": "application/json" } }));
     if (url.endsWith("/api/interactive-sessions") && init?.method === "POST") {
       expect(JSON.parse(init.body as string)).toEqual({
-        target_id: 8, service_id: null,
+        target_id: 8, service_id: 3,
         template_id: "ftp-client", variables: {port: "21"}, run_as_root: false,
+        graph_node_id: "finding-14",
       });
       return Promise.resolve(new Response(JSON.stringify({ id: 55 }), {
         status: 201, headers: { "Content-Type": "application/json" },
@@ -767,4 +768,79 @@ it("renders an ftp-directory-tree run as a real file tree, and promotes a clicke
     "/api/executions/90/promote-ftp-file", expect.objectContaining({ method: "POST" }),
   ));
   expect(await screen.findByText(/그래프에 남겼습니다/)).toBeTruthy();
+});
+
+it("lets a file in an ftp-directory-tree run be dragged onto the canvas too", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/90/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "F|backup.zip", stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "execution-90", type: "technique", status: "succeeded", objective: false, hidden: false,
+      label: "폴더·파일 트리 조회",
+      meta: JSON.stringify({ tool: "ftp-directory-tree" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 90 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const file = await screen.findByText("backup.zip");
+  const setData = vi.fn();
+  fireEvent.dragStart(file, { dataTransfer: { setData, effectAllowed: "" } });
+
+  expect(setData).toHaveBeenCalledWith(FILE_DRAG_MIME, JSON.stringify(
+    { kind: "ftp-tree", executionId: 90, path: "backup.zip", graphNodeId: "execution-90" }));
+});
+
+it("auto-populates a folder/file tree on an ftp-client session's own node", async () => {
+  // Every ftp-client session gets an anonymous ftp-directory-tree crawl
+  // auto-started at session creation (sessions/router.py) -- the session's
+  // own Inspector reads that run back by target+service instead of leaving
+  // the operator to fetch a separate "폴더·파일 트리 조회" by hand for
+  // something they're already sitting inside.
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 37, command: "ftp 10.10.10.60 21", status: "running" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/37/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/executions?target_id=10")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 91, template_id: "ftp-directory-tree", service_id: 5, status: "completed",
+        stdout: "F|backup.zip" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/executions/91/promote-ftp-file") && init?.method === "POST") {
+      expect(JSON.parse(init.body as string)).toEqual({
+        path: "backup.zip", graph_node_id: "session-37",
+      });
+      return Promise.resolve(new Response(JSON.stringify({ finding_id: 1, evidence_id: 2 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10, serviceId: 5 }} node={{
+      id: "session-37", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "FTP 수동 접속", meta: JSON.stringify({ tool: "ftp-client" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 37 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const file = await screen.findByText("backup.zip");
+  fireEvent.click(file);
+
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/executions/91/promote-ftp-file", expect.objectContaining({ method: "POST" }),
+  ));
 });

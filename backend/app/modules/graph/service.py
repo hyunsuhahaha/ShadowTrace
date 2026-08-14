@@ -673,7 +673,17 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if ("session", sess.id) in dismissed:
                 continue
             responder = sess.template_id == "responder-listener"
-            parent = operator_for() if responder else parent_of(sess.service_id, sess.target_id)
+            # A session opened from a specific finding/technique (e.g. "익명으로
+            # 접속하기" on an Ftp Anon finding) belongs under that node, not the
+            # generic host/service placement every other session falls back to --
+            # "attempted" already permits finding/service/host -> technique.
+            explicit_parent = (
+                db.get(GraphNode, sess.graph_parent_node_id)
+                if sess.graph_parent_node_id else None)
+            if explicit_parent is not None and explicit_parent.project_id != project_id:
+                explicit_parent = None
+            parent = (operator_for() if responder
+                      else explicit_parent or parent_of(sess.service_id, sess.target_id))
             if parent is None:
                 continue
             live_status = sess.status

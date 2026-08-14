@@ -9,7 +9,8 @@ export const FILE_DRAG_MIME = "application/x-oscp-tree-file";
 export type FileDragPayload =
   | { kind: "post-exploitation"; runId: number; path: string }
   | { kind: "archive"; evidenceId: number; entry: string }
-  | { kind: "ftp-download"; sessionId: number; filename: string; graphNodeId: string | null };
+  | { kind: "ftp-download"; sessionId: number; filename: string; graphNodeId: string | null }
+  | { kind: "ftp-tree"; executionId: number; path: string; graphNodeId: string | null };
 
 // Shared by every "show a remote host's directory structure automatically"
 // feature (post-exploitation file listings, SMB share spidering, NFS
@@ -105,15 +106,22 @@ function FileIcon() {
 // just walks the already-filtered subtree. A query also force-opens every
 // <details> on the way down, since a match three folders deep is useless
 // hidden behind three collapsed twisties.
-export function FileTreeView({ node, depth = 0, searchable, onOpenFile, runId, query = "" }: {
+export function FileTreeView({ node, depth = 0, searchable, onOpenFile, runId, dragPayload, query = "" }: {
   node: TreeNode; depth?: number; searchable?: boolean;
-  onOpenFile?: (path: string) => void; runId?: number; query?: string;
+  onOpenFile?: (path: string) => void; runId?: number;
+  // Generic drag-to-graph source for any tree, not just post-exploitation's
+  // runId-keyed one -- pass a factory turning a clicked path into whatever
+  // FileDragPayload variant that tree's own promote endpoint expects.
+  dragPayload?: (path: string) => FileDragPayload; query?: string;
 }) {
   const [ownQuery, setOwnQuery] = useState("");
   const activeQuery = depth === 0 && searchable ? ownQuery : query;
   const displayNode = activeQuery ? filterTree(node, activeQuery) : node;
   const entries = [...displayNode.children.values()].sort((a, b) =>
     a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1);
+  const dragFor = dragPayload ?? (runId != null
+    ? (path: string): FileDragPayload => ({ kind: "post-exploitation", runId, path })
+    : undefined);
   return (<>
     {depth === 0 && searchable && (
       <input className="fileTreeSearch" type="search" value={ownQuery}
@@ -132,14 +140,13 @@ export function FileTreeView({ node, depth = 0, searchable, onOpenFile, runId, q
                   {child.name}
                 </summary>
                 <FileTreeView node={child} depth={depth + 1}
-                  onOpenFile={onOpenFile} runId={runId} query={activeQuery} />
+                  onOpenFile={onOpenFile} runId={runId} dragPayload={dragPayload} query={activeQuery} />
               </details>
             ) : onOpenFile ? (
               <button type="button" className="fileTreeFile fileTreeFile--clickable"
-                draggable={runId != null}
-                onDragStart={runId == null ? undefined : (event) => {
-                  const payload: FileDragPayload = { kind: "post-exploitation", runId, path: child.path };
-                  event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(payload));
+                draggable={dragFor != null}
+                onDragStart={dragFor == null ? undefined : (event) => {
+                  event.dataTransfer.setData(FILE_DRAG_MIME, JSON.stringify(dragFor(child.path)));
                   event.dataTransfer.effectAllowed = "copy";
                 }}
                 onClick={() => onOpenFile(child.path)}>
