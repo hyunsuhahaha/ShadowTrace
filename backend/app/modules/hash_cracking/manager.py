@@ -55,53 +55,81 @@ class HashCrackManager:
         if subscribers:
             subscribers.discard(queue)
 
+    async def _spawn_and_pump(self, job_id: int, argv: list[str], folder: Path,
+                              stdout_path: Path, stderr_path: Path,
+                              cancel_event: asyncio.Event) -> tuple[int, bool]:
+        streamed = 0
+        # Mesa's rusticl OpenCL platform (the CPU fallback on a GPU-less
+        # box — a VM, most often) enumerates zero devices unless this is
+        # set; a real GPU backend (CUDA/HIP/a genuine OpenCL ICD) is
+        # unaffected either way, so it's safe to always set.
+        env = {**os.environ, "RUSTICL_ENABLE": "llvmpipe"}
+        process = await asyncio.create_subprocess_exec(
+            *argv, cwd=folder, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE, start_new_session=True, env=env)
+        self.processes[job_id] = process
+
+        async def pump(stream, path: Path, kind: str):
+            nonlocal streamed
+            with path.open("wb") as output:
+                while line := await stream.readline():
+                    output.write(line); output.flush()
+                    if streamed < self.stream_limit:
+                        streamed += len(line)
+                        await self._publish(job_id, {
+                            "stream": kind, "data": line.decode(errors="replace")})
+
+        pump_task = asyncio.ensure_future(asyncio.gather(
+            pump(process.stdout, stdout_path, "stdout"),
+            pump(process.stderr, stderr_path, "stderr")))
+        process_task = asyncio.ensure_future(process.wait())
+        cancel_task = asyncio.ensure_future(cancel_event.wait())
+        done, _ = await asyncio.wait({process_task, cancel_task},
+                                     return_when=asyncio.FIRST_COMPLETED)
+        cancelled = False
+        if process_task not in done:
+            cancelled = True
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(process_task, timeout=3)
+            except asyncio.TimeoutError:
+                os.killpg(process.pid, signal.SIGKILL)
+                await process_task
+        cancel_task.cancel()
+        await pump_task
+        self.processes.pop(job_id, None)
+        return process.returncode, cancelled
+
+    @staticmethod
+    def _is_self_test_failure(stderr_path: Path) -> bool:
+        if not stderr_path.is_file():
+            return False
+        return "kernel self-test failed" in stderr_path.read_text(
+            encoding="utf-8", errors="replace").lower()
+
     async def _run(self, job_id: int, argv: list[str], folder: Path) -> None:
         folder.mkdir(parents=True, exist_ok=True)
         stdout_path, stderr_path = folder / "stdout.txt", folder / "stderr.txt"
         cracked_path = folder / "cracked.txt"
         await self._publish(job_id, {"stream": "status", "status": "running"})
-        streamed = 0
-        cancelled = False
         cancel_event = self.cancel_events[job_id]
         try:
-            # Mesa's rusticl OpenCL platform (the CPU fallback on a GPU-less
-            # box — a VM, most often) enumerates zero devices unless this is
-            # set; a real GPU backend (CUDA/HIP/a genuine OpenCL ICD) is
-            # unaffected either way, so it's safe to always set.
-            env = {**os.environ, "RUSTICL_ENABLE": "llvmpipe"}
-            process = await asyncio.create_subprocess_exec(
-                *argv, cwd=folder, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, start_new_session=True, env=env)
-            self.processes[job_id] = process
-
-            async def pump(stream, path: Path, kind: str):
-                nonlocal streamed
-                with path.open("wb") as output:
-                    while line := await stream.readline():
-                        output.write(line); output.flush()
-                        if streamed < self.stream_limit:
-                            streamed += len(line)
-                            await self._publish(job_id, {
-                                "stream": kind, "data": line.decode(errors="replace")})
-
-            pump_task = asyncio.ensure_future(asyncio.gather(
-                pump(process.stdout, stdout_path, "stdout"),
-                pump(process.stderr, stderr_path, "stderr")))
-            process_task = asyncio.ensure_future(process.wait())
-            cancel_task = asyncio.ensure_future(cancel_event.wait())
-            done, _ = await asyncio.wait({process_task, cancel_task},
-                                         return_when=asyncio.FIRST_COMPLETED)
-            if process_task not in done:
-                cancelled = True
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    await asyncio.wait_for(process_task, timeout=3)
-                except asyncio.TimeoutError:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    await process_task
-            cancel_task.cancel()
-            await pump_task
-            code = process.returncode
+            code, cancelled = await self._spawn_and_pump(
+                job_id, argv, folder, stdout_path, stderr_path, cancel_event)
+            if (not cancelled and code not in OK_EXIT_CODES
+                    and "--self-test-disable" not in argv
+                    and self._is_self_test_failure(stderr_path)):
+                # Confirmed live: Mesa's software OpenCL (llvmpipe/rusticl)
+                # kernel doesn't pass its own self-test for some algorithms
+                # (PKZIP's pure kernel, seen here) even though the actual
+                # attack runs and parses hashes fine once self-test is
+                # skipped -- hashcat's own error message names this exact
+                # flag as the sanctioned override, so retry once with it
+                # rather than reporting a driver limitation as a cracking
+                # failure.
+                code, cancelled = await self._spawn_and_pump(
+                    job_id, [*argv, "--self-test-disable"], folder,
+                    stdout_path, stderr_path, cancel_event)
             cracked = parse_cracked(cracked_path)
             with SessionLocal() as db:
                 job = db.get(HashCrackJob, job_id)

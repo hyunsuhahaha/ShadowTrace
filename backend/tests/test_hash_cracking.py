@@ -467,6 +467,93 @@ def test_hashcat_runs_with_rusticl_enabled_for_the_cpu_opencl_fallback(tmp_path,
     assert (folder / "stdout.txt").read_text(encoding="utf-8").strip() == "llvmpipe"
 
 
+def test_manager_retries_once_with_self_test_disable_after_a_kernel_self_test_failure(
+        tmp_path, monkeypatch):
+    # Confirmed live: PKZIP's pure kernel fails its own self-test on Mesa's
+    # software OpenCL (llvmpipe/rusticl) even though the actual attack
+    # parses hashes and runs fine once self-test is skipped -- hashcat's own
+    # error message names --self-test-disable as the sanctioned override.
+    engine = create_engine(f"sqlite:///{tmp_path / 'retry.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+        db.add(target); db.flush()
+        job = HashCrackJob(
+            project_id=project.id, target_id=target.id, hash_mode_id="pkzip_multi_compressed",
+            hash_mode="17220", hash_type_name="PKZIP", attack_mode="0",
+            hash_count=1, status="running")
+        db.add(job); db.commit()
+        job_id = job.id
+
+    folder = tmp_path / "job"
+    script = tmp_path / "fake_hashcat.py"
+    script.write_text(
+        "import sys\n"
+        "if '--self-test-disable' in sys.argv:\n"
+        "    print('cracked ok')\n"
+        "    sys.exit(0)\n"
+        "sys.stderr.write('* Device #1: ATTENTION! OpenCL kernel self-test failed.\\n')\n"
+        "sys.exit(255)\n",
+        encoding="utf-8")
+
+    async def run():
+        manager_module.manager.cancel_events[job_id] = asyncio.Event()
+        await manager_module.manager._run(job_id, [sys.executable, str(script)], folder)
+    asyncio.run(run())
+
+    assert (folder / "stdout.txt").read_text(encoding="utf-8").strip() == "cracked ok"
+    with factory() as db:
+        finished = db.get(HashCrackJob, job_id)
+        assert finished.status == "completed"
+        assert finished.exit_code == 0
+
+
+def test_manager_does_not_retry_a_failure_that_is_not_a_self_test_failure(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'noretry.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(manager_module, "SessionLocal", factory)
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        target = Target(project_id=project.id, name="Box", ip="10.10.10.13")
+        db.add(target); db.flush()
+        job = HashCrackJob(
+            project_id=project.id, target_id=target.id, hash_mode_id="pkzip",
+            hash_mode="17200", hash_type_name="PKZIP", attack_mode="0",
+            hash_count=1, status="running")
+        db.add(job); db.commit()
+        job_id = job.id
+
+    folder = tmp_path / "job"
+    script = tmp_path / "fake_hashcat.py"
+    script.write_text(
+        "import sys\n"
+        "sys.stderr.write('No hashes loaded.\\n')\n"
+        "sys.exit(255)\n",
+        encoding="utf-8")
+    calls = []
+    real_exec = asyncio.create_subprocess_exec
+
+    async def counting_exec(*args, **kwargs):
+        calls.append(args)
+        return await real_exec(*args, **kwargs)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", counting_exec)
+
+    async def run():
+        manager_module.manager.cancel_events[job_id] = asyncio.Event()
+        await manager_module.manager._run(job_id, [sys.executable, str(script)], folder)
+    asyncio.run(run())
+
+    assert len(calls) == 1
+    with factory() as db:
+        assert db.get(HashCrackJob, job_id).status == "failed"
+
+
 def test_manager_captures_evidence_when_the_process_fails_to_spawn(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{tmp_path / 'spawnfail.db'}")
     Base.metadata.create_all(engine)
