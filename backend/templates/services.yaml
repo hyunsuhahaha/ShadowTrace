@@ -181,6 +181,7 @@ mongodb:
     - {id: mongodb-info, name: MongoDB 무인증 정보 확인, description: 인증 없이 MongoDB 빌드와 서버 정보가 공개되는지 확인합니다., command: "nmap -Pn -p{port} --script mongodb-info {host}", execution_mode: captured, risk: low, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: mongodb-default-audit, name: MongoDB 기본 자격증명 제한 점검, description: MongoDB에 사용자 8개와 비밀번호 4개만 최대 2분 동안 저속으로 점검합니다., command: "nmap -Pn -p{port} --script mongodb-brute --script-args brute.start=2,brute.threads=2,brute.delay=2,brute.guesses=3,brute.firstonly=true,brute.retries=0,unpwdb.userlimit=8,unpwdb.passlimit=4,unpwdb.timelimit=2m {host}", execution_mode: captured, risk: high, tool: nmap, sudo: false, output: text, policy: allowed}
     - {id: mongodb-db-tree, name: 데이터베이스·컬렉션 트리 조회, description: 인증 없이 볼 수 있는 모든 데이터베이스와 컬렉션을 나열합니다. admin·local·config 시스템 데이터베이스는 제외합니다., command: "{repo_dir}/.venv/bin/python -m app.mongodb_tree --host {host} --port {port}", execution_mode: captured, risk: low, tool: python3, sudo: false, output: text, policy: allowed}
+    - {id: mongo-client, name: MongoDB 수동 접속, description: "대화형 mongosh를 엽니다. 인증이 필요하면 접속 후 db.auth()를 직접 입력하세요.", command: "mongosh --host {host} --port {port}", execution_mode: interactive, risk: low, tool: mongosh, sudo: false, output: pty-log, policy: allowed, match: {services: [], ports: []}}
 mysql:
   display_name: MySQL/MariaDB
   match: {services: [mysql], ports: [3306]}

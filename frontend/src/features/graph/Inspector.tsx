@@ -5,7 +5,7 @@ import { DetachableTerminal } from "../../FloatingTerminal";
 import SmartTerminalOutput from "../../SmartTerminalOutput";
 import InteractiveTerminal from "../../InteractiveTerminal";
 import XtermOutput from "../../XtermOutput";
-import { parseLinkExtractResults } from "../../serviceIntel";
+import { parseLinkExtractResults, parseMysqlProbeSuccess } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
 import FileContentModal from "../../FileContentModal";
 import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
@@ -21,6 +21,35 @@ type StoredCredential = {
   secret_hint?: string; source_kind?: string; source_detail?: string;
   source_execution_kind?: string;
 };
+
+// Shared shape for every "does this protocol allow unauthenticated (or
+// just-confirmed) access" check -- mongodb/snmp/mysql-probe/webdav/
+// ldap-anonymous/svn all follow the same pattern App.tsx's own auto-run
+// already established: check succeeds -> a richer follow-up command
+// already ran against the same target -- this just surfaces that result
+// (and a connect action, where one genuinely exists) instead of a plain
+// "성공" label with nothing to act on.
+function UnauthAccessResult({label, connectLabel, onConnect, treeLabel, tree}: {
+  label: string; connectLabel?: string; onConnect?: () => void;
+  treeLabel?: string; tree?: {status: string; stdout: string};
+}) {
+  return <section style={S.netexecNodeResult} aria-label={`${label} 결과`}>
+    <div style={S.netexecNodeResultHead}>
+      <span>{label}</span>
+      <strong>확인됨</strong>
+    </div>
+    {onConnect && <div style={{ padding: "0 12px 12px" }}>
+      <button style={S.resultAction} onClick={onConnect}>{connectLabel}</button>
+    </div>}
+    {treeLabel && <div style={S.netexecTree}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "9px 12px" }}>
+        <b>{treeLabel}</b>
+      </div>
+      {!tree ? <div style={S.resultMessage}>자동 조회 중…</div>
+        : <pre style={S.terminalOutput}>{tree.stdout || "(빈 결과)"}</pre>}
+    </div>}
+  </section>;
+}
 
 export function Inspector(props: {
   node?: GraphNode; links?: DeepLink[]; busy: boolean;
@@ -175,6 +204,34 @@ export function Inspector(props: {
     .exec(tool || "")?.[1] as NetexecProtocol | undefined;
   const isNetexecCheck = !!netexecProtocol;
   const isRedisUnauthCheck = tool === "redis-unauthenticated-info";
+  // Every "does this protocol allow unauthenticated access" check already
+  // auto-triggers a richer follow-up command against this same target
+  // (App.tsx's autoRun*Tree functions) once it succeeds -- this just reads
+  // that follow-up's own result back by template id + service, instead of
+  // re-running anything itself.
+  const unauthChecks = useQuery({
+    queryKey: ["graphUnauthCheckExecutions", props.executionContext?.targetId],
+    enabled: !!props.executionContext?.targetId,
+    queryFn: () => api<Array<{ id: number; template_id: string; service_id: number | null;
+      status: string; stdout: string }>>(
+      `/executions?target_id=${props.executionContext!.targetId}`),
+  });
+  const latestExecutionFor = (templateId: string) => unauthChecks.data
+    ?.filter((item) => item.template_id === templateId && item.status === "completed"
+      && (!props.executionContext?.serviceId || item.service_id === props.executionContext.serviceId))
+    .sort((a, b) => b.id - a.id)[0];
+  const isMongoCheck = tool === "mongodb-info";
+  const mongoSuccess = /mongodb-info:/i.test(executionOutput.data?.stdout || "");
+  const isSnmpCheck = tool === "snmp-info";
+  const snmpSuccess = /snmp-info:/i.test(executionOutput.data?.stdout || "");
+  const isMysqlProbeCheck = tool === "mysql-credential-probe";
+  const mysqlProbe = parseMysqlProbeSuccess(executionOutput.data?.stdout || "");
+  const isWebdavCheck = tool === "http-webdav-detect";
+  const webdavSuccess = /PROPFIND/i.test(executionOutput.data?.stdout || "");
+  const isLdapAnonCheck = tool === "ldap-anonymous-users";
+  const ldapAnonSuccess = /^\[\+\]/im.test(executionOutput.data?.stdout || "");
+  const isSvnCheck = tool === "svn-wcdb-check";
+  const svnSuccess = /^HTTP\/[\d.]+ 200/im.test(executionOutput.data?.stdout || "");
   const fileTreeRuns = useQuery({
     queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
     enabled: isNetexecCheck && !!props.executionContext?.targetId,
@@ -287,7 +344,7 @@ export function Inspector(props: {
   // redis-unauthenticated-info already proved INFO runs with no AUTH -- one
   // click opens the same interactive client a manual "redis-client" catalog
   // run would, instead of the operator having to go find it themselves.
-  const openManualSession = async (cmd: string, title?: string) => {
+  const openManualSession = async (cmd: string, title?: string, initialInput?: string) => {
     if (!props.executionContext) return;
     const session = await api<{id: number}>("/interactive-sessions/manual", {
       method: "POST", headers: {"Content-Type": "application/json"},
@@ -297,11 +354,24 @@ export function Inspector(props: {
         command: cmd,
       }),
     });
-    setManualSession({id: session.id, title: title || cmd});
+    setManualSession({id: session.id, title: title || cmd, initialInput});
   };
   const openRedisShell = async () => {
     if (!target) return;
     await openManualSession(`redis-cli -h ${target.ip} -p ${service?.port || 6379}`);
+  };
+  const openMongoShell = async () => {
+    if (!target) return;
+    await openManualSession(`mongosh --host ${target.ip} --port ${service?.port || 27017}`);
+  };
+  // mysql-client's trailing bare -p prompts interactively (same pattern as
+  // evil-winrm's plaintext path) -- the probe's own recovered password is
+  // typed into that prompt rather than riding in argv.
+  const openMysqlProbeShell = async () => {
+    if (!target || !mysqlProbe) return;
+    await openManualSession(
+      `mysql -h ${target.ip} -P ${service?.port || 3306} -u ${mysqlProbe.username} --skip-ssl -p`,
+      undefined, `${mysqlProbe.password}\r`);
   };
   // Same shape as App.tsx's own copy of each of these (openSshShell,
   // openMssqlShell, openPsexecShell, openLateralShell, copyXfreerdpCommand,
@@ -594,6 +664,32 @@ export function Inspector(props: {
             </button>
           </div>}
       </section>}
+      {executionId !== null && isMongoCheck && mongoSuccess && (
+        <UnauthAccessResult label="MONGODB" connectLabel="mongosh로 접속하기"
+          onConnect={() => void openMongoShell()}
+          treeLabel="데이터베이스·컬렉션 트리" tree={latestExecutionFor("mongodb-db-tree")} />
+      )}
+      {executionId !== null && isSnmpCheck && snmpSuccess && (
+        <UnauthAccessResult label="SNMP"
+          treeLabel="OID 트리 (community: public)" tree={latestExecutionFor("snmp-oid-tree")} />
+      )}
+      {executionId !== null && isMysqlProbeCheck && mysqlProbe && (
+        <UnauthAccessResult label="MYSQL" connectLabel="mysql-client로 접속하기"
+          onConnect={() => void openMysqlProbeShell()}
+          treeLabel="데이터베이스·테이블 트리" tree={latestExecutionFor("mysql-db-tree")} />
+      )}
+      {executionId !== null && isWebdavCheck && webdavSuccess && (
+        <UnauthAccessResult label="WEBDAV"
+          treeLabel="WebDAV 폴더·파일 트리" tree={latestExecutionFor("http-webdav-tree")} />
+      )}
+      {executionId !== null && isLdapAnonCheck && ldapAnonSuccess && (
+        <UnauthAccessResult label="LDAP 익명 bind"
+          treeLabel="Directory Information Tree" tree={latestExecutionFor("ldap-dit-tree")} />
+      )}
+      {executionId !== null && isSvnCheck && svnSuccess && (
+        <UnauthAccessResult label="노출된 .SVN"
+          treeLabel="복구된 파일 목록" tree={latestExecutionFor("svn-dump-recover")} />
+      )}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>
           <span style={S.nodeNotesLabel}>작업 메모</span>

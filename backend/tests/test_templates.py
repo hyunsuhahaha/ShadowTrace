@@ -158,6 +158,14 @@ def test_redis_client_opens_an_interactive_shell_with_no_credentials_required():
     assert item["execution_mode"] == "interactive"
 
 
+def test_mongo_client_opens_an_interactive_shell_with_no_credentials_required():
+    item, command, argv = catalog.render("mongo-client", {
+        "host": "10.10.10.10", "port": "27017",
+    }, "interactive")
+    assert argv == ["mongosh", "--host", "10.10.10.10", "--port", "27017"]
+    assert item["execution_mode"] == "interactive"
+
+
 def test_imap_mailbox_tree_renders_with_credentials():
     item, command, argv = catalog.render("imap-mailbox-tree", {
         "host": "10.10.10.10", "port": "993", "username": "bob", "password": "hunter2",

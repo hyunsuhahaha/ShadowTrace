@@ -294,6 +294,80 @@ it("offers SSH/MSSQL/RDP connect actions for their own NetExec checks, not just 
   });
 });
 
+it("offers mongosh and shows the auto-fetched db tree once mongodb-info confirms no auth", async () => {
+  const posted: Array<{body: unknown}> = [];
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/40/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "| mongodb-info: \n|   MongoDB version: 3.6.8\n", stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.includes("/api/executions?target_id=9")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 41, template_id: "mongodb-db-tree", service_id: 27, status: "completed",
+        stdout: "admin\n  system.users\nloot\n  creds\n" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 9, project_id: 2, ip: "10.129.8.5" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST") {
+      posted.push({body: JSON.parse(init.body as string)});
+      return Promise.resolve(new Response(JSON.stringify({ id: 88 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 9, serviceId: 27 }} node={{
+      id: "execution-40", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "MongoDB 무인증 정보 확인",
+      meta: JSON.stringify({ tool: "mongodb-info" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 40 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText(/admin/)).toBeTruthy();
+  fireEvent.click(screen.getByText("mongosh로 접속하기"));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  expect(posted[0].body).toEqual({
+    target_id: 9, service_id: 27, command: "mongosh --host 10.129.8.5 --port 27017",
+  });
+});
+
+it("shows the auto-fetched OID tree for a confirmed SNMP community string, with no connect action", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/60/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "| snmp-info: \n|   enterprise: net-snmp\n", stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.includes("/api/executions?target_id=3")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 61, template_id: "snmp-oid-tree", service_id: null, status: "completed",
+        stdout: ".1.3.6.1.2.1.1\n  sysDescr\n" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 3, project_id: 1, ip: "10.129.8.9" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 3 }} node={{
+      id: "execution-60", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "SNMP 상세 정보 확인",
+      meta: JSON.stringify({ tool: "snmp-info" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 60 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("sysDescr", {exact: false})).toBeTruthy();
+  expect(screen.queryByText(/접속하기/)).toBeNull();
+});
+
 it("offers to open redis-cli once redis-unauthenticated-info confirms no AUTH is needed", async () => {
   const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
