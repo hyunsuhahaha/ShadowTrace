@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
-  filterActivityFeed, filterGraph, formatElapsed,
+  fileFindingGlyph, filterActivityFeed, filterGraph, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
   isCrackableCredential, isFlagFinding, nodeStatusReason, nodeSummary,
   pathToObjective } from "./graphModel";
@@ -13,10 +13,22 @@ it("recognizes OSCP/HTB deliverable filenames as flag findings, case- and path-i
   expect(isFlagFinding({type: "finding", label: "파일 발견: C:\\loot\\flag2.txt"})).toBe(true);
   // a plain path with no "파일 발견: " prefix still matches on the filename
   expect(isFlagFinding({type: "finding", label: "/home/bob/root.txt"})).toBe(true);
+  // a file pulled down by hand through promote-download is just as much a flag
+  expect(isFlagFinding({type: "finding", label: "파일 다운로드: flag.txt"})).toBe(true);
   // not every discovered file is a flag, and only finding-type nodes count
   expect(isFlagFinding({type: "finding", label: "파일 발견: /etc/passwd"})).toBe(false);
   expect(isFlagFinding({type: "finding", label: "파일 발견: notes-flag-ideas.txt"})).toBe(false);
   expect(isFlagFinding({type: "credential", label: "파일 발견: /root/flag.txt"})).toBe(false);
+});
+
+it("picks a per-extension pictogram for a file-backed finding", () => {
+  expect(fileFindingGlyph({type: "finding", label: "파일 다운로드: backup.zip"})).toBe("📦");
+  expect(fileFindingGlyph({type: "finding", label: "파일 발견: C:\\loot\\creds.json"})).toBe("🧾");
+  expect(fileFindingGlyph({type: "finding", label: "파일 발견: /root/id_rsa.pem"})).toBe("🔐");
+  // no extension, an extension we don't recognize, or a non-finding node -> no glyph
+  expect(fileFindingGlyph({type: "finding", label: "파일 다운로드: README"})).toBeUndefined();
+  expect(fileFindingGlyph({type: "finding", label: "파일 다운로드: notes.weird"})).toBeUndefined();
+  expect(fileFindingGlyph({type: "credential", label: "파일 다운로드: backup.zip"})).toBeUndefined();
 });
 
 it("reads a node's evidence count defensively", () => {

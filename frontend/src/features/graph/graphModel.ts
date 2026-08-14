@@ -67,17 +67,44 @@ export const GLYPH: Record<NodeType, string> = {
 };
 export const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
 
+// Both promote-file ("파일 발견: <path>") and promote-download
+// ("파일 다운로드: <filename>") title findings with the source filename
+// right after a fixed Korean prefix; anything else (a finding created
+// another way that just happens to have a path-shaped label) is taken
+// as the path itself, unprefixed.
+const FILE_FINDING_PREFIX = /^파일 (?:발견|다운로드): (.+)$/;
+function findingFileName(node: Pick<GraphNode, "type" | "label">): string | undefined {
+  if (node.type !== "finding") return undefined;
+  const path = FILE_FINDING_PREFIX.exec(node.label)?.[1] ?? node.label;
+  return path.split(/[\\/]/).pop()?.trim() || undefined;
+}
+
 // A found flag deserves to look like one instead of blending into every
 // other Draft finding at the same dull gray "untried" status -- matches
-// promote-file's "파일 발견: <path>" title (and any plain path, for
-// findings created another way) against the usual OSCP/HTB deliverable
-// filenames.
+// the usual OSCP/HTB deliverable filenames.
 const FLAG_FILENAME = /^(flag\d*|local|proof|root|user)\.txt$/i;
 export function isFlagFinding(node: Pick<GraphNode, "type" | "label">): boolean {
-  if (node.type !== "finding") return false;
-  const path = /파일 발견: (.+)$/.exec(node.label)?.[1] ?? node.label;
-  const filename = path.split(/[\\/]/).pop()?.trim() ?? "";
-  return FLAG_FILENAME.test(filename);
+  return FLAG_FILENAME.test(findingFileName(node) ?? "");
+}
+
+// A quick per-extension pictogram so a promoted file reads as "this is a
+// zip" / "this is a screenshot" at a glance on the canvas instead of every
+// file-backed finding collapsing into the same plain finding diamond.
+const FILE_KIND_GLYPH: Record<string, string> = {
+  zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦", tgz: "📦", bz2: "📦", xz: "📦",
+  json: "🧾", xml: "🧾", yaml: "🧾", yml: "🧾", csv: "🧾",
+  pdf: "📕", doc: "📄", docx: "📄", txt: "📄", log: "📄", md: "📄",
+  xls: "📊", xlsx: "📊",
+  db: "🗄️", sqlite: "🗄️", sqlite3: "🗄️", sql: "🗄️",
+  pem: "🔐", key: "🔐", crt: "🔐", cer: "🔐", p12: "🔐", pfx: "🔐", ppk: "🔐",
+  jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", bmp: "🖼️",
+  exe: "⚙️", dll: "⚙️", bin: "⚙️", msi: "⚙️",
+  sh: "📜", py: "📜", ps1: "📜", bat: "📜", pl: "📜", php: "📜",
+};
+export function fileFindingGlyph(node: Pick<GraphNode, "type" | "label">): string | undefined {
+  const filename = findingFileName(node);
+  const ext = filename?.includes(".") ? filename.split(".").pop()!.toLowerCase() : undefined;
+  return ext ? FILE_KIND_GLYPH[ext] : undefined;
 }
 
 export function nodeMeta(node: Pick<GraphNode, "meta">): Record<string, any> {

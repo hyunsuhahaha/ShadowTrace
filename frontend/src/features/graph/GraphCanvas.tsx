@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
-  buildActivityFeed, clampActivityPanel, color, evidenceCount, filterActivityFeed,
+  buildActivityFeed, clampActivityPanel, color, evidenceCount, fileFindingGlyph, filterActivityFeed,
   getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
   initialGraphPosition, initialGraphPositionNearParent, isFlagFinding, NodeActivity,
   nodeStatusReason, nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
@@ -496,7 +496,8 @@ export function GraphCanvas(props: {
         ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-        ctx.fillText(isFlag ? "🚩" : GLYPH[current.type], n.x, n.y + 0.5);
+        ctx.fillText(isFlag ? "🚩" : fileFindingGlyph(current) ?? GLYPH[current.type],
+          n.x, n.y + 0.5);
         drawEvidenceBadge(evidenceCount(current), n.x + r * 0.7, n.y - r * 0.7);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
         if (alwaysLabel || hover === n || isSel || isHost || isRoot || isOperator || current.hidden || activity) {
