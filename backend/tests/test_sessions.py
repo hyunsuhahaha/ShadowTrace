@@ -61,6 +61,36 @@ def test_responder_is_allowed_when_nothing_is_running(tmp_path, monkeypatch):
     assert row.command == "sudo responder -I tun0 -v"
 
 
+def test_smbserver_is_blocked_while_an_instance_is_already_running(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=0, stdout="222333\n"))
+
+    with pytest.raises(HTTPException) as exc:
+        create_interactive_session(InteractiveSessionIn(
+            target_id=box.id, template_id="smbserver-listener", variables={}), db=db)
+
+    assert exc.value.status_code == 409
+    assert "222333" in exc.value.detail
+
+
+def test_smbserver_is_allowed_when_nothing_is_running_and_gets_its_own_share_dir(
+        tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=""))
+
+    row = create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, template_id="smbserver-listener", variables={}), db=db)
+
+    assert row.template_id == "smbserver-listener"
+    share_dir = tmp_path / "projects" / "Lab" / "targets" / "10.10.10.60" / "outputs" / "smb-share"
+    assert row.command == f"sudo impacket-smbserver share {share_dir} -smb2support"
+    assert share_dir.is_dir()  # impacket-smbserver requires the path to pre-exist
+
+
 def test_failed_interactive_session_can_be_restarted(tmp_path, monkeypatch):
     db = database()
     box = target(db, tmp_path, monkeypatch)

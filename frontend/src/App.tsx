@@ -14,6 +14,8 @@ import VhostFuzzPanel from "./VhostFuzzPanel";
 import DnsSubdomainPanel from "./DnsSubdomainPanel";
 import ParamFuzzPanel from "./ParamFuzzPanel";
 import LinkExtractPanel from "./LinkExtractPanel";
+import DotDotPwnPanel from "./DotDotPwnPanel";
+import SmbServerPanel from "./SmbServerPanel";
 import S3BucketPanel from "./S3BucketPanel";
 import CloudEnumPanel from "./CloudEnumPanel";
 import KerbruteEnumPanel from "./KerbruteEnumPanel";
@@ -1036,6 +1038,27 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
       setOutput((value) => `${value}\n[Responder 실행 실패] ${message}\n`);
     }
   };
+  // Same auto-floated in-page PTY as Responder above -- it stays mounted
+  // while the tester triggers a forced-auth coercion from elsewhere.
+  const startSmbServer = async () => {
+    if (!targetId) return;
+    try {
+      const session = await api<any>("/interactive-sessions", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          target_id: targetId, template_id: "smbserver-listener",
+          variables: {}, run_as_root: true,
+        }),
+      });
+      addInteractiveSession({id: session.id, command: session.command, autoFloat: true});
+      setOutput((value) =>
+        `${value}\n$ ${session.command}\n\n[xterm PTY에서 실행했습니다.]\n`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setOutput((value) => `${value}\n[SMB 서버 실행 실패] ${message}\n`);
+    }
+  };
   const openManualShell = async (command: string) => {
     if (!targetId || !serviceId) return;
     const session = await api<any>("/interactive-sessions/manual", {
@@ -1361,6 +1384,16 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
         ` | grep -ohE '(href|src|action)=\\"[^\\"#]*\\"' | sed -E 's/^[a-z]+=\\"//;s/\\"$//' | sort -u"`,
       target_level: false,
       variables: {path},
+    });
+  };
+  const runDotDotPwn = (url: string, pattern: string) => {
+    if (!target || !service || !url.trim() || !pattern.trim()) return;
+    setRunWithSudo(false);
+    void run({
+      id: "dotdotpwn-traversal-fuzz",
+      preview: `dotdotpwn -m http-url -u ${url} -k ${pattern} -b -q`,
+      target_level: false,
+      variables: {traversal_url: url, match_pattern: pattern},
     });
   };
   const openLinkInRequest = (url: string) => {
@@ -2034,6 +2067,8 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
             onSendHashToCracking={(capture) => sendHashToCracking(capture.value,
               `Responder · ${capture.username} · ${target?.ip || ""}`)}
             onSaveCredential={(capture) => void saveResponderCredential(capture)} />}
+          {!!service && <SmbServerPanel targetId={targetId}
+            onStartListener={() => void startSmbServer()} />}
           {!!service && <DpapiDecoderPanel />}
           {!!service && <PuttyKeyConverter />}
           {!!service && <PypykatzLsassPanel />}
@@ -2077,6 +2112,13 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
               runState={runStates["http-link-extract"]}
               serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
               onFuzz={runLinkExtract} onOpenInRequest={openLinkInRequest}
+              onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
+          )}
+          {isWebService && (
+            <DotDotPwnPanel target={target} service={service}
+              runState={runStates["dotdotpwn-traversal-fuzz"]}
+              serviceExecutions={serviceExecutions} evidenceMsg={evidenceMsg}
+              onFuzz={runDotDotPwn}
               onCaptureEvidence={(execution, title) => void captureEvidence(execution, title)} />
           )}
           {isWebService && (

@@ -1,3 +1,4 @@
+import shlex
 from app.modules.core.router import tool_catalog
 from app.templates import catalog
 
@@ -170,6 +171,47 @@ def test_rsync_module_tree_renders_the_list_script_with_the_chosen_module():
         "bash", "/opt/oscp-workspace/backend/scripts/rsync_tree.sh",
         "10.10.10.10", "873", "backup",
     ]
+
+
+def test_dotdotpwn_traversal_fuzz_is_listed_with_its_two_user_supplied_variables():
+    groups = catalog.list_all()
+    http = next(group for group in groups if group["key"] == "http")
+    by_id = {command["id"]: command for command in http["commands"]}
+    assert by_id["dotdotpwn-traversal-fuzz"]["variables"] == ["match_pattern", "traversal_url"]
+    # The command template takes a fully user-supplied URL rather than
+    # {host}/{port}/{scheme} tokens the app would fill in itself (the panel
+    # prefills a starting URL client-side instead), so this doesn't need the
+    # service-selection step needs_service gates other commands behind.
+    assert by_id["dotdotpwn-traversal-fuzz"]["needs_service"] is False
+
+
+def test_dotdotpwn_traversal_fuzz_renders_the_http_url_module():
+    item, command, argv = catalog.render("dotdotpwn-traversal-fuzz", {
+        "traversal_url": "http://unika.htb/index.php?page=TRAVERSAL",
+        "match_pattern": "root:",
+    })
+    assert argv == [
+        "dotdotpwn", "-m", "http-url", "-u", "http://unika.htb/index.php?page=TRAVERSAL",
+        "-k", "root:", "-b", "-q",
+    ]
+
+
+def test_dotdotpwn_traversal_fuzz_shell_metacharacters_dont_escape_their_argument():
+    # traversal_url/match_pattern are free text the user types in, unlike
+    # every other variable here which comes from a dropdown or the target
+    # itself -- shlex.quote() has to actually hold for this one.
+    item, command, argv = catalog.render("dotdotpwn-traversal-fuzz", {
+        "traversal_url": "http://unika.htb/TRAVERSAL; rm -rf ~",
+        "match_pattern": "$(whoami)",
+    })
+    assert argv == [
+        "dotdotpwn", "-m", "http-url", "-u", "http://unika.htb/TRAVERSAL; rm -rf ~",
+        "-k", "$(whoami)", "-b", "-q",
+    ]
+    # This app execs argv directly (no shell), so the injection attempt only
+    # matters if shlex.split(command) would ever re-tokenize it differently
+    # than the original argv -- it must not, since callers only ever use argv.
+    assert shlex.split(command) == argv
 
 
 def test_nfs_export_tree_renders_the_mount_script_with_the_chosen_export_path():

@@ -77,6 +77,17 @@ def create_interactive_session(
             raise HTTPException(
                 409, "Responder가 이미 실행 중입니다 (PID "
                 f"{running.stdout.split()[0]}). 기존 터미널 창을 사용하세요.")
+    # impacket-smbserver binds 445 (and 139) exclusively same as Responder
+    # binds its own port set -- a second instance just fails to bind and
+    # exits immediately, so catch that before a second window opens only to
+    # error out right away.
+    if body.template_id == "smbserver-listener":
+        running = subprocess.run(
+            ["pgrep", "-f", "smbserver.py"], capture_output=True, text=True)
+        if running.returncode == 0:
+            raise HTTPException(
+                409, "SMB 서버가 이미 실행 중입니다 (PID "
+                f"{running.stdout.split()[0]}). 기존 터미널 창을 사용하세요.")
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -85,6 +96,10 @@ def create_interactive_session(
         "host": target.ip,
         "repo_dir": str(REPOSITORY_DIR),
     }
+    if body.template_id == "smbserver-listener":
+        share_dir = target_dir / "outputs" / "smb-share"
+        share_dir.mkdir(parents=True, exist_ok=True)
+        variables["output_dir"] = str(share_dir)
     if service:
         variables.update(
             port=str(service.port), protocol=service.protocol,
