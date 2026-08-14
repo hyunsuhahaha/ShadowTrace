@@ -180,6 +180,32 @@ def test_create_job_builds_argv_and_writes_hash_file(wordlist, tmp_path, monkeyp
         "$krb5tgs$23$*user$REALM$spn*$deadbeef"
 
 
+def test_create_job_gives_each_job_its_own_hashcat_session_so_concurrent_jobs_dont_collide(
+        wordlist, tmp_path, monkeypatch):
+    # Without --session, every job shares hashcat's default session name and
+    # its single-instance lock -- a second job starting while an earlier one
+    # is still running fails instantly with "Already an instance running",
+    # regardless of which hashes/target either job is actually for
+    # (confirmed live).
+    from app.modules.hash_cracking import router as router_module
+    monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    first = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+        hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+        wordlist_id="test_list"), db)
+    second = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+        hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+        wordlist_id="test_list"), db)
+    first_argv = json.loads(db.get(HashCrackJob, first.id).argv_json)
+    second_argv = json.loads(db.get(HashCrackJob, second.id).argv_json)
+    assert first_argv[6:8] == ["--session", str(first.id)]
+    assert second_argv[6:8] == ["--session", str(second.id)]
+    assert first_argv[6:8] != second_argv[6:8]
+
+
 def test_create_job_appends_rule_flag_when_selected(wordlist, tmp_path, monkeypatch):
     from app.modules.hash_cracking import router as router_module
     monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)

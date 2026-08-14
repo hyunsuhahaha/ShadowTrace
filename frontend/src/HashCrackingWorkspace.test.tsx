@@ -185,6 +185,61 @@ it("shows the job as running immediately after starting, without waiting for the
   expect(await screen.findByText("실행 중")).toBeTruthy();
 });
 
+function job(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: 5, project_id: 1, target_id: 2, label: "", hash_mode_id: "ntlm", hash_mode: "1000",
+    hash_type_name: "NTLM", attack_mode: "0", wordlist_id: "rockyou", wordlist2_id: "",
+    rule_id: "", mask: "", hash_count: 1, command_display: "", status: "failed", exit_code: 1,
+    cracked_count: 0, cancelled: false, error: "", evidence_id: null, created_at: "",
+    ...overrides,
+  };
+}
+
+it("stays on the just-started job instead of snapping back to the one selected before, when the history list hasn't refetched yet", async () => {
+  // history.data only picks up the new job once its own invalidateQueries
+  // resolves -- a beat after setJobId(created.id) already ran. The
+  // "current job vanished from the list, fall back to most recent" effect
+  // used to fire on that single stale render (new job not in the still-old
+  // list) and snap straight back to job 5, so starting a job never
+  // actually showed it without a manual click in the history list.
+  let historyReturnsNewJob = false;
+  const fetcher = baseFetcher((url, init) => {
+    if (url.includes("/hash-cracking?target_id=")) {
+      return new Response(JSON.stringify(historyReturnsNewJob
+        ? [job({ id: 9, status: "running" }), job({ id: 5 })] : [job({ id: 5 })]),
+        { headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      historyReturnsNewJob = true;
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9, status: "running" }),
+        { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/output") || url.includes("/hash-cracking/5/output")) {
+      return new Response(JSON.stringify({ stdout: "", stderr: "", cracked: [] }),
+        { headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher);
+  await screen.findByLabelText("공격 모드");
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0" },
+  });
+
+  fireEvent.click(screen.getByText("크랙 시작"));
+
+  await waitFor(() => expect(screen.getAllByText(/작업 #9/).length).toBeGreaterThan(0));
+  // Give the invalidated history query a chance to refetch and re-run the
+  // fallback effect -- it must not undo the switch to job 9 once it does.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.getAllByText(/작업 #9/).length).toBeGreaterThan(0);
+  expect(document.querySelector(".crackRow.active")?.textContent).toContain("9");
+});
+
 it("puts the cracked password front and center, with the hash as secondary detail and a copy button", async () => {
   const fetcher = baseFetcher((url) => {
     if (url.includes("/hash-cracking?target_id=")) {

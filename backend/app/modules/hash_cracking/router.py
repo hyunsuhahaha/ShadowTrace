@@ -164,6 +164,14 @@ def create_job(body: JobIn, db: Session = Depends(get_db)):
 
     argv = ["hashcat", "-m", hash_mode["mode"], "-a", body.attack_mode,
             "--potfile-disable", "-o", "cracked.txt", "hashes.txt"]
+    # Without an explicit --session, every job shares hashcat's default
+    # session name and its single-instance lock file with it -- a second
+    # job started while an earlier one is still running fails instantly
+    # with "Already an instance '/usr/bin/hashcat' running", regardless of
+    # which job/hashes/target it's actually for (confirmed live: two
+    # concurrent jobs on unrelated hashes collided this way). Job id is
+    # unique per row, so using it as the session name gives every job its
+    # own lock.
     wordlist_id = wordlist2_id = rule_id = mask = ""
     if body.attack_mode == "0":
         wordlist_id = body.wordlist_id
@@ -197,6 +205,7 @@ def create_job(body: JobIn, db: Session = Depends(get_db)):
         wordlist_id=wordlist_id, wordlist2_id=wordlist2_id, rule_id=rule_id,
         mask=mask, hash_count=len(hash_lines))
     db.add(row); db.flush()
+    argv[6:6] = ["--session", str(row.id)]  # after the fixed base, before the mode-specific tail
     folder = job_directory(project, target, row.id)
     hashes_path = folder / "hashes.txt"
     hashes_path.write_text("\n".join(hash_lines) + "\n", encoding="utf-8")

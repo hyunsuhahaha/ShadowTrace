@@ -176,7 +176,17 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
   useEffect(() => {
     if (target) syncSelectedProject(target.project_id);
   }, [target]);
+  // createAndStart below sets jobId to a job that was just POSTed and can't
+  // possibly be in `history.data` yet (that only refreshes once its own
+  // invalidateQueries resolves, a beat later) -- without this guard, this
+  // effect's own "current job vanished from the list, fall back to the
+  // most recent one" logic fires on that single stale render and snaps
+  // straight back to whatever was selected before, so starting a new job
+  // never actually showed it; the operator had to click it in the history
+  // list by hand to actually see it.
+  const skipHistoryFallbackRef = useRef(false);
   useEffect(() => {
+    if (skipHistoryFallbackRef.current) { skipHistoryFallbackRef.current = false; return; }
     if (history.data?.length && !history.data.some((r) => r.id === jobId)) {
       setJobId(history.data[0].id);
       setLiveStatus(history.data[0].status);
@@ -264,6 +274,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
         mask: selectedAttackMode.needsMask ? mask.trim() : undefined,
       });
       await post<Job>(`/hash-cracking/${created.id}/start`, {});
+      skipHistoryFallbackRef.current = true;
       setJobId(created.id);
       setLiveStatus("running");
       setHashes(""); setLabel(""); setHashModeAuto(false);
