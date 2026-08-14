@@ -177,6 +177,30 @@ def test_delete_execution_blocks_a_still_running_command():
     assert db.get(Execution, execution.id) is not None
 
 
+def test_execute_stores_the_graph_node_it_was_run_to_follow_up_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    async def noop(*args, **kwargs):
+        pass
+    monkeypatch.setattr(executions_router, "run_execution", noop)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.11")
+    db.add(target); db.flush()
+    service = Service(
+        target_id=target.id, port=445, protocol="tcp", state="open", name="microsoft-ds",
+        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
+    db.add(service); db.commit()
+
+    row = asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=service.id, template_id="smb-enum",
+        variables={}, run_as_root=False,
+        graph_node_id="01ABCXYZFINDINGNODE0000001"), db=db))
+
+    assert row.graph_parent_node_id == "01ABCXYZFINDINGNODE0000001"
+
+
 def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
         tmp_path, monkeypatch):
     # Vhost-routed sites often refuse or redirect bare-IP requests, so HTTP

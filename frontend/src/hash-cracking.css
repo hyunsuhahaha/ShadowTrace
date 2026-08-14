@@ -30,6 +30,11 @@
 .zipFileTrigger:has(input:disabled){cursor:default;opacity:.6}
 .crackAutoBadge{margin-left:6px;font-style:normal;color:var(--green);font-size:9px;letter-spacing:.02em}
 .crackMaskHint{color:#71868c;font-size:9px}
+.crackEngine{border:1px solid #29373b;border-radius:3px;padding:10px;display:grid;gap:6px;margin:0}
+.crackEngine legend{padding:0 4px;font-size:11px;color:#9aadb2}
+.crackEngineOption{display:flex!important;align-items:center;gap:6px;font-size:12px;color:#dbe4e7}
+.crackEngineOption input{width:auto;padding:0}
+.crackEngineFallback{color:#e3b47f;font-size:9px}
 .crackForm>button{margin-top:4px;border:1px solid #365136;background:var(--green);color:#0a120b;font-weight:700;border-radius:3px;padding:10px;font-size:12px}
 .crackFormResizeHandle{right:-5px}
 .crackFormResizeHandle::after{right:4px}

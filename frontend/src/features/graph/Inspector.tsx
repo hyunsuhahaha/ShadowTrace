@@ -486,6 +486,7 @@ export function Inspector(props: {
     const body: Record<string, unknown> = {
       target_id: props.executionContext.targetId,
       service_id: props.executionContext.serviceId || null,
+      graph_node_id: n?.id,
     };
     if (!hashMatch) body.command = base;
     const session = await api<{id: number}>("/interactive-sessions/manual", {
@@ -499,6 +500,12 @@ export function Inspector(props: {
   // redis-unauthenticated-info already proved INFO runs with no AUTH -- one
   // click opens the same interactive client a manual "redis-client" catalog
   // run would, instead of the operator having to go find it themselves.
+  // Shared by every "open a shell for this confirmed access" button below
+  // (redis/mongo/mysql-probe/ssh/mssql/psexec/lateral) -- graph_node_id
+  // defaults to whatever node is selected (the finding/technique that
+  // proved this access works), so sync_from_project() parents the
+  // resulting session there instead of the generic host/service fallback
+  // (docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙").
   const openManualSession = async (cmd: string, title?: string, initialInput?: string) => {
     if (!props.executionContext) return;
     const session = await api<{id: number}>("/interactive-sessions/manual", {
@@ -506,7 +513,7 @@ export function Inspector(props: {
       body: JSON.stringify({
         target_id: props.executionContext.targetId,
         service_id: props.executionContext.serviceId || null,
-        command: cmd,
+        command: cmd, graph_node_id: n?.id,
       }),
     });
     setManualSession({id: session.id, title: title || cmd, initialInput});
@@ -599,6 +606,10 @@ export function Inspector(props: {
     if (!props.executionContext) return;
     localStorage.setItem("oscp-workspace-hash-target", String(props.executionContext.targetId));
     localStorage.setItem("oscp-workspace-hash-mode", "kerberoast");
+    // n is the NetExec-check technique node that proved this access -- see
+    // HashCrackingWorkspace's own handoffGraphNodeId effect for the other
+    // end of this handoff.
+    if (n?.id) localStorage.setItem("oscp-workspace-hash-graph-node", n.id);
     location.hash = "hash-cracking";
   };
   // lookupsid/rid-brute are recon follow-ups, not a "connect" action, so
@@ -617,7 +628,7 @@ export function Inspector(props: {
           target_id: props.executionContext.targetId,
           service_id: targetLevel ? null : (props.executionContext.serviceId || null),
           template_id: templateId, variables, run_as_root: false,
-          output_filename: "", command_override: null,
+          output_filename: "", command_override: null, graph_node_id: n?.id,
         }),
       });
       dispatchEvent(new CustomEvent("oscp-graph-refresh"));

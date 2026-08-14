@@ -69,6 +69,7 @@ def get_catalog():
         "wordlists": catalog.wordlists(),
         "rules": catalog.rules(),
         "hashcat_installed": bool(shutil.which("hashcat")),
+        "john_installed": bool(shutil.which("john")),
     }
 
 
@@ -162,50 +163,75 @@ def create_job(body: JobIn, db: Session = Depends(get_db)):
     if not hash_lines:
         raise HTTPException(400, "No hash lines were provided")
 
-    argv = ["hashcat", "-m", hash_mode["mode"], "-a", body.attack_mode,
-            "--potfile-disable", "-o", "cracked.txt", "hashes.txt"]
-    # Without an explicit --session, every job shares hashcat's default
-    # session name and its single-instance lock file with it -- a second
-    # job started while an earlier one is still running fails instantly
-    # with "Already an instance '/usr/bin/hashcat' running", regardless of
-    # which job/hashes/target it's actually for (confirmed live: two
-    # concurrent jobs on unrelated hashes collided this way). Job id is
-    # unique per row, so using it as the session name gives every job its
-    # own lock.
+    john_format = hash_mode.get("john_format")
+    if body.engine == "john" and not john_format:
+        raise HTTPException(
+            400, f"john engine doesn't support hash mode '{hash_mode['id']}' yet -- pick hashcat")
+    if body.engine == "john" and body.attack_mode not in ("0", "3"):
+        raise HTTPException(400, "john engine only supports dictionary (0) or mask (3) attacks")
+    if body.engine == "john" and body.rule_id:
+        raise HTTPException(400, "john engine doesn't support hashcat rule files")
+
     wordlist_id = wordlist2_id = rule_id = mask = ""
-    if body.attack_mode == "0":
-        wordlist_id = body.wordlist_id
-        argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
-        if body.rule_id:
-            rule_path = catalog.rule_path(body.rule_id)
-            if not rule_path:
-                raise HTTPException(400, "Unknown or uninstalled rule_id")
-            rule_id = body.rule_id
-            argv += ["-r", rule_path]
-    elif body.attack_mode == "1":
-        wordlist_id, wordlist2_id = body.wordlist_id, body.wordlist2_id
-        argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
-        argv.append(_resolved_wordlist(wordlist2_id, "wordlist2_id"))
-    elif body.attack_mode == "3":
-        mask = _resolved_mask(body.mask)
-        argv.append(mask)
-    elif body.attack_mode == "6":
-        wordlist_id, mask = body.wordlist_id, _resolved_mask(body.mask)
-        argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
-        argv.append(mask)
-    else:  # "7"
-        wordlist_id, mask = body.wordlist_id, _resolved_mask(body.mask)
-        argv.append(mask)
-        argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
+    if body.engine == "john":
+        argv = ["john", f"--format={john_format}"]
+        if body.attack_mode == "0":
+            wordlist_id = body.wordlist_id
+            argv.append(f"--wordlist={_resolved_wordlist(wordlist_id, 'wordlist_id')}")
+        else:  # "3"
+            mask = _resolved_mask(body.mask)
+            argv.append(f"--mask={mask}")
+        argv.append("hashes.txt")
+    else:
+        argv = ["hashcat", "-m", hash_mode["mode"], "-a", body.attack_mode,
+                "--potfile-disable", "-o", "cracked.txt", "hashes.txt"]
+        if body.attack_mode == "0":
+            wordlist_id = body.wordlist_id
+            argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
+            if body.rule_id:
+                rule_path = catalog.rule_path(body.rule_id)
+                if not rule_path:
+                    raise HTTPException(400, "Unknown or uninstalled rule_id")
+                rule_id = body.rule_id
+                argv += ["-r", rule_path]
+        elif body.attack_mode == "1":
+            wordlist_id, wordlist2_id = body.wordlist_id, body.wordlist2_id
+            argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
+            argv.append(_resolved_wordlist(wordlist2_id, "wordlist2_id"))
+        elif body.attack_mode == "3":
+            mask = _resolved_mask(body.mask)
+            argv.append(mask)
+        elif body.attack_mode == "6":
+            wordlist_id, mask = body.wordlist_id, _resolved_mask(body.mask)
+            argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
+            argv.append(mask)
+        else:  # "7"
+            wordlist_id, mask = body.wordlist_id, _resolved_mask(body.mask)
+            argv.append(mask)
+            argv.append(_resolved_wordlist(wordlist_id, "wordlist_id"))
 
     row = HashCrackJob(
-        project_id=project.id, target_id=target.id, label=body.label,
+        project_id=project.id, target_id=target.id, label=body.label, engine=body.engine,
         hash_mode_id=hash_mode["id"], hash_mode=hash_mode["mode"],
         hash_type_name=hash_mode["name"], attack_mode=body.attack_mode,
         wordlist_id=wordlist_id, wordlist2_id=wordlist2_id, rule_id=rule_id,
         mask=mask, hash_count=len(hash_lines), graph_parent_node_id=body.graph_node_id)
     db.add(row); db.flush()
-    argv[6:6] = ["--session", str(row.id)]  # after the fixed base, before the mode-specific tail
+    if body.engine == "john":
+        # john has no hashcat-style single-instance lock (concurrent jobs
+        # don't collide the way hashcat's do), but still gets its own
+        # --session name for isolated restore-state bookkeeping.
+        argv[1:1] = [f"--session={row.id}"]
+    else:
+        # Without an explicit --session, every job shares hashcat's default
+        # session name and its single-instance lock file with it -- a second
+        # job started while an earlier one is still running fails instantly
+        # with "Already an instance '/usr/bin/hashcat' running", regardless of
+        # which job/hashes/target it's actually for (confirmed live: two
+        # concurrent jobs on unrelated hashes collided this way). Job id is
+        # unique per row, so using it as the session name gives every job its
+        # own lock.
+        argv[6:6] = ["--session", str(row.id)]  # after the fixed base, before the mode-specific tail
     folder = job_directory(project, target, row.id)
     hashes_path = folder / "hashes.txt"
     hashes_path.write_text("\n".join(hash_lines) + "\n", encoding="utf-8")
@@ -220,14 +246,15 @@ async def start_job(job_id: int, db: Session = Depends(get_db)):
     row = need(db, HashCrackJob, job_id)
     if row.status != "prepared":
         raise HTTPException(409, "This job was already started")
-    if not shutil.which("hashcat"):
-        raise HTTPException(409, "hashcat is not installed (sudo apt install hashcat)")
+    if not shutil.which(row.engine):
+        raise HTTPException(409, f"{row.engine} is not installed")
     target = need(db, Target, row.target_id)
     project = need(db, Project, row.project_id)
     folder = job_directory(project, target, row.id)
     row.status = "running"; row.started_at = utcnow()
     db.commit(); db.refresh(row)
-    manager.enqueue(row.id, json.loads(row.argv_json), folder)
+    manager.enqueue(row.id, json.loads(row.argv_json), folder, row.engine,
+                    catalog.HASH_MODE_INDEX[row.hash_mode_id].get("john_format", ""))
     return row
 
 

@@ -140,7 +140,7 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
     row = Execution(
         target_id=target.id, service_id=body.service_id,
         template_id=item["id"], command=command, cwd=str(target_dir),
-        status="queued",
+        status="queued", graph_parent_node_id=body.graph_node_id,
     )
     db.add(row)
     db.commit()

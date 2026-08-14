@@ -16,46 +16,56 @@ from pathlib import Path
 HASH_MODES = [
     {"id": "ntlm", "name": "NTLM (SAM/NTDS, secretsdump)", "mode": "1000",
      "example": "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c",
-     "detect": r"^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}$"},
+     "detect": r"^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}$", "john_format": "NT"},
     {"id": "netntlmv2", "name": "NetNTLMv2", "mode": "5600",
      "example": "admin::CORP:1122334455667788:aaaa...:0101...",
-     "detect": r"^[^:\s]+::[^:\s]*:[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+$"},
+     "detect": r"^[^:\s]+::[^:\s]*:[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+$",
+     "john_format": "netntlmv2"},
     {"id": "kerberoast", "name": "Kerberoasting (TGS-REP, etype 23)", "mode": "13100",
      "example": "$krb5tgs$23$*user$REALM$spn*$...",
-     "detect": r"^\$krb5tgs\$23\$"},
+     "detect": r"^\$krb5tgs\$23\$", "john_format": "krb5tgs"},
     {"id": "asreproast", "name": "AS-REP Roasting (etype 23)", "mode": "18200",
      "example": "$krb5asrep$23$user@REALM:...",
-     "detect": r"^\$krb5asrep\$23\$"},
+     "detect": r"^\$krb5asrep\$23\$", "john_format": "krb5asrep"},
     {"id": "linux_sha512crypt", "name": "Linux shadow · sha512crypt ($6$)", "mode": "1800",
-     "example": "$6$saltsalt$hash...", "detect": r"^\$6\$"},
+     "example": "$6$saltsalt$hash...", "detect": r"^\$6\$", "john_format": "sha512crypt"},
     {"id": "linux_md5crypt", "name": "Linux shadow · md5crypt ($1$)", "mode": "500",
-     "example": "$1$saltsalt$hash...", "detect": r"^\$1\$"},
+     "example": "$1$saltsalt$hash...", "detect": r"^\$1\$", "john_format": "md5crypt"},
     {"id": "bcrypt", "name": "bcrypt (Linux/Unix, 최신 웹서비스)", "mode": "3200",
-     "example": "$2y$05$saltsaltsaltsaltsaltsu.hash...", "detect": r"^\$2[abxy]\$"},
+     "example": "$2y$05$saltsaltsaltsaltsaltsu.hash...", "detect": r"^\$2[abxy]\$",
+     "john_format": "bcrypt"},
     {"id": "winzip", "name": "WinZip (AES)", "mode": "13600",
-     "example": "$zip2$*0*...", "detect": r"^\$zip2\$"},
+     "example": "$zip2$*0*...", "detect": r"^\$zip2\$", "john_format": "ZIP"},
     # Legacy ZipCrypto (`zip -e`) is what most OSCP loot zips actually use,
     # unlike WinZip AES above. hashcat's PKZIP family splits into five
     # submodes by compression/entry-count that a $pkzip$ hash string alone
     # doesn't unambiguously reveal, so only the most common submode
     # (compressed entries) auto-detects; the rest are manual-only picks in
     # the dropdown, same spirit as the "detect is best-effort" note above.
+    # All five PKZIP submodes come from the identical zip2john $pkzip$
+    # hash shape and differ only in hashcat's own internal subdivision by
+    # compression/entry-count -- john has a single "PKZIP" format that
+    # handles all of them the same way (confirmed live against a real
+    # multi-file archive, see docs/OBVIOUSNESS_STANDARD.md).
     {"id": "pkzip", "name": "PKZIP/ZipCrypto (구형, 압축됨)", "mode": "17200",
-     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"^\$pkzip\$"},
+     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"^\$pkzip\$",
+     "john_format": "PKZIP"},
     {"id": "pkzip_uncompressed", "name": "PKZIP/ZipCrypto (구형, 비압축·stored)", "mode": "17210",
-     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"(?!)"},
+     "example": "$pkzip$1*1*2*0*...*$/pkzip$", "detect": r"(?!)", "john_format": "PKZIP"},
     {"id": "pkzip_multi_compressed", "name": "PKZIP/ZipCrypto (다중 파일, 압축됨)", "mode": "17220",
-     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)", "john_format": "PKZIP"},
     {"id": "pkzip_multi_mixed", "name": "PKZIP/ZipCrypto (다중 파일, 혼합)", "mode": "17225",
-     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)", "john_format": "PKZIP"},
     {"id": "pkzip_multi_checksum", "name": "PKZIP/ZipCrypto (다중 파일, 체크섬만)", "mode": "17230",
-     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)"},
+     "example": "$pkzip$8*2*...*$/pkzip$", "detect": r"(?!)", "john_format": "PKZIP"},
     {"id": "sevenzip", "name": "7-Zip", "mode": "11600",
-     "example": "$7z$2$19$0$salt$8$iv$...", "detect": r"^\$7z\$"},
+     "example": "$7z$2$19$0$salt$8$iv$...", "detect": r"^\$7z\$", "john_format": "7z"},
     {"id": "rar5", "name": "RAR5", "mode": "13000",
-     "example": "$rar5$16$salt$15$iv$8$checksum", "detect": r"^\$rar5\$"},
+     "example": "$rar5$16$salt$15$iv$8$checksum", "detect": r"^\$rar5\$",
+     "john_format": "RAR5"},
     {"id": "keepass", "name": "KeePass 1/2 (keepass2john)", "mode": "13400",
-     "example": "$keepass$*2*60000*0*...", "detect": r"^\$keepass\$\*"},
+     "example": "$keepass$*2*60000*0*...", "detect": r"^\$keepass\$\*",
+     "john_format": "KeePass"},
     {"id": "sha256_salt_pass", "name": "salted SHA256 (sha256($salt.$pass), 웹앱 DB)",
      "mode": "1420", "example": "hash(64자 hex):salt",
      # hash:salt is the only unambiguous shape available for this mode — a
@@ -66,13 +76,13 @@ HASH_MODES = [
     # own hashcat -m number and its own detect regex on that field.
     {"id": "ms_office_2007", "name": "MS Office 2007", "mode": "9400",
      "example": "$office$*2007*20*128*16*salt*hash*verifier",
-     "detect": r"^\$office\$\*2007\*"},
+     "detect": r"^\$office\$\*2007\*", "john_format": "Office"},
     {"id": "ms_office_2010", "name": "MS Office 2010", "mode": "9500",
      "example": "$office$*2010*100000*128*16*salt*hash*verifier",
-     "detect": r"^\$office\$\*2010\*"},
+     "detect": r"^\$office\$\*2010\*", "john_format": "Office"},
     {"id": "ms_office_2013", "name": "MS Office 2013+", "mode": "9600",
      "example": "$office$*2013*100000*256*16*salt*hash*verifier",
-     "detect": r"^\$office\$\*2013\*"},
+     "detect": r"^\$office\$\*2013\*", "john_format": "Office"},
     {"id": "wpa", "name": "WPA-PBKDF2 (PMKID/EAPOL)", "mode": "22000",
      # No inline (?i) here: this pattern is reused verbatim as a JS RegExp
      # on the frontend for hash-mode auto-detection, and JS doesn't support
@@ -97,10 +107,10 @@ HASH_MODES = [
      "detect": r"^[0-9a-fA-F]+(?::[0-9a-fA-F]+){6,}$"},
     {"id": "sha256", "name": "SHA256 (일반 체크섬)", "mode": "1400",
      "example": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
-     "detect": r"^[0-9a-fA-F]{64}$"},
+     "detect": r"^[0-9a-fA-F]{64}$", "john_format": "Raw-SHA256"},
     {"id": "md5", "name": "MD5 (구형 웹사이트, 단순 체크섬)", "mode": "0",
      "example": "5f4dcc3b5aa765d61d8327deb882cf99",
-     "detect": r"^[0-9a-fA-F]{32}$"},
+     "detect": r"^[0-9a-fA-F]{32}$", "john_format": "Raw-MD5"},
 ]
 HASH_MODE_INDEX = {item["id"]: item for item in HASH_MODES}
 

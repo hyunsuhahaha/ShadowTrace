@@ -12,8 +12,12 @@ class JobIn(BaseModel):
     label: str = Field(default="", max_length=200)
     hash_mode_id: str = Field(min_length=1, max_length=40)
     hashes: str = Field(min_length=1, max_length=2_000_000)
+    # Confirmed live on this CPU-only box: john's native OpenMP beats
+    # hashcat's software-OpenCL path by 2-6x, so it's the default.
+    engine: str = Field(default="john", pattern=r"^(hashcat|john)$")
     # hashcat -a: 0 straight, 1 combination, 3 brute-force/mask,
-    # 6 hybrid wordlist+mask, 7 hybrid mask+wordlist.
+    # 6 hybrid wordlist+mask, 7 hybrid mask+wordlist. john only supports
+    # 0 (--wordlist) and 3 (--mask) of these -- see create_job.
     attack_mode: str = Field(default="0", pattern=r"^[01367]$")
     wordlist_id: str = Field(default="", max_length=80)
     wordlist2_id: str = Field(default="", max_length=80)
@@ -36,6 +40,7 @@ class PromoteIn(BaseModel):
 class JobOut(ORM):
     id: int; project_id: int; target_id: int | None
     label: str; hash_mode_id: str; hash_mode: str; hash_type_name: str
+    engine: str
     attack_mode: str; wordlist_id: str; wordlist2_id: str; rule_id: str
     mask: str; hash_count: int
     command_display: str; status: str; exit_code: int | None

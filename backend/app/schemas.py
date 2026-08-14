@@ -66,6 +66,11 @@ class ExecutionIn(BaseModel):
     run_as_root: bool = True
     output_filename: str = Field(default="", max_length=120, pattern=r"^[\w .-]*$")
     command_override: str | None = Field(default=None, max_length=4096)
+    # See docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- the finding/
+    # technique node this command was run to follow up on, so
+    # sync_from_project() parents it there instead of always falling back
+    # to the bare host/service.
+    graph_node_id: str | None = Field(default=None, max_length=40)
 class ExecutionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; stdout: str; stderr: str; cwd: str
@@ -183,6 +188,12 @@ class ManualTerminalIn(BaseModel):
     # or this row's command column.
     command: str = Field(default="", max_length=500)
     run_as_root: bool = False
+    # See docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- the finding/
+    # credential/technique node this shell was opened from (e.g. Inspector's
+    # openManualSession helper defaults this to whatever node is selected),
+    # so sync_from_project() parents the session there instead of always
+    # falling back to the bare host/service.
+    graph_node_id: str | None = Field(default=None, max_length=40)
     @field_validator("command")
     @classmethod
     def no_inline_secrets(cls, v: str) -> str:

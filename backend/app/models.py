@@ -68,6 +68,11 @@ class Execution(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued")
     error: Mapped[str] = mapped_column(Text, default="")
     output_path: Mapped[str] = mapped_column(Text, default="")
+    # See docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- which graph node
+    # (e.g. the finding this command was run to follow up on) this execution
+    # should be parented under instead of sync_from_project()'s default
+    # host/service fallback.
+    graph_parent_node_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
 
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"
@@ -561,6 +566,12 @@ class HashCrackJob(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
     label: Mapped[str] = mapped_column(String(200), default="")
+    # "hashcat" or "john" -- confirmed live on this CPU-only (no GPU) box
+    # that john's native OpenMP threading beats hashcat's software-OpenCL
+    # (llvmpipe) path by ~2-6x, so john is the default engine; hashcat stays
+    # selectable for hash modes john doesn't cover (see catalog.HASH_MODES'
+    # john_format key) or when a real GPU backend is available.
+    engine: Mapped[str] = mapped_column(String(10), default="john")
     hash_mode_id: Mapped[str] = mapped_column(String(40))
     hash_mode: Mapped[str] = mapped_column(String(20))
     hash_type_name: Mapped[str] = mapped_column(String(120), default="")

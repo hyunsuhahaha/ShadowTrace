@@ -12,14 +12,17 @@ type Project = { id: number; name: string };
 type Target = {
   id: number; project_id: number; name: string; ip: string;
 };
-type HashMode = { id: string; name: string; mode: string; example: string; detect: string };
+type HashMode = {
+  id: string; name: string; mode: string; example: string; detect: string; john_format?: string;
+};
 type Wordlist = { id: string; name: string; path: string; installed: boolean; hint?: string };
 type Rule = { id: string; name: string; path: string; installed: boolean };
 type Catalog = {
-  hash_modes: HashMode[]; wordlists: Wordlist[]; rules: Rule[]; hashcat_installed: boolean;
+  hash_modes: HashMode[]; wordlists: Wordlist[]; rules: Rule[];
+  hashcat_installed: boolean; john_installed: boolean;
 };
 type Job = {
-  id: number; project_id: number; target_id: number; label: string;
+  id: number; project_id: number; target_id: number; label: string; engine: string;
   hash_mode_id: string; hash_mode: string; hash_type_name: string;
   attack_mode: string; wordlist_id: string; wordlist2_id: string; rule_id: string;
   mask: string; hash_count: number;
@@ -93,6 +96,13 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
   const [hashModeId, setHashModeId] = useState<string | undefined>(initialMode);
   const [hashModeAuto, setHashModeAuto] = useState(false);
   const [hashes, setHashes] = useState(initialHash);
+  // Confirmed live on this CPU-only box: john's native OpenMP threading
+  // beats hashcat's software-OpenCL path by 2-6x, so john is the preferred
+  // engine -- but it only covers attack modes 0/3 and hash modes with a
+  // john_format entry (see catalog.py), so this is a *preference*; the
+  // actually-used engine (below) silently falls back to hashcat outside
+  // that coverage rather than leaving the operator stuck on a broken pick.
+  const [enginePreference, setEnginePreference] = useState<"hashcat" | "john">("john");
   const [attackMode, setAttackMode] = useState("0");
   const [wordlistId, setWordlistId] = useState<string>();
   const [wordlist2Id, setWordlist2Id] = useState<string>();
@@ -217,6 +227,20 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
       localStorage.removeItem("oscp-workspace-hash-value");
     }
   }, [catalog.data]);
+  // Same handoff shape as -target/-mode/-value above -- Inspector's
+  // Kerberoast/AS-REP button navigates via location.hash (full route
+  // change, unlike the embedded panel's initialGraphNodeId prop), so the
+  // finding/technique node it fired from would otherwise be dropped at
+  // this handoff and the resulting job would fall back to the bare host
+  // (docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙").
+  const [handoffGraphNodeId, setHandoffGraphNodeId] = useState<string>();
+  useEffect(() => {
+    const requested = localStorage.getItem("oscp-workspace-hash-graph-node");
+    if (requested) {
+      setHandoffGraphNodeId(requested);
+      localStorage.removeItem("oscp-workspace-hash-graph-node");
+    }
+  }, []);
 
   const selected = history.data?.find((r) => r.id === jobId);
   const displayStatus = liveStatus ?? selected?.status;
@@ -227,6 +251,11 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
   const wordlistReady = !selectedAttackMode.needsWordlist || !!selectedWordlist?.installed;
   const wordlist2Ready = !selectedAttackMode.needsWordlist2 || !!selectedWordlist2?.installed;
   const maskReady = !selectedAttackMode.needsMask || !!mask.trim();
+  const johnCoversThisJob = !!selectedMode?.john_format && (attackMode === "0" || attackMode === "3");
+  const engine = enginePreference === "john" && johnCoversThisJob ? "john" : "hashcat";
+  const engineFellBack = enginePreference === "john" && !johnCoversThisJob;
+  const engineInstalled = engine === "john"
+    ? catalog.data?.john_installed : catalog.data?.hashcat_installed;
 
   const onHashesChange = (value: string) => {
     setHashes(value);
@@ -267,13 +296,16 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
     setError(""); setPromoteMsg("");
     try {
       const created = await post<Job>("/hash-cracking", {
-        project_id: projectId, target_id: targetId, label,
+        project_id: projectId, target_id: targetId, label, engine,
         hash_mode_id: hashModeId, hashes, attack_mode: attackMode,
         wordlist_id: selectedAttackMode.needsWordlist ? wordlistId : undefined,
         wordlist2_id: selectedAttackMode.needsWordlist2 ? wordlist2Id : undefined,
-        rule_id: selectedAttackMode.needsRule ? (ruleId || undefined) : undefined,
+        // john doesn't take hashcat rule files (see create_job) -- never
+        // sent when john ends up being the engine this job actually runs on.
+        rule_id: selectedAttackMode.needsRule && engine === "hashcat"
+          ? (ruleId || undefined) : undefined,
         mask: selectedAttackMode.needsMask ? mask.trim() : undefined,
-        graph_node_id: initialGraphNodeId,
+        graph_node_id: initialGraphNodeId ?? handoffGraphNodeId,
       });
       await post<Job>(`/hash-cracking/${created.id}/start`, {});
       skipHistoryFallbackRef.current = true;
@@ -393,8 +425,10 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
           </select>
         </div>
       </header>}
-      {catalog.data && !catalog.data.hashcat_installed && (
-        <div className="crackWarning">hashcat이 설치되어 있지 않습니다 (sudo apt install hashcat)</div>
+      {catalog.data && !engineInstalled && (
+        <div className="crackWarning">
+          {engine}이 설치되어 있지 않습니다 (sudo apt install {engine})
+        </div>
       )}
       <main className="crackLayout" style={{
         "--crack-form-width": `${formWidth}px`,
@@ -421,6 +455,28 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
             </select>
           </label>
           {selectedMode && <code className="crackExample">{selectedMode.example}</code>}
+          <fieldset className="crackEngine">
+            <legend>크래킹 엔진</legend>
+            <label className="crackEngineOption">
+              <input type="radio" name="engine" value="john"
+                checked={enginePreference === "john"}
+                onChange={() => setEnginePreference("john")} />
+              john (권장 — 이 환경에서 hashcat보다 2~6배 빠름)
+            </label>
+            <label className="crackEngineOption">
+              <input type="radio" name="engine" value="hashcat"
+                checked={enginePreference === "hashcat"}
+                onChange={() => setEnginePreference("hashcat")} />
+              hashcat
+            </label>
+            {engineFellBack && (
+              <small className="crackEngineFallback">
+                {!selectedMode?.john_format
+                  ? "이 해시 종류는 아직 john을 지원하지 않아 hashcat으로 실행됩니다."
+                  : "john은 사전 대입·마스크 공격만 지원해 hashcat으로 실행됩니다."}
+              </small>
+            )}
+          </fieldset>
           <label>
             zip 파일에서 해시 추출 (zip2john)
             <span className="zipFileTrigger">
@@ -513,7 +569,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
           )}
           <button type="button"
             disabled={!targetId || !hashModeId || !hashes.trim() || !wordlistReady
-              || !wordlist2Ready || !maskReady || !catalog.data?.hashcat_installed}
+              || !wordlist2Ready || !maskReady || !engineInstalled}
             onClick={createAndStart}>
             크랙 시작
           </button>
@@ -626,7 +682,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
               onClick={() => { setJobId(r.id); setLiveStatus(r.status); }}>
               <span><b>#{r.id} · {r.hash_type_name}</b>
                 <em>{statusLabel[r.status] || r.status}</em></span>
-              <small>{r.hash_count}개 해시 · {new Date(r.created_at).toLocaleString()}</small>
+              <small>{r.engine} · {r.hash_count}개 해시 · {new Date(r.created_at).toLocaleString()}</small>
               {terminal.includes(r.status) && <small>크랙 {r.cracked_count}건</small>}
             </div>
           ))}

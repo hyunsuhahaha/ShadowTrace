@@ -377,6 +377,62 @@ def test_sync_projects_executions_as_technique_nodes():
     assert tech.status == "in-progress"
 
 
+def test_execution_parents_under_the_finding_it_was_run_to_follow_up_on():
+    # docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- an execution
+    # triggered from a specific finding (e.g. re-running a directory brute
+    # force after spotting a vhost) belongs under that finding, not the
+    # generic host/service every execution falls back to by default.
+    from app.models import Execution, Finding, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.26")
+    db.add(t); db.flush()
+    finding = Finding(project_id=p.id, target_id=t.id, title="Ftp Anon on 10.0.0.26:21")
+    db.add(finding); db.flush()
+    service.sync_from_project(db, p.id)
+    finding_node = db.query(GraphNode).filter_by(type="finding").one()
+
+    db.add(Execution(target_id=t.id, template_id="ftp-directory-tree",
+                     command="python -m app.ftp_tree ...", cwd="/tmp", status="completed",
+                     graph_parent_node_id=finding_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", finding_node.id, tech.id) in relations
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert ("attempted", host.id, tech.id) not in relations
+
+
+def test_execution_falls_back_to_host_when_the_explicit_parent_is_a_credential():
+    from app.models import Credential, Execution, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.27")
+    db.add(t); db.flush()
+    db.add(Credential(project_id=p.id, target_id=t.id, username="bob", secret="hash",
+                      secret_kind="hash", service_names="[]", notes=""))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    cred_node = db.query(GraphNode).filter_by(type="credential").one()
+
+    db.add(Execution(target_id=t.id, template_id="feroxbuster",
+                     command="feroxbuster ...", cwd="/tmp", status="completed",
+                     graph_parent_node_id=cred_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    host = db.query(GraphNode).filter_by(type="host").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", host.id, tech.id) in relations
+
+
 def test_technique_node_labels_use_the_catalogs_human_readable_name():
     # "service-version" means nothing to someone reading the graph; the
     # catalog already carries a Korean name for it, so use that instead of

@@ -159,7 +159,12 @@ def create_interactive_session(
         if tree_service is not None and not db.scalar(select(Execution.id).where(
                 Execution.target_id == target.id, Execution.service_id == tree_service.id,
                 Execution.template_id == "ftp-directory-tree")):
-            background_tasks.add_task(_auto_run_ftp_tree, target.id, tree_service.id)
+            # The tree crawl and the session it follows from share the same
+            # cause (docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙") -- if
+            # this session was itself parented under a specific finding,
+            # the tree run belongs there too, not the bare service.
+            background_tasks.add_task(
+                _auto_run_ftp_tree, target.id, tree_service.id, row.graph_parent_node_id)
     return row
 
 
@@ -197,6 +202,7 @@ def create_manual_terminal(
         target_id=target.id, service_id=service.id if service else None,
         template_id="manual-shell", command=command,
         cwd=str(target_dir), status="ready",
+        graph_parent_node_id=body.graph_node_id,
     )
     db.add(row)
     db.commit()
@@ -224,7 +230,8 @@ async def interactive_session_socket(websocket: WebSocket, ident: int):
     await pty_manager.connect(ident, argv, cwd, log_path, websocket)
 
 
-async def _auto_run_ftp_tree(target_id: int, service_id: int) -> None:
+async def _auto_run_ftp_tree(
+        target_id: int, service_id: int, graph_parent_node_id: str | None = None) -> None:
     # ftp-directory-tree's script doubles as the login check (a wrong
     # password fails before any listing starts), so an anonymous crawl here
     # is safe to fire for every ftp-client session -- create_interactive_session
@@ -250,7 +257,7 @@ async def _auto_run_ftp_tree(target_id: int, service_id: int) -> None:
             return
         row = Execution(target_id=target.id, service_id=service.id,
                          template_id=item["id"], command=command, cwd=str(target_dir),
-                         status="queued")
+                         status="queued", graph_parent_node_id=graph_parent_node_id)
         db.add(row); db.commit(); db.refresh(row)
         output = _output_path(output_dir, "", item["id"])
         execution_id = row.id
@@ -392,6 +399,7 @@ def retry_interactive_session(ident: int, db: Session = Depends(get_db)):
         target_id=previous.target_id, service_id=previous.service_id,
         template_id=previous.template_id, command=previous.command,
         cwd=previous.cwd, status="ready",
+        graph_parent_node_id=previous.graph_parent_node_id,
     )
     db.add(row); db.commit(); db.refresh(row)
     return row

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.database import Base
 from app.models import Credential, Evidence, HashCrackJob, Project, Target
 from app.modules.hash_cracking import catalog, manager as manager_module, router
-from app.modules.hash_cracking.manager import parse_cracked
+from app.modules.hash_cracking.manager import parse_cracked, _parse_john_show
 from app.modules.hash_cracking.schemas import JobIn, PromoteIn
 
 
@@ -130,7 +130,7 @@ def test_create_job_reencodes_werkzeug_hashes_before_writing_the_hash_file(
     line = "pbkdf2:sha256:600000$AMtzteQIG7yAbZIa$" + "0673ad90a0b4afb19d662336f0fce3a9" * 2
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="werkzeug_pbkdf2",
-        hashes=line, wordlist_id="test_list"), db)
+        hashes=line, wordlist_id="test_list", engine="hashcat"), db)
     assert job.hash_mode == "10900"
     folder = router_module.job_directory(project, target, job.id)
     written = (folder / "hashes.txt").read_text(encoding="utf-8").strip()
@@ -169,7 +169,8 @@ def test_create_job_builds_argv_and_writes_hash_file(wordlist, tmp_path, monkeyp
     project, _other, target, _foreign = scope(db)
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="kerberoast",
-        hashes="$krb5tgs$23$*user$REALM$spn*$deadbeef\n\n", wordlist_id="test_list"), db)
+        hashes="$krb5tgs$23$*user$REALM$spn*$deadbeef\n\n", wordlist_id="test_list",
+        engine="hashcat"), db)
     assert job.hash_count == 1
     assert job.hash_mode == "13100"
     argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
@@ -194,11 +195,11 @@ def test_create_job_gives_each_job_its_own_hashcat_session_so_concurrent_jobs_do
     first = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        wordlist_id="test_list"), db)
+        wordlist_id="test_list", engine="hashcat"), db)
     second = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        wordlist_id="test_list"), db)
+        wordlist_id="test_list", engine="hashcat"), db)
     first_argv = json.loads(db.get(HashCrackJob, first.id).argv_json)
     second_argv = json.loads(db.get(HashCrackJob, second.id).argv_json)
     assert first_argv[6:8] == ["--session", str(first.id)]
@@ -219,9 +220,94 @@ def test_create_job_appends_rule_flag_when_selected(wordlist, tmp_path, monkeypa
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        wordlist_id="test_list", rule_id="best64"), db)
+        wordlist_id="test_list", rule_id="best64", engine="hashcat"), db)
     argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
     assert argv[-2:] == ["-r", str(rule_path)]
+
+
+def test_create_job_defaults_to_john_and_builds_its_argv(wordlist, tmp_path, monkeypatch):
+    # Confirmed live on a GPU-less box: john's native OpenMP threading beats
+    # hashcat's software-OpenCL path by 2-6x, so john is the default engine.
+    from app.modules.hash_cracking import router as router_module
+    monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    job = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+        hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+        wordlist_id="test_list"), db)
+    assert job.engine == "john"
+    argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
+    assert argv[0] == "john"
+    assert argv[1] == f"--session={job.id}"
+    assert "--format=NT" in argv
+    assert argv[-1] == "hashes.txt"
+    assert any(a.startswith("--wordlist=") and str(wordlist) in a for a in argv)
+
+
+def test_create_job_builds_john_mask_argv(tmp_path, monkeypatch):
+    from app.modules.hash_cracking import router as router_module
+    monkeypatch.setattr(router_module, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    job = router.create_job(JobIn(
+        project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+        hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+        attack_mode="3", mask="?u?l?l?l?l?d?d?d"), db)
+    argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
+    assert "--mask=?u?l?l?l?l?d?d?d" in argv
+
+
+def test_create_job_rejects_john_for_a_hash_mode_it_has_no_mapping_for(wordlist):
+    # wpa has no john_format in the catalog -- hcxtools' WPA*02* hash shape
+    # isn't john's own wpapsk format, so this must not silently misroute.
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    with pytest.raises(HTTPException) as exc:
+        router.create_job(JobIn(
+            project_id=project.id, target_id=target.id, hash_mode_id="wpa",
+            hashes="WPA*02*hash*mac_ap*mac_sta*essid***", wordlist_id="test_list"), db)
+    assert exc.value.status_code == 400
+
+
+def test_create_job_rejects_john_for_combination_and_hybrid_attack_modes(wordlist):
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    for attack_mode in ("1", "6", "7"):
+        with pytest.raises(HTTPException) as exc:
+            router.create_job(JobIn(
+                project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+                hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+                attack_mode=attack_mode, wordlist_id="test_list", mask="?d?d?d?d"), db)
+        assert exc.value.status_code == 400
+
+
+def test_create_job_rejects_john_with_a_hashcat_rule_file(wordlist, tmp_path, monkeypatch):
+    monkeypatch.setattr(catalog, "CANDIDATE_RULES", [
+        {"id": "best64", "name": "best64.rule", "path": str(tmp_path / "best64.rule")},
+    ])
+    db = database()
+    project, _other, target, _foreign = scope(db)
+    with pytest.raises(HTTPException) as exc:
+        router.create_job(JobIn(
+            project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
+            hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+            wordlist_id="test_list", rule_id="best64"), db)
+    assert exc.value.status_code == 400
+
+
+def test_parse_john_show_recovers_hash_plain_pairs_across_formats():
+    # NT's own --show line has no trailing fields; ZIP's does (archive name
+    # and member list after the plaintext) -- splitting on the first colon
+    # and taking only the very next field (not rpartition, which the ZIP
+    # shape would break) handles both the same way.
+    nt_output = "aad3b435b51404eeaad3b435b51404ee:password\n\n1 password hash cracked, 0 left\n"
+    assert _parse_john_show(nt_output) == [
+        {"hash": "aad3b435b51404eeaad3b435b51404ee", "plain": "password"}]
+
+    zip_output = ("backup.zip:741852963::backup.zip:style.css, index.php:"
+                  "/home/kali/loot/backup.zip\n\n1 password hash cracked, 0 left\n")
+    assert _parse_john_show(zip_output) == [{"hash": "backup.zip", "plain": "741852963"}]
 
 
 def test_create_job_combination_mode_needs_two_wordlists(wordlist, tmp_path, monkeypatch):
@@ -238,7 +324,8 @@ def test_create_job_combination_mode_needs_two_wordlists(wordlist, tmp_path, mon
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        attack_mode="1", wordlist_id="test_list", wordlist2_id="second_list"), db)
+        attack_mode="1", wordlist_id="test_list", wordlist2_id="second_list",
+        engine="hashcat"), db)
     argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
     assert argv[:6] == ["hashcat", "-m", "1000", "-a", "1", "--potfile-disable"]
     assert argv[-2:] == [str(wordlist), str(second)]
@@ -246,7 +333,7 @@ def test_create_job_combination_mode_needs_two_wordlists(wordlist, tmp_path, mon
         router.create_job(JobIn(
             project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
             hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-            attack_mode="1", wordlist_id="test_list"), db)
+            attack_mode="1", wordlist_id="test_list", engine="hashcat"), db)
 
 
 def test_create_job_brute_force_mode_uses_a_validated_mask(wordlist, tmp_path, monkeypatch):
@@ -257,7 +344,7 @@ def test_create_job_brute_force_mode_uses_a_validated_mask(wordlist, tmp_path, m
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        attack_mode="3", mask="?u?l?l?l?l?d?d?d"), db)
+        attack_mode="3", mask="?u?l?l?l?l?d?d?d", engine="hashcat"), db)
     argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
     assert argv[:6] == ["hashcat", "-m", "1000", "-a", "3", "--potfile-disable"]
     assert argv[-1] == "?u?l?l?l?l?d?d?d"
@@ -265,7 +352,7 @@ def test_create_job_brute_force_mode_uses_a_validated_mask(wordlist, tmp_path, m
         router.create_job(JobIn(
             project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
             hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-            attack_mode="3", mask=""), db)
+            attack_mode="3", mask="", engine="hashcat"), db)
 
 
 def test_create_job_rejects_a_mask_disguised_as_a_hashcat_flag(wordlist):
@@ -288,7 +375,8 @@ def test_create_job_hybrid_modes_order_wordlist_and_mask_correctly(
     job = router.create_job(JobIn(
         project_id=project.id, target_id=target.id, hash_mode_id="ntlm",
         hashes="aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
-        attack_mode=attack_mode, wordlist_id="test_list", mask="?d?d?d?d"), db)
+        attack_mode=attack_mode, wordlist_id="test_list", mask="?d?d?d?d",
+        engine="hashcat"), db)
     argv = json.loads(db.get(HashCrackJob, job.id).argv_json)
     assert argv[:6] == ["hashcat", "-m", "1000", "-a", attack_mode, "--potfile-disable"]
     if attack_mode == "6":

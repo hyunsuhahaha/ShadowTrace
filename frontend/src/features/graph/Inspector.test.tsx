@@ -292,6 +292,7 @@ it("offers SSH/MSSQL/RDP connect actions for their own NetExec checks, not just 
   expect(posted[0].body).toEqual({
     target_id: 12, service_id: 22,
     command: "impacket-mssqlclient 'sa:hunter2@10.129.7.10' -port 1433",
+    graph_node_id: "execution-70",
   });
 });
 
@@ -335,6 +336,7 @@ it("offers mongosh and shows the auto-fetched db tree once mongodb-info confirms
   await waitFor(() => expect(posted).toHaveLength(1));
   expect(posted[0].body).toEqual({
     target_id: 9, service_id: 27, command: "mongosh --host 10.129.8.5 --port 27017",
+    graph_node_id: "execution-40",
   });
 });
 
@@ -386,6 +388,7 @@ it("offers to open redis-cli once redis-unauthenticated-info confirms no AUTH is
     if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST") {
       expect(JSON.parse(init.body as string)).toEqual({
         target_id: 6, service_id: 16, command: "redis-cli -h 10.129.6.199 -p 6379",
+        graph_node_id: "execution-15",
       });
       return Promise.resolve(new Response(JSON.stringify({ id: 99 }), {
         status: 201, headers: { "Content-Type": "application/json" },

@@ -634,7 +634,19 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 select(Execution).where(Execution.target_id.in_(target_ids))):
             if ("execution", ex.id) in dismissed:
                 continue
-            parent = parent_of(ex.service_id, ex.target_id)
+            # A command run to follow up on a specific finding belongs
+            # under that finding, not the generic host/service placement --
+            # "attempted" only permits finding/service/host as a source (see
+            # docs/SPEC_GRAPH_TRACKER.md §6.1), so an override of any other
+            # type (e.g. credential, always a structural leaf) falls back.
+            explicit_parent = (
+                db.get(GraphNode, ex.graph_parent_node_id)
+                if ex.graph_parent_node_id else None)
+            if explicit_parent is not None and (
+                    explicit_parent.project_id != project_id
+                    or explicit_parent.type not in {"finding", "service", "host"}):
+                explicit_parent = None
+            parent = explicit_parent or parent_of(ex.service_id, ex.target_id)
             if parent is None:
                 continue
             activity = _runtime_activity(

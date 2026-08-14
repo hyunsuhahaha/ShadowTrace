@@ -173,6 +173,23 @@ def test_failed_interactive_session_can_be_restarted(tmp_path, monkeypatch):
     assert restarted.command == previous.command
 
 
+def test_retrying_a_session_keeps_its_original_graph_parent(tmp_path, monkeypatch):
+    # A session that failed after being correctly parented under a specific
+    # finding (docs/SPEC_GRAPH_TRACKER.md §6.1) must not silently fall back
+    # to the bare host/service just because it was retried.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    previous = InteractiveSession(
+        target_id=box.id, template_id="ftp-client", command="ftp 10.10.10.60 21",
+        cwd=str(tmp_path), status="failed",
+        graph_parent_node_id="01ABCXYZFINDINGNODE0000003")
+    db.add(previous); db.commit()
+
+    restarted = retry_interactive_session(previous.id, db)
+
+    assert restarted.graph_parent_node_id == "01ABCXYZFINDINGNODE0000003"
+
+
 def test_the_running_process_check_only_applies_to_responder(tmp_path, monkeypatch):
     db = database()
     box = target(db, tmp_path, monkeypatch)
@@ -298,6 +315,20 @@ def test_manual_terminal_opens_a_target_level_shell_without_a_service(
     assert row.target_id == box.id
     assert row.service_id is None
     assert row.command == "/bin/bash --noprofile --norc"
+
+
+def test_manual_terminal_stores_the_graph_node_it_was_opened_from(tmp_path, monkeypatch):
+    # docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- Inspector's shared
+    # openManualSession helper (ssh/mssql/redis/mongo/mysql-probe shells...)
+    # routes through this exact endpoint, so this is the one fix that
+    # covers all of those buttons at once.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+
+    row = create_manual_terminal(ManualTerminalIn(
+        target_id=box.id, graph_node_id="01ABCXYZFINDINGNODE0000000"), db=db)
+
+    assert row.graph_parent_node_id == "01ABCXYZFINDINGNODE0000000"
 
 
 def test_manual_terminal_runs_the_given_safe_command_for_a_desktop_launch(
@@ -442,7 +473,29 @@ def test_create_interactive_session_queues_an_automatic_directory_tree_for_ftp_c
     assert len(background_tasks.tasks) == 1
     task = background_tasks.tasks[0]
     assert task.func is sessions_router._auto_run_ftp_tree
-    assert task.args == (box.id, service.id)
+    assert task.args == (box.id, service.id, None)
+
+
+def test_auto_ftp_tree_inherits_the_sessions_own_graph_parent(tmp_path, monkeypatch):
+    # The tree crawl and the session it follows from share the same cause
+    # (docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙") -- a session opened
+    # from a specific finding should have its auto-tree land there too, not
+    # the bare service the tree would otherwise default to.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                       name="ftp", product="", version="", extra_info="", scripts="{}",
+                       notes="", tags="[]")
+    db.add(service); db.commit()
+    background_tasks = BackgroundTasks()
+
+    create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, service_id=service.id, template_id="ftp-client",
+        variables={}, graph_node_id="01ABCXYZFINDINGNODE0000002"),
+        background_tasks=background_tasks, db=db)
+
+    task = background_tasks.tasks[0]
+    assert task.args == (box.id, service.id, "01ABCXYZFINDINGNODE0000002")
 
 
 def test_ftp_client_auto_tree_resolves_service_by_port_when_service_id_is_not_given(
@@ -463,7 +516,7 @@ def test_ftp_client_auto_tree_resolves_service_by_port_when_service_id_is_not_gi
         variables={"port": "21"}), background_tasks=background_tasks, db=db)
 
     assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].args == (box.id, service.id)
+    assert background_tasks.tasks[0].args == (box.id, service.id, None)
 
 
 def test_ftp_client_auto_tree_is_not_queued_twice_for_the_same_target_and_service(

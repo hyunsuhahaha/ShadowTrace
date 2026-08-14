@@ -26,6 +26,28 @@ def parse_cracked(cracked_path: Path) -> list[dict]:
     return results
 
 
+def _parse_john_show(output: str) -> list[dict]:
+    """`john --show` doesn't write hash:plain the way hashcat's own -o does
+    -- its line shape varies by format (NT: "lmhash:plain", ZIP:
+    "name:plain::archive:entries:path", ...), but every format shares the
+    same first-two-fields structure: identifier, then plaintext, then
+    optional trailing metadata. Splitting on the first colon and taking the
+    next field (not rpartition -- ZIP's trailing fields would eat the
+    plaintext) recovers a hash:plain pair in every format observed, so this
+    writes straight into cracked_path in parse_cracked()'s own shape and
+    every downstream consumer (Inspector's cracked list, promote, evidence
+    capture) stays unchanged."""
+    results = []
+    for line in output.splitlines():
+        if ":" not in line or "password hash" in line:
+            continue
+        identifier, _, rest = line.partition(":")
+        plain = rest.split(":")[0]
+        if identifier and plain:
+            results.append({"hash": identifier, "plain": plain})
+    return results
+
+
 class HashCrackManager:
     def __init__(self, stream_limit: int = 2_000_000):
         self.stream_limit = stream_limit
@@ -34,10 +56,11 @@ class HashCrackManager:
         self.events: dict[int, set[asyncio.Queue]] = {}
         self.tasks: dict[int, asyncio.Task] = {}
 
-    def enqueue(self, job_id: int, argv: list[str], folder: Path) -> None:
+    def enqueue(self, job_id: int, argv: list[str], folder: Path,
+                engine: str = "hashcat", john_format: str = "") -> None:
         self.events.setdefault(job_id, set())
         self.cancel_events[job_id] = asyncio.Event()
-        task = asyncio.create_task(self._run(job_id, argv, folder))
+        task = asyncio.create_task(self._run(job_id, argv, folder, engine, john_format))
         self.tasks[job_id] = task
         task.add_done_callback(lambda _: self.tasks.pop(job_id, None))
 
@@ -101,13 +124,32 @@ class HashCrackManager:
         return process.returncode, cancelled
 
     @staticmethod
+    async def _write_john_cracked(folder: Path, john_format: str, cracked_path: Path) -> None:
+        """john writes cracked pairs to its own global potfile (~/.john/
+        john.pot), not to a file this job controls the way hashcat's -o
+        does -- --show reads them back out keyed by the exact hashes.txt
+        this job already wrote, including anything already cracked in a
+        previous run (a deliberate cross-job cache, not a bug: john has no
+        hashcat-style single-instance lock forcing job isolation in the
+        first place). Re-derives the same hash:plain shape hashcat's -o
+        already produces so every downstream consumer needs no changes."""
+        process = await asyncio.create_subprocess_exec(
+            "john", "--show", f"--format={john_format}", "hashes.txt",
+            cwd=folder, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        stdout, _ = await process.communicate()
+        cracked = _parse_john_show(stdout.decode(errors="replace"))
+        cracked_path.write_text(
+            "\n".join(f"{item['hash']}:{item['plain']}" for item in cracked), encoding="utf-8")
+
+    @staticmethod
     def _is_self_test_failure(stderr_path: Path) -> bool:
         if not stderr_path.is_file():
             return False
         return "kernel self-test failed" in stderr_path.read_text(
             encoding="utf-8", errors="replace").lower()
 
-    async def _run(self, job_id: int, argv: list[str], folder: Path) -> None:
+    async def _run(self, job_id: int, argv: list[str], folder: Path,
+                    engine: str = "hashcat", john_format: str = "") -> None:
         folder.mkdir(parents=True, exist_ok=True)
         stdout_path, stderr_path = folder / "stdout.txt", folder / "stderr.txt"
         cracked_path = folder / "cracked.txt"
@@ -116,7 +158,7 @@ class HashCrackManager:
         try:
             code, cancelled = await self._spawn_and_pump(
                 job_id, argv, folder, stdout_path, stderr_path, cancel_event)
-            if (not cancelled and code not in OK_EXIT_CODES
+            if (engine == "hashcat" and not cancelled and code not in OK_EXIT_CODES
                     and "--self-test-disable" not in argv
                     and self._is_self_test_failure(stderr_path)):
                 # Confirmed live: Mesa's software OpenCL (llvmpipe/rusticl)
@@ -130,6 +172,8 @@ class HashCrackManager:
                 code, cancelled = await self._spawn_and_pump(
                     job_id, [*argv, "--self-test-disable"], folder,
                     stdout_path, stderr_path, cancel_event)
+            if engine == "john" and not cancelled and code in OK_EXIT_CODES:
+                await self._write_john_cracked(folder, john_format, cracked_path)
             cracked = parse_cracked(cracked_path)
             with SessionLocal() as db:
                 job = db.get(HashCrackJob, job_id)
@@ -182,7 +226,7 @@ class HashCrackManager:
         evidence = Evidence(
             project_id=project.id, target_id=target.id,
             title=f"Hash crack #{job.id}: {job.hash_type_name}",
-            description=f"hashcat -m {job.hash_mode} · {job.command_display}",
+            description=job.command_display,
             kind="command_output", source_type="hash_crack_job",
             source_id=job.id, file_path=str(output_path),
             original_name=output_path.name,

@@ -624,6 +624,26 @@ GET    /api/projects/{pid}/graph/timeline        # append-only Graph Snapshot re
   (`hidden=true`), 숨긴 노드는 Graph/Outline/Attack Path에서 빠진다. 노드는 여전히 존재하므로 **sync가 되살리지 않는다**
   (삭제와 다름). 이는 NodeZero의 "POC 그래프는 전부 저장, v3/v4는 가지치기 렌더" 패턴과 같은 접근이다.
 - 모든 투영은 `sourceRef` 기준 멱등이며 **덮어쓰지 않고 병합**: 사용자가 수정한 label/notes/status는 보존, 원천 필드만 갱신.
+- **노드 연결 원칙 — 부착 부모는 "가장 구체적인 직접 원인" 노드여야 한다.** 호스트/서비스로의 부착
+  (`parent_of(service_id, target_id)`)은 "더 구체적인 원인이 없을 때"의 최후 폴백이지, 일반 규칙이 아니다.
+  예: FTP anon finding에서 "익명으로 접속하기"를 눌러 연 세션은 그 finding의 자식이어야지 호스트 밑에 붙으면
+  안 된다 — 그 세션이 존재하는 이유 자체가 그 finding이기 때문이다. 이 원칙을 어기면 그래프가 "발견 순서/
+  선후관계"가 아니라 "같은 호스트에 있는 것들의 나열"이 되어, 그래프를 도입한 원래 목적(누가 무엇을
+  유발했는지 한눈에 보기)이 무의미해진다.
+  - **구현 패턴**: 해당 도메인 row에 `graph_parent_node_id` 컬럼을 두고(예: `InteractiveSession`,
+    `HashCrackJob`), 생성 엔드포인트의 입력 스키마에 `graph_node_id`(그래프 노드 id, ULID 문자열)를 받아
+    그 컬럼에 저장한다. 프런트엔드는 "이 액션을 일으킨, 현재 선택돼 있거나 문맥상 명확한 노드"를 그 필드로
+    넘긴다. `sync_from_project`는 이 명시적 부모가 있고(같은 프로젝트, 그 relation의 유효한 source 타입) —
+    예를 들어 `attempted`는 `{finding, service, host}`만 source가 될 수 있으므로 credential처럼 항상
+    구조적 리프인 타입이 넘어오면 무시 — 있으면 그것을 쓰고, 없을 때만 `parent_of` 폴백을 쓴다.
+  - **이 패턴이 아직 없는 곳** (2026-08-14 감사 시점): `Execution`(모든 실행이 항상 서비스/호스트로만
+    부착됨 — `sync_from_project`의 execution 루프에 override 자체가 없음), `POST
+    /interactive-sessions/manual`(카탈로그 기반 세션 생성 엔드포인트 `POST /interactive-sessions`만 이
+    패턴이 있고, 수동 터미널 엔드포인트 `ManualTerminalIn`엔 없음 — Inspector의 `openManualSession`이 이
+    경로를 쓰는 다수의 "쉘 열기" 버튼이 전부 이 구멍의 영향을 받는다).
+  - **예외**: 최초 발견(스캔이 처음 찾은 서비스, 서비스가 처음 찾은 finding 등)은 "더 구체적인 원인"이
+    원래 존재하지 않으므로 호스트/서비스 부착이 정답이다 — 모든 것을 finding/technique에 강제로 매달라는
+    뜻이 아니라, **더 구체적인 원인이 실제로 있는데 안 쓰는 경우**만 위반이다.
 
 ---
 

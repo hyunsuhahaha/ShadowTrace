@@ -71,7 +71,7 @@ function baseFetcher(extra: (url: string, init?: RequestInit) => Response | unde
       hash_modes: hashModes,
       wordlists: [{ id: "rockyou", name: "rockyou.txt", path: "/usr/share/wordlists/rockyou.txt",
         installed: true }],
-      rules: [], hashcat_installed: true,
+      rules: [], hashcat_installed: true, john_installed: true,
     });
     if (url.includes("/hash-cracking?target_id=")) return response([]);
     throw new Error(`Unhandled request: ${url} ${init?.method}`);
@@ -181,6 +181,74 @@ it("parents a job under the finding its hash was handed off from", async () => {
 
   await waitFor(() => expect(created).toBeTruthy());
   expect(created.graph_node_id).toBe("finding-11");
+});
+
+it("defaults to john and sends engine:\"john\" for a hash mode/attack mode it covers", async () => {
+  // The shared `hashModes` fixture above deliberately has no john_format
+  // (so the other 20+ tests in this file keep exercising the hashcat
+  // fallback path unchanged) -- this is the one test that actually covers
+  // the real default a fresh install ships with, confirmed live to be
+  // 2-6x faster than hashcat on a GPU-less box.
+  let created: any;
+  const fetcher = baseFetcher((url, init) => {
+    if (url.includes("/hash-cracking/catalog")) return new Response(JSON.stringify({
+      hash_modes: [{ id: "ntlm", name: "NTLM", mode: "1000",
+        example: "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c",
+        detect: "^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}$", john_format: "NT" }],
+      wordlists: [{ id: "rockyou", name: "rockyou.txt", path: "/usr/share/wordlists/rockyou.txt",
+        installed: true }],
+      rules: [], hashcat_installed: true, john_installed: true,
+    }), { headers: { "Content-Type": "application/json" } });
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      created = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: 9, ...created }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/hash-cracking/9/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher);
+  await screen.findByLabelText("공격 모드");
+
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0" },
+  });
+  expect((screen.getByDisplayValue("john") as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByText("크랙 시작"));
+
+  await waitFor(() => expect(created).toBeTruthy());
+  expect(created.engine).toBe("john");
+  expect(created.rule_id).toBeUndefined();
+});
+
+it("falls back to hashcat and explains why when john doesn't cover the pick", async () => {
+  const fetcher = baseFetcher((url, init) => {
+    if (url.includes("/hash-cracking/catalog")) return new Response(JSON.stringify({
+      hash_modes: [{ id: "wpa", name: "WPA-PBKDF2", mode: "22000",
+        example: "WPA*02*hash*mac_ap*mac_sta*essid***", detect: "^WPA\\*0[12]\\*" }],
+      wordlists: [{ id: "rockyou", name: "rockyou.txt", path: "/usr/share/wordlists/rockyou.txt",
+        installed: true }],
+      rules: [], hashcat_installed: true, john_installed: true,
+    }), { headers: { "Content-Type": "application/json" } });
+    if (url.endsWith("/api/hash-cracking") && init?.method === "POST") {
+      return new Response(JSON.stringify({ id: 9 }),
+        { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+    return undefined;
+  });
+  mount(fetcher);
+  await screen.findByLabelText("공격 모드");
+  fireEvent.change(screen.getByLabelText("워드리스트"), { target: { value: "rockyou" } });
+  fireEvent.change(screen.getByLabelText(/해시 \(한 줄에/), {
+    target: { value: "WPA*02*hash*mac_ap*mac_sta*essid***" },
+  });
+
+  expect(await screen.findByText(
+    /이 해시 종류는 아직 john을 지원하지 않아 hashcat으로 실행됩니다/)).toBeTruthy();
+  expect((screen.getByText("크랙 시작") as HTMLButtonElement).disabled).toBe(false);
 });
 
 it("invalidates the graph query on start, so the canvas doesn't need an unrelated refetch to notice the new job", async () => {
