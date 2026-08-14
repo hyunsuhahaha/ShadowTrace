@@ -23,6 +23,11 @@
 .crackForm input,.crackForm select,.crackForm textarea{background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:8px;border-radius:3px;font:inherit;font-size:12px}
 .crackForm textarea{font-family:ui-monospace,monospace;resize:vertical}
 .crackExample{background:#040708;border:1px solid var(--line);color:#8ed9bd;padding:8px;font-size:10px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.zipFileTrigger{position:relative;display:flex;align-items:center;gap:8px;background:#0b1113;border:1px solid #29373b;color:#dbe4e7;padding:8px;border-radius:3px;font-size:12px;cursor:pointer}
+.zipFileTrigger input{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;opacity:0}
+.zipFileTrigger b{border:1px solid #3a4c51;border-radius:3px;padding:3px 8px;color:#c9d5d8;font-weight:600;font-size:11px;white-space:nowrap}
+.zipFileTrigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#71868c}
+.zipFileTrigger:has(input:disabled){cursor:default;opacity:.6}
 .crackAutoBadge{margin-left:6px;font-style:normal;color:var(--green);font-size:9px;letter-spacing:.02em}
 .crackMaskHint{color:#71868c;font-size:9px}
 .crackForm>button{margin-top:4px;border:1px solid #365136;background:var(--green);color:#0a120b;font-weight:700;border-radius:3px;padding:10px;font-size:12px}

@@ -403,16 +403,17 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
           {selectedMode && <code className="crackExample">{selectedMode.example}</code>}
           <label>
             zip 파일에서 해시 추출 (zip2john)
-            <input type="file" accept=".zip" disabled={zipUploading}
-              onChange={(e) => {
-                const picked = e.target.files?.[0];
-                e.target.value = "";
-                if (picked) uploadZip(picked);
-              }} />
+            <span className="zipFileTrigger">
+              <input type="file" accept=".zip" disabled={zipUploading}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0];
+                  e.target.value = "";
+                  if (picked) uploadZip(picked);
+                }} />
+              <b>파일 선택</b>
+              <span>{zipUploading ? "zip2john 실행 중…" : zipFileName || "선택된 파일 없음"}</span>
+            </span>
           </label>
-          {zipFileName && (
-            <small>{zipFileName}{zipUploading ? " · zip2john 실행 중…" : ""}</small>
-          )}
           {zipError && <ErrorState message={zipError} />}
           <label>
             해시 (한 줄에 하나씩 붙여넣기)
