@@ -148,6 +148,14 @@ class PromoteDownloadIn(BaseModel):
     filename: str = Field(min_length=1, max_length=255, pattern=r"^[^/\\\x00]+$")
     graph_node_id: str | None = Field(default=None, max_length=40)
 
+class ArchiveExtractIn(BaseModel):
+    # The exact name zipfile.namelist() returned for this entry -- never
+    # used as a filesystem path (extract_archive_entry only ever reads bytes
+    # out of the archive, then writes them under its own generated name), so
+    # a zip-slip entry ("../../etc/passwd") can't escape anywhere.
+    entry: str = Field(min_length=1, max_length=4096)
+    graph_node_id: str | None = Field(default=None, max_length=40)
+
 class InteractiveSessionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str
     command: str; cwd: str; status: str; pid: int | None

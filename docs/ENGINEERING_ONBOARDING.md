@@ -185,7 +185,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 | Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs, 종료 세션 `/retry` 재시작 |
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
-| Evidence | `modules/evidence/router.py` | Evidence files와 ZIP export |
+| Evidence | `modules/evidence/router.py` | Evidence files, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
 | Note | `modules/notes/router.py` | `Note` rows (project 필수, target/service/credential 선택 스코프) |
 | Finding | `modules/findings/router.py` | Finding과 link tables |
 | Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export |
@@ -637,11 +637,21 @@ credential은 `Credential.source_execution_kind`/`source_execution_id` 체인을
 `created_at` 기반 순수 클라이언트 계산), (4) `discovered`/`enumerated`/`attempted` 등
 구조적 엣지에도 방향 화살표 추가(이전엔 `captures-from`/Access Lineage 엣지에만 있었음).
 관련 순수 함수(`evidenceCount`, `pathToObjective`, `formatElapsed`)는 `graphModel.ts`에 있다.
+`파일 발견`/`파일 다운로드` finding 라벨에서 확장자를 뽑아 zip/json/pem/jpg 등에 각각 다른
+pictogram(`fileFindingGlyph`)을 Canvas에 그린다(flag 판정과 같은 파일명 추출 로직 공유).
+finding Inspector는 연결된 Evidence마다 다운로드 링크를 보여주며, zip evidence는 "압축 해제"로
+멤버 목록을 펼쳐 각각을 새 Evidence+Draft Finding으로 그래프에 다시 올릴 수 있다(`/evidence/
+{id}/archive`, `/evidence/{id}/extract` — 항상 `archive.read()`만 쓰고 엔트리 이름을 파일
+경로로 쓰지 않아 zip-slip에 안전하며, 암호로 보호된 멤버는 목록에서부터 🔒로 표시하고
+추출을 막는다 — Hash Cracking의 zip2john으로 먼저 풀어야 한다). `service-version`/
+`service-version-udp` technique 실행은 완료 시 `executor.py`가 이미 서비스 행에 제품/버전을
+자동 반영하므로, Inspector도 raw stdout 대신 반영된 값을 바로 요약해 보여준다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
-`/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST).
+`/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST),
+`/evidence/{id}/archive`, `/evidence/{id}/extract`(POST).
 
 ### 10.15 인프라/공용 파일 (특정 워크스페이스에 속하지 않음)
 

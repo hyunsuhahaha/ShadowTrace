@@ -113,7 +113,7 @@ export function Inspector(props: {
     queryKey: ["graphLinkServices", props.executionContext?.targetId],
     enabled: executionId !== null && !!props.executionContext?.serviceId,
     queryFn: () => api<Array<{ id: number; port: number; name: string;
-      product?: string; tls?: boolean }>>(
+      product?: string; version?: string; extra_info?: string; tls?: boolean }>>(
       `/targets/${props.executionContext!.targetId}/services`),
   });
   const [evidenceState, setEvidenceState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -184,6 +184,36 @@ export function Inspector(props: {
       setCaptureMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   };
+  // A promoted zip was previously a dead end past its own "download" link --
+  // this lets an entry inside it become its own graph node too, the same
+  // way promote-download turns a file sitting in a session's cwd into one.
+  // Only ever reads bytes back out of the archive server-side (never
+  // extracts to an entry-controlled path), so this is just a list-and-pick
+  // UI over an endpoint that's already zip-slip safe on its own.
+  const [openArchiveId, setOpenArchiveId] = useState<number | null>(null);
+  const archiveQuery = useQuery({
+    queryKey: ["evidenceArchive", openArchiveId],
+    enabled: openArchiveId !== null,
+    queryFn: () => api<{ entries: Array<{ name: string; size: number; encrypted: boolean }> }>(
+      `/evidence/${openArchiveId}/archive`),
+  });
+  const [extractedEntries, setExtractedEntries] = useState<Set<string>>(new Set());
+  const [archiveMessage, setArchiveMessage] = useState("");
+  useEffect(() => { setOpenArchiveId(null); setArchiveMessage(""); }, [n?.id]);
+  const extractEntry = async (evidenceId: number, entryName: string) => {
+    setArchiveMessage("");
+    try {
+      await api(`/evidence/${evidenceId}/extract`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({entry: entryName}),
+      });
+      setExtractedEntries((current) => new Set(current).add(`${evidenceId}:${entryName}`));
+      setArchiveMessage(`${entryName} 그래프에 남겼습니다`);
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setArchiveMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
   const credentialQuery = useQuery({
     queryKey: ["graphCredential", props.projectId, credentialId],
     enabled: credentialId !== null && !!props.projectId,
@@ -232,6 +262,13 @@ export function Inspector(props: {
   const ldapAnonSuccess = /^\[\+\]/im.test(executionOutput.data?.stdout || "");
   const isSvnCheck = tool === "svn-wcdb-check";
   const svnSuccess = /^HTTP\/[\d.]+ 200/im.test(executionOutput.data?.stdout || "");
+  // service-version's own catalog description already promises this: "관찰된
+  // 값을 이 서비스에 자동 저장합니다" -- and the backend genuinely does that
+  // (executor.py's update_execution_observations, on every -oX completion).
+  // What was missing was ever showing that here -- without it this panel is
+  // just raw nmap stdout the operator has to parse by hand to learn what the
+  // service row already has.
+  const isServiceVersionCheck = tool === "service-version" || tool === "service-version-udp";
   const fileTreeRuns = useQuery({
     queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
     enabled: isNetexecCheck && !!props.executionContext?.targetId,
@@ -556,18 +593,60 @@ export function Inspector(props: {
         <section style={S.executionResults} aria-label="연결된 Evidence">
           <div style={S.executionResultsHead}><strong>연결된 Evidence</strong></div>
           <div style={S.linkList}>
-            {findingQuery.data.evidence.map((item) => (
-              <div key={item.id} style={S.linkRow}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.title}
-                </span>
-                <span style={S.linkKind}>{item.kind}</span>
-                <a href={`/api/evidence/${item.evidence_id}/file`}
-                  style={{ ...S.resultAction, textDecoration: "none" }}>
-                  다운로드
-                </a>
-              </div>
-            ))}
+            {findingQuery.data.evidence.map((item) => {
+              const isZip = /\.zip$/i.test(item.title);
+              const archiveOpen = openArchiveId === item.evidence_id;
+              return (
+                <div key={item.id}>
+                  <div style={S.linkRow}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.title}
+                    </span>
+                    <span style={S.linkKind}>{item.kind}</span>
+                    <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      {isZip && <button style={S.resultAction}
+                        onClick={() => {
+                          setArchiveMessage("");
+                          setOpenArchiveId(archiveOpen ? null : item.evidence_id);
+                        }}>
+                        {archiveOpen ? "압축 목록 닫기" : "압축 해제"}
+                      </button>}
+                      <a href={`/api/evidence/${item.evidence_id}/file`}
+                        style={{ ...S.resultAction, textDecoration: "none" }}>
+                        다운로드
+                      </a>
+                    </span>
+                  </div>
+                  {archiveOpen && (
+                    <div style={S.netexecTree}>
+                      {archiveMessage && <div style={S.resultNotice}>{archiveMessage}</div>}
+                      {archiveQuery.isLoading ? (
+                        <div style={S.resultMessage}>압축 목록 불러오는 중…</div>
+                      ) : archiveQuery.isError ? (
+                        <div style={S.resultError}>압축 목록을 불러오지 못했습니다.</div>
+                      ) : !archiveQuery.data?.entries.length ? (
+                        <div style={S.resultMessage}>압축 파일이 비어 있습니다.</div>
+                      ) : archiveQuery.data.entries.map((entry) => {
+                        const key = `${item.evidence_id}:${entry.name}`;
+                        const done = extractedEntries.has(key);
+                        return (
+                          <div key={entry.name} style={S.linkRow}>
+                            <code style={S.linkCode}>{entry.encrypted && "🔒 "}{entry.name}</code>
+                            <span style={S.linkKind}>{(entry.size / 1024).toFixed(1)} KB</span>
+                            <button style={S.rowAction} disabled={done || entry.encrypted}
+                              title={entry.encrypted
+                                ? "암호로 보호됨 -- Hash Cracking의 zip2john으로 먼저 크랙하세요" : undefined}
+                              onClick={() => void extractEntry(item.evidence_id, entry.name)}>
+                              {done ? "추가됨" : entry.encrypted ? "암호 필요" : "노드로 추가"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -712,6 +791,30 @@ export function Inspector(props: {
       {executionId !== null && isSvnCheck && svnSuccess && (
         <UnauthAccessResult label="노출된 .SVN"
           treeLabel="복구된 파일 목록" tree={latestExecutionFor("svn-dump-recover")} />
+      )}
+      {executionId !== null && isServiceVersionCheck && executionOutput.data?.status === "completed"
+        && service && (
+        <section style={S.netexecNodeResult} aria-label="제품·버전 식별 결과">
+          <div style={S.netexecNodeResultHead}>
+            <span>제품·버전 식별</span>
+            <strong>{service.product ? "확인됨" : "식별 안 됨"}</strong>
+          </div>
+          <div style={{ padding: "0 12px 12px", display: "grid", gap: 4 }}>
+            {service.product ? <>
+              <div style={{ color: "#e7e7ee", fontSize: 12 }}>
+                {[service.product, service.version].filter(Boolean).join(" ")}
+                {service.extra_info && <span style={{ color: "#9a9aa6" }}> · {service.extra_info}</span>}
+              </div>
+              <div style={{ color: "#59f59a", fontSize: 10 }}>
+                {service.name} {service.port} 서비스에 자동 반영됨 — 별도 등록 필요 없음
+              </div>
+            </> : (
+              <div style={{ color: "#9a9aa6", fontSize: 11 }}>
+                이 probe로는 제품·버전을 식별하지 못했습니다. 아래 실행 결과에서 원문을 확인하세요.
+              </div>
+            )}
+          </div>
+        </section>
       )}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>

@@ -432,3 +432,99 @@ it("offers a direct download for a finding's attached files instead of only the 
   const link = await screen.findByText("다운로드");
   expect(link.closest("a")?.getAttribute("href")).toBe("/api/evidence/124/file");
 });
+
+it("lets a zip's own contents become graph nodes instead of only offering a raw download", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: backup.zip",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/archive")) return Promise.resolve(new Response(JSON.stringify({
+      entries: [{ name: "creds.txt", size: 512, encrypted: false }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/extract") && init?.method === "POST") {
+      expect(JSON.parse(init.body as string)).toEqual({ entry: "creds.txt" });
+      return Promise.resolve(new Response(JSON.stringify({ finding_id: 40, evidence_id: 200 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "파일 다운로드: backup.zip",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("압축 해제"));
+  fireEvent.click(await screen.findByText("노드로 추가"));
+
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/evidence/124/extract", expect.objectContaining({ method: "POST" }),
+  ));
+  expect(await screen.findByText("추가됨")).toBeTruthy();
+});
+
+it("marks a password-protected archive member as needing a crack first, disabled rather than clickable", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: protected.zip",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/archive")) return Promise.resolve(new Response(JSON.stringify({
+      entries: [{ name: "secret.txt", size: 12, encrypted: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "파일 다운로드: protected.zip",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("압축 해제"));
+
+  const button = await screen.findByText("암호 필요");
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("summarizes a service-version identification instead of leaving the operator to parse raw nmap stdout", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/70/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "PORT   STATE SERVICE VERSION\n21/tcp open  ftp     vsftpd 3.0.3\n",
+      stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 8, project_id: 9, ip: "10.129.6.219" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/8/services")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 22, port: 21, name: "ftp", product: "vsftpd", version: "3.0.3", extra_info: "" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 8, serviceId: 22 }} node={{
+      id: "execution-70", type: "technique", status: "succeeded", objective: false, hidden: false,
+      label: "제품·버전 식별",
+      meta: JSON.stringify({ tool: "service-version" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 70 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("vsftpd 3.0.3")).toBeTruthy();
+  expect(screen.getByText(/서비스에 자동 반영됨/)).toBeTruthy();
+});

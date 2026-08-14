@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import secrets
 import zipfile
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -10,8 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
 from ...database import get_db
-from ...models import Evidence, ExploitResearch, Project, Service, Target
-from ...schemas import EvidenceOut, EvidenceUpdate
+from ...models import Evidence, ExploitResearch, Finding, FindingEvidence, Project, Service, Target
+from ...schemas import ArchiveExtractIn, EvidenceOut, EvidenceUpdate
+from ..core.support import safe_part
 from ..scan_center.service import _safe
 
 router = APIRouter(prefix="/api/evidence", tags=["Evidence"])
@@ -153,6 +155,93 @@ def evidence_preview(ident: int, db: Session = Depends(get_db)):
     text = content[:MAX_PREVIEW].decode("utf-8", errors="replace")
     language = "xml" if extension == ".xml" else "json" if extension == ".json" else "text"
     return {"content": text, "truncated": truncated, "language": language}
+
+
+@router.get("/{ident}/archive")
+def evidence_archive(ident: int, db: Session = Depends(get_db)):
+    """List a zip evidence's members so the operator can pick which ones are
+    worth pulling back out onto the graph -- mirrors promote-download's own
+    per-file picker (interactive_session_ftp_downloads), just one level
+    deeper into an archive instead of a session's cwd."""
+    row = need(db, Evidence, ident)
+    path = Path(row.file_path)
+    if not row.file_path or not path.is_file():
+        raise HTTPException(410, "Evidence file is no longer available")
+    if not zipfile.is_zipfile(path):
+        raise HTTPException(415, "Evidence is not a zip archive")
+    entries = []
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+            # Listing a member's metadata never needs its password -- only
+            # actually reading its bytes (extract_archive_entry) does. Flag
+            # 0x1 marks that read as needing one, so the UI can say so up
+            # front instead of the operator finding out via a failed click.
+            entries.append({"name": info.filename, "size": info.file_size,
+                            "encrypted": bool(info.flag_bits & 0x1)})
+            if len(entries) >= 500:  # a huge listing is no longer a quick pick
+                break
+    return {"entries": entries}
+
+
+@router.post("/{ident}/extract", status_code=201)
+def extract_archive_entry(ident: int, body: ArchiveExtractIn, db: Session = Depends(get_db)):
+    """Same idea as promote-download/promote-file: pull one archive member
+    out as its own Evidence + Draft Finding, so a zip an operator downloaded
+    stops being a dead end that only offers a raw download. Only ever reads
+    bytes back out of the archive (archive.read, never .extract()) and
+    writes them under a name this endpoint generates itself, so a crafted
+    entry name ("../../etc/passwd") has nothing to escape into."""
+    row = need(db, Evidence, ident)
+    path = Path(row.file_path)
+    if not row.file_path or not path.is_file():
+        raise HTTPException(410, "Evidence file is no longer available")
+    if not zipfile.is_zipfile(path):
+        raise HTTPException(415, "Evidence is not a zip archive")
+    with zipfile.ZipFile(path) as archive:
+        try:
+            info = archive.getinfo(body.entry)
+        except KeyError:
+            raise HTTPException(404, "That entry is not in this archive") from None
+        if info.is_dir():
+            raise HTTPException(422, "That entry is a folder, not a file")
+        if info.file_size > MAX_FILE:
+            raise HTTPException(413, "Archive entry is too large to extract")
+        try:
+            content = archive.read(info)
+        except RuntimeError as exc:
+            # zipfile raises a bare RuntimeError (no dedicated exception
+            # type) for both "wrong/missing password" and "no password
+            # given" -- either way this app has no password to try itself,
+            # so hand the operator to the tool that already exists for this
+            # (HashCrackingWorkspace's zip2john upload) instead of guessing.
+            if "password" not in str(exc).lower():
+                raise
+            raise HTTPException(
+                422, "이 항목은 암호로 보호되어 있습니다. Hash Cracking에서 "
+                "zip 원본을 zip2john으로 크랙한 뒤 다시 시도하세요.") from None
+    entry_name = Path(info.filename.replace("\\", "/")).name or info.filename
+    output_path = path.parent / f"extracted-{secrets.token_hex(6)}-{safe_part(entry_name)}"
+    output_path.write_bytes(content)
+    evidence = Evidence(
+        project_id=row.project_id, target_id=row.target_id, service_id=row.service_id,
+        title=f"압축 해제: {entry_name}",
+        description=f"{row.title}에서 압축 해제 · {info.filename}",
+        kind="attachment", source_type="archive_extract", source_id=row.id,
+        file_path=str(output_path), original_name=entry_name,
+        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
+        hostname=row.hostname, include_report=False,
+    )
+    db.add(evidence); db.flush()
+    finding = Finding(
+        project_id=row.project_id, target_id=row.target_id, service_id=row.service_id,
+        title=f"압축 해제: {entry_name}", status="Draft",
+        reproduction_steps=f"{row.title}에서 압축 해제\n\n{info.filename}")
+    db.add(finding); db.flush()
+    db.add(FindingEvidence(finding_id=finding.id, evidence_id=evidence.id, is_primary=True))
+    db.commit()
+    return {"finding_id": finding.id, "evidence_id": evidence.id}
 
 
 @router.post("/export")
