@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import json
 import sys
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -8,16 +10,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
-from app.models import Execution, Project, Service, Target
-from app.schemas import ExecutionDeriveIn, ExecutionIn
+from app.models import (Evidence, Execution, Finding, FindingEvidence, GraphEdge, GraphNode,
+                        Project, Service, Target)
+from app.schemas import ExecutionDeriveIn, ExecutionIn, FtpTreePromoteIn
 from fastapi import HTTPException
 
 import app.executor as executor_module
 import app.modules.executions.router as executions_router
 from app.modules.executions.router import (
-    _output_path, _validated_override, delete_execution, derive_output, execute,
-    execution_output_file,
+    _ftp_tree_connection_args, _output_path, _validated_override, delete_execution,
+    derive_output, execute, execution_output_file, promote_ftp_file,
 )
+from app.modules.graph import service as graph_service
 
 
 def database():
@@ -328,3 +332,129 @@ def test_run_execution_survives_a_long_stretch_without_a_newline(tmp_path, monke
         assert row.status != "failed", row.error
         assert row.exit_code == 0
         assert "done" in row.stdout
+
+
+def test_ftp_tree_connection_args_recovers_host_port_username_password():
+    command = ("/repo/.venv/bin/python -m app.ftp_tree --host 10.129.7.93 --port 21 "
+              "--username anonymous --password anonymous@")
+    assert _ftp_tree_connection_args(command) == {
+        "host": "10.129.7.93", "port": "21",
+        "username": "anonymous", "password": "anonymous@"}
+
+
+class _FakeFTP:
+    """Records connect()/login() calls and returns fixed bytes from
+    retrbinary() (or raises, for the failure test) -- ftp_tree.py's own
+    walker only lists, so promote_ftp_file has to open its own fresh
+    connection to actually fetch a file's bytes."""
+    instances: list["_FakeFTP"] = []
+
+    def __init__(self, *, content: bytes = b"loot", error: Exception | None = None):
+        self.connected = None
+        self.logged_in = None
+        self.content = content
+        self.error = error
+        _FakeFTP.instances.append(self)
+
+    def connect(self, host, port, timeout=10):
+        self.connected = (host, port)
+
+    def login(self, username, password):
+        self.logged_in = (username, password)
+
+    def retrbinary(self, cmd, callback):
+        self.retr_cmd = cmd
+        if self.error:
+            raise self.error
+        callback(self.content)
+
+    def quit(self):
+        pass
+
+
+def _ftp_tree_execution(db, tmp_path, monkeypatch, command=None):
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.129.7.93")
+    db.add(target); db.flush()
+    execution = Execution(
+        target_id=target.id, template_id="ftp-directory-tree",
+        command=command or ("python -m app.ftp_tree --host 10.129.7.93 --port 21 "
+                            "--username anonymous --password anonymous@"),
+        cwd=".", status="completed")
+    db.add(execution); db.commit()
+    return project, target, execution
+
+
+def test_promote_ftp_file_reconnects_and_registers_a_draft_finding(tmp_path, monkeypatch):
+    db = database()
+    _project, _target, execution = _ftp_tree_execution(db, tmp_path, monkeypatch)
+    _FakeFTP.instances = []
+    monkeypatch.setattr(executions_router.ftplib, "FTP", lambda: _FakeFTP(content=b"loot"))
+
+    result = promote_ftp_file(execution.id, FtpTreePromoteIn(path="backup.zip"), db=db)
+
+    ftp = _FakeFTP.instances[0]
+    assert ftp.connected == ("10.129.7.93", 21)
+    assert ftp.logged_in == ("anonymous", "anonymous@")
+    assert ftp.retr_cmd == "RETR backup.zip"
+    finding = db.get(Finding, result["finding_id"])
+    assert finding is not None and finding.status == "Draft"
+    evidence = db.get(Evidence, result["evidence_id"])
+    assert evidence.kind == "attachment" and evidence.original_name == "backup.zip"
+    assert Path(evidence.file_path).read_bytes() == b"loot"
+    link = db.query(FindingEvidence).filter_by(finding_id=finding.id).one()
+    assert link.evidence_id == evidence.id and link.is_primary is True
+
+
+def test_promote_ftp_file_attaches_to_the_given_technique_node(tmp_path, monkeypatch):
+    db = database()
+    project, _target, execution = _ftp_tree_execution(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(executions_router.ftplib, "FTP", lambda: _FakeFTP(content=b"loot"))
+    technique = graph_service.create_node(db, project.id, "technique", label="폴더·파일 트리 조회")
+    db.commit()
+
+    result = promote_ftp_file(execution.id, FtpTreePromoteIn(
+        path="backup.zip", graph_node_id=technique.id), db=db)
+
+    finding_node = db.query(GraphNode).filter_by(
+        project_id=project.id, type="finding").one()
+    assert json.loads(finding_node.source_ref) == {
+        "module": "findings", "kind": "finding", "id": result["finding_id"]}
+    assert json.loads(finding_node.meta)["evidenceCount"] == 1
+    edge = db.query(GraphEdge).filter_by(source=technique.id, target=finding_node.id).one()
+    assert edge.relation == "yielded"
+
+
+def test_promote_ftp_file_rejects_an_execution_that_is_not_an_ftp_tree(tmp_path, monkeypatch):
+    db = database()
+    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.129.7.93")
+    db.add(target); db.flush()
+    execution = Execution(
+        target_id=target.id, template_id="ftp-anon", command="nxc ftp 10.129.7.93",
+        cwd=".", status="completed")
+    db.add(execution); db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        promote_ftp_file(execution.id, FtpTreePromoteIn(path="backup.zip"), db=db)
+    assert exc.value.status_code == 422
+
+
+def test_promote_ftp_file_surfaces_a_failed_download_instead_of_a_500(tmp_path, monkeypatch):
+    # Reproduces the live failure: a typo'd path (or a file that's been
+    # removed since the tree ran) gets "550 Failed to open file" from the
+    # server -- this should read as a clear error, not crash.
+    import ftplib as ftplib_module
+    db = database()
+    _project, _target, execution = _ftp_tree_execution(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(executions_router.ftplib, "FTP",
+        lambda: _FakeFTP(error=ftplib_module.error_perm("550 Failed to open file.")))
+
+    with pytest.raises(HTTPException) as exc:
+        promote_ftp_file(execution.id, FtpTreePromoteIn(path="bazkup.zip"), db=db)
+    assert exc.value.status_code == 502
+    assert "550" in str(exc.value.detail)

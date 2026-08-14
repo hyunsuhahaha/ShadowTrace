@@ -295,6 +295,29 @@ export function Inspector(props: {
     "telnet-info", "telnet-version-trace", "database-info"].includes(tool || "");
   const isTargetIdentityCheck = ["target-hostname-redirect", "target-hostname-identity",
     "target-os-identity"].includes(tool || "");
+  // These five all emit the same D|/F|-tagged lines FileTreeView already
+  // knows how to render (post-exploitation's own file trees, SMB spider
+  // output, ...) -- ftp_tree.py/webdav_tree.py/nfs_tree.sh/rsync_tree.sh's
+  // own comments say so explicitly ("same format as the other tree
+  // commands"), but this execution-result view never used it, just dumped
+  // the raw D|/F| lines as plain text.
+  const isTaggedTreeOutput = ["ftp-directory-tree", "git-dump-tree", "http-webdav-tree",
+    "nfs-export-tree", "rsync-module-tree"].includes(tool || "");
+  const [ftpPromoteMessage, setFtpPromoteMessage] = useState("");
+  const promoteFtpTreeFile = async (path: string) => {
+    if (executionId === null) return;
+    setFtpPromoteMessage("");
+    try {
+      await api(`/executions/${executionId}/promote-ftp-file`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path, graph_node_id: n?.id}),
+      });
+      setFtpPromoteMessage(`${path} 그래프에 남겼습니다`);
+      void queryClient.invalidateQueries({queryKey: ["graph"]});
+    } catch (reason) {
+      setFtpPromoteMessage(`실패: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  };
   const fileTreeRuns = useQuery({
     queryKey: ["graphFileTreeRuns", props.executionContext?.targetId],
     enabled: isNetexecCheck && !!props.executionContext?.targetId,
@@ -418,6 +441,27 @@ export function Inspector(props: {
       }),
     });
     setManualSession({id: session.id, title: title || cmd, initialInput});
+  };
+  // scan_center's capture_scan_evidence() auto-titles every ftp-anon NSE
+  // hit exactly "Ftp Anon on {ip}:{port}" (see service.py) -- host/port are
+  // right there in the finding's own label, so this needs no extra fetch
+  // beyond the finding's target_id (for the session row itself) to jump
+  // straight into the interactive client instead of leaving the operator
+  // to find+type the same "ftp {host} {port}" themselves.
+  const ftpAnonMatch = findingId !== null
+    ? /^Ftp Anon on ([\d.]+):(\d+)$/.exec(n?.label || "") : null;
+  const openFtpAnonSession = async () => {
+    if (!ftpAnonMatch || findingQuery.data?.target_id === undefined) return;
+    const [, host, port] = ftpAnonMatch;
+    const session = await api<{id: number}>("/interactive-sessions/manual", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        target_id: findingQuery.data.target_id, service_id: null,
+        command: `ftp ${host} ${port}`,
+      }),
+    });
+    setManualSession({id: session.id, title: `FTP ${host}:${port}`,
+      initialInput: "anonymous\ranonymous@\r"});
   };
   const openRedisShell = async () => {
     if (!target) return;
@@ -598,6 +642,17 @@ export function Inspector(props: {
           ))}
         </div>
       </div>
+      {ftpAnonMatch && (
+        <section style={S.netexecNodeResult} aria-label="FTP 익명 접속">
+          <div style={S.netexecNodeResultHead}><span>FTP 익명 로그인</span><strong>확인됨</strong></div>
+          <div style={{ padding: "0 12px 12px" }}>
+            <button style={S.resultAction} disabled={findingQuery.data?.target_id === undefined}
+              onClick={() => void openFtpAnonSession()}>
+              익명으로 접속하기
+            </button>
+          </div>
+        </section>
+      )}
       {findingFileEvidenceId !== undefined && <section style={S.executionResults} aria-label="발견된 파일 내용">
         <div style={S.executionResultsHead}>
           <strong>파일 내용</strong>
@@ -948,10 +1003,25 @@ export function Inspector(props: {
               {executionOutput.data?.error && <div style={S.resultError}>{executionOutput.data.error}</div>}
               {executionOutput.data?.stdout && <details open={n.label !== "http-link-extract"}>
                 <summary style={S.terminalComment}># stdout</summary>
-                <pre style={S.terminalOutput}><SmartTerminalOutput
-                  output={executionOutput.data.stdout} context={{projectId: props.projectId,
-                    targetId: props.executionContext?.targetId, targetIp: target?.ip,
-                    serviceId: props.executionContext?.serviceId}} /></pre>
+                {isTaggedTreeOutput ? (
+                  <div style={S.terminalOutput}>
+                    {tool === "ftp-directory-tree" && (
+                      <div style={{ color: "#71868c", fontSize: 9, marginBottom: 6 }}>
+                        파일을 클릭하면 다시 접속해 받아온 뒤 그래프 노드로 추가합니다.
+                      </div>
+                    )}
+                    <FileTreeView searchable
+                      node={buildFileTree(parseTaggedTreeLines(executionOutput.data.stdout), "/")}
+                      onOpenFile={tool === "ftp-directory-tree"
+                        ? (path) => void promoteFtpTreeFile(path) : undefined} />
+                    {ftpPromoteMessage && <div style={S.resultNotice}>{ftpPromoteMessage}</div>}
+                  </div>
+                ) : (
+                  <pre style={S.terminalOutput}><SmartTerminalOutput
+                    output={executionOutput.data.stdout} context={{projectId: props.projectId,
+                      targetId: props.executionContext?.targetId, targetIp: target?.ip,
+                      serviceId: props.executionContext?.serviceId}} /></pre>
+                )}
               </details>}
               {executionOutput.data?.stderr && <details open>
                 <summary style={S.terminalComment}># stderr</summary>

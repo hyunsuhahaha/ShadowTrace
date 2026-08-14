@@ -1,7 +1,10 @@
 import asyncio
+import ftplib
 import hashlib
+import io
 import json
 import re
+import secrets
 import shlex
 import shutil
 from datetime import datetime
@@ -20,10 +23,12 @@ from ...executor import (
     run_execution,
     stop_execution,
 )
-from ...models import Evidence, Execution, Project, Service, Target
-from ...schemas import ExecutionDeriveIn, ExecutionIn, ExecutionOut, EvidenceOut
+from ...models import (Evidence, Execution, Finding, FindingEvidence, GraphNode,
+                       Project, Service, Target)
+from ...schemas import ExecutionDeriveIn, ExecutionIn, ExecutionOut, EvidenceOut, FtpTreePromoteIn
 from ...templates import catalog
 from ..core.support import need, safe_part
+from ..graph import service as graph_service
 
 router = APIRouter()
 REPOSITORY_DIR = Path(__file__).resolve().parents[4]
@@ -249,3 +254,85 @@ def derive_output(ident: int, body: ExecutionDeriveIn, db: Session = Depends(get
     db.commit()
     db.refresh(row)
     return row
+
+
+def _ftp_tree_connection_args(command: str) -> dict[str, str]:
+    """ftp-directory-tree's own stored command is exactly
+    `python -m app.ftp_tree --host H --port P --username U --password W`
+    (shlex-joined) -- shlex.split is the exact inverse, so this recovers the
+    same connection details the tree run itself already used instead of
+    re-deriving or re-typing them."""
+    argv = shlex.split(command)
+    values: dict[str, str] = {}
+    for flag in ("--host", "--port", "--username", "--password"):
+        if flag in argv:
+            index = argv.index(flag)
+            if index + 1 < len(argv):
+                values[flag.lstrip("-")] = argv[index + 1]
+    return values
+
+
+@router.post("/api/executions/{ident}/promote-ftp-file", status_code=201)
+def promote_ftp_file(ident: int, body: FtpTreePromoteIn, db: Session = Depends(get_db)):
+    """ftp-directory-tree only ever lists what's there (ftp_tree.py has no
+    RETR) -- this is the one-click alternative to hand-typing a fresh
+    `ftp host port` session and getting the path right by hand (a single
+    typo there is a silent "550 Failed to open file", confirmed live).
+    Reconnects with the exact same host/port/username/password the tree
+    run itself already used."""
+    execution = need(db, Execution, ident)
+    if execution.template_id != "ftp-directory-tree":
+        raise HTTPException(422, "This execution is not an FTP directory tree")
+    args = _ftp_tree_connection_args(execution.command)
+    host, port = args.get("host"), args.get("port")
+    if not host or not port:
+        raise HTTPException(500, "Could not recover connection details from this execution")
+    target, output_dir = _execution_output_dir(db, execution)
+    ftp = ftplib.FTP()
+    buffer = io.BytesIO()
+    try:
+        ftp.connect(host, int(port), timeout=10)
+        ftp.login(args.get("username") or "anonymous", args.get("password") or "anonymous@")
+        ftp.retrbinary(f"RETR {body.path}", buffer.write)
+    except (*ftplib.all_errors, ValueError) as exc:
+        raise HTTPException(502, f"FTP download failed: {exc}") from None
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            pass
+    content = buffer.getvalue()
+    filename = Path(body.path.replace("\\", "/")).name or body.path
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"ftp-{secrets.token_hex(6)}-{safe_part(filename)}"
+    output_path.write_bytes(content)
+    evidence = Evidence(
+        project_id=target.project_id, target_id=target.id, service_id=execution.service_id,
+        title=f"파일 다운로드: {filename}",
+        description=f"실행 #{execution.id}의 FTP 트리에서 다운로드 · {body.path}",
+        kind="attachment", source_type="execution", source_id=execution.id,
+        file_path=str(output_path), original_name=filename,
+        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
+        hostname=target.hostname or target.ip, include_report=False,
+    )
+    db.add(evidence); db.flush()
+    finding = Finding(
+        project_id=target.project_id, target_id=target.id, service_id=execution.service_id,
+        title=f"파일 다운로드: {filename}", status="Draft",
+        reproduction_steps=f"실행 #{execution.id}의 FTP 트리에서 다운로드\n\n{body.path}")
+    db.add(finding); db.flush()
+    db.add(FindingEvidence(finding_id=finding.id, evidence_id=evidence.id, is_primary=True))
+    source_node = db.get(GraphNode, body.graph_node_id) if body.graph_node_id else None
+    if (source_node and source_node.project_id == target.project_id
+            and source_node.type == "technique"):
+        finding_node = graph_service.create_node(
+            db, target.project_id, "finding", label=finding.title,
+            source_ref=json.dumps(
+                {"module": "findings", "kind": "finding", "id": finding.id},
+                sort_keys=True),
+            meta=json.dumps({"severity": finding.severity, "category": finding.category,
+                             "evidenceCount": 1}))
+        graph_service.create_edge(
+            db, target.project_id, source_node.id, finding_node.id, "yielded")
+    db.commit()
+    return {"finding_id": finding.id, "evidence_id": evidence.id}

@@ -76,6 +76,14 @@ class ExecutionDeriveIn(BaseModel):
     content: str = Field(min_length=1, max_length=5_000_000)
     filename: str = Field(min_length=1, max_length=120, pattern=r"^[\w .-]+$")
 
+class FtpTreePromoteIn(BaseModel):
+    # The exact "D|"/"F|"-tagged path ftp-directory-tree's own output listed
+    # -- reconnects over FTP itself rather than trusting anything about the
+    # path beyond what that same run already discovered, so this never
+    # walks anywhere the tree didn't already show.
+    path: str = Field(min_length=1, max_length=4096)
+    graph_node_id: str | None = Field(default=None, max_length=40)
+
 class ScanProfileOut(ORM):
     id: int; name: str; kind: str; description: str; arguments: str; builtin: bool
     engine: str; chain_kind: str
