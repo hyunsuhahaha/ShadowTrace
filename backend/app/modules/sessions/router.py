@@ -111,6 +111,17 @@ def create_interactive_session(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    if body.template_id == "responder-listener" and body.command_override is not None:
+        override = body.command_override.strip()
+        if not override:
+            raise HTTPException(400, "Command cannot be empty")
+        try:
+            argv = shlex.split(override)
+        except ValueError as exc:
+            raise HTTPException(400, f"Invalid command syntax: {exc}") from exc
+        if not argv:
+            raise HTTPException(400, "Command cannot be empty")
+        command = shlex.join(argv)
     if not shutil.which(argv[0]):
         raise HTTPException(409, f"Tool not installed: {argv[0]}")
     if body.run_as_root:

@@ -61,6 +61,68 @@ def test_responder_is_allowed_when_nothing_is_running(tmp_path, monkeypatch):
     assert row.command == "sudo responder -I tun0 -v"
 
 
+def test_responder_command_override_replaces_the_template_default(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=""))
+
+    row = create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, template_id="responder-listener",
+        variables={"interface": "tun0"},
+        command_override="responder -I tun0 -A -v"), db=db)
+
+    # run_as_root still wraps whatever argv the operator ended up with
+    assert row.command == "sudo responder -I tun0 -A -v"
+
+
+def test_responder_command_override_still_goes_through_the_single_instance_guard(
+        tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=0, stdout="144448\n"))
+
+    with pytest.raises(HTTPException) as exc:
+        create_interactive_session(InteractiveSessionIn(
+            target_id=box.id, template_id="responder-listener",
+            variables={"interface": "tun0"},
+            command_override="responder -I tun0 --lm"), db=db)
+
+    assert exc.value.status_code == 409
+
+
+def test_responder_command_override_rejects_an_empty_command(tmp_path, monkeypatch):
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=""))
+
+    with pytest.raises(HTTPException) as exc:
+        create_interactive_session(InteractiveSessionIn(
+            target_id=box.id, template_id="responder-listener",
+            variables={"interface": "tun0"}, command_override="   "), db=db)
+
+    assert exc.value.status_code == 400
+
+
+def test_command_override_is_ignored_for_templates_other_than_responder(tmp_path, monkeypatch):
+    # Scoped deliberately narrow -- letting an arbitrary template's launch
+    # be swapped out for an operator-typed command would bypass every other
+    # template's own tool-not-installed / variable-substitution checks.
+    db = database()
+    box = target(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(sessions_router.subprocess, "run", lambda *a, **k:
+        SimpleNamespace(returncode=1, stdout=""))
+
+    row = create_interactive_session(InteractiveSessionIn(
+        target_id=box.id, template_id="smbserver-listener",
+        variables={}, command_override="whoami"), db=db)
+
+    assert "impacket-smbserver" in row.command
+    assert "whoami" not in row.command
+
+
 def test_smbserver_is_blocked_while_an_instance_is_already_running(tmp_path, monkeypatch):
     db = database()
     box = target(db, tmp_path, monkeypatch)

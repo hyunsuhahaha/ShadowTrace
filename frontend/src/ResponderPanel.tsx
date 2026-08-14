@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 export type ResponderCapture = {
@@ -16,12 +16,18 @@ export default function ResponderPanel({
   targetId, onStartListener, onSendHashToCracking, onSaveCredential, evidenceMsg,
 }: {
   targetId?: number;
-  onStartListener: (interfaceName: string) => void;
+  onStartListener: (interfaceName: string, command: string) => void;
   onSendHashToCracking: (capture: ResponderCapture) => void;
   onSaveCredential: (capture: ResponderCapture) => void;
   evidenceMsg: string;
 }) {
   const [interfaceName, setInterfaceName] = useState("tun0");
+  // Prefilled from the interface field, but freely editable from there --
+  // add -A (analyze-only), --lm, -w (WPAD), drop -v, whatever the operator
+  // actually wants, instead of only ever being able to pick the interface
+  // and running the one fixed set of flags the template used to hardcode.
+  const [command, setCommand] = useState("sudo responder -I tun0 -v");
+  const [commandTouched, setCommandTouched] = useState(false);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   // Responder's own log files are the one de-duplicated, authoritative
   // record of what it has captured — polling them here means seeing a
@@ -40,6 +46,9 @@ export default function ResponderPanel({
     next.has(key) ? next.delete(key) : next.add(key);
     return next;
   });
+  useEffect(() => {
+    if (!commandTouched) setCommand(`sudo responder -I ${interfaceName.trim() || "tun0"} -v`);
+  }, [interfaceName, commandTouched]);
 
   return (
     <section className="netexecCredCheck" aria-labelledby="responder-heading">
@@ -49,12 +58,24 @@ export default function ResponderPanel({
       <div className="netexecCredForm">
         <input value={interfaceName} onChange={(e) => setInterfaceName(e.target.value)}
           placeholder="인터페이스 (예: tun0)" aria-label="인터페이스" />
-        <button disabled={!interfaceName.trim()}
-          onClick={() => onStartListener(interfaceName.trim())}>
+        <button disabled={!interfaceName.trim() || !command.trim()}
+          onClick={() => onStartListener(interfaceName.trim(), command.trim())}>
           리스너 준비 (Responder)
         </button>
       </div>
+      <div className="serviceCommandSession__repl">
+        <div><span>REPL / EDITABLE ARGV</span>
+          <small>{commandTouched ? "operator modified" : "default rendered"}</small></div>
+        <label><b>$</b><textarea aria-label="실행할 Responder 명령 (직접 수정 가능)"
+          rows={2} spellCheck={false} value={command}
+          onChange={(e) => { setCommand(e.target.value); setCommandTouched(true); }} /></label>
+        {commandTouched && <div className="serviceCommandSession__state" aria-live="polite">
+          <span className="is-modified">OPERATOR EDIT</span>
+          <button type="button" onClick={() => setCommandTouched(false)}>기본값으로</button>
+        </div>}
+      </div>
       <p className="netexecEvidenceMsg">
+        위 명령을 직접 수정한 뒤 실행할 수 있습니다 (예: -A로 분석 전용, --lm, -w 등 추가).
         Kali 데스크톱에 별도 터미널 창을 열어 실행합니다 — 다른 탭으로 이동해도 계속 실행됩니다.
       </p>
       {!!captures.data?.length && (

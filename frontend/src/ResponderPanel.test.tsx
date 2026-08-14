@@ -32,7 +32,7 @@ it("starts Responder on the typed interface, defaulting to tun0", () => {
   const onStartListener = vi.fn();
   mount({ onStartListener });
   fireEvent.click(screen.getByText("리스너 준비 (Responder)"));
-  expect(onStartListener).toHaveBeenCalledWith("tun0");
+  expect(onStartListener).toHaveBeenCalledWith("tun0", "sudo responder -I tun0 -v");
 });
 
 it("uses a custom interface when typed", () => {
@@ -41,7 +41,35 @@ it("uses a custom interface when typed", () => {
   mount({ onStartListener });
   fireEvent.change(screen.getByLabelText("인터페이스"), { target: { value: "eth0" } });
   fireEvent.click(screen.getByText("리스너 준비 (Responder)"));
-  expect(onStartListener).toHaveBeenCalledWith("eth0");
+  expect(onStartListener).toHaveBeenCalledWith("eth0", "sudo responder -I eth0 -v");
+});
+
+it("lets the operator edit the rendered command before launching, e.g. adding -A", () => {
+  vi.stubGlobal("fetch", vi.fn(() => response([])));
+  const onStartListener = vi.fn();
+  mount({ onStartListener });
+  const box = screen.getByLabelText("실행할 Responder 명령 (직접 수정 가능)") as HTMLTextAreaElement;
+  expect(box.value).toBe("sudo responder -I tun0 -v");
+
+  fireEvent.change(box, { target: { value: "sudo responder -I tun0 -A -v" } });
+  fireEvent.click(screen.getByText("리스너 준비 (Responder)"));
+
+  expect(onStartListener).toHaveBeenCalledWith("tun0", "sudo responder -I tun0 -A -v");
+});
+
+it("keeps a manually edited command even if the interface field changes afterward", () => {
+  vi.stubGlobal("fetch", vi.fn(() => response([])));
+  mount();
+  const box = screen.getByLabelText("실행할 Responder 명령 (직접 수정 가능)") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "sudo responder -I tun0 -A" } });
+
+  fireEvent.change(screen.getByLabelText("인터페이스"), { target: { value: "eth0" } });
+
+  expect(box.value).toBe("sudo responder -I tun0 -A");
+  expect(screen.getByText("기본값으로")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("기본값으로"));
+  expect(box.value).toBe("sudo responder -I eth0 -v");
 });
 
 it("polls captured credentials for this target and masks them until revealed", async () => {

@@ -299,14 +299,21 @@ export function GraphCanvas(props: {
         }
         if (lineageColor) {
           // Both are straight lines now (see the credentialUse check above),
-          // so both get the same straight-line arrow angle.
+          // so both get the same straight-line arrow angle. Sized well
+          // above the plain structural arrowhead below (4-6px wings) --
+          // "I logged in here with this credential" is a bigger deal than
+          // an ordinary discovered/enumerated hop and should read as one
+          // at a glance, not blend in as just another thin marker.
           const angle = Math.atan2(b.y - a.y, b.x - a.x);
-          const tipX = b.x - Math.cos(angle) * 30;
-          const tipY = b.y - Math.sin(angle) * 30;
+          const tipX = b.x - Math.cos(angle) * 34;
+          const tipY = b.y - Math.sin(angle) * 34;
           ctx.beginPath(); ctx.moveTo(tipX, tipY);
-          ctx.lineTo(tipX - Math.cos(angle - .5) * 9, tipY - Math.sin(angle - .5) * 9);
-          ctx.lineTo(tipX - Math.cos(angle + .5) * 9, tipY - Math.sin(angle + .5) * 9);
-          ctx.closePath(); ctx.fillStyle = lineageColor; ctx.fill();
+          ctx.lineTo(tipX - Math.cos(angle - .5) * 16, tipY - Math.sin(angle - .5) * 16);
+          ctx.lineTo(tipX - Math.cos(angle + .5) * 16, tipY - Math.sin(angle + .5) * 16);
+          ctx.closePath();
+          ctx.save(); ctx.shadowColor = lineageColor; ctx.shadowBlur = 6;
+          ctx.fillStyle = lineageColor; ctx.fill();
+          ctx.restore();
           const label = edge.label || (credentialUse ? "CREDENTIAL REUSE" : "LATERAL ACCESS");
           ctx.font = "600 8px ui-monospace,monospace";
           const labelWidth = Math.min(190, ctx.measureText(label).width + 12);

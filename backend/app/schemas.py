@@ -136,6 +136,10 @@ class InteractiveSessionIn(BaseModel):
     template_id: str = Field(pattern=r"^[a-z0-9-]+$")
     variables: dict[str, str] = Field(default_factory=dict)
     run_as_root: bool = True
+    # responder-listener only: lets the operator edit the rendered command
+    # (add -A, --lm, -w, drop -v, ...) before it runs, instead of being
+    # stuck with whatever the template's default flags happen to be.
+    command_override: str | None = Field(default=None, max_length=500)
 
 class InteractiveSessionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str

@@ -1019,8 +1019,8 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
   };
   // Responder is auto-floated through the AppShell-level xterm provider, so
   // it stays mounted while the user switches nodes and workspaces.
-  const startResponderDesktop = async (interfaceName: string) => {
-    if (!targetId || !interfaceName.trim()) return;
+  const startResponderDesktop = async (interfaceName: string, command: string) => {
+    if (!targetId || !interfaceName.trim() || !command.trim()) return;
     try {
       const session = await api<any>("/interactive-sessions", {
         method: "POST",
@@ -1028,11 +1028,11 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
         body: JSON.stringify({
           target_id: targetId, template_id: "responder-listener",
           variables: {interface: interfaceName.trim()}, run_as_root: true,
+          command_override: command.trim(),
         }),
       });
       addInteractiveSession({id: session.id, command: session.command, autoFloat: true});
-      setOutput((value) =>
-        `${value}\n$ sudo responder -I ${interfaceName.trim()} -v\n\n[xterm PTY에서 실행했습니다.]\n`);
+      setOutput((value) => `${value}\n$ ${command.trim()}\n\n[xterm PTY에서 실행했습니다.]\n`);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
       setOutput((value) => `${value}\n[Responder 실행 실패] ${message}\n`);
@@ -2063,7 +2063,8 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
           {!!service && <ChiselPivotPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <ResponderPanel targetId={targetId} evidenceMsg={evidenceMsg}
-            onStartListener={(interfaceName) => void startResponderDesktop(interfaceName)}
+            onStartListener={(interfaceName, command) =>
+              void startResponderDesktop(interfaceName, command)}
             onSendHashToCracking={(capture) => sendHashToCracking(capture.value,
               `Responder · ${capture.username} · ${target?.ip || ""}`)}
             onSaveCredential={(capture) => void saveResponderCredential(capture)} />}
