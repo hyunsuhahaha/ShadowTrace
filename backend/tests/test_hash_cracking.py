@@ -365,6 +365,27 @@ def test_zip2john_extracts_a_pkzip_hash_and_selects_the_pkzip_mode(monkeypatch):
         "$pkzip$1*1*2*0*1a4*54c*8664e6d1*0*42*8*1a4*a15b*fdea72d8524a084d7276df6db4a3f8a*$/pkzip$")
 
 
+def test_zip2john_selects_the_multi_file_mode_for_an_archive_with_more_than_one_encrypted_member(
+        monkeypatch):
+    # Confirmed live against a real 2-file `zip -e` archive: zip2john folds
+    # every encrypted member into one $pkzip$<count>*... line, and mode
+    # 17200 (single-file only) rejects a count > 1 hash outright with
+    # "Hash-value exception" -- hashcat --identify agrees 17220 is what
+    # this actually is.
+    monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
+    stdout = ("upload.zip:$pkzip$2*1*1*0*8*24*5722*543fb39ed1a919ce7b58641a238e00f4cb3a826c*2*0*3da*cca*"
+              "1b1ccd6a*504*43*8*3da*989a*22290dc3505e51d341f319*$/pkzip$:::upload.zip:index.php,"
+              "style.css:upload.zip\n")
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+
+    result = asyncio.run(router.zip2john(upload(b"fake zip bytes")))
+    assert result["hash_mode_id"] == "pkzip_multi_compressed"
+    assert result["hashes"].startswith("$pkzip$2*")
+
+
 def test_zip2john_extracts_a_winzip_hash_and_selects_the_winzip_mode(monkeypatch):
     monkeypatch.setattr(router.shutil, "which", lambda _: "/usr/bin/zip2john")
     stdout = "upload.zip:$zip2$*0*3*0*salt*verify*10*data*hmac*$/zip2$:::upload.zip:secret.docx:upload.zip\n"

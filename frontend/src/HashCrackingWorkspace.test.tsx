@@ -25,6 +25,8 @@ const hashModes = [
     detect: "^[0-9a-fA-F]{64}$" },
   { id: "md5", name: "MD5 (구형 웹사이트, 단순 체크섬)", mode: "0",
     example: "5f4dcc3b5aa765d61d8327deb882cf99", detect: "^[0-9a-fA-F]{32}$" },
+  { id: "pkzip", name: "PKZIP/ZipCrypto (구형, 압축됨)", mode: "17200",
+    example: "$pkzip$1*1*2*0*...*$/pkzip$", detect: "^\\$pkzip\\$" },
 ];
 
 describe("detectHashMode", () => {
@@ -247,6 +249,30 @@ it("updates the source credential without asking for its username again", async 
   await waitFor(() => expect(promoted).toBeTruthy());
   expect(promoted).toMatchObject({ credential_id: 9, secret: "badminton" });
   expect(screen.queryByText("이 평문 비밀번호가 속한 사용자명을 입력하세요.")).toBeNull();
+});
+
+it("shows the picked zip's filename even though the native input is cleared right after picking", async () => {
+  const fetcher = baseFetcher((url, init) => {
+    if (url.endsWith("/api/hash-cracking/zip2john") && init?.method === "POST")
+      return new Response(JSON.stringify({ hashes: "$pkzip$1*1*2*0*...*$/pkzip$",
+        hash_mode_id: "pkzip", stderr: "" }),
+        { headers: { "Content-Type": "application/json" } });
+    return undefined;
+  });
+  mount(fetcher);
+  const input = await screen.findByLabelText(/zip 파일에서 해시 추출/) as HTMLInputElement;
+  const file = new File(["zip bytes"], "backup.zip", { type: "application/zip" });
+
+  fireEvent.change(input, { target: { files: [file] } });
+
+  // The native input is deliberately cleared right after picking (so the
+  // same file can be re-selected later), which used to mean the browser's
+  // own "선택된 파일: backup.zip" text never appeared -- this is what
+  // stands in for it now.
+  expect(await screen.findByText(/backup\.zip/)).toBeTruthy();
+  expect(input.value).toBe("");
+  await waitFor(() => expect((screen.getByLabelText(/해시 종류/) as HTMLSelectElement).value)
+    .toBe("pkzip"));
 });
 
 it("persists the form panel width when resized with the scroll wheel", async () => {

@@ -34,6 +34,18 @@ ZIP_MAX_BYTES = 300 * 1024 * 1024
 # lets us pull the hash out of its "name:hash:::archive:entry" wrapper line
 # without having to parse that wrapper.
 ZIP_HASH_PATTERN = re.compile(r"\$(zip2|pkzip)\$.*?\$/\1\$")
+# A legacy ZipCrypto ($pkzip$) hash's own leading field is how many of the
+# archive's files it bundles into this one hash line -- an archive with
+# more than one encrypted member (backup.zip with index.php AND style.css,
+# say) produces a single $pkzip$2*... line, and mode 17200 ("PKZIP
+# (Compressed)", single-file only) rejects that outright with "Hash-value
+# exception" (confirmed live: hashcat --identify agrees 17220 is what a
+# 2-file hash actually is). $pkzip$ itself never distinguishes "compressed"
+# from "mixed" compression across members the way 17220 vs 17225 do --
+# 17220 is the correct guess whenever it's uniform, which is what `zip -e`
+# (and most real-world tooling) always produces, so that's the fallback;
+# the dropdown is manually correctable if a given archive turns out mixed.
+PKZIP_COUNT = re.compile(r"^\$pkzip\$(\d+)\*")
 
 
 def need(db: Session, model, ident: int):
@@ -87,7 +99,12 @@ def run_zip2john(content: bytes) -> dict:
         if completed.stderr.strip():
             detail += f": {completed.stderr.strip()[:500]}"
         raise HTTPException(422, detail)
-    hash_mode_id = "winzip" if hash_lines[0].startswith("$zip2$") else "pkzip"
+    if hash_lines[0].startswith("$zip2$"):
+        hash_mode_id = "winzip"
+    else:
+        count_match = PKZIP_COUNT.match(hash_lines[0])
+        hash_mode_id = "pkzip_multi_compressed" if count_match and int(count_match.group(1)) > 1 \
+            else "pkzip"
     return {
         "hashes": "\n".join(hash_lines), "hash_mode_id": hash_mode_id,
         "stderr": completed.stderr[:5_000],

@@ -100,6 +100,7 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
   const [jobId, setJobId] = useState<number>();
   const [zipUploading, setZipUploading] = useState(false);
   const [zipError, setZipError] = useState("");
+  const [zipFileName, setZipFileName] = useState("");
   const [error, setError] = useState("");
   const [output, setOutput] = useState("작업을 만들고 실행하면 실시간 출력이 표시됩니다.\n");
   const [promoteFor, setPromoteFor] = useState<Cracked>();
@@ -228,7 +229,11 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
   };
 
   const uploadZip = async (file: File) => {
-    setZipError(""); setZipUploading(true);
+    // The native <input type="file"> is cleared right after picking (below)
+    // so the same file can be re-selected without a no-op change event --
+    // but that also blanks the browser's own "선택된 파일: X" text for the
+    // whole upload, so this is the only place the filename is still shown.
+    setZipError(""); setZipUploading(true); setZipFileName(file.name);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -405,7 +410,9 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
                 if (picked) uploadZip(picked);
               }} />
           </label>
-          {zipUploading && <small>zip2john 실행 중…</small>}
+          {zipFileName && (
+            <small>{zipFileName}{zipUploading ? " · zip2john 실행 중…" : ""}</small>
+          )}
           {zipError && <ErrorState message={zipError} />}
           <label>
             해시 (한 줄에 하나씩 붙여넣기)

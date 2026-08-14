@@ -229,6 +229,42 @@ def test_evidence_zip2john_hands_the_archive_straight_to_hash_cracking_without_a
     assert result["hashes"].startswith("$pkzip$")
 
 
+def test_evidence_zip2john_selects_the_multi_file_mode_for_a_multi_member_protected_zip(
+        tmp_path, monkeypatch):
+    # Reproduces the live failure: backup.zip held two encrypted members
+    # (index.php, style.css). zip2john folds both into one $pkzip$2*...
+    # line, and hashcat mode 17200 (single-file only) rejected that outright
+    # with "Hash-value exception" -- confirmed by actually running hashcat
+    # against it. hashcat --identify agrees 17220 is the real mode.
+    import subprocess
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    (tmp_path / "index.php").write_text("<?php echo 'hi'; ?>")
+    (tmp_path / "style.css").write_text("body{}")
+    zip_path = tmp_path / "multi.zip"
+    subprocess.run(["zip", "-j", "-P", "hunter2", str(zip_path),
+                    str(tmp_path / "index.php"), str(tmp_path / "style.css")],
+                   check=True, capture_output=True)
+    uploaded = tempfile.SpooledTemporaryFile()
+    uploaded.write(zip_path.read_bytes())
+    uploaded.seek(0)
+    row = asyncio.run(upload_evidence(
+        project_id=project.id, target_id=target.id, title="파일 다운로드: backup.zip",
+        kind="attachment", description="", service_id=None,
+        source_type="interactive_session", source_id=1, sensitivity="normal",
+        include_report=False, file=UploadFile(filename="backup.zip", file=uploaded), db=db))
+
+    result = evidence_zip2john(row.id, db)
+
+    assert result["hash_mode_id"] == "pkzip_multi_compressed"
+    assert result["hashes"].startswith("$pkzip$2*")
+
+
 def test_evidence_zip2john_rejects_a_non_zip_file(tmp_path, monkeypatch):
     import app.modules.evidence.router as router
     monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
