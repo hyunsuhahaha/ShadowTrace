@@ -684,6 +684,31 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 host = host_for(sess.target_id)
                 if host:
                     ensure_edge(node, host, "captures-from", "AUTH CAPTURE")
+                # Credentials this listener caught get a direct line back to
+                # it, not just the host they're filed under -- the
+                # host->credential "enumerated" edge the credential loop
+                # above gives every credential by default doesn't fit here
+                # (nothing was scanned or logged into; the listener passively
+                # caught an inbound auth attempt), so replace it rather than
+                # add a second, redundant edge alongside it. Queried fresh
+                # from the DB (not the `edges` list loaded at the top of this
+                # function) since the credential loop above creates that
+                # edge via create_edge(), not ensure_edge(), so it never
+                # made it into `edges` on a project's very first sync.
+                for cred in db.scalars(select(Credential).where(
+                        Credential.target_id == sess.target_id,
+                        Credential.source_kind == "responder")):
+                    cred_node = index.get(("credential", cred.id))
+                    if cred_node is None:
+                        continue
+                    if host is not None:
+                        for edge in db.scalars(select(GraphEdge).where(
+                                GraphEdge.source == host.id, GraphEdge.target == cred_node.id,
+                                GraphEdge.relation == "enumerated")):
+                            db.delete(edge)
+                            if edge in edges:
+                                edges.remove(edge)
+                    ensure_edge(node, cred_node, "yielded")
             else:
                 ensure_edge(parent, node, "attempted")
 

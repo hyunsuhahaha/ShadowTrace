@@ -447,6 +447,45 @@ def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
                    for relation, _, target in relations)
 
 
+def test_sync_links_a_responder_captured_credential_to_the_listener_that_caught_it(monkeypatch):
+    # Without this, a Responder-sourced credential only ever got the same
+    # generic host->credential "enumerated" edge every other credential
+    # gets -- nothing in the graph showed which capture session it actually
+    # came from, even though the listener node ("captures-from" a host) was
+    # right there.
+    import os
+    from app.models import Credential, InteractiveSession, Target
+    db = database()
+    monkeypatch.setattr(service, "_operator_address", lambda: "10.10.16.178")
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.12")
+    db.add(t); db.flush()
+    db.add(InteractiveSession(target_id=t.id, template_id="responder-listener",
+                              command="responder -I tun0", cwd="/tmp",
+                              status="launched", pid=os.getpid()))
+    db.add(Credential(project_id=p.id, target_id=t.id, username="Administrator",
+                      secret="badminton", secret_kind="password",
+                      source_kind="responder", source_detail="SMB-NTLMv2-SSP-10.0.0.12",
+                      service_names="[]", notes=""))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    cred = db.query(GraphNode).filter_by(type="credential").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("yielded", tech.id, cred.id) in relations
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert ("enumerated", host.id, cred.id) not in relations
+
+    # a second sync (idempotent re-run) must not duplicate the edge
+    service.sync_from_project(db, p.id)
+    yielded = [e for e in db.query(GraphEdge).all()
+               if e.relation == "yielded" and e.source == tech.id and e.target == cred.id]
+    assert len(yielded) == 1
+
+
 def test_sync_prunes_orphaned_nodes_when_target_deleted():
     from app.models import Service, Target
     db = database()
