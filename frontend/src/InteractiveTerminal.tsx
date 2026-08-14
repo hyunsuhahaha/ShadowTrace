@@ -31,7 +31,7 @@ export default function InteractiveTerminal(props: PtyTerminalProps & {
     if (wasFloating.current) { props.onClose(); return; }
     floatingState.floatTerminal({ id: floatingId,
       label: `${props.title || "대화형 터미널"} #${props.sessionId}`,
-      content: <InteractiveTerminal {...props} floating autoFloat={false} /> },
+      content: <InteractiveTerminal {...props} floating autoFloat={false} />, keepOnDock: true },
     new DOMRect(Math.max(8, innerWidth - 760), 72, 720, 460));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.autoFloat, props.sessionId, isFloating]);

@@ -29,6 +29,12 @@ type FloatingContent = {
   returnHash: string;
   commandContext?: FloatingCommandContext;
   executedCommand?: string;
+  // autoFloat PTYs (evil-winrm, every addInteractiveSession() shell, ...)
+  // never had an inline/docked position to begin with -- for these, "[
+  // 원위치 ]" just resets the window back to its default spot rather than
+  // un-floating it, since un-floating would unmount the live PtyTerminal
+  // and the backend kills the process the instant that socket closes.
+  keepOnDock?: boolean;
 };
 type FloatingState = {kind: "scan"; session: ScanSession} | FloatingContent;
 type FloatingTerminalContextValue = {
@@ -214,6 +220,10 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   };
   const dock = () => {
     if (!floating) return;
+    if (floating.kind === "content" && floating.keepOnDock) {
+      persistFrame({x: Math.max(8, innerWidth - 760), y: 72, width: 720, height: 460});
+      return;
+    }
     if (floating.kind === "scan") localStorage.setItem("oscp-scan-dock", JSON.stringify({
       scanId: floating.session.scanId, targetId: floating.session.targetId,
     }));
@@ -251,6 +261,12 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
       event.preventDefault();
     };
   const dockExtra = (terminal: FloatingContent) => {
+    if (terminal.keepOnDock) {
+      setExtraFloating((items) => items.map((item) => item.terminal.id === terminal.id
+        ? {...item, frame: clampFrame({x: Math.max(8, innerWidth - 760), y: 72, width: 720, height: 460})}
+        : item));
+      return;
+    }
     setExtraFloating((items) => items.filter((item) => item.terminal.id !== terminal.id));
     location.hash = terminal.returnHash;
   };
