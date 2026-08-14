@@ -181,7 +181,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 |---|---|---|
 | Project, Target, Service | `modules/core/router.py` | `models.py`, workspace target directories |
 | Scan | `modules/scan_center/router.py` | `service.py`, `manager.py`, scan artifacts |
-| Captured command | `modules/executions/router.py` | `executor.py`, output files |
+| Captured command | `modules/executions/router.py` | `executor.py`, output files, ftp-directory-tree 멤버 재다운로드(FTP 재접속) |
 | Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs, 종료 세션 `/retry` 재시작 |
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
@@ -661,10 +661,23 @@ mssql/postgres/docker/git-dumper의 "성공하면 후속 tree 명령을 자동 �
 imap/postgres) 별도 confirm 커맨드가 없어 아직 Inspector 쪽 `isXCheck` 짝이 없다. 다만
 raw stdout이 거짓을 말하는 건 아니다 — 트리 자체의 그래프 노드를 직접 선택하면 결과를 볼 수
 있으니, 위 auto-save 케이스처럼 "약속과 다르게 동작"하는 버그는 아니고 미완성 UX 롤아웃이다.
+scan_center의 `capture_scan_evidence()`가 nmap NSE 긍정 결과(예: ftp-anon)로 자동 생성하는
+"Needs Review" finding 후보 중, 제목이 `Ftp Anon on {ip}:{port}` 형태인 것은 Inspector가
+정규식으로 host/port를 그대로 읽어 "익명으로 접속하기" 버튼 하나로 anonymous/anonymous@를
+미리 입력한 대화형 FTP 세션을 띄운다(`docs/FINDING_REPORTING.md` §Automatic scan evidence
+참고 — 이 자동 Finding 자체는 Phase 1부터 있던 기존 동작). `ftp-directory-tree`/
+`git-dump-tree`/`http-webdav-tree`/`nfs-export-tree`/`rsync-module-tree` 다섯 개는 전부
+post-exploitation 파일 트리와 같은 `D|`/`F|` 태그 형식을 쓰므로(각 스크립트 자체 주석에
+"other tree commands와 같은 형식"이라고 명시) raw stdout 대신 `FileTreeView`로 렌더한다.
+`ftp-directory-tree`는 추가로 파일 클릭 시 `/executions/{id}/promote-ftp-file`로 같은
+호스트/포트/자격증명으로 재접속해 그 파일 하나만 다시 받아 Evidence+Draft Finding으로
+승격한다(`ftp_tree.py` 자체는 목록만 만들고 내려받지 않으므로 조회와 다운로드가 분리돼
+있음). 나머지 네 개는 아직 이 재다운로드 짝이 없다 — 트리 렌더링만 개선됐다.
 API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST, idempotent),
 `/projects/{id}/graph/tree`, `/projects/{id}/graph/timeline`,
 `/projects/{id}/graph/nodes`(POST), `/projects/{id}/graph/edges`(POST),
 `/graph/nodes/{id}`(PATCH), `/executions/{id}/output`, `/executions/{id}/derive`,
+`/executions/{id}/promote-ftp-file`(POST), `/interactive-sessions/manual`(POST),
 `/targets`, `/targets/{id}/services`, `/projects/{id}/responder-captures/sync`(POST),
 `/evidence/{id}/archive`, `/evidence/{id}/extract`(POST), `/evidence/{id}/zip2john`(POST).
 
