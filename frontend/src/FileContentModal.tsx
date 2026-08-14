@@ -5,8 +5,8 @@ import { api } from "./api";
 // Reads one file a file-tree run already discovered, over that run's own
 // connection/credential -- see the backend's /read-file route for the
 // "only a path this run itself found, never a freeform command" guard.
-export default function FileContentModal({ runId, path, onClose }: {
-  runId: number; path: string; onClose: () => void;
+export default function FileContentModal({ runId, path, graphNodeId, onClose }: {
+  runId: number; path: string; graphNodeId?: string; onClose: () => void;
 }) {
   const qc = useQueryClient();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -39,7 +39,7 @@ export default function FileContentModal({ runId, path, onClose }: {
     try {
       await api(`/post-exploitation/${runId}/promote-file`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify({ path, graph_node_id: graphNodeId }),
       });
       setPromote("saved");
       // Findings sync into "finding" graph nodes on every graph fetch --

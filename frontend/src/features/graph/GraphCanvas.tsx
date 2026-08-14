@@ -15,6 +15,7 @@ export function GraphCanvas(props: {
   onContext: (id: string, x: number, y: number) => void;
   objectivePath?: ObjectivePath | null;
   onDropFile?: (payload: FileDragPayload) => void;
+  dropFileBusy?: boolean;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -623,6 +624,11 @@ export function GraphCanvas(props: {
       {fileDragOver && (
         <div style={S.fileDropOverlay} aria-hidden="true">
           여기에 놓으면 Finding 노드로 추가됩니다
+        </div>
+      )}
+      {props.dropFileBusy && (
+        <div style={S.fileDropBusyOverlay} aria-hidden="true">
+          파일을 Finding으로 저장하는 중… (원격 세션에서 다시 읽는 중이라 몇 초 걸릴 수 있습니다)
         </div>
       )}
     </div>

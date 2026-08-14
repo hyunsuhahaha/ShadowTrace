@@ -48,6 +48,25 @@ export function Inspector(props: {
   const executionId = source?.kind === "execution" ? source.id : null;
   const sessionId = source?.kind === "session" ? source.id : null;
   const credentialId = source?.kind === "credential" ? source.id : null;
+  const findingId = source?.kind === "finding" ? source.id : null;
+  const findingQuery = useQuery({
+    queryKey: ["graphFinding", findingId],
+    enabled: findingId !== null,
+    queryFn: () => api<{ evidence: Array<{ evidence_id: number; kind: string; is_primary: boolean }> }>(
+      `/findings/${findingId}`),
+  });
+  // Only findings promoted from a file-tree drag (promote-file always sets
+  // this exact kind+is_primary combination) get their content shown here --
+  // manually-created findings' screenshots/notes already have their own
+  // views elsewhere and would just error against the text-only preview.
+  const findingFileEvidenceId = findingQuery.data?.evidence.find(
+    (item) => item.is_primary && item.kind === "command_output")?.evidence_id;
+  const findingFilePreview = useQuery({
+    queryKey: ["graphFindingFilePreview", findingFileEvidenceId],
+    enabled: findingFileEvidenceId !== undefined,
+    queryFn: () => api<{ content: string; truncated: boolean }>(
+      `/evidence/${findingFileEvidenceId}/preview`),
+  });
   const executionOutput = useQuery({
     queryKey: ["executionOutput", executionId],
     enabled: executionId !== null,
@@ -251,6 +270,19 @@ export function Inspector(props: {
           ))}
         </div>
       </div>
+      {findingFileEvidenceId !== undefined && <section style={S.executionResults} aria-label="발견된 파일 내용">
+        <div style={S.executionResultsHead}>
+          <strong>파일 내용</strong>
+          {findingFilePreview.data?.truncated && <span style={{ color: "#e3b341" }}>일부만 표시됨</span>}
+        </div>
+        <div style={S.terminalBody}>
+          {findingQuery.isLoading || findingFilePreview.isLoading
+            ? <div style={S.resultMessage}>파일 내용 불러오는 중…</div>
+            : findingFilePreview.isError
+              ? <div style={S.resultError}>파일 내용을 불러오지 못했습니다.</div>
+              : <pre style={S.terminalOutput}>{findingFilePreview.data?.content || "(빈 파일)"}</pre>}
+        </div>
+      </section>}
       {credentialId !== null && <section style={S.credentialDetail} aria-label="저장된 인증정보">
         <div style={S.credentialDetailHead}>
           <div style={{ display: "grid", gap: 3 }}>
@@ -338,7 +370,8 @@ export function Inspector(props: {
               latestFileTree.command_id.startsWith("windows_file_tree") ? "\\" : "/")} />}
         </div>}
         {latestFileTree && openFilePath !== null && <FileContentModal
-          runId={latestFileTree.id} path={openFilePath} onClose={() => setOpenFilePath(null)} />}
+          runId={latestFileTree.id} path={openFilePath} graphNodeId={n.id}
+          onClose={() => setOpenFilePath(null)} />}
       </section>}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>

@@ -64,6 +64,7 @@ export default function GraphWorkspace() {
   const [postPanel, setPostPanel] = useState<CredentialHandoff | null>(null);
   const [reportPanel, setReportPanel] = useState(false);
   const [dropFileError, setDropFileError] = useState("");
+  const [dropFileBusy, setDropFileBusy] = useState(false);
   useEffect(() => {
     setWebRequest(null);
     setHashPanel(null);
@@ -367,14 +368,23 @@ export default function GraphWorkspace() {
   // "drop position" to honor, see GraphCanvas's own comment on this).
   const dropFile = async (payload: {runId: number; path: string}) => {
     setDropFileError("");
+    setDropFileBusy(true);
     try {
+      // promote-file re-reads the file over the run's live connection
+      // (WinRM/SSH), which routinely takes several seconds -- graph_node_id
+      // is the technique node the tree was opened from (i.e. whatever's
+      // selected right now, since that's what's rendering the tree the
+      // drag came out of), so the finding attaches there instead of the
+      // bare host sync()'s own projection would otherwise fall back to.
       await api(`/post-exploitation/${payload.runId}/promote-file`, {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({path: payload.path}),
+        body: JSON.stringify({path: payload.path, graph_node_id: selected}),
       });
       void queryClient.invalidateQueries({queryKey: ["graph"]});
     } catch (reason) {
       setDropFileError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDropFileBusy(false);
     }
   };
 
@@ -497,7 +507,7 @@ export default function GraphWorkspace() {
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
-            onDropFile={(payload) => void dropFile(payload)} />
+            onDropFile={(payload) => void dropFile(payload)} dropFileBusy={dropFileBusy} />
         ) : (
           <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
         )}
