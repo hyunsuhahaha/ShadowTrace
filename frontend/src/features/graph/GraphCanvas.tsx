@@ -304,9 +304,16 @@ export function GraphCanvas(props: {
           // "I logged in here with this credential" is a bigger deal than
           // an ordinary discovered/enumerated hop and should read as one
           // at a glance, not blend in as just another thin marker.
+          // Retraction has to track the target's own radius (same as the
+          // structural arrowhead above) rather than one fixed distance --
+          // a fixed number tuned to look right against a host (r=26) left
+          // a visible gap in front of the smaller service/finding/credential
+          // nodes (r=19) this same arrow just as often points at.
+          const targetRadius = b.type === "project-root" ? 40 : b.id === anchorId ? 38
+            : b.type === "host" || b.type === "operator" ? 26 : 19;
           const angle = Math.atan2(b.y - a.y, b.x - a.x);
-          const tipX = b.x - Math.cos(angle) * 34;
-          const tipY = b.y - Math.sin(angle) * 34;
+          const tipX = b.x - Math.cos(angle) * (targetRadius + 4);
+          const tipY = b.y - Math.sin(angle) * (targetRadius + 4);
           ctx.beginPath(); ctx.moveTo(tipX, tipY);
           ctx.lineTo(tipX - Math.cos(angle - .5) * 16, tipY - Math.sin(angle - .5) * 16);
           ctx.lineTo(tipX - Math.cos(angle + .5) * 16, tipY - Math.sin(angle + .5) * 16);
