@@ -71,6 +71,9 @@ export function Inspector(props: {
   useEffect(() => setCredentialRevealed(false), [credentialId]);
   const [captureMessage, setCaptureMessage] = useState("");
   const [retrySession, setRetrySession] = useState<{id: number; command: string} | null>(null);
+  const [winrmSession, setWinrmSession] = useState<
+    {id: number; title: string; initialInput?: string} | null
+  >(null);
   const [retryError, setRetryError] = useState("");
   const sessionQuery = useQuery({
     queryKey: ["graphInteractiveSession", sessionId],
@@ -193,6 +196,31 @@ export function Inspector(props: {
       setRetryError(reason instanceof Error ? reason.message : String(reason));
     }
   };
+  // Mirrors App.tsx's openEvilWinrmShell: a plaintext password never touches
+  // argv or the sessions table (the backend rejects -p/-H outright), so it
+  // gets typed into evil-winrm's own interactive prompt instead. A hash has
+  // no such prompt to type into, so it has to ride in argv via -H -- typed
+  // into a bare shell for the user to review and press Enter on themselves.
+  const openEvilWinrm = async () => {
+    if (!target || !props.executionContext) return;
+    const userMatch = /-u\s+(\S+)/.exec(command);
+    const hashMatch = /-H\s+(\S+)/.exec(command);
+    const passMatch = /-p\s+(\S+)/.exec(command);
+    if (!userMatch || (!hashMatch && !passMatch)) return;
+    const base = `evil-winrm -i ${target.ip} -u ${userMatch[1]}`;
+    const body: Record<string, unknown> = {
+      target_id: props.executionContext.targetId,
+      service_id: props.executionContext.serviceId || null,
+    };
+    if (!hashMatch) body.command = base;
+    const session = await api<{id: number}>("/interactive-sessions/manual", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    });
+    setWinrmSession(hashMatch
+      ? {id: session.id, title: `${base} -H … · 검토 후 Enter`,
+        initialInput: `${base} -H ${hashMatch[1]}`}
+      : {id: session.id, title: base, initialInput: `${passMatch![1]}\r`});
+  };
   if (!n)
     return <aside style={S.inspector}>
       <div style={{ color: "#6b6b76", fontSize: 13 }}>노드를 선택하세요.</div>
@@ -289,6 +317,12 @@ export function Inspector(props: {
             <dd style={{ margin: 0, color: "#9eb5a8", fontSize: 10 }}>{command || n.label}</dd>
           </div>
         </dl>
+        {/^\[\+\]|pwn3d/im.test(executionOutput.data?.stdout || "") && /\bwinrm\b/i.test(command)
+          && <div style={{ padding: "0 12px 12px" }}>
+            <button style={S.resultAction} onClick={() => void openEvilWinrm()}>
+              evil-winrm 명령 준비하기
+            </button>
+          </div>}
         {latestFileTree && <div style={S.netexecTree}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "9px 12px" }}>
             <b>폴더·파일 트리</b><span style={{ color: "#71867b", fontSize: 9 }}>
@@ -331,6 +365,9 @@ export function Inspector(props: {
       {retrySession && <InteractiveTerminal sessionId={retrySession.id}
         title={`Responder 재시작 · ${retrySession.command}`} autoFloat
         onClose={() => setRetrySession(null)} />}
+      {winrmSession && <InteractiveTerminal sessionId={winrmSession.id}
+        title={winrmSession.title} initialInput={winrmSession.initialInput} autoFloat
+        onClose={() => setWinrmSession(null)} />}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}
         commandContext={target && props.executionContext ? {
