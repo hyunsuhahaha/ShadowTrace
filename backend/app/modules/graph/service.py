@@ -42,6 +42,15 @@ _EXECUTION_STATUS = {
 # reads them.
 _WELL_KNOWN_PORT_NAMES = {5985: "winrm", 5986: "winrm"}
 
+# Which port(s) a RemoteExecution.connection value actually logged into --
+# lets the reused-credential edge below point at the specific service a
+# credential unlocked instead of always landing on the host in general.
+# wmiexec/secretsdump both authenticate over SMB/DCE-RPC, so both map to
+# the same SMB port; there's no narrower "service" to point at than that.
+_CONNECTION_PORTS = {
+    "ssh": {22}, "winrm": {5985, 5986}, "wmiexec": {445, 135}, "secretsdump": {445, 135},
+}
+
 _ACTIVE_STATUSES = {"queued", "running", "processing", "launched"}
 
 
@@ -575,9 +584,30 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     for run in successful_access:
         credential = db.get(Credential, run.credential_id)
         credential_node = index.get(("credential", run.credential_id))
-        destination = host_for(run.target_id)
-        if not credential or not credential_node or not destination:
+        host_destination = host_for(run.target_id)
+        if not credential or not credential_node or not host_destination:
             continue
+        # Point at the specific service this connection actually logged
+        # into when one's identifiable (e.g. the 5985/tcp winrm node, not
+        # just "the host in general") -- pivoted-to below stays host-level
+        # regardless, since that relation's schema only allows host->host.
+        service_id = db.scalar(select(Service.id).where(
+            Service.target_id == run.target_id,
+            Service.port.in_(_CONNECTION_PORTS.get(run.connection, ()))))
+        destination = index.get(("service", service_id)) or host_destination
+        if destination.id != host_destination.id:
+            # A prior sync (before a service could be resolved, or before
+            # this project was even port-scanned) may have already pointed
+            # this same credential->target link at the bare host --
+            # ensure_edge only recognizes an existing edge by matching
+            # (source, target, relation), so upgrading to the service here
+            # would otherwise leave that one behind as a stale duplicate
+            # rather than replacing it.
+            for stale in db.scalars(select(GraphEdge).where(
+                    GraphEdge.source == credential_node.id,
+                    GraphEdge.target == host_destination.id,
+                    GraphEdge.relation == "reused-credential")):
+                db.delete(stale)
         identity = "\\".join(filter(None, (credential.domain, credential.username)))
         identity = identity or "credential"
         meta = json.dumps({
@@ -592,8 +622,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                     label=f"{identity} · {run.connection.upper()}",
                     status="succeeded", meta=meta)
         source = host_for(credential.target_id) if credential.target_id else None
-        if source and source.id != destination.id:
-            ensure_edge(source, destination, "pivoted-to",
+        if source and source.id != host_destination.id:
+            ensure_edge(source, host_destination, "pivoted-to",
                         label=f"LATERAL · {identity}", status="succeeded", meta=meta)
 
     # executions auto-nodify into technique nodes (attempted from service/host).

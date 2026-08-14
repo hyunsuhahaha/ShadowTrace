@@ -255,6 +255,85 @@ def test_sync_projects_successful_credential_reuse_as_access_lineage():
         project_id=p.id, relation="pivoted-to").count() == 1
 
 
+def test_sync_points_reused_credential_at_the_specific_service_when_known():
+    # Without a matching Service row, reused-credential always landed on
+    # the bare host -- correct when nothing narrower is known, but for a
+    # target that *was* port-scanned (the common case), "I logged in with
+    # this credential" should point at the exact service that was logged
+    # into (5985/tcp winrm), not the host in general. pivoted-to stays
+    # host-level regardless, since its relation only allows host->host.
+    from app.models import Credential, RemoteExecution, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="dc", ip="10.0.0.30")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=5985, protocol="tcp", name="http")
+    db.add(svc); db.flush()
+    credential = Credential(
+        project_id=p.id, target_id=t.id, username="Administrator",
+        secret_kind="password", secret="badminton", source_kind="responder")
+    db.add(credential); db.flush()
+    db.add(RemoteExecution(
+        project_id=p.id, target_id=t.id, credential_id=credential.id,
+        command_id="windows_file_tree_winrm", category="file_tree",
+        connection="winrm", request_key="svc-target-1", approval_token_hash="x",
+        argv_json="[]", command_display="evil-winrm -i 10.0.0.30 -u Administrator",
+        timeout_seconds=30, status="completed", exit_code=0))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    service_node = db.query(GraphNode).filter_by(project_id=p.id, type="service").one()
+    host_node = db.query(GraphNode).filter_by(project_id=p.id, type="host").one()
+    reused = db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="reused-credential").one()
+    assert reused.target == service_node.id
+    assert reused.target != host_node.id
+    # a lone target has no lateral hop -- no pivoted-to edge to mis-point
+    assert db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="pivoted-to").count() == 0
+
+
+def test_sync_upgrades_a_stale_host_level_reused_credential_edge_to_the_service():
+    # Reproduces the case where the RemoteExecution completed (and got its
+    # host-level reused-credential edge) *before* the target was port-
+    # scanned -- once a matching Service shows up on a later sync, the
+    # stale host edge must be replaced, not left behind as a duplicate
+    # alongside the new service-targeted one.
+    from app.models import Credential, RemoteExecution, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="dc", ip="10.0.0.31")
+    db.add(t); db.flush()
+    credential = Credential(
+        project_id=p.id, target_id=t.id, username="Administrator",
+        secret_kind="password", secret="badminton", source_kind="responder")
+    db.add(credential); db.flush()
+    db.add(RemoteExecution(
+        project_id=p.id, target_id=t.id, credential_id=credential.id,
+        command_id="windows_file_tree_winrm", category="file_tree",
+        connection="winrm", request_key="svc-upgrade-1", approval_token_hash="x",
+        argv_json="[]", command_display="evil-winrm -i 10.0.0.31 -u Administrator",
+        timeout_seconds=30, status="completed", exit_code=0))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+    host_node = db.query(GraphNode).filter_by(project_id=p.id, type="host").one()
+    first = db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="reused-credential").one()
+    assert first.target == host_node.id
+
+    db.add(Service(target_id=t.id, port=5985, protocol="tcp", name="http"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+
+    edges = db.query(GraphEdge).filter_by(
+        project_id=p.id, relation="reused-credential").all()
+    assert len(edges) == 1
+    service_node = db.query(GraphNode).filter_by(project_id=p.id, type="service").one()
+    assert edges[0].target == service_node.id
+
+
 def test_sync_does_not_claim_lineage_for_failed_authentication():
     from app.models import Credential, RemoteExecution, Target
     db = database()
