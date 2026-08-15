@@ -192,6 +192,10 @@ export function GraphCanvas(props: {
       const cx = W / 2, cy = H / 2;
       for (const n of nodes) {
         if (n.id === anchorId) { n.x = cx; n.y = cy; n.vx = n.vy = 0; continue; }
+        // A memo is a pinned sticky note, not a graph node the force-directed
+        // layout gets to wobble around -- it sits exactly where it was
+        // placed (or last dragged to) and never drifts on its own.
+        if (n.type === "memo") { n.vx = n.vy = 0; continue; }
         if (props.layoutMode === "graph" && stabilizationEnds > performance.now()
             && retained.has(n.id) && n !== dragging) {
           n.vx = n.vy = 0;
@@ -377,6 +381,37 @@ export function GraphCanvas(props: {
         // filled: same status color, but "done, take a look" not "running now."
         const awaitingReview = !activity && nodeStatusReason(current) === "사용자 검토 대기";
         const isAnchor = n.id === anchorId, isSel = n.id === selectedRef.current;
+        if (current.type === "memo") {
+          // A sticky note, not a graph node -- its own small draw path
+          // entirely (no activity/credential/flag/evidence machinery
+          // applies to it), a rounded rect with a folded corner instead of
+          // the usual circle+glyph so it reads as "memo" at a glance.
+          const w = 44, h = 36, x = n.x - w / 2, y = n.y - h / 2, rad = 5, fold = 10;
+          ctx.save();
+          ctx.shadowColor = isSel ? "#fff" : "#c9a227"; ctx.shadowBlur = isSel ? 16 : 6;
+          ctx.beginPath();
+          ctx.moveTo(x + rad, y);
+          ctx.lineTo(x + w - rad, y); ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+          ctx.lineTo(x + w, y + h - fold);
+          ctx.lineTo(x + w - fold, y + h);
+          ctx.lineTo(x + rad, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+          ctx.lineTo(x, y + rad); ctx.quadraticCurveTo(x, y, x + rad, y);
+          ctx.closePath();
+          ctx.fillStyle = "#f5e6a3"; ctx.fill();
+          ctx.strokeStyle = isSel ? "#fff" : "#c9a227";
+          ctx.lineWidth = isSel ? 2 : 1; ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x + w - fold, y + h); ctx.lineTo(x + w, y + h - fold);
+          ctx.lineTo(x + w - fold, y + h - fold); ctx.closePath();
+          ctx.fillStyle = "#d8c67e"; ctx.fill();
+          ctx.restore();
+          ctx.fillStyle = "#4a3d10"; ctx.font = "17px sans-serif";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText("🗒️", n.x, y + (h - fold) / 2 + 1);
+          ctx.fillStyle = "#e7e7ee"; ctx.textBaseline = "top"; ctx.font = "12px sans-serif";
+          ctx.fillText(current.label, n.x, y + h + 6);
+          continue;
+        }
         const isHost = n.type === "host", isRoot = n.type === "project-root";
         const isOperator = n.type === "operator";
         const isFlag = isFlagFinding(current);
@@ -640,6 +675,8 @@ export function GraphCanvas(props: {
       for (const n of nodes) {
         if (n.type === "credential"
             && Math.abs(n.x - x) <= 95 && Math.abs(n.y - y) <= 20) return n;
+        if (n.type === "memo"
+            && Math.abs(n.x - x) <= 26 && Math.abs(n.y - y) <= 22) return n;
         const rr = n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18;
         if (Math.hypot(n.x - x, n.y - y) < rr) return n;
       }

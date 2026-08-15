@@ -16,6 +16,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows a memo node as a freeform note instead of a domain finding/technique", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    throw new Error(`Unhandled request: ${String(input)}`);
+  }));
+  const onSetStatus = vi.fn();
+  const onSetDetails = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "note-1", type: "memo", status: "untried", objective: false, hidden: false,
+      label: "새 메모", notes: "admin:hunter2", source_ref: "",
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={onSetStatus} onAddNode={vi.fn()}
+      onSetDetails={onSetDetails} />
+  </QueryClientProvider>);
+
+  // no 상태 buttons -- untried/in-progress/... doesn't mean anything for a note
+  expect(screen.queryByText("준비됨")).toBeNull();
+  expect(screen.queryByText("완료")).toBeNull();
+
+  const title = await screen.findByPlaceholderText("메모 제목");
+  expect((title as HTMLInputElement).value).toBe("새 메모");
+  fireEvent.change(title, { target: { value: "발견한 자격증명" } });
+  fireEvent.blur(title);
+  expect(onSetDetails).toHaveBeenCalledWith("note-1", { label: "발견한 자격증명" });
+
+  expect(screen.getByText("메모 내용")).toBeTruthy();
+  const body = screen.getByPlaceholderText("자유롭게 기록하세요 -- txt 파일처럼 쓰시면 됩니다.");
+  expect((body as HTMLTextAreaElement).value).toBe("admin:hunter2");
+});
+
 it("offers the full link-extract workflow from an execution node", async () => {
   const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

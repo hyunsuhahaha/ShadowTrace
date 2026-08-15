@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 // GraphRequestPanel.tsx, OutlineView.tsx, graphLeaves.tsx).
 
 export type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
-  | "technique" | "credential";
+  | "technique" | "credential" | "memo";
 export type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
   source_ref: string; hidden: boolean; meta?: string; created_at?: string; updated_at?: string;
@@ -71,7 +71,7 @@ export const EXECUTION_STATUS_LABEL: Record<string, string> = {
 };
 export const GLYPH: Record<NodeType, string> = {
   "project-root": "◎", operator: "⌁", host: "▣", service: "◉", finding: "◇",
-  technique: "⚡", credential: "🔑",
+  technique: "⚡", credential: "🔑", memo: "🗒️",
 };
 export const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
 

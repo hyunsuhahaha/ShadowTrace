@@ -142,6 +142,26 @@ it("renders credential badges and directional access lineage without secrets", (
   expect(rendered).not.toContain("must-not-render");
 });
 
+it("draws a memo as its own sticky note, not a circle+glyph node", () => {
+  const ctx = stubCanvasContext();
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "note", type: "memo", status: "untried", label: "admin creds",
+      objective: false, source_ref: "", hidden: false},
+  ], edges: []};
+
+  render(<GraphCanvas data={data} hostCount={0} showHidden={false} credentialOverlay
+    selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+
+  const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
+  expect(rendered).toContain("🗒️");
+  expect(rendered).toContain("admin creds");
+  // rounded-rect+fold corner, not a plain circle.
+  expect(ctx.quadraticCurveTo).toHaveBeenCalled();
+});
+
 it("draws falling binary rain (not the ring pulse or scan sweep) for a running hash-crack job", () => {
   const ctx = stubCanvasContext();
   const data: GraphOut = {root_node_id: "root", nodes: [

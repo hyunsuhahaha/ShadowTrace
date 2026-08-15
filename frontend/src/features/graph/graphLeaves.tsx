@@ -82,7 +82,7 @@ export function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; on
 // menu instead of falling through to the browser's own -- just the one
 // action that makes sense with no specific node to act on.
 export function BlankCanvasQuickMenu(props: { x: number; y: number;
-  onClose: () => void; onAdd: () => void }) {
+  onClose: () => void; onAdd: () => void; onAddMemo: () => void }) {
   return <div style={S.quickMenuBackdrop} onPointerDown={props.onClose}>
     <menu aria-label="캔버스 작업" style={{ ...S.quickMenu,
       left: Math.max(8, Math.min(props.x, window.innerWidth - 244)),
@@ -91,6 +91,9 @@ export function BlankCanvasQuickMenu(props: { x: number; y: number;
       <div style={S.quickMenuGroup}>
         <button style={S.quickMenuItem} onClick={props.onAdd}>
           <span aria-hidden="true" style={S.quickMenuIcon}>+</span><span>노드 추가</span>
+        </button>
+        <button style={S.quickMenuItem} onClick={props.onAddMemo}>
+          <span aria-hidden="true" style={S.quickMenuIcon}>🗒️</span><span>메모 추가</span>
         </button>
       </div>
     </menu>

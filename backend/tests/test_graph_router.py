@@ -40,6 +40,20 @@ def test_create_node_rejects_project_root_type():
     assert exc.value.status_code == 422
 
 
+def test_create_node_allows_a_freestanding_memo_with_no_edge():
+    # A memo is a sticky note the operator drops on the canvas, not a
+    # domain object with a source -- unlike every other type, node creation
+    # alone (no follow-up edge POST) is a complete, valid memo.
+    db = database()
+    p = project(db)
+    api.get_graph(p.id, db)
+
+    node = api.create_node(p.id, NodeIn(type="memo", label="새 메모"), db)
+
+    assert node.type == "memo"
+    assert node.label == "새 메모"
+
+
 def test_delete_project_root_is_forbidden():
     db = database()
     p = project(db)

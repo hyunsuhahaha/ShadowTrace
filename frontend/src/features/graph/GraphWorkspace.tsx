@@ -182,7 +182,7 @@ export default function GraphWorkspace() {
     onSuccess: invalidateGraph,
   });
   const setDetails = useMutation({
-    mutationFn: (v: { id: string; notes?: string; pinned?: boolean }) =>
+    mutationFn: (v: { id: string; notes?: string; pinned?: boolean; label?: string }) =>
       api(`/graph/nodes/${v.id}`, { method: "PATCH",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) }),
     onSuccess: invalidateGraph,
@@ -212,6 +212,19 @@ export default function GraphWorkspace() {
       });
     },
     onSuccess: invalidateGraph,
+  });
+
+  // A memo is a freestanding sticky note, not a domain finding/technique/etc
+  // -- no edge to a source node the way addNode's other types always get one
+  // (see graph_service.create_node's own "manually-created nodes (no
+  // source_ref) are never pruned" -- the same protection applies here with
+  // no edge either).
+  const addMemo = useMutation({
+    mutationFn: () => api<{ id: string }>(`/projects/${projectId}/graph/nodes`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "memo", label: "새 메모", status: "untried" }),
+    }),
+    onSuccess: (node) => { invalidateGraph(); setSelected(node.id); },
   });
 
   const graph = useQuery({
@@ -681,10 +694,12 @@ export default function GraphWorkspace() {
             setContextMenu(null); }}
           onStatus={(status) => { setStatus.mutate({ id: menuNodeId, status }); setContextMenu(null); }} />;
       })()}
-      {replayAt == null && contextMenu && contextMenu.id === null && rootNode && (
+      {replayAt == null && contextMenu && contextMenu.id === null && (
         <BlankCanvasQuickMenu x={contextMenu.x} y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          onAdd={() => { setSelected(rootNode.id); setAddOpen(true); setContextMenu(null); }} />
+          onAdd={() => { if (rootNode) { setSelected(rootNode.id); setAddOpen(true); }
+            setContextMenu(null); }}
+          onAddMemo={() => { addMemo.mutate(); setContextMenu(null); }} />
       )}
       {replayAt == null && addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>

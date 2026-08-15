@@ -61,7 +61,7 @@ export function Inspector(props: {
   onOpenHashCrack?: (handoff: CredentialHandoff) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
-  onSetDetails?: (id: string, details: { notes?: string; pinned?: boolean }) => void;
+  onSetDetails?: (id: string, details: { notes?: string; pinned?: boolean; label?: string }) => void;
   onAddNode: (v: AddForm & { sourceId: string }) => void;
 }) {
   const n = props.node;
@@ -72,6 +72,12 @@ export function Inspector(props: {
   const [adding, setAdding] = useState(false);
   const [notes, setNotes] = useState(n?.notes || "");
   useEffect(() => setNotes(n?.notes || ""), [n?.id, n?.notes]);
+  // A memo has no domain title of its own to fall back on (unlike every
+  // other node type, whose label comes from the finding/execution/etc it
+  // was created from) -- editable in place instead of stuck on "새 메모"
+  // forever.
+  const [memoLabel, setMemoLabel] = useState(n?.label || "");
+  useEffect(() => setMemoLabel(n?.label || ""), [n?.id, n?.label]);
   const source = (() => {
     if (!n?.source_ref) return null;
     try {
@@ -780,7 +786,16 @@ export function Inspector(props: {
     </aside>;
   return (
     <aside style={S.inspector}>
-      <div style={S.inspectorTitle}><h3 style={{ margin: 0, fontSize: 15 }}>{n.label}</h3>
+      <div style={S.inspectorTitle}>
+        {n.type === "memo" ? (
+          <input value={memoLabel} onChange={(event) => setMemoLabel(event.target.value)}
+            onBlur={() => memoLabel.trim() && memoLabel !== n.label
+              && props.onSetDetails?.(n.id, { label: memoLabel.trim() })}
+            placeholder="메모 제목"
+            style={{ margin: 0, fontSize: 15, fontWeight: 600, flex: 1, minWidth: 0,
+              border: "1px solid #2a2a34", borderRadius: 6, padding: "4px 8px",
+              background: "#0e0e12", color: "#e7e7ee" }} />
+        ) : <h3 style={{ margin: 0, fontSize: 15 }}>{n.label}</h3>}
         <button title={n.pinned ? "북마크 해제" : "북마크"}
           onClick={() => props.onSetDetails?.(n.id, { pinned: !n.pinned })}>
           {n.pinned ? "★" : "☆"}</button></div>
@@ -789,7 +804,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -801,7 +816,7 @@ export function Inspector(props: {
             }}>{s === n.status ? nodeStatusReason(n) : STATUS_REASON[s] ?? s}</button>
           ))}
         </div>
-      </div>
+      </div>}
       {ftpAnonMatch && (
         <section style={S.netexecNodeResult} aria-label="FTP 익명 접속">
           <div style={S.netexecNodeResultHead}><span>FTP 익명 로그인</span><strong>확인됨</strong></div>
@@ -1133,13 +1148,14 @@ export function Inspector(props: {
       )}
       <section style={S.nodeNotes}>
         <div style={S.nodeNotesHead}>
-          <span style={S.nodeNotesLabel}>작업 메모</span>
+          <span style={S.nodeNotesLabel}>{n.type === "memo" ? "메모 내용" : "작업 메모"}</span>
           <button style={S.nodeNotesSave} disabled={notes === (n.notes || "")}
             onClick={() => props.onSetDetails?.(n.id, { notes })}>저장</button>
         </div>
         <textarea style={S.nodeNotesArea} value={notes}
           onChange={(event) => setNotes(event.target.value)}
-          placeholder="확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요." />
+          placeholder={n.type === "memo" ? "자유롭게 기록하세요 -- txt 파일처럼 쓰시면 됩니다."
+            : "확인한 내용, 실패 원인, 다음에 볼 항목을 기록하세요."} />
       </section>
       {sessionId !== null && tool === "responder-listener" && <DetachableTerminal
         id={`responder-session-${sessionId}`} label={`Responder 세션 #${sessionId}`}>

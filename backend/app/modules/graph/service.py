@@ -130,7 +130,7 @@ from .ids import new_ulid
 
 NODE_TYPES = {
     "project-root", "operator", "host", "service", "finding", "technique",
-    "credential",
+    "credential", "memo",
 }
 NODE_STATUSES = {
     "untried", "in-progress", "attempt-failed", "succeeded", "blocked",
