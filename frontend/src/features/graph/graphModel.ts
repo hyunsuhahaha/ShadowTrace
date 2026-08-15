@@ -100,14 +100,16 @@ export function isFlagFinding(node: Pick<GraphNode, "type" | "label">): boolean 
 // file-backed finding collapsing into the same plain finding diamond.
 const FILE_KIND_GLYPH: Record<string, string> = {
   zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦", tgz: "📦", bz2: "📦", xz: "📦",
-  json: "🧾", xml: "🧾", yaml: "🧾", yml: "🧾", csv: "🧾",
+  json: "🧾", xml: "🧾", yaml: "🧾", yml: "🧾", csv: "🧾", ini: "🧾", conf: "🧾",
+  cfg: "🧾", env: "🧾", toml: "🧾",
   pdf: "📕", doc: "📄", docx: "📄", txt: "📄", log: "📄", md: "📄",
   xls: "📊", xlsx: "📊",
   db: "🗄️", sqlite: "🗄️", sqlite3: "🗄️", sql: "🗄️",
   pem: "🔐", key: "🔐", crt: "🔐", cer: "🔐", p12: "🔐", pfx: "🔐", ppk: "🔐",
   jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", bmp: "🖼️",
   exe: "⚙️", dll: "⚙️", bin: "⚙️", msi: "⚙️",
-  sh: "📜", py: "📜", ps1: "📜", bat: "📜", pl: "📜", php: "📜",
+  sh: "📜", py: "📜", ps1: "📜", bat: "📜", pl: "📜", php: "📜", rb: "📜",
+  html: "🌐", htm: "🌐", css: "🎨", js: "📜", ts: "📜", jsx: "📜", tsx: "📜",
 };
 export function fileFindingGlyph(node: Pick<GraphNode, "type" | "label">): string | undefined {
   const filename = findingFileName(node);
@@ -117,6 +119,16 @@ export function fileFindingGlyph(node: Pick<GraphNode, "type" | "label">): strin
 
 export function nodeMeta(node: Pick<GraphNode, "meta">): Record<string, any> {
   try { return JSON.parse(node.meta || "{}"); } catch { return {}; }
+}
+
+// Set once, server-side, the moment a password-protected archive entry gets
+// successfully extracted (see extract_archive_entry) -- a fact about how
+// this node came to exist, not an ongoing state, so the canvas only plays
+// the one-shot "unlock" effect for a short window after creation rather
+// than forever.
+export function justUnlockedAt(node: Pick<GraphNode, "meta">): string | undefined {
+  const value = nodeMeta(node).unlockedAt;
+  return typeof value === "string" ? value : undefined;
 }
 
 export function nodeStatusReason(node: Pick<GraphNode, "status" | "type" | "meta">): string {

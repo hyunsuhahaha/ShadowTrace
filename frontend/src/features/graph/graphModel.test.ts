@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
   fileFindingGlyph, filterActivityFeed, filterGraph, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
-  isCrackableCredential, isFlagFinding, nodeStatusReason, nodeSummary,
+  isCrackableCredential, isFlagFinding, justUnlockedAt, nodeStatusReason, nodeSummary,
   pathToObjective } from "./graphModel";
 
 it("recognizes OSCP/HTB deliverable filenames as flag findings, case- and path-insensitively", () => {
@@ -29,6 +29,20 @@ it("picks a per-extension pictogram for a file-backed finding", () => {
   expect(fileFindingGlyph({type: "finding", label: "파일 다운로드: README"})).toBeUndefined();
   expect(fileFindingGlyph({type: "finding", label: "파일 다운로드: notes.weird"})).toBeUndefined();
   expect(fileFindingGlyph({type: "credential", label: "파일 다운로드: backup.zip"})).toBeUndefined();
+  // extract_archive_entry's "압축 해제: ..." labels don't match the
+  // 발견/다운로드 prefix at all, but the extension still falls out of the
+  // whole-label fallback -- confirmed live this used to silently fall back
+  // to the plain finding diamond for every extracted archive member.
+  expect(fileFindingGlyph({type: "finding", label: "압축 해제: style.css"})).toBe("🎨");
+  expect(fileFindingGlyph({type: "finding", label: "압축 해제: index.php"})).toBe("📜");
+});
+
+it("reads a node's one-shot unlock timestamp defensively", () => {
+  expect(justUnlockedAt({ meta: JSON.stringify({ unlockedAt: "2026-08-15T01:00:00Z" }) }))
+    .toBe("2026-08-15T01:00:00Z");
+  expect(justUnlockedAt({ meta: JSON.stringify({}) })).toBeUndefined();
+  expect(justUnlockedAt({ meta: "broken" })).toBeUndefined();
+  expect(justUnlockedAt({ meta: undefined })).toBeUndefined();
 });
 
 it("reads a node's evidence count defensively", () => {

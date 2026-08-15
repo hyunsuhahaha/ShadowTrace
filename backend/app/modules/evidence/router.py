@@ -11,9 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
 from ...database import get_db
-from ...models import Evidence, ExploitResearch, Finding, FindingEvidence, Project, Service, Target
+from ...models import (Evidence, ExploitResearch, Finding, FindingEvidence, GraphNode, Project,
+                       Service, Target)
 from ...schemas import ArchiveExtractIn, EvidenceOut, EvidenceUpdate
+from ...time import utcnow
 from ..core.support import safe_part
+from ..graph import service as graph_service
 from ..hash_cracking.router import run_zip2john
 from ..scan_center.service import _safe
 
@@ -270,6 +273,27 @@ def extract_archive_entry(ident: int, body: ArchiveExtractIn, db: Session = Depe
         reproduction_steps=f"{row.title}에서 압축 해제\n\n{info.filename}")
     db.add(finding); db.flush()
     db.add(FindingEvidence(finding_id=finding.id, evidence_id=evidence.id, is_primary=True))
+    # docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- the archive's own
+    # finding/technique node yielded this one, not the bare host/service
+    # sync_from_project()'s default projection would otherwise fall back to
+    # (Finding has no graph_parent_node_id column of its own, so this node
+    # is created directly here, same pattern promote_download already uses).
+    source_node = db.get(GraphNode, body.graph_node_id) if body.graph_node_id else None
+    if (source_node and source_node.project_id == row.project_id
+            and source_node.type in {"technique", "finding"}):
+        meta = {"severity": finding.severity, "category": finding.category, "evidenceCount": 1}
+        if body.password:
+            # A one-shot "unlock" cue on the canvas (GraphCanvas.tsx) instead
+            # of the crack/scan/shell activity language, none of which fit
+            # "this was already sitting there encrypted, now it's open".
+            meta["unlockedAt"] = utcnow().isoformat()
+        finding_node = graph_service.create_node(
+            db, row.project_id, "finding", label=finding.title,
+            source_ref=json.dumps(
+                {"module": "findings", "kind": "finding", "id": finding.id}, sort_keys=True),
+            meta=json.dumps(meta))
+        graph_service.create_edge(
+            db, row.project_id, source_node.id, finding_node.id, "yielded")
     db.commit()
     return {"finding_id": finding.id, "evidence_id": evidence.id}
 

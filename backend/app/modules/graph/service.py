@@ -146,7 +146,11 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "discovered": ({"project-root", "host"}, {"host", "service"}),
     "enumerated": ({"service", "host"}, {"finding", "credential"}),
     "attempted": ({"finding", "service", "host"}, {"technique"}),
-    "yielded": ({"technique"}, {"credential", "host", "service", "finding"}),
+    # "finding" as a source covers a file pulled back out of another finding
+    # (e.g. extracting an entry from a downloaded archive) -- the archive's
+    # own finding "yielded" the extracted one, same relationship a technique
+    # yielding a finding already has, just one hop further down.
+    "yielded": ({"technique", "finding"}, {"credential", "host", "service", "finding"}),
     "pivoted-to": ({"host"}, {"host"}),
     "reused-credential": ({"credential"}, {"host", "service"}),
     "blocked-by": ({"technique", "finding"}, NODE_TYPES),

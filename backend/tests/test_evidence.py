@@ -8,7 +8,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Evidence, Finding, FindingEvidence, Project, Target
+from app.models import Evidence, Finding, FindingEvidence, GraphEdge, Project, Target
 from app.modules.evidence.router import (evidence_archive, evidence_preview,
     evidence_zip2john, export_evidence, extract_archive_entry, upload_evidence)
 from app.schemas import ArchiveExtractIn
@@ -154,6 +154,75 @@ def test_extract_archive_entry_promotes_one_member_as_its_own_finding(tmp_path, 
     assert _Path(evidence.file_path).read_bytes() == b"loot"
     link = db.query(FindingEvidence).filter_by(finding_id=finding.id).one()
     assert link.evidence_id == evidence.id and link.is_primary is True
+
+
+def test_extract_archive_entry_attaches_the_finding_to_the_archive_s_own_node(tmp_path, monkeypatch):
+    # docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- the archive's own
+    # finding node yielded this one, not the bare host/service
+    # sync_from_project() would otherwise fall back to (confirmed live: an
+    # extracted file was landing on the root node with no clear cause).
+    import json
+    from app.models import GraphNode
+    from app.modules.graph import service as graph_service
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    row = _zip_evidence(db, project, target)
+    archive_node = graph_service.create_node(
+        db, project.id, "finding", label="파일 다운로드: backup.zip")
+    db.commit()
+
+    result = extract_archive_entry(row.id, ArchiveExtractIn(
+        entry="notes.txt", graph_node_id=archive_node.id), db=db)
+
+    finding_node = db.query(GraphNode).filter_by(
+        project_id=project.id, type="finding", id=archive_node.id).count()
+    assert finding_node == 1  # the archive's own node, untouched
+    extracted_node = db.query(GraphNode).filter_by(
+        project_id=project.id, type="finding").filter(GraphNode.id != archive_node.id).one()
+    assert json.loads(extracted_node.source_ref) == {
+        "module": "findings", "kind": "finding", "id": result["finding_id"]}
+    edge = db.query(GraphEdge).filter_by(
+        source=archive_node.id, target=extracted_node.id, relation="yielded").one()
+    assert edge is not None
+
+
+def test_extract_archive_entry_marks_a_password_unlocked_entry_for_the_one_shot_canvas_effect(
+        tmp_path, monkeypatch):
+    import json
+    from app.modules.graph import service as graph_service
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.13")
+    db.add(target); db.commit()
+    row = _protected_zip_evidence(db, project, target, tmp_path)
+    archive_node = graph_service.create_node(
+        db, project.id, "finding", label="파일 다운로드: protected.zip")
+    db.commit()
+
+    result = extract_archive_entry(row.id, ArchiveExtractIn(
+        entry="secret.txt", password="hunter2", graph_node_id=archive_node.id), db=db)
+
+    from app.models import GraphNode
+    extracted_node = db.get(GraphNode, db.query(GraphNode).filter_by(
+        project_id=project.id, type="finding").filter(GraphNode.id != archive_node.id).one().id)
+    assert "unlockedAt" in json.loads(extracted_node.meta)
+
+    # An unencrypted entry (no password given) never got locked in the
+    # first place -- it shouldn't play an "unlock" effect either.
+    plain_row = _zip_evidence(db, project, target)
+    plain_result = extract_archive_entry(plain_row.id, ArchiveExtractIn(
+        entry="notes.txt", graph_node_id=archive_node.id), db=db)
+    plain_node = db.query(GraphNode).filter_by(
+        project_id=project.id, type="finding",
+        source_ref=json.dumps({"module": "findings", "kind": "finding",
+                               "id": plain_result["finding_id"]}, sort_keys=True)).one()
+    assert "unlockedAt" not in json.loads(plain_node.meta)
 
 
 def test_extract_archive_entry_rejects_an_entry_that_is_not_in_the_zip(tmp_path, monkeypatch):

@@ -91,12 +91,16 @@ export function Inspector(props: {
       evidence: Array<{ id: number; evidence_id: number;
       title: string; kind: string; is_primary: boolean }> }>(`/findings/${findingId}`),
   });
-  // Only findings promoted from a file-tree drag (promote-file always sets
-  // this exact kind+is_primary combination) get their content shown here --
-  // manually-created findings' screenshots/notes already have their own
-  // views elsewhere and would just error against the text-only preview.
+  // "command_output" (promote-file/file-tree drag) and "attachment"
+  // (archive extract, promote-download) both cover findings whose primary
+  // evidence is a plain file that's often worth reading right here instead
+  // of downloading first -- the preview endpoint itself already refuses
+  // anything that isn't a recognized text extension, so a screenshot or zip
+  // attachment just falls through to isError below rather than needing a
+  // client-side extension guess.
   const findingFileEvidenceId = findingQuery.data?.evidence.find(
-    (item) => item.is_primary && item.kind === "command_output")?.evidence_id;
+    (item) => item.is_primary
+      && (item.kind === "command_output" || item.kind === "attachment"))?.evidence_id;
   const findingFilePreview = useQuery({
     queryKey: ["graphFindingFilePreview", findingFileEvidenceId],
     enabled: findingFileEvidenceId !== undefined,
@@ -253,7 +257,7 @@ export function Inspector(props: {
     try {
       await api(`/evidence/${evidenceId}/extract`, {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({entry: entryName, password: archivePassword}),
+        body: JSON.stringify({entry: entryName, password: archivePassword, graph_node_id: n?.id}),
       });
       setExtractedEntries((current) => new Set(current).add(`${evidenceId}:${entryName}`));
       setArchiveMessage(`${entryName} 그래프에 남겼습니다`);
@@ -753,7 +757,12 @@ export function Inspector(props: {
           </div>
         </section>
       )}
-      {findingFileEvidenceId !== undefined && <section style={S.executionResults} aria-label="발견된 파일 내용">
+      {/* Zip/pdf/screenshot attachments 404 the text-only preview endpoint --
+          rather than surface that as a scary error, the whole section just
+          doesn't render for them (same "no inline preview" outcome the
+          comment below already documents for those kinds). */}
+      {findingFileEvidenceId !== undefined && !findingFilePreview.isError
+        && <section style={S.executionResults} aria-label="발견된 파일 내용">
         <div style={S.executionResultsHead}>
           <strong>파일 내용</strong>
           {findingFilePreview.data?.truncated && <span style={{ color: "#e3b341" }}>일부만 표시됨</span>}
@@ -761,9 +770,7 @@ export function Inspector(props: {
         <div style={S.terminalBody}>
           {findingQuery.isLoading || findingFilePreview.isLoading
             ? <div style={S.resultMessage}>파일 내용 불러오는 중…</div>
-            : findingFilePreview.isError
-              ? <div style={S.resultError}>파일 내용을 불러오지 못했습니다.</div>
-              : <pre style={S.terminalOutput}>{findingFilePreview.data?.content || "(빈 파일)"}</pre>}
+            : <pre style={S.terminalOutput}>{findingFilePreview.data?.content || "(빈 파일)"}</pre>}
         </div>
       </section>}
       {/* Zip, pcap, pdf, ... never get an inline preview -- Evidence 레일도

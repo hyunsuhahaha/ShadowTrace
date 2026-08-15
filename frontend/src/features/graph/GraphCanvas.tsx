@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "r
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, evidenceCount, fileFindingGlyph, filterActivityFeed,
   getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
-  initialGraphPosition, initialGraphPositionNearParent, isFlagFinding, NodeActivity,
+  initialGraphPosition, initialGraphPositionNearParent, isFlagFinding, justUnlockedAt, NodeActivity,
   nodeStatusReason, nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
@@ -378,6 +378,14 @@ export function GraphCanvas(props: {
         const isOperator = n.type === "operator";
         const isFlag = isFlagFinding(current);
         const r = isRoot ? 40 : isAnchor ? 38 : isHost || isOperator ? 26 : 19;
+        // A one-shot "just unlocked" burst instead of the flag's looping
+        // rings -- this is a fact about how the node came to exist, not an
+        // ongoing state, so it plays once and settles rather than pulsing
+        // forever the way an active/flagged node does.
+        const unlockedAt = justUnlockedAt(current);
+        const unlockElapsed = unlockedAt ? now - Date.parse(unlockedAt) : Infinity;
+        const unlockWindow = 2200;
+        const unlocking = unlockElapsed >= 0 && unlockElapsed < unlockWindow;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         const credential = credentialBadge(current);
         if (credential) {
@@ -518,6 +526,20 @@ export function GraphCanvas(props: {
           }
           ctx.restore();
         } else activityStarted.current.delete(`flag:${n.id}`);
+        if (unlocking && !reduceMotion) {
+          // A single ring bursting outward and fading once -- reduceMotion
+          // skips it outright rather than freezing it mid-burst, since a
+          // static ring frozen at one radius would just look like stray
+          // clutter, unlike the other effects' reduced-motion fallbacks
+          // (which still convey an ongoing state at rest).
+          const p = Math.min(1, unlockElapsed / unlockWindow);
+          const ease = 1 - Math.pow(1 - p, 3);
+          ctx.save(); ctx.shadowColor = "#ffe9a8"; ctx.shadowBlur = 22;
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 6 + ease * 30, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255,225,160,${(1 - ease) * .8})`;
+          ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+        }
         ctx.save();
         ctx.shadowColor = isFlag ? "#f5c518" : activity ? nodeSignal
           : awaitingReview ? color(current.status) : isAnchor ? "#6aa9ff" : color(current.status);
@@ -541,7 +563,7 @@ export function GraphCanvas(props: {
         ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-        ctx.fillText(isFlag ? "🚩" : fileFindingGlyph(current) ?? GLYPH[current.type],
+        ctx.fillText(isFlag ? "🚩" : unlocking ? "🔓" : fileFindingGlyph(current) ?? GLYPH[current.type],
           n.x, n.y + 0.5);
         drawEvidenceBadge(evidenceCount(current), n.x + r * 0.7, n.y - r * 0.7);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);

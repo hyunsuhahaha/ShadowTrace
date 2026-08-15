@@ -448,7 +448,8 @@ it("lets a zip's own contents become graph nodes instead of only offering a raw 
       entries: [{ name: "creds.txt", size: 512, encrypted: false }],
     }), { headers: { "Content-Type": "application/json" } }));
     if (url.endsWith("/api/evidence/124/extract") && init?.method === "POST") {
-      expect(JSON.parse(init.body as string)).toEqual({ entry: "creds.txt", password: "" });
+      expect(JSON.parse(init.body as string)).toEqual(
+        { entry: "creds.txt", password: "", graph_node_id: "finding-11" });
       return Promise.resolve(new Response(JSON.stringify({ finding_id: 40, evidence_id: 200 }), {
         status: 201, headers: { "Content-Type": "application/json" },
       }));
@@ -490,7 +491,7 @@ it("lets a cracked password unlock a password-protected archive member", async (
     }), { headers: { "Content-Type": "application/json" } }));
     if (url.endsWith("/api/evidence/124/extract") && init?.method === "POST") {
       expect(JSON.parse(init.body as string)).toEqual(
-        { entry: "secret.txt", password: "hunter2" });
+        { entry: "secret.txt", password: "hunter2", graph_node_id: "finding-11" });
       return Promise.resolve(new Response(JSON.stringify({ finding_id: 40, evidence_id: 200 }), {
         status: 201, headers: { "Content-Type": "application/json" },
       }));
