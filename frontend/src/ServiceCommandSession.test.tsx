@@ -32,6 +32,44 @@ test("target, service and engine drift lock execution", () => {
     .toEqual({engine: false, target: false, service: false});
 });
 
+const sshClient: ServiceCommand = {
+  id: "ssh-client", name: "SSH 수동 접속", description: "SSH 클라이언트를 열고 직접 인증합니다.",
+  preview: "ssh -p 22 {username}@10.10.10.10", command: "ssh -p {port} {username}@{host}",
+  risk: "low", execution_mode: "interactive",
+};
+
+test("offers a one-click username fill per known credential for an interactive username-only profile", () => {
+  const review = vi.fn();
+  render(<ServiceCommandSession commands={[command, sshClient]} serviceKey="ssh:22"
+    targetIp="10.10.10.10" port={22} protocol="tcp"
+    credentials={[{username: "postgres"}, {username: "admin"}]}
+    onReview={review} />);
+
+  expect(screen.getByText("postgres · SSH 수동 접속")).toBeTruthy();
+  fireEvent.click(screen.getByText("admin · SSH 수동 접속"));
+
+  // Switches to the ssh-client profile and fills username, but still stops
+  // short of running it -- the operator reviews/edits in the REPL and clicks
+  // RUN themselves, same as every other profile.
+  expect((screen.getByLabelText("서비스 명령") as HTMLTextAreaElement).value)
+    .toBe("ssh -p 22 'admin'@10.10.10.10");
+  expect(review).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", {name: "[ RUN ↵ ]"}));
+  expect(review.mock.calls[0][0].variables).toEqual({username: "admin"});
+});
+
+test("does not offer quick-connect without a matching interactive username-only profile or without known credentials", () => {
+  const {rerender} = render(<ServiceCommandSession commands={[command]} serviceKey="ftp:21"
+    targetIp="10.10.10.10" port={21} protocol="tcp"
+    credentials={[{username: "anonymous"}]} onReview={vi.fn()} />);
+  expect(screen.queryByText(/알려진 계정으로 접속 시도/)).toBeNull();
+
+  rerender(<ServiceCommandSession commands={[command, sshClient]} serviceKey="ssh:22"
+    targetIp="10.10.10.10" port={22} protocol="tcp" onReview={vi.fn()} />);
+  expect(screen.queryByText(/알려진 계정으로 접속 시도/)).toBeNull();
+});
+
 test("missing profile context is injected next to the prompt", () => {
   const review = vi.fn();
   const dns: ServiceCommand = {...command, id: "dns-subdomain", name: "DNS enum",

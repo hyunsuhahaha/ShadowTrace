@@ -403,7 +403,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `FloatingCommandSession.tsx` | 플로팅 결과의 전체 실행 명령·target/service-bound 하단 prompt; 입력 시 bare Bash interactive session을 만들고 실제 PTY로 전환 |
 | `PtyTerminal.tsx` | xterm.js + WebSocket으로 실제 서버 PTY를 렌더하고 입력·resize·종료를 중계하는 raw 터미널 뷰 |
 | `SmartTerminalOutput.tsx` | raw stdout의 IP/URL/open service 후보를 파싱하고 승인형 Graph/browser/fuzz smart action을 제공 |
-| `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging |
+| `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging. `{username}`만 필요하고 `{password}`는 없는 interactive 프로필(ssh-client 등)이 매칭되고 Credential Store에 알려진 계정이 있으면, PROFILE 선택 전에도 "알려진 계정으로 접속 시도" 콜아웃이 즉시 뜬다 — 클릭하면 그 프로필로 전환하고 username만 채운다(비밀번호는 그대로 인터랙티브 프롬프트로 남김); RUN은 여전히 사용자가 누른다 |
 
 ### 10.2 `ScanCenter.tsx` — 기본(unmatched) 라우트
 

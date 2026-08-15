@@ -43,13 +43,19 @@ export function commandBinding(base: string, draft: string, host: string, port: 
 }
 
 export default function ServiceCommandSession({commands, serviceKey, targetIp,
-  targetHostname, port, protocol, onReview}: {
+  targetHostname, port, protocol, credentials, onReview}: {
   commands: ServiceCommand[];
   serviceKey: string;
   targetIp: string;
   targetHostname?: string;
   port: number;
   protocol: string;
+  // Known project credentials (Credential Store) offered as one-click
+  // username fills for whichever interactive client profile this service
+  // matched (ssh-client, etc.) -- password stays untouched, since these
+  // clients all prompt for it interactively themselves; see the quick-connect
+  // callout below.
+  credentials?: {username: string}[];
   onReview: (command: ServiceCommand) => void;
 }) {
   const [selectedId, setSelectedId] = useState("");
@@ -93,12 +99,33 @@ export default function ServiceCommandSession({commands, serviceKey, targetIp,
     setDraft(command?.preview || "");
     setEdited(false);
   };
+  // Any interactive client profile the catalog matched for this service that
+  // only needs a username (ssh-client, etc.) -- the client itself prompts
+  // for the password interactively, so quick-filling just the username is
+  // enough to get to a ready-to-review connection attempt.
+  const quickConnectProfile = commands.find((item) =>
+    item.execution_mode === "interactive" && /\{username\}/.test(item.preview)
+    && !/\{password\}/.test(item.preview));
+  const knownUsernames = quickConnectProfile && credentials
+    ? [...new Set(credentials.map((item) => item.username).filter(Boolean))] : [];
+  const quickConnect = (username: string) => {
+    if (!quickConnectProfile) return;
+    select(quickConnectProfile.id);
+    setValues((current) => ({...current, username}));
+  };
 
   return <section className="serviceCommandSession" aria-label="서비스 명령 세션">
     <header>
       <div><small>SERVICE COMMAND</small><strong>{selected.name}</strong></div>
       <span>{selected.execution_mode === "interactive" ? "PTY" : "STDOUT"}</span>
     </header>
+    {!!knownUsernames.length && <div className="webServiceActions">
+      <span>알려진 계정으로 접속 시도</span>
+      {knownUsernames.map((username) => <button key={username} type="button"
+        onClick={() => quickConnect(username)}>
+        {username} · {quickConnectProfile!.name}
+      </button>)}
+    </div>}
     <label className="serviceCommandSession__profile">
       <span>PROFILE</span>
       <select aria-label="서비스 명령 프로필" value={selected.id}
