@@ -152,6 +152,36 @@ def test_sync_projects_findings_and_credentials():
     assert finding.label == "Anonymous SMB"
 
 
+def test_resync_preserves_a_finding_s_one_shot_unlock_marker():
+    # Confirmed live: GraphWorkspace.tsx polls /graph/sync every 4s, and this
+    # loop was unconditionally overwriting an existing finding node's meta
+    # wholesale on every single poll -- extract_archive_entry's unlockedAt
+    # (meant to survive for several seconds so the canvas can play its
+    # one-shot effect) was getting wiped out almost immediately, well before
+    # an operator could ever see it.
+    from app.models import Finding, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.10")
+    db.add(t); db.flush()
+    db.add(Finding(project_id=p.id, target_id=t.id,
+                   title="압축 해제: index.php", severity="Informational"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    finding_node = db.query(GraphNode).filter_by(project_id=p.id, type="finding").one()
+    meta = json.loads(finding_node.meta)
+    meta["unlockedAt"] = "2026-08-15T02:35:08.525894+00:00"
+    finding_node.meta = json.dumps(meta)
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    refreshed = db.get(GraphNode, finding_node.id)
+    assert json.loads(refreshed.meta)["unlockedAt"] == "2026-08-15T02:35:08.525894+00:00"
+    # the sync-owned fields still update normally, this isn't a frozen blob
+    assert json.loads(refreshed.meta)["evidenceCount"] == 0
+
+
 def test_sync_sets_evidence_count_on_host_and_service_nodes():
     from app.models import Evidence, Service, Target
     db = database()

@@ -532,12 +532,26 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             continue
         evidence_count = db.scalar(select(func.count(FindingEvidence.id)).where(
             FindingEvidence.finding_id == finding.id)) or 0
-        meta = json.dumps({"severity": finding.severity or "",
-                           "category": finding.category or "",
-                           "evidenceCount": evidence_count})
+        meta_fields = {"severity": finding.severity or "",
+                       "category": finding.category or "",
+                       "evidenceCount": evidence_count}
         if ("finding", finding.id) in index:
-            index[("finding", finding.id)].meta = meta
+            existing = index[("finding", finding.id)]
+            # unlockedAt (extract_archive_entry's one-shot canvas cue) is set
+            # once at creation and owned by the caller, not by this sync --
+            # this loop runs on a 4s poll (GraphWorkspace.tsx), so blindly
+            # overwriting meta here wiped it out almost immediately,
+            # confirmed live: the unlock effect never had a real chance to
+            # render before its own trigger disappeared.
+            try:
+                old_meta = json.loads(existing.meta or "{}")
+            except (TypeError, json.JSONDecodeError):
+                old_meta = {}
+            if "unlockedAt" in old_meta:
+                meta_fields["unlockedAt"] = old_meta["unlockedAt"]
+            existing.meta = json.dumps(meta_fields)
             continue
+        meta = json.dumps(meta_fields)
         node = create_node(db, project_id, "finding", label=finding.title,
                            source_ref=_source_ref("findings", "finding", finding.id),
                            meta=meta)
