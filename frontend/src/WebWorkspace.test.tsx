@@ -23,7 +23,7 @@ function response(body: unknown, status = 200) {
 function mount(fetcher: ReturnType<typeof vi.fn>) {
   vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  return render(<QueryClientProvider client={client}><WebWorkspace /></QueryClientProvider>);
+  return { ...render(<QueryClientProvider client={client}><WebWorkspace /></QueryClientProvider>), client };
 }
 
 afterEach(() => {
@@ -261,6 +261,44 @@ it("defaults a new request's URL to the confirmed hostname instead of the bare I
   await screen.findByText("저장된 요청이 없습니다");
   await waitFor(() => expect((screen.getByLabelText("URL") as HTMLInputElement).value)
     .toBe("http://unika.htb/"));
+});
+
+it("keeps a mid-typed URL when the shared target list refetches in the background", async () => {
+  // Regression test: the draft-reset effect used to depend on targets.data
+  // itself, not just targetId. ["allTargets"] is the same query AppShell's
+  // header polls/refetches, so any change elsewhere (a scan discovering a
+  // new target, a hostname getting confirmed) that lands a new array
+  // reference while the operator is mid-typing a request here used to wipe
+  // it silently -- without ever touching targetId.
+  const secondTarget = { id: 2, project_id: 1, name: "10.10.10.20", ip: "10.10.10.20" };
+  const fetcher = vi.fn((url: string) => {
+    if (url === "/api/targets") return response([target]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  const {client} = mount(fetcher);
+
+  await screen.findByText("저장된 요청이 없습니다");
+  const urlInput = screen.getByLabelText("URL") as HTMLInputElement;
+  await waitFor(() => expect(urlInput.value).toBe("http://10.10.10.10/"));
+  fireEvent.change(urlInput, { target: { value: "http://unika.htb/still-typing" } });
+
+  // A newly-discovered target lands in the shared cache -- same targetId,
+  // genuinely different array/object identity (not just a stale re-fetch of
+  // identical data, which TanStack Query's structural sharing would no-op).
+  fetcher.mockImplementation((url: string) => {
+    if (url === "/api/targets") return response([target, secondTarget]);
+    if (url.startsWith("/api/web/requests?target_id=")) return response([]);
+    throw new Error(`unhandled fetch ${url}`);
+  });
+  await client.refetchQueries({ queryKey: ["allTargets"] });
+  // Prove the refetch actually landed and re-rendered before checking the
+  // draft survived it -- otherwise this assertion would trivially pass by
+  // never observing the update at all, buggy effect deps or not.
+  await screen.findByText("10.10.10.20 · 10.10.10.20");
+
+  expect((screen.getByLabelText("URL") as HTMLInputElement).value)
+    .toBe("http://unika.htb/still-typing");
 });
 
 it("disables the UNC-insert button until a tun0 IP is detected", async () => {

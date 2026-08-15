@@ -108,6 +108,7 @@ export default function CommandPalette({
     if (!option.target) return;
     setPendingServiceNav({
       targetId: option.target.id, serviceId: option.service.id, anchorId: entry.anchorId,
+      projectId: Number(localStorage.getItem("oscp-workspace-project")),
     });
     location.hash = entry.route;
     dispatchEvent(new CustomEvent("oscp-service-nav"));

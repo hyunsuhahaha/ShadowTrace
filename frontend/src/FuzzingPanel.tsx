@@ -77,7 +77,15 @@ export default function FuzzingPanel({
         </select>
         <input value={extensions} onChange={(e) => setExtensions(e.target.value)}
           placeholder="확장자(선택, 예: php,txt,html)" aria-label="확장자" />
-        <button disabled={busy} onClick={() => onFuzz(wordlist, extensions.trim())}>
+        <button disabled={busy} onClick={() => {
+          // onFuzz (App.tsx's runDirectoryFuzz) reads-and-clears the same
+          // localStorage key this banner mirrors -- without clearing our
+          // own copy here too, a second click after the first fuzz run
+          // would keep showing a "staged target" that's already been
+          // consumed and silently won't be used again.
+          setStagedUrl("");
+          onFuzz(wordlist, extensions.trim());
+        }}>
           {busy ? "탐색 중…" : "퍼징 시작"}
         </button>
       </div>

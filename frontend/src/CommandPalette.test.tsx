@@ -101,6 +101,7 @@ it("stays open and explains why when the target has no matching service for an a
 
 it("offers a cross-target service picker when the project has a matching service elsewhere", () => {
   vi.useFakeTimers();
+  localStorage.setItem("oscp-workspace-project", "7");
   const onClose = vi.fn();
   const services = [
     { id: 11, target_id: 2, port: 53, protocol: "tcp", name: "domain", product: "", scripts: "" },
@@ -122,8 +123,35 @@ it("offers a cross-target service picker when the project has a matching service
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(location.hash).toBe("#enumeration");
   expect(consumePendingServiceNav()).toEqual({
-    targetId: 2, serviceId: 11, anchorId: "dns-subdomain-heading",
+    targetId: 2, serviceId: 11, anchorId: "dns-subdomain-heading", projectId: 7,
   });
+  vi.useRealTimers();
+});
+
+it("drops a pending nav queued for a project that is no longer active", () => {
+  // Regression test: picking a service, then switching the active project
+  // before the destination route mounts and consumes the nav, used to land
+  // the OLD project's target/service into the NEW project's Enumeration
+  // screen -- consumePendingServiceNav() now checks the nav's project
+  // against whatever "oscp-workspace-project" says right now.
+  vi.useFakeTimers();
+  localStorage.setItem("oscp-workspace-project", "7");
+  const onClose = vi.fn();
+  const services = [
+    { id: 11, target_id: 2, port: 53, protocol: "tcp", name: "domain", product: "", scripts: "" },
+  ];
+  const targets = [{ id: 2, name: "DC01", ip: "10.10.10.5" }];
+  render(<CommandPalette onClose={onClose} services={services} targets={targets} />);
+
+  fireEvent.change(screen.getByPlaceholderText(/도구나 화면 검색/), { target: { value: "gobuster dns" } });
+  fireEvent.click(screen.getByText("서브도메인 브루트포스 (gobuster dns)"));
+  act(() => { vi.runAllTimers(); });
+  fireEvent.click(screen.getByText("DC01 · 10.10.10.5"));
+
+  // User switches the active project before the Enumeration route consumes it.
+  localStorage.setItem("oscp-workspace-project", "9");
+
+  expect(consumePendingServiceNav()).toBeUndefined();
   vi.useRealTimers();
 });
 

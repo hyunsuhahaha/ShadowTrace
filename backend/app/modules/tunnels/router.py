@@ -113,7 +113,7 @@ def tunnels(project_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=TunnelOut, status_code=201)
-def create_tunnel(body: TunnelIn, db: Session = Depends(get_db)):
+async def create_tunnel(body: TunnelIn, db: Session = Depends(get_db)):
     project = need(db, Project, body.project_id)
     target = need(db, Target, body.target_id)
     if target.project_id != project.id:

@@ -368,8 +368,8 @@ export default function GraphWorkspace() {
   const selectedType = selected ? nodeById.get(selected)?.type : undefined;
   useEffect(() => {
     const h = serviceHandoff(selected);
-    if (h) {
-      setPendingServiceNav(h);
+    if (h && projectId) {
+      setPendingServiceNav({...h, projectId});
       dispatchEvent(new CustomEvent("oscp-service-nav"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

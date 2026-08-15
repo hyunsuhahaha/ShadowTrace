@@ -522,26 +522,34 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             select(Target).where(Target.project_id == project_id)):
         target_ids.append(target.id)
         host = host_for(target.id)
-        if host is None:
-            if ("target", target.id) in dismissed:
-                continue
+        # A dismissed (user-deleted) host node must not be recreated, but its
+        # services still need to run through the loop below every sync --
+        # skipping the whole target body here used to leave any
+        # already-synced service node under it permanently stuck with
+        # whatever meta/label it had at the moment the host was deleted
+        # (per spec §2.1 "노드 삭제 시 관련 엣지 cascade" only edges cascade
+        # on delete, not descendant nodes, so those service nodes are still
+        # expected to be live and refreshed by every future sync).
+        host_dismissed = host is None and ("target", target.id) in dismissed
+        if host is None and not host_dismissed:
             label = target.ip + (f" ({target.hostname})" if target.hostname else "")
             host = create_node(db, project_id, "host", label=label,
                                source_ref=_source_ref("core", "target", target.id))
             create_edge(db, project_id, root.id, host.id, "discovered")
             index[("target", target.id)] = host
             created["hosts"] += 1
-        scan = active_scans.get(target.id)
-        # Host-level evidence only (service_id is None) -- evidence attached to
-        # one of the target's services is counted on that service node instead,
-        # so the two counts don't double up on the same underlying row.
-        host_evidence_count = db.scalar(select(func.count(Evidence.id)).where(
-            Evidence.target_id == target.id, Evidence.service_id.is_(None))) or 0
-        host.meta = _activity_meta(
-            _merge_meta(host.meta, {"evidenceCount": host_evidence_count}),
-            _runtime_activity(
-                "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
-            ) if scan else None)
+        if host is not None:
+            scan = active_scans.get(target.id)
+            # Host-level evidence only (service_id is None) -- evidence attached to
+            # one of the target's services is counted on that service node instead,
+            # so the two counts don't double up on the same underlying row.
+            host_evidence_count = db.scalar(select(func.count(Evidence.id)).where(
+                Evidence.target_id == target.id, Evidence.service_id.is_(None))) or 0
+            host.meta = _activity_meta(
+                _merge_meta(host.meta, {"evidenceCount": host_evidence_count}),
+                _runtime_activity(
+                    "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
+                ) if scan else None)
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
@@ -555,7 +563,10 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                                        "version": service.version or "",
                                        "evidenceCount": service_evidence_count})
             if ("service", service.id) not in index:
-                if ("service", service.id) in dismissed:
+                # No host to attach a brand-new service to -- same "don't
+                # auto-create under a dismissed parent" rule the host itself
+                # follows just above.
+                if host_dismissed or ("service", service.id) in dismissed:
                     continue
                 svc = create_node(db, project_id, "service", label=refined,
                                   source_ref=_source_ref("scans", "service", service.id),
@@ -772,7 +783,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             explicit_parent = (
                 db.get(GraphNode, sess.graph_parent_node_id)
                 if sess.graph_parent_node_id else None)
-            if explicit_parent is not None and explicit_parent.project_id != project_id:
+            if explicit_parent is not None and (
+                    explicit_parent.project_id != project_id
+                    or explicit_parent.type not in {"finding", "service", "host"}):
                 explicit_parent = None
             parent = (operator_for() if responder
                       else explicit_parent or parent_of(sess.service_id, sess.target_id))

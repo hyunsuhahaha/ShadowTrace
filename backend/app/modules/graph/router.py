@@ -138,6 +138,16 @@ def delete_node(node_id: str, db: Session = Depends(get_db)):
         raise HTTPException(422, "project-root cannot be deleted")
     project_id = node.project_id
     service.dismiss_source(db, project_id, node.source_ref)
+    incident_edge_ids = [
+        edge_id for edge_id, in db.query(GraphEdge.id).filter(
+            (GraphEdge.source == node_id) | (GraphEdge.target == node_id))]
+    # Same cleanup delete_edge does for a single edge -- otherwise a node
+    # that pinned one of these as its canonical parent is left with a
+    # dangling pointer once the edge is gone.
+    if incident_edge_ids:
+        db.query(GraphNode).filter(
+            GraphNode.pinned_canonical_edge_id.in_(incident_edge_ids)).update(
+            {GraphNode.pinned_canonical_edge_id: None}, synchronize_session=False)
     db.query(GraphEdge).filter(
         (GraphEdge.source == node_id) | (GraphEdge.target == node_id)).delete(
         synchronize_session=False)

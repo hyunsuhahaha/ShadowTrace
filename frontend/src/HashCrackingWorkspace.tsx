@@ -175,13 +175,21 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", { detail: targetId }));
   }, [targetId]);
   useEffect(() => {
+    // ["allTargets"] always fetches every target across every project in one
+    // shot, so once it has resolved at all there's no "match will show up
+    // after another refetch" case left to wait for -- a requested id that
+    // isn't in it is stale (its target got deleted, or the id was garbage)
+    // and must be cleared now, not left to leak in localStorage indefinitely
+    // and potentially get misapplied much later if a future target happens
+    // to reuse that id.
+    if (!targets.data) return;
     const requestedTarget = Number(localStorage.getItem("oscp-workspace-hash-target"));
-    const match = targets.data?.find((item) => item.id === requestedTarget);
+    const match = targets.data.find((item) => item.id === requestedTarget);
     if (match) {
       setProjectId(match.project_id);
       setTargetId(match.id);
-      localStorage.removeItem("oscp-workspace-hash-target");
     }
+    localStorage.removeItem("oscp-workspace-hash-target");
   }, [targets.data]);
   const target = targets.data?.find((item) => item.id === targetId);
   useEffect(() => {
@@ -212,11 +220,15 @@ export default function HashCrackingWorkspace({ embedded = false, initialProject
     }
   }, [catalog.data, hashModeId, wordlistId]);
   useEffect(() => {
+    if (!catalog.data) return;
     const requestedMode = localStorage.getItem("oscp-workspace-hash-mode");
-    if (requestedMode && catalog.data?.hash_modes.some((m) => m.id === requestedMode)) {
-      setHashModeId(requestedMode);
-      localStorage.removeItem("oscp-workspace-hash-mode");
-    }
+    if (!requestedMode) return;
+    // Same reasoning as -hash-target above: the catalog is a fixed, fully
+    // loaded list once catalog.data resolves, so a requested mode that
+    // isn't in it is stale and must be cleared now rather than left to
+    // leak (and be silently retried on every future mount).
+    if (catalog.data.hash_modes.some((m) => m.id === requestedMode)) setHashModeId(requestedMode);
+    localStorage.removeItem("oscp-workspace-hash-mode");
   }, [catalog.data]);
   useEffect(() => {
     const requestedHash = localStorage.getItem("oscp-workspace-hash-value");

@@ -203,6 +203,48 @@ def test_sync_sets_evidence_count_on_host_and_service_nodes():
     assert json.loads(svc_node.meta)["evidenceCount"] == 1
 
 
+def test_service_node_under_a_deleted_host_keeps_refreshing_on_later_syncs():
+    # Regression test: deleting a host node (docs/SPEC_GRAPH_TRACKER.md §2.1
+    # -- node delete cascades EDGES only, never descendant nodes) used to
+    # make sync_from_project skip its whole per-target body, including the
+    # nested service loop, whenever the host row stayed dismissed. Any
+    # service node synced before the host was deleted then got permanently
+    # stuck with stale meta/label forever, instead of continuing to reflect
+    # reality the way every other still-live node does.
+    from app.models import Evidence, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.31")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=445, protocol="tcp", name="smb")
+    db.add(svc); db.flush()
+
+    service.sync_from_project(db, p.id)
+    host = db.query(GraphNode).filter_by(type="host").one()
+    svc_node = db.query(GraphNode).filter_by(type="service").one()
+    assert json.loads(svc_node.meta)["evidenceCount"] == 0
+
+    # Delete the host node the same way the API does: dismiss its source_ref
+    # so sync won't recreate it, then drop the node and its own edges.
+    service.dismiss_source(db, p.id, host.source_ref)
+    db.query(GraphEdge).filter(
+        (GraphEdge.source == host.id) | (GraphEdge.target == host.id)
+    ).delete(synchronize_session=False)
+    db.delete(host)
+    db.flush()
+
+    db.add(Evidence(project_id=p.id, target_id=t.id, service_id=svc.id,
+                    title="smb banner", kind="command_output", source_type="upload"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+
+    assert not any(node.type == "host" for node in
+                  db.query(GraphNode).filter_by(project_id=p.id).all())
+    refreshed = db.get(GraphNode, svc_node.id)
+    assert refreshed is not None
+    assert json.loads(refreshed.meta)["evidenceCount"] == 1
+
+
 def test_sync_sets_evidence_count_on_credential_via_hash_crack_source():
     from app.models import Credential, Evidence, HashCrackJob, Target
     db = database()
@@ -753,6 +795,70 @@ def test_sync_reads_a_non_listener_manual_session_as_a_shell_immediately():
     service.sync_from_project(db, p.id)
     tech = db.query(GraphNode).filter_by(type="technique").one()
     assert json.loads(tech.meta)["activity"]["kind"] == "shell"
+
+
+def test_session_parents_under_the_finding_it_was_opened_from():
+    # Same override as executions/hash-crack jobs (SPEC_GRAPH_TRACKER.md §6.1) --
+    # e.g. the "익명으로 접속하기" button on an Ftp Anon finding opens the
+    # session with graph_node_id set to that finding.
+    from app.models import Finding, InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.29")
+    db.add(t); db.flush()
+    finding = Finding(project_id=p.id, target_id=t.id, title="Ftp Anon on 10.0.0.29:21")
+    db.add(finding); db.flush()
+    service.sync_from_project(db, p.id)
+    finding_node = db.query(GraphNode).filter_by(type="finding").one()
+
+    db.add(InteractiveSession(target_id=t.id, template_id="ftp-client",
+                              command="ftp 10.0.0.29", cwd="/tmp", status="launched",
+                              graph_parent_node_id=finding_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", finding_node.id, tech.id) in relations
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert ("attempted", host.id, tech.id) not in relations
+
+
+def test_session_falls_back_to_host_when_the_explicit_parent_is_a_technique():
+    # Regression test: Inspector.tsx's openSsh/openPsexec/openEvilWinrm quick
+    # actions pass the currently selected node's id as graph_node_id, and
+    # that node can be a technique (e.g. a completed NetExec check), not just
+    # a finding. "attempted" only permits finding/service/host as a source
+    # (same rule enforced for Execution and HashCrackJob below) -- without
+    # the type guard this used to raise GraphIntegrityError and break sync
+    # for the whole project on every subsequent poll.
+    from app.models import Execution, InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.30")
+    db.add(t); db.flush()
+    db.add(Execution(target_id=t.id, template_id="netexec-check",
+                     command="nxc smb 10.0.0.30", cwd="/tmp", status="completed"))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    technique_node = db.query(GraphNode).filter_by(type="technique").one()
+
+    db.add(InteractiveSession(target_id=t.id, template_id="ssh-client",
+                              command="ssh admin@10.0.0.30", cwd="/tmp", status="launched",
+                              graph_parent_node_id=technique_node.id))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    host = db.query(GraphNode).filter_by(type="host").one()
+    sessions_tech = [n for n in db.query(GraphNode).filter_by(type="technique").all()
+                     if n.id != technique_node.id]
+    assert len(sessions_tech) == 1
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("attempted", host.id, sessions_tech[0].id) in relations
 
 
 def test_sync_links_a_responder_captured_credential_to_the_listener_that_caught_it(monkeypatch):

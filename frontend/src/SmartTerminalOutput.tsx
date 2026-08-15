@@ -111,7 +111,7 @@ export default function SmartTerminalOutput({output, context, cursor}: {
   };
   const stageFuzz = async () => {
     const match = menu?.match;
-    if (!match || !context.targetId) return;
+    if (!match || !context.targetId || !context.projectId) return;
     try {
       const services = await api<Array<{id: number; port: number; name: string}>>(
         `/targets/${context.targetId}/services`);
@@ -121,7 +121,7 @@ export default function SmartTerminalOutput({output, context, cursor}: {
       if (!service) throw new Error(`${port}/tcp Service를 먼저 그래프에 추가하세요.`);
       localStorage.setItem("oscp-smart-fuzz-url", url.toString());
       setPendingServiceNav({targetId: context.targetId, serviceId: service.id,
-        anchorId: "fuzz-heading"});
+        anchorId: "fuzz-heading", projectId: context.projectId});
       location.hash = "#enumeration";
       dispatchEvent(new CustomEvent("oscp-service-nav"));
       setMenu(undefined);

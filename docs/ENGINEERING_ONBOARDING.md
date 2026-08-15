@@ -864,7 +864,6 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-services-panel-width` / `-collapsed` | px / bool | `App.tsx` 서비스 목록 패널 리사이즈 |
 | `oscp-execution-panel-width` / `-collapsed` | px / bool | `App.tsx` 실행 이력 패널 리사이즈 |
 | `oscp-service-workspace-height` / `-collapsed` | px / bool | `App.tsx` 서비스 대시보드 패널 리사이즈 |
-| `oscp-workspace-exploit-service` | service id | `App.tsx` → `ExploitResearchWorkspace.tsx` "이 서비스로 Exploit Research 열기" 핸드오프 |
 | `oscp-command-palette-recent` | JSON 배열(최대 5개 id) | `CommandPalette.tsx` 최근 사용 항목 |
 | `oscp-intruder-candidate-sets` | JSON 배열 | `IntruderPanel.tsx` 저장된 퍼징 후보값 세트 |
 

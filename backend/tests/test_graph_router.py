@@ -105,6 +105,29 @@ def test_deleting_edge_clears_pinned_canonical_reference():
     assert host.pinned_canonical_edge_id is None
 
 
+def test_deleting_a_node_clears_pinned_canonical_references_on_its_edges():
+    # delete_node's bulk edge delete used to skip the cleanup delete_edge
+    # does for a single edge, leaving any node that had pinned one of the
+    # deleted node's incident edges as its canonical parent with a dangling
+    # pointer into a row that no longer exists.
+    db = database()
+    p = project(db)
+    root_id = api.get_graph(p.id, db).root_node_id
+    host = api.create_node(p.id, NodeIn(type="host", label="h"), db)
+    service_node = api.create_node(p.id, NodeIn(type="service", label="s"), db)
+    api.create_edge(p.id, EdgeIn(source=root_id, target=host.id,
+                                 relation="discovered"), db)
+    edge = api.create_edge(p.id, EdgeIn(source=host.id, target=service_node.id,
+                                        relation="discovered"), db)
+    service_node.pinned_canonical_edge_id = edge.id
+    db.commit()
+
+    api.delete_node(host.id, db)
+
+    db.refresh(service_node)
+    assert service_node.pinned_canonical_edge_id is None
+
+
 def test_sync_endpoint_creates_host_and_service_nodes():
     from app.models import Service, Target
     db = database()

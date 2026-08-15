@@ -227,7 +227,15 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
       ? {...empty(target), service_id: launch.serviceId, url: launch.url}
       : empty(target));
     if (launch?.targetId === targetId) localStorage.removeItem("oscp-web-launch");
-  }, [targetId, targets.data]);
+    // Deliberately NOT depending on targets.data: it's the shared
+    // ["allTargets"] query AppShell also reads, so a background refetch
+    // (window refocus, a scan discovering a target) changes its array
+    // reference without targetId changing -- that used to wipe whatever
+    // request the user was mid-typing. targetId alone is the real trigger;
+    // when it changes this still reads the freshest targets.data from the
+    // render that scheduled it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetId]);
   useEffect(() => {
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
   }, [targetId]);

@@ -116,6 +116,24 @@ it("auto-selects the hash mode from pasted hash text and flags it as detected", 
   expect(screen.getByText("자동 감지됨")).toBeTruthy();
 });
 
+it("clears a stale hash-target handoff instead of leaving it to leak forever", async () => {
+  // Regression test: oscp-workspace-hash-target/-mode were only cleared on
+  // a successful match -- a stale id (its target already deleted, or the
+  // handoff simply never matched anything) stayed in localStorage forever
+  // and got silently retried on every future mount, one target list fetch
+  // away from being misapplied.
+  localStorage.setItem("oscp-workspace-hash-target", "999");
+  localStorage.setItem("oscp-workspace-hash-mode", "not-a-real-mode");
+  mount(baseFetcher(() => undefined));
+
+  await screen.findByLabelText("공격 모드");
+
+  await waitFor(() => {
+    expect(localStorage.getItem("oscp-workspace-hash-target")).toBeNull();
+    expect(localStorage.getItem("oscp-workspace-hash-mode")).toBeNull();
+  });
+});
+
 it("swaps the mask field in for the wordlist when a mask-only attack mode is picked", async () => {
   mount(baseFetcher(() => undefined));
   await screen.findByLabelText("공격 모드");
