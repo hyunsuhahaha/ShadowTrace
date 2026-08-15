@@ -7,8 +7,8 @@ import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 import { S } from "./graphStyles";
 import { OutlineView } from "./OutlineView";
-import { AddNodeForm, BlankCanvasQuickMenu, ElapsedTimer, Empty, MultiSelectPanel, NodeQuickMenu,
-  OnboardingPane, Tab, TaskQueue } from "./graphLeaves";
+import { AddNodeForm, BlankCanvasQuickMenu, ElapsedTimer, Empty, NodeQuickMenu, OnboardingPane,
+  Tab, TaskQueue } from "./graphLeaves";
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 import { GraphCanvas } from "./GraphCanvas";
@@ -636,12 +636,6 @@ export default function GraphWorkspace() {
                 <button type="button" onClick={() => changeReplay(null)}>RETURN LIVE ↵</button>
               </div>
             </div>
-          ) : replayAt == null && multiSelected.size > 1 ? (
-            <MultiSelectPanel
-              nodes={Array.from(multiSelected).map((id) => nodeById.get(id)).filter(
-                (node): node is typeof data.nodes[number] => !!node)}
-              onFocus={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
-              onRemove={toggleMultiSelect} />
           ) : reportPanel ? (
             <div style={S.embedPane}><Suspense fallback={<Empty text="Findings 불러오는 중…" />}>
               <EmbeddedReports embedded initialProjectId={projectId || undefined}
