@@ -9,6 +9,16 @@
 
 - 브랜치: `phase-8/stabilization`
 - 최근 커밋:
+  - `b00850a` — 전수 감사로 찾은 버그 6건 수정(각각 pre-fix 코드에서 실패하는
+    회귀 테스트 포함): tunnels `create_tunnel`이 sync 라우트라
+    `asyncio.create_task()`가 매번 RuntimeError로 죽어 SSH 터널이 한 번도
+    작동한 적이 없던 문제, `InteractiveSession.graph_parent_node_id`가
+    technique 타입 가드 누락으로 `/graph/sync` 전체를 깨뜨리던 문제,
+    dismissed host 아래 service 노드가 sync에서 영구히 스킵되던 문제,
+    `delete_node`가 `pinned_canonical_edge_id` 정리를 안 하던 문제,
+    Command Palette로 다른 프로젝트 서비스 선택 후 전환 시 헤더/본문
+    불일치, `WebWorkspace` draft가 무관한 background refetch로 사라지던
+    문제, 죽은/leak되는 localStorage 핸드오프 정리.
   - `c118cc1` — `WebWorkspace.test.tsx`의 실제 레이스 컨디션 수정(Responder IP
     삽입 테스트 2건, 타이핑이 draft 리셋 effect와 경쟁하던 문제)
   - `915a828` — Vitest pool을 `forks`로 전환(테스트 파일 간 완전한 프로세스 격리)
@@ -50,8 +60,8 @@
 
 ## 검증
 
-- 전체 backend suite: `431 passed` (golden-path 통합 테스트 포함)
-- 전체 frontend Vitest: `91 files / 424 tests` 통과
+- 전체 backend suite: `542 passed` (golden-path 통합 테스트 포함)
+- 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과
 - `npm run test:e2e` (Playwright golden-path): `1 passed`; 래퍼 스크립트는 브라우저
   재설치 단계의 interactive sudo 때문에 이 환경에서 실행하지 못했지만 설치된 Chromium을
