@@ -95,6 +95,9 @@ export default function AppShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [createError, setCreateError] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const sidebarResize = useRef({x: 0, width: 264});
@@ -166,13 +169,24 @@ export default function AppShell({
     setActiveProjectId(id);
     dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
   };
-  const createProject = async () => {
-    const name = prompt("새 프로젝트 이름",
-      `OSCP Practice ${Date.now().toString().slice(-4)}`);
-    if (name === null) return;               // cancelled
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  // In-app modal instead of window.prompt()/alert() -- those are native OS
+  // dialogs, not something this app renders, and on Linux (esp. Chrome run
+  // as root or without a full window manager, e.g. a bare Kali VM) they can
+  // fail to surface at all: the call just returns null/undefined with zero
+  // visible sign anything happened, which reads exactly like "the button
+  // doesn't do anything." The same silent-null failure also happens on any
+  // OS once a browser has been told to block a site's dialogs. An in-app
+  // modal is plain DOM, so none of that applies.
+  const openCreateProject = () => {
+    setNewProjectName(`OSCP Practice ${Date.now().toString().slice(-4)}`);
+    setCreateError("");
+    setCreatingProject(true);
+  };
+  const submitCreateProject = async () => {
+    const trimmed = newProjectName.trim();
+    if (!trimmed) { setCreateError("이름을 입력하세요."); return; }
     setCreateBusy(true);
+    setCreateError("");
     try {
       const response = await fetch("/api/projects", {
         method: "POST",
@@ -186,8 +200,9 @@ export default function AppShell({
       const created = await response.json();
       await queryClient.invalidateQueries({queryKey: ["projects"]});
       selectProject(created.id);
+      setCreatingProject(false);
     } catch (reason) {
-      alert(String(reason).replace(/^Error:\s*/, ""));
+      setCreateError(String(reason).replace(/^Error:\s*/, ""));
     } finally {
       setCreateBusy(false);
     }
@@ -365,8 +380,8 @@ export default function AppShell({
                     </div>
                   )}
                   <button type="button" style={PM.add} disabled={createBusy}
-                    onClick={() => { setMenuOpen(false); void createProject(); }}>
-                    {createBusy ? "만드는 중…" : "＋ 새 프로젝트 추가"}
+                    onClick={() => { setMenuOpen(false); openCreateProject(); }}>
+                    ＋ 새 프로젝트 추가
                   </button>
                 </div>
               </>
@@ -439,6 +454,45 @@ export default function AppShell({
                   onClick={removeProject}
                 >
                   {deleteBusy ? "삭제 중…" : "삭제"}
+                </Button>
+              </footer>
+            </div>
+          </div>
+        )}
+        {creatingProject && (
+          <div className="modal" role="presentation">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-project-title"
+            >
+              <span>새 프로젝트</span>
+              <h2 id="create-project-title">프로젝트 추가</h2>
+              <label htmlFor="new-project-name">이름</label>
+              <input
+                id="new-project-name"
+                autoFocus
+                value={newProjectName}
+                disabled={createBusy}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void submitCreateProject(); }
+                }}
+              />
+              {createError && <p className="webError" role="alert">{createError}</p>}
+              <footer>
+                <Button
+                  disabled={createBusy}
+                  onClick={() => setCreatingProject(false)}
+                >
+                  취소
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={createBusy || !newProjectName.trim()}
+                  onClick={() => void submitCreateProject()}
+                >
+                  {createBusy ? "만드는 중…" : "추가"}
                 </Button>
               </footer>
             </div>

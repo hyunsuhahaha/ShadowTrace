@@ -135,6 +135,56 @@ it("persists the display-only first-project fallback so other components agree",
   await waitFor(() => expect(localStorage.getItem("oscp-workspace-project")).toBe("7"));
 });
 
+it("creates a project through an in-app modal instead of window.prompt", async () => {
+  // Regression test: creation used to go through window.prompt()/alert(),
+  // native OS dialogs the app itself never renders. On Linux (esp. Chrome
+  // run as root or without a full window manager) those can silently fail
+  // to appear at all -- prompt() just returns null with zero visible sign
+  // anything happened, which reads as "the button does nothing." Asserting
+  // window.prompt is never called is exactly the regression this guards.
+  const promptSpy = vi.spyOn(window, "prompt");
+  let created = false;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST" && url === "/api/projects") {
+      created = true;
+      return response({id: 2, name: "New Lab"});
+    }
+    if (url.endsWith("/api/projects"))
+      return response(created ? [{id: 1, name: "Alpha"}, {id: 2, name: "New Lab"}]
+        : [{id: 1, name: "Alpha"}]);
+    if (url.endsWith("/api/targets")) return response([]);
+    if (url.endsWith("/api/projects/1/services") || url.endsWith("/api/projects/2/services"))
+      return response([]);
+    if (url.endsWith("/api/vpn/status")) return response({
+      connected: false, tun0: "", operation: null,
+    });
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  localStorage.setItem("oscp-workspace-project", "1");
+  const client = new QueryClient({
+    defaultOptions: {queries: {retry: false, staleTime: Infinity}},
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <AppShell route="enumeration"><div /></AppShell>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Alpha");
+
+  fireEvent.click(screen.getByRole("button", {name: /Alpha/}));
+  fireEvent.click(screen.getByRole("button", {name: "＋ 새 프로젝트 추가"}));
+
+  const nameInput = await screen.findByLabelText("이름") as HTMLInputElement;
+  expect(nameInput.value).toMatch(/^OSCP Practice \d{4}$/);
+  fireEvent.change(nameInput, {target: {value: "New Lab"}});
+  fireEvent.click(screen.getByRole("button", {name: "추가"}));
+
+  await waitFor(() => expect(screen.getByRole("button", {name: /New Lab/})).toBeTruthy());
+  expect(localStorage.getItem("oscp-workspace-project")).toBe("2");
+  expect(promptSpy).not.toHaveBeenCalled();
+});
+
 it("drops every cached query, not just projects/targets, when a project is deleted", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
