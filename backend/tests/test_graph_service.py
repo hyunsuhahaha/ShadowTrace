@@ -387,6 +387,39 @@ def test_sync_does_not_claim_lineage_for_failed_authentication():
         "reused-credential", "pivoted-to"])).count() == 0
 
 
+def test_a_fuzzing_execution_gets_its_own_activity_kind_not_a_generic_scan():
+    # ffuf/feroxbuster/gobuster all work through their own wordlist -- the
+    # canvas gives that a distinct "fuzz" cue instead of the plain radar
+    # sweep every other still-running execution gets. Driven by the
+    # template's own catalog `tool` field, not a template-id allowlist, so
+    # a new fuzz-shaped template picks this up without a matching edit here.
+    from app.models import Execution, Service, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.11")
+    db.add(t); db.flush()
+    svc = Service(target_id=t.id, port=80, protocol="tcp", name="http")
+    db.add(svc); db.flush()
+    db.add(Execution(target_id=t.id, service_id=svc.id, template_id="http-directory-fuzz-ext",
+                     command="feroxbuster -u http://10.0.0.11/ -w rockyou.txt -x php,txt",
+                     cwd="/tmp", status="running"))
+    db.add(Execution(target_id=t.id, service_id=svc.id, template_id="http-param-fuzz",
+                     command="ffuf -u http://10.0.0.11/?FUZZ=test -w rockyou.txt",
+                     cwd="/tmp", status="running"))
+    db.add(Execution(target_id=t.id, service_id=svc.id, template_id="http-service-version",
+                     command="nmap -sV -p80 10.0.0.11", cwd="/tmp", status="running"))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    techniques = db.query(GraphNode).filter_by(project_id=p.id, type="technique").all()
+    kinds = {json.loads(t.meta)["tool"]: json.loads(t.meta).get("activity", {}).get("kind")
+             for t in techniques}
+    assert kinds["http-directory-fuzz-ext"] == "fuzz"
+    assert kinds["http-param-fuzz"] == "fuzz"
+    assert kinds["http-service-version"] == "execution"
+
+
 def test_sync_projects_executions_as_technique_nodes():
     from app.models import Execution, Service, Target
     db = database()

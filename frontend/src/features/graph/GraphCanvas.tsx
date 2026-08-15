@@ -105,23 +105,27 @@ export function GraphCanvas(props: {
       levels.set(depth, [...(levels.get(depth) || []), node]);
     });
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // Four activity languages, one per meaning: green = actively searching
+    // Five activity languages, one per meaning: green = actively searching
     // (scan output still streaming, outcome unknown), red = armed and
     // waiting on something external (Responder), blue = an interactive
     // shell attached and settled -- any InteractiveSession, floating PTY or
     // desktop (reuses the app's existing anchor/selection blue rather than
-    // inventing a hue), violet = hashcat grinding a wordlist -- distinct
-    // from the other three so it doesn't read as "just another scan."
+    // inventing a hue), violet = hashcat grinding a wordlist, amber = a
+    // path/param fuzzer (ffuf/feroxbuster/gobuster) working through its own
+    // wordlist -- each distinct so none of them read as "just another scan."
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
     const connectedSignal = "#6aa9ff";
     const crackSignal = "#b388ff";
-    type SignalKind = "scan" | "listener" | "connected" | "crack";
+    const fuzzSignal = "#ffa94d";
+    type SignalKind = "scan" | "listener" | "connected" | "crack" | "fuzz";
     const SIGNAL_RGB: Record<SignalKind, string> = {
       scan: "89,245,154", listener: "255,77,103", connected: "106,169,255", crack: "179,136,255",
+      fuzz: "255,169,77",
     };
     const signalKindOf = (a: NodeActivity | null): SignalKind | null => !a ? null
       : a.kind === "listener" ? "listener" : a.kind === "crack" ? "crack"
+      : a.kind === "fuzz" ? "fuzz"
       // A live shell reads as settled/attached, not still searching --
       // every InteractiveSession activity is kind:"shell" regardless of
       // whether it's a floating PTY ("running") or a desktop launch
@@ -130,17 +134,19 @@ export function GraphCanvas(props: {
       : a.kind === "shell" ? "connected" : "scan";
     const signalHex = (kind: SignalKind) =>
       kind === "listener" ? listenerSignal : kind === "connected" ? connectedSignal
-      : kind === "crack" ? crackSignal : signal;
+      : kind === "crack" ? crackSignal : kind === "fuzz" ? fuzzSignal : signal;
     const signalRgba = (kind: SignalKind, alpha: number) => `rgba(${SIGNAL_RGB[kind]},${alpha})`;
     const FILL_BG: Record<SignalKind, string> = {
       scan: "#10251a", listener: "#2a1016", connected: "#0e1a2a", crack: "#1c1430",
+      fuzz: "#2a1c0e",
     };
     const BADGE_BG: Record<SignalKind, string> = {
       scan: "rgba(5,18,12,.9)", listener: "rgba(25,5,10,.92)", connected: "rgba(6,14,26,.92)",
-      crack: "rgba(20,12,30,.92)",
+      crack: "rgba(20,12,30,.92)", fuzz: "rgba(28,17,5,.92)",
     };
     const signalLabel = (a: NodeActivity, kind: SignalKind) => kind === "listener" ? "LISTENING"
       : kind === "connected" ? "CONNECTED" : kind === "crack" ? "CRACKING"
+      : kind === "fuzz" ? "FUZZING"
       : a.kind === "scan" ? "SCANNING" : a.status.toUpperCase();
 
     const resize = () => {
@@ -490,7 +496,7 @@ export function GraphCanvas(props: {
           const phase = (now % 2400) / 2400;
           const kind = signalKind!;
           ctx.save(); ctx.shadowColor = nodeSignal; ctx.shadowBlur = 18;
-          if (kind !== "crack") {
+          if (kind !== "crack" && kind !== "fuzz") {
             for (let i = 0; i < (reduceMotion ? 1 : 3); i++) {
               const p = reduceMotion ? .38 : (phase + i / 3) % 1;
               ctx.beginPath(); ctx.arc(n.x, n.y, r + 14 + p * 52, 0, Math.PI * 2);
@@ -531,6 +537,26 @@ export function GraphCanvas(props: {
                 ctx.fillText(DIGITS[Math.abs(h) % 2], colX, ty);
               }
             }
+          } else if (kind === "fuzz") {
+            // No pulse rings, no rotating sweep -- a fuzzer's whole job is
+            // trying the next wordlist entry against a path/param, so the
+            // one effect this node gets is that candidate cycling fast
+            // right above it, reading as "still guessing" instead of the
+            // radar-sweep language every other still-searching activity
+            // uses.
+            const WORDS = ["/admin", "/login", "/backup", "/.git", "/config",
+              "/api", "/upload", "/test", "/dev", "/staging", "/old", "/tmp",
+              "/secret", "/robots.txt"];
+            let seed = 0;
+            for (let i = 0; i < n.id.length; i++) seed = (seed * 31 + n.id.charCodeAt(i)) | 0;
+            const tick = reduceMotion ? 0 : Math.floor(now / 110);
+            let h = (seed + tick * 2654435761) | 0;
+            h = (h ^ (h >>> 13)) | 0;
+            const word = WORDS[Math.abs(h) % WORDS.length];
+            ctx.font = "600 9px ui-monospace,monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = signalRgba("fuzz", .9 * fade);
+            ctx.fillText(word, n.x, n.y - r - 12);
           } else if (!reduceMotion && activity.status !== "queued") {
             const angle = now / 720;
             ctx.beginPath(); ctx.moveTo(n.x, n.y);

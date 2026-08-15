@@ -36,7 +36,7 @@ export type CredentialHandoff = {
   graph_node_id?: string;
 };
 export type NodeActivity = {
-  kind: "scan" | "execution" | "listener" | "crack" | "shell";
+  kind: "scan" | "execution" | "listener" | "crack" | "shell" | "fuzz";
   status: "queued" | "running" | "processing" | "launched";
   label: string; startedAt?: string | null;
 };
@@ -301,7 +301,7 @@ export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | n
   if (!node.meta) return null;
   try {
     const value = JSON.parse(node.meta).activity;
-    if (!value || !["scan", "execution", "listener", "crack", "shell"].includes(value.kind)
+    if (!value || !["scan", "execution", "listener", "crack", "shell", "fuzz"].includes(value.kind)
       || !["queued", "running", "processing", "launched"].includes(value.status)) return null;
     return { kind: value.kind, status: value.status,
       label: typeof value.label === "string" ? value.label : "TASK",

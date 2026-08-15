@@ -53,6 +53,17 @@ _CONNECTION_PORTS = {
 
 _ACTIVE_STATUSES = {"queued", "running", "processing", "launched"}
 
+# A path/param/subdomain fuzzer working through its own wordlist gets a
+# distinct canvas activity kind ("fuzz") instead of the generic scan-sweep
+# every other execution gets -- driven by the template's own `tool` field
+# so a new fuzz-shaped template picks this up automatically without a
+# template-id allowlist to keep in sync by hand.
+_FUZZ_TOOLS = {"ffuf", "feroxbuster", "gobuster"}
+
+
+def _is_fuzz_template(template_id: str | None) -> bool:
+    return catalog.items.get(template_id or "", {}).get("tool") in _FUZZ_TOOLS
+
 
 def _operator_address() -> str:
     match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})/\d+",
@@ -675,7 +686,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if parent is None:
                 continue
             activity = _runtime_activity(
-                "execution", ex.status, ex.template_id or "COMMAND", ex.started_at)
+                "fuzz" if _is_fuzz_template(ex.template_id) else "execution",
+                ex.status, ex.template_id or "COMMAND", ex.started_at)
             existing = index.get(("execution", ex.id))
             runtime = {"tool": ex.template_id or "", "command": ex.command or "",
                        "executionStatus": ex.status, "exitCode": ex.exit_code,
