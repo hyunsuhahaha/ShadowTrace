@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ADD_TYPES, AddForm, defaultRelation, formatElapsed, GraphNode, nodeStatusReason,
+import { ADD_TYPES, AddForm, defaultRelation, formatElapsed, GLYPH, GraphNode, nodeStatusReason,
   RELATIONS, STATUS_LABEL, STATUS_ORDER } from "./graphModel";
 import { S } from "./graphStyles";
 
@@ -77,6 +77,33 @@ export function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; on
   </div>;
 }
 
+
+// Ctrl/Cmd+click accumulates a multi-selection, but a ring scattered
+// somewhere on the canvas (maybe off-screen) doesn't tell the operator
+// what's actually in it -- this replaces the single-node Inspector with an
+// explicit list for as long as more than one node is selected.
+export function MultiSelectPanel(props: { nodes: GraphNode[];
+  onFocus: (id: string) => void; onRemove: (id: string) => void }) {
+  return <aside style={S.inspector}>
+    <div style={S.inspectorTitle}><h3 style={{ margin: 0, fontSize: 15 }}>
+      {props.nodes.length}개 선택됨</h3></div>
+    <div style={{ ...S.linkList, marginTop: 12 }}>
+      {props.nodes.map((node) => (
+        <div key={node.id} style={S.linkRow}>
+          <button style={{ ...S.resultAction, textAlign: "left", border: "none",
+            background: "transparent", padding: "6px 0", overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            onClick={() => props.onFocus(node.id)} title="이 노드로 이동">
+            {GLYPH[node.type]} {node.label}
+          </button>
+          <span style={S.linkKind}>{node.type}</span>
+          <button style={S.resultAction} onClick={() => props.onRemove(node.id)}
+            title="선택에서 제외">×</button>
+        </div>
+      ))}
+    </div>
+  </aside>;
+}
 
 // Right-clicking blank canvas (no node under the cursor) still deserves a
 // menu instead of falling through to the browser's own -- just the one
