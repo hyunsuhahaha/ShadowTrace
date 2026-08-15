@@ -809,7 +809,13 @@ export function Inspector(props: {
                             onClick={() => void sendToHashCracking(item.evidence_id)}>
                             {zip2johnBusy ? "zip2john 실행 중…" : "🔓 Hash Cracking으로 보내기 (zip2john)"}
                           </button>
+                          {/* autoComplete="new-password" -- without it, browsers pair a
+                              bare type="password" field with a saved login and autofill
+                              some *other* nearby text input (e.g. the graph's own search
+                              box) as the "username", confirmed live: it silently filtered
+                              the whole canvas down to zero nodes. */}
                           <input type="password" placeholder="크랙한 암호 (암호로 보호된 항목 해제용)"
+                            autoComplete="new-password"
                             value={archivePassword}
                             onChange={(event) => setArchivePassword(event.target.value)}
                             style={{ border: "1px solid #2a2a34", borderRadius: 6, padding: "5px 8px",
