@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 import re
+import shlex
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -132,6 +134,53 @@ def _pid_alive(pid: int | None) -> bool:
         return True
     except (OSError, ProcessLookupError):
         return False
+
+
+# A manual session's template_id is always "manual-shell" (create_manual_terminal
+# doesn't distinguish *why* the shell was opened), so a listener has to be
+# recognized from its own command line: nc/ncat/netcat invoked with a listen
+# flag. This only tells us the process is armed, not whether anything has
+# connected to it yet -- see _listener_connected below for that half.
+_LISTENER_ARGV0 = {"nc", "ncat", "netcat"}
+
+
+def _is_listener_command(command: str) -> bool:
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return False
+    if argv and argv[0] == "sudo":
+        argv = argv[1:]
+    if not argv or argv[0] not in _LISTENER_ARGV0:
+        return False
+    return any(
+        arg in ("-l", "--listen")
+        or (arg.startswith("-") and not arg.startswith("--") and "l" in arg[1:])
+        for arg in argv[1:]
+    )
+
+
+# nc -lvnp only ever prints its "listening" banner while armed; once a peer
+# connects it prints a second line ("connect to ... from ...", ncat's
+# "Connection from ...", or GNU netcat's "Connection received on ..."). Any of
+# those show up in the session's own PTY log, so the log is read the same way
+# _parse_responder_log reads Responder's capture file -- both turn a raw tool
+# log into a piece of graph state instead of trusting the local process's
+# mere existence, which for a listener never proves a client landed.
+_LISTENER_CONNECTED_RE = re.compile(r"(?i)connect(ion)?\s+(to|from|received)")
+
+
+def _listener_connected(log_path: str | None) -> bool:
+    if not log_path:
+        return False
+    path = Path(log_path)
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return bool(_LISTENER_CONNECTED_RE.search(text))
 
 
 def _service_display_name(service) -> str:
@@ -738,13 +787,20 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             live_status = sess.status
             if live_status == "launched" and not _pid_alive(sess.pid):
                 live_status = "closed"
+            # A manual session is armed-not-connected if its own command line
+            # is a listener (nc/ncat/socat -l...) and its log hasn't shown a
+            # peer connecting yet -- that gets the same "listener" pulse as
+            # Responder. Once a client lands (or the session isn't a listener
+            # at all, e.g. an interactive shell opened straight into an
+            # already-live connection) it reads as "attached", the calm
+            # breathing-ring kind="shell" treatment (GraphCanvas.tsx's
+            # signalKindOf), never the scan sweep.
+            armed_listener = (
+                not responder and _is_listener_command(sess.command or "")
+                and not _listener_connected(sess.log_path))
             activity = _runtime_activity(
-                # A live shell reads as "attached", not "still searching" --
-                # the canvas gives kind="shell" the same calm breathing-ring
-                # treatment a settled desktop session used to get alone,
-                # never the scan sweep (GraphCanvas.tsx's signalKindOf).
-                "listener" if sess.template_id == "responder-listener" else "shell",
-                live_status, "RESPONDER" if sess.template_id == "responder-listener"
+                "listener" if responder or armed_listener else "shell",
+                live_status, "RESPONDER" if responder
                 else sess.template_id or "SESSION", sess.started_at)
             existing = index.get(("session", sess.id))
             if existing is not None:

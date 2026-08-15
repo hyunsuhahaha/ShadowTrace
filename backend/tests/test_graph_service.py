@@ -683,6 +683,93 @@ def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
                    for relation, _, target in relations)
 
 
+@pytest.mark.parametrize("command", [
+    "nc -lvnp 4444",
+    "nc -nvlp 4444",
+    "sudo nc -lvnp 443",
+    "ncat -lvp 4444",
+    "nc --listen -p 4444",
+])
+def test_is_listener_command_recognizes_listen_flags(command):
+    assert service._is_listener_command(command) is True
+
+
+@pytest.mark.parametrize("command", [
+    "nc 10.0.0.1 4444",
+    "bash --noprofile --norc",
+    "impacket-psexec admin:pass@10.0.0.1",
+    "not valid \"shell",
+])
+def test_is_listener_command_rejects_non_listeners(command):
+    assert service._is_listener_command(command) is False
+
+
+def test_listener_connected_reads_the_sessions_own_log(tmp_path):
+    armed = tmp_path / "armed.log"
+    armed.write_text("listening on [any] 4444 ...\n")
+    assert service._listener_connected(str(armed)) is False
+
+    connected = tmp_path / "connected.log"
+    connected.write_text(
+        "listening on [any] 4444 ...\nconnect to [1.2.3.4] from (UNKNOWN) [5.6.7.8] 1111\n")
+    assert service._listener_connected(str(connected)) is True
+
+    assert service._listener_connected("") is False
+    assert service._listener_connected(str(tmp_path / "missing.log")) is False
+
+
+def test_sync_reads_manual_nc_listener_as_armed_until_the_log_shows_a_connection(
+        monkeypatch, tmp_path):
+    # A manual session's template_id is always "manual-shell" regardless of
+    # what command was actually run, and pty_manager marks it "launched" the
+    # instant the *local* nc process spawns -- long before any remote client
+    # connects. Without reading the nc listener's own log for its connection
+    # line, this always looked identical to an attached shell (kind="shell").
+    import os
+    from app.models import InteractiveSession, Target
+
+    db = database()
+    monkeypatch.setattr(service, "_operator_address", lambda: "10.10.16.178")
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.13")
+    db.add(t); db.flush()
+
+    log = tmp_path / "session_1.log"
+    log.write_text("listening on [any] 4444 ...\n")
+    db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
+                              command="nc -lvnp 4444", cwd="/tmp",
+                              status="launched", pid=os.getpid(), log_path=str(log)))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert json.loads(tech.meta)["activity"]["kind"] == "listener"
+
+    log.write_text(
+        "listening on [any] 4444 ...\nconnect to [10.0.0.13] from (UNKNOWN) [10.10.16.178] 51522\n")
+    service.sync_from_project(db, p.id)
+    db.refresh(tech)
+    assert json.loads(tech.meta)["activity"]["kind"] == "shell"
+
+
+def test_sync_reads_a_non_listener_manual_session_as_a_shell_immediately():
+    import os
+    from app.models import InteractiveSession, Target
+
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.14")
+    db.add(t); db.flush()
+    db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
+                              command="bash --noprofile --norc", cwd="/tmp",
+                              status="launched", pid=os.getpid()))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert json.loads(tech.meta)["activity"]["kind"] == "shell"
+
+
 def test_sync_links_a_responder_captured_credential_to_the_listener_that_caught_it(monkeypatch):
     # Without this, a Responder-sourced credential only ever got the same
     # generic host->credential "enumerated" edge every other credential
