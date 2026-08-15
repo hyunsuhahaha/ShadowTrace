@@ -108,6 +108,11 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
     label: "Responder 리스너", detail: "서비스 선택 후 페이지 하단에 표시 · 데스크톱 터미널에서 실행",
     category: "Service Enumeration 도구",
     keywords: ["responder", "llmnr", "nbt-ns", "poisoning", "ntlm", "리스너", "포이즈닝"] },
+  { id: "enumeration/reverse-shell", route: "enumeration", anchorId: "revshell-heading",
+    serviceKind: "any",
+    label: "리버스 쉘", detail: "서비스 선택 후 페이지 하단에 표시 · 페이로드와 리스너 준비",
+    category: "Service Enumeration 도구",
+    keywords: ["reverse shell", "reverse-shell", "revshell", "리버스쉘", "역방향 쉘"] },
 ];
 
 export const commandPaletteIndex: CommandPaletteEntry[] = [

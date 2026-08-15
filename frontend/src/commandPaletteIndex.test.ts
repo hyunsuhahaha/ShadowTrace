@@ -36,6 +36,11 @@ it("finds the SQLi reference tab by its English security term, not just its Kore
   expect(results.map((entry) => entry.id)).toContain("web/sqli");
 });
 
+it("finds the reverse-shell panel by its English name", () => {
+  const results = searchCommandPalette("reverse shell");
+  expect(results.map((entry) => entry.id)).toContain("enumeration/reverse-shell");
+});
+
 it("finds the Repeater tab by its Burp-style alias even though the tab itself is labeled Request", () => {
   const results = searchCommandPalette("repeater");
   expect(results.map((entry) => entry.id)).toContain("web/request");
