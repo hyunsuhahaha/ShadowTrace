@@ -7,8 +7,8 @@ import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 import { S } from "./graphStyles";
 import { OutlineView } from "./OutlineView";
-import { AddNodeForm, ElapsedTimer, Empty, NodeQuickMenu, OnboardingPane, Tab, TaskQueue }
-  from "./graphLeaves";
+import { AddNodeForm, BlankCanvasQuickMenu, ElapsedTimer, Empty, NodeQuickMenu, OnboardingPane,
+  Tab, TaskQueue } from "./graphLeaves";
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 import { GraphCanvas } from "./GraphCanvas";
@@ -53,7 +53,8 @@ export default function GraphWorkspace() {
   const [filter, setFilter] = useState<GraphFilter>({ query: "", type: "all",
     status: "all", focusDepth: 0, pinnedOnly: false });
   const [queueOpen, setQueueOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    { id: string | null; x: number; y: number } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [credentialOverlay, setCredentialOverlay] = useState(true);
   const [pathHighlight, setPathHighlight] = useState(false);
@@ -469,6 +470,9 @@ export default function GraphWorkspace() {
       const ref = JSON.parse(selectedNode.source_ref);
       return ref.kind === "target" ? Number(ref.id) : undefined;
     } catch { return undefined; } })() : undefined;
+  // Right-clicking blank canvas has no node of its own to attach a new one
+  // under -- the project root is always there and is a sensible default.
+  const rootNode = data.nodes.find((n) => n.type === "project-root");
 
   return (
     <div style={S.wrap}>
@@ -662,18 +666,26 @@ export default function GraphWorkspace() {
         onSelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
         onStatus={(id, status) => setStatus.mutate({ id, status })}
         onAdd={() => selectedNode && setAddOpen(true)} canAdd={!!selectedNode} />}
-      {replayAt == null && contextMenu && nodeById.get(contextMenu.id) && <NodeQuickMenu
-        node={nodeById.get(contextMenu.id)!} x={contextMenu.x} y={contextMenu.y}
-        onClose={() => setContextMenu(null)}
-        onOpen={() => { setSelected(contextMenu.id); setContextMenu(null); }}
-        onAdd={() => { setSelected(contextMenu.id); setAddOpen(true); setContextMenu(null); }}
-        onPin={() => { const node = nodeById.get(contextMenu.id)!;
-          setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
-        onHide={() => { setHidden.mutate({ id: contextMenu.id, hidden: true }); setContextMenu(null); }}
-        onDelete={() => { const node = nodeById.get(contextMenu.id)!;
-          if (confirm(`「${node.label}」 노드와 연결 관계를 제거할까요?`)) deleteNode.mutate(node.id);
-          setContextMenu(null); }}
-        onStatus={(status) => { setStatus.mutate({ id: contextMenu.id, status }); setContextMenu(null); }} />}
+      {replayAt == null && contextMenu && contextMenu.id && nodeById.get(contextMenu.id) && (() => {
+        const menuNodeId = contextMenu.id;
+        return <NodeQuickMenu
+          node={nodeById.get(menuNodeId)!} x={contextMenu.x} y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onOpen={() => { setSelected(menuNodeId); setContextMenu(null); }}
+          onAdd={() => { setSelected(menuNodeId); setAddOpen(true); setContextMenu(null); }}
+          onPin={() => { const node = nodeById.get(menuNodeId)!;
+            setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
+          onHide={() => { setHidden.mutate({ id: menuNodeId, hidden: true }); setContextMenu(null); }}
+          onDelete={() => { const node = nodeById.get(menuNodeId)!;
+            if (confirm(`「${node.label}」 노드와 연결 관계를 제거할까요?`)) deleteNode.mutate(node.id);
+            setContextMenu(null); }}
+          onStatus={(status) => { setStatus.mutate({ id: menuNodeId, status }); setContextMenu(null); }} />;
+      })()}
+      {replayAt == null && contextMenu && contextMenu.id === null && rootNode && (
+        <BlankCanvasQuickMenu x={contextMenu.x} y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAdd={() => { setSelected(rootNode.id); setAddOpen(true); setContextMenu(null); }} />
+      )}
       {replayAt == null && addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>
           <div style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>

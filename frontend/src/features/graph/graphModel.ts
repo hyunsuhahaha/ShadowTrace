@@ -131,6 +131,24 @@ export function justUnlockedAt(node: Pick<GraphNode, "meta">): string | undefine
   return typeof value === "string" ? value : undefined;
 }
 
+// Ctrl+F inside a file-content preview should search that content, not the
+// whole page (the browser's own find bar is what fires today, confirmed
+// live) -- start indices of every case-insensitive match, in order.
+export function findTextMatches(content: string, query: string): number[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const haystack = content.toLowerCase();
+  const matches: number[] = [];
+  let from = 0;
+  while (true) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) break;
+    matches.push(at);
+    from = at + needle.length;
+  }
+  return matches;
+}
+
 export function nodeStatusReason(node: Pick<GraphNode, "status" | "type" | "meta">): string {
   const meta = nodeMeta(node);
   if (node.type === "technique" && node.status === "in-progress"

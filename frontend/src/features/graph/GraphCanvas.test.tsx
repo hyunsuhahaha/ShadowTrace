@@ -69,6 +69,23 @@ it("mounts and unmounts without throwing on an empty graph", () => {
   unmount();
 });
 
+it("right-clicking blank canvas suppresses the browser menu and reports no node", () => {
+  // Confirmed live: right-clicking anywhere that isn't a node used to do
+  // nothing at all, so the browser's own "이미지를 다른 이름으로 저장…" menu fired
+  // instead of any app affordance -- preventDefault has to run every time,
+  // not only on a hit.
+  const onContext = vi.fn();
+  render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
+    selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} onContext={onContext} />);
+  const canvas = document.querySelector("canvas")!;
+
+  const event = fireEvent.contextMenu(canvas, { clientX: 40, clientY: 60 });
+
+  expect(event).toBe(false);  // fireEvent returns false when preventDefault ran
+  expect(onContext).toHaveBeenCalledWith(null, 40, 60);
+});
+
 it("re-renders when the node set changes without throwing", () => {
   const data: GraphOut = { root_node_id: "root", nodes: [
     { id: "root", type: "project-root", status: "untried", label: "Project",

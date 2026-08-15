@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
-  fileFindingGlyph, filterActivityFeed, filterGraph, formatElapsed,
+  fileFindingGlyph, filterActivityFeed, filterGraph, findTextMatches, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
   isCrackableCredential, isFlagFinding, justUnlockedAt, nodeStatusReason, nodeSummary,
   pathToObjective } from "./graphModel";
@@ -43,6 +43,14 @@ it("reads a node's one-shot unlock timestamp defensively", () => {
   expect(justUnlockedAt({ meta: JSON.stringify({}) })).toBeUndefined();
   expect(justUnlockedAt({ meta: "broken" })).toBeUndefined();
   expect(justUnlockedAt({ meta: undefined })).toBeUndefined();
+});
+
+it("finds every case-insensitive occurrence of a search query in file content", () => {
+  expect(findTextMatches("admin:P@ssw0rd\nADMIN:other", "admin")).toEqual([0, 15]);
+  expect(findTextMatches("nothing here", "zzz")).toEqual([]);
+  expect(findTextMatches("anything", "")).toEqual([]);
+  expect(findTextMatches("anything", "   ")).toEqual([]);
+  expect(findTextMatches("aaa", "aa")).toEqual([0]);  // non-overlapping
 });
 
 it("reads a node's evidence count defensively", () => {

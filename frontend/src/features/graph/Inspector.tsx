@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import { DetachableTerminal } from "../../FloatingTerminal";
@@ -12,8 +12,8 @@ import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
 import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
 import { setPendingGraphFocus } from "../../pendingGraphFocus";
-import { AddForm, color, CredentialHandoff, DeepLink, EXECUTION_STATUS_LABEL, GLYPH, GraphNode,
-  GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
+import { AddForm, color, CredentialHandoff, DeepLink, EXECUTION_STATUS_LABEL, findTextMatches,
+  GLYPH, GraphNode, GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
 import { S } from "./graphStyles";
 import { AddNodeForm } from "./graphLeaves";
@@ -107,6 +107,59 @@ export function Inspector(props: {
     queryFn: () => api<{ content: string; truncated: boolean }>(
       `/evidence/${findingFileEvidenceId}/preview`),
   });
+  const fileContentVisible = findingFileEvidenceId !== undefined && !findingFilePreview.isError;
+  // Confirmed live: opening this file-content panel and pressing Ctrl+F ran
+  // the browser's own whole-page find instead of searching just this text --
+  // intercepted here (only while the panel is actually showing) the same
+  // way apps with their own text views (editors, PDF viewers, ...) usually
+  // do, since a page can't scope the browser's native find to one element.
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [fileSearchIndex, setFileSearchIndex] = useState(0);
+  const fileSearchInputRef = useRef<HTMLInputElement>(null);
+  const fileSearchMatchRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!fileContentVisible) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      setFileSearchOpen(true);
+      requestAnimationFrame(() => fileSearchInputRef.current?.focus());
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fileContentVisible]);
+  useEffect(() => { if (!fileContentVisible) { setFileSearchOpen(false); setFileSearchQuery(""); } },
+    [fileContentVisible]);
+  const fileContent = findingFilePreview.data?.content || "";
+  const fileSearchMatches = fileSearchOpen ? findTextMatches(fileContent, fileSearchQuery) : [];
+  const fileSearchCurrent = fileSearchMatches.length
+    ? ((fileSearchIndex % fileSearchMatches.length) + fileSearchMatches.length)
+      % fileSearchMatches.length : 0;
+  useEffect(() => {
+    // jsdom (tests) has no scrollIntoView at all -- optional-called rather
+    // than typeof-guarded so real browsers (which always have it) take the
+    // exact same code path.
+    fileSearchMatchRef.current?.scrollIntoView?.({ block: "center" });
+  }, [fileSearchCurrent, fileSearchQuery]);
+  const goToFileMatch = (delta: number) => setFileSearchIndex((value) => value + delta);
+  const fileContentNodes = (() => {
+    if (!fileSearchMatches.length) return fileContent;
+    const nodes: (string | JSX.Element)[] = [];
+    let cursor = 0;
+    fileSearchMatches.forEach((start, index) => {
+      if (start > cursor) nodes.push(fileContent.slice(cursor, start));
+      const isCurrent = index === fileSearchCurrent;
+      nodes.push(<mark key={start} ref={isCurrent ? fileSearchMatchRef : undefined}
+        style={{ background: isCurrent ? "#f5c518" : "#5a4a1a",
+          color: isCurrent ? "#0c0c10" : "#e7e7ee" }}>
+        {fileContent.slice(start, start + fileSearchQuery.trim().length)}
+      </mark>);
+      cursor = start + fileSearchQuery.trim().length;
+    });
+    if (cursor < fileContent.length) nodes.push(fileContent.slice(cursor));
+    return nodes;
+  })();
   const executionOutput = useQuery({
     queryKey: ["executionOutput", executionId],
     enabled: executionId !== null,
@@ -251,7 +304,10 @@ export function Inspector(props: {
   // is the only place a cracked-via-zip2john password has anywhere to go
   // back into once Hash Cracking has it.
   const [archivePassword, setArchivePassword] = useState("");
-  useEffect(() => { setOpenArchiveId(null); setArchiveMessage(""); setArchivePassword(""); }, [n?.id]);
+  useEffect(() => {
+    setOpenArchiveId(null); setArchiveMessage(""); setArchivePassword("");
+    setFileSearchOpen(false); setFileSearchQuery("");
+  }, [n?.id]);
   const extractEntry = async (evidenceId: number, entryName: string) => {
     setArchiveMessage("");
     try {
@@ -761,16 +817,36 @@ export function Inspector(props: {
           rather than surface that as a scary error, the whole section just
           doesn't render for them (same "no inline preview" outcome the
           comment below already documents for those kinds). */}
-      {findingFileEvidenceId !== undefined && !findingFilePreview.isError
+      {fileContentVisible
         && <section style={S.executionResults} aria-label="발견된 파일 내용">
         <div style={S.executionResultsHead}>
           <strong>파일 내용</strong>
           {findingFilePreview.data?.truncated && <span style={{ color: "#e3b341" }}>일부만 표시됨</span>}
         </div>
+        {fileSearchOpen && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+            borderBottom: "1px solid #2a2a34", background: "#0e0e12" }}>
+            <input ref={fileSearchInputRef} value={fileSearchQuery} placeholder="파일 내용 검색"
+              onChange={(event) => { setFileSearchQuery(event.target.value); setFileSearchIndex(0); }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") { setFileSearchOpen(false); event.stopPropagation(); }
+                else if (event.key === "Enter") { goToFileMatch(event.shiftKey ? -1 : 1); event.preventDefault(); }
+              }}
+              style={{ ...S.field, flex: 1 }} />
+            <span style={{ fontSize: 10, color: "#8a8a96", whiteSpace: "nowrap" }}>
+              {fileSearchMatches.length ? `${fileSearchCurrent + 1}/${fileSearchMatches.length}` : "0/0"}
+            </span>
+            <button style={S.rowAction} disabled={!fileSearchMatches.length}
+              onClick={() => goToFileMatch(-1)}>↑</button>
+            <button style={S.rowAction} disabled={!fileSearchMatches.length}
+              onClick={() => goToFileMatch(1)}>↓</button>
+            <button style={S.rowAction} onClick={() => setFileSearchOpen(false)}>✕</button>
+          </div>
+        )}
         <div style={S.terminalBody}>
           {findingQuery.isLoading || findingFilePreview.isLoading
             ? <div style={S.resultMessage}>파일 내용 불러오는 중…</div>
-            : <pre style={S.terminalOutput}>{findingFilePreview.data?.content || "(빈 파일)"}</pre>}
+            : <pre style={S.terminalOutput}>{fileContentNodes.length !== 0 ? fileContentNodes : "(빈 파일)"}</pre>}
         </div>
       </section>}
       {/* Zip, pcap, pdf, ... never get an inline preview -- Evidence 레일도

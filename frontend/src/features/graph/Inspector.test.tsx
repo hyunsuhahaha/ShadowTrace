@@ -566,6 +566,41 @@ it("hands a password-protected zip straight to Hash Cracking instead of leaving 
   }));
 });
 
+it("shows an extracted text file's content and searches within it instead of the whole page on Ctrl+F", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
+      evidence: [{ id: 15, evidence_id: 124, title: "압축 해제: index.php",
+        kind: "attachment", is_primary: true }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/preview")) return Promise.resolve(new Response(JSON.stringify({
+      content: "admin:hunter2\nguest:guest\nadmin:hunter2again", truncated: false,
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "finding-11", type: "finding", status: "untried", objective: false, hidden: false,
+      label: "압축 해제: index.php",
+      source_ref: JSON.stringify({ module: "findings", kind: "finding", id: 11 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("guest:guest", { exact: false })).toBeTruthy();
+  expect(screen.queryByPlaceholderText("파일 내용 검색")).toBeNull();
+
+  fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+
+  const searchInput = await screen.findByPlaceholderText("파일 내용 검색");
+  fireEvent.change(searchInput, { target: { value: "admin" } });
+  expect(await screen.findByText("1/2")).toBeTruthy();
+
+  fireEvent.keyDown(searchInput, { key: "Escape" });
+  expect(screen.queryByPlaceholderText("파일 내용 검색")).toBeNull();
+});
+
 it("summarizes a service-version identification instead of leaving the operator to parse raw nmap stdout", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const url = String(input);

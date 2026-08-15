@@ -78,6 +78,25 @@ export function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; on
 }
 
 
+// Right-clicking blank canvas (no node under the cursor) still deserves a
+// menu instead of falling through to the browser's own -- just the one
+// action that makes sense with no specific node to act on.
+export function BlankCanvasQuickMenu(props: { x: number; y: number;
+  onClose: () => void; onAdd: () => void }) {
+  return <div style={S.quickMenuBackdrop} onPointerDown={props.onClose}>
+    <menu aria-label="캔버스 작업" style={{ ...S.quickMenu,
+      left: Math.max(8, Math.min(props.x, window.innerWidth - 244)),
+      top: Math.max(8, Math.min(props.y, window.innerHeight - 340)) }}
+      onPointerDown={(e) => e.stopPropagation()}>
+      <div style={S.quickMenuGroup}>
+        <button style={S.quickMenuItem} onClick={props.onAdd}>
+          <span aria-hidden="true" style={S.quickMenuIcon}>+</span><span>노드 추가</span>
+        </button>
+      </div>
+    </menu>
+  </div>;
+}
+
 export function AddNodeForm(props: {
   source: GraphNode; busy: boolean;
   onCancel: () => void; onSubmit: (v: AddForm) => void;

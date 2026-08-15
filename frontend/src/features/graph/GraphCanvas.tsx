@@ -12,7 +12,10 @@ export function GraphCanvas(props: {
   selected: string | null; onSelect: (id: string) => void;
   focus: { id: string; nonce: number } | null;
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
-  onContext: (id: string, x: number, y: number) => void;
+  // null id -- the right-click landed on blank canvas, not a node -- still
+  // gets a callback (with the browser's own menu suppressed either way) so
+  // the caller can offer a "여기에 노드 추가" affordance instead of nothing.
+  onContext: (id: string | null, x: number, y: number) => void;
   objectivePath?: ObjectivePath | null;
   onDropFile?: (payload: FileDragPayload) => void;
   dropFileBusy?: boolean;
@@ -655,9 +658,14 @@ export function GraphCanvas(props: {
       if (n) props.onSelect(n.id);
     };
     const onContext = (ev: MouseEvent) => {
+      // Confirmed live: right-clicking blank canvas used to fall straight
+      // through to the browser's own "이미지를 다른 이름으로 저장…" menu (the
+      // canvas is just a raster surface to the browser) since this handler
+      // did nothing at all on a miss -- preventDefault has to run
+      // unconditionally, not only when a node was actually hit.
+      ev.preventDefault();
       const p = toWorld(ev), n = nodeAt(p.x, p.y);
-      if (!n) return;
-      ev.preventDefault(); props.onContext(n.id, ev.clientX, ev.clientY);
+      props.onContext(n ? n.id : null, ev.clientX, ev.clientY);
     };
     // Zoom about a screen point (sx,sy), keeping the world point under it fixed.
     const zoomAt = (factor: number, sx: number, sy: number) => {
