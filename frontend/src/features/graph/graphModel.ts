@@ -36,7 +36,7 @@ export type CredentialHandoff = {
   graph_node_id?: string;
 };
 export type NodeActivity = {
-  kind: "scan" | "execution" | "listener" | "crack";
+  kind: "scan" | "execution" | "listener" | "crack" | "shell";
   status: "queued" | "running" | "processing" | "launched";
   label: string; startedAt?: string | null;
 };
@@ -213,7 +213,7 @@ export function buildActivityFeed(data: GraphOut): ActivityItem[] {
     const activity = getNodeActivity(node);
     return activity?.startedAt ? [{ nodeId: node.id, at: activity.startedAt,
       text: `${activity.label} ${activity.kind === "listener" ? "listening"
-        : activity.status === "launched" ? "connected" : "started"}`,
+        : activity.kind === "shell" ? "connected" : "started"}`,
       kind: "live" as const, status: "in-progress", reason: "실행 중" }] : [];
   });
   const activeIds = new Set(active.map((item) => item.nodeId));
@@ -271,7 +271,7 @@ export function getNodeActivity(node: Pick<GraphNode, "meta">): NodeActivity | n
   if (!node.meta) return null;
   try {
     const value = JSON.parse(node.meta).activity;
-    if (!value || !["scan", "execution", "listener", "crack"].includes(value.kind)
+    if (!value || !["scan", "execution", "listener", "crack", "shell"].includes(value.kind)
       || !["queued", "running", "processing", "launched"].includes(value.status)) return null;
     return { kind: value.kind, status: value.status,
       label: typeof value.label === "string" ? value.label : "TASK",

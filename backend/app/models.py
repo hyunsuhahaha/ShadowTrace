@@ -73,6 +73,12 @@ class Execution(Base):
     # should be parented under instead of sync_from_project()'s default
     # host/service fallback.
     graph_parent_node_id: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    # Set for an execution whose own result is already rendered inline on
+    # another node's Inspector (e.g. the ftp-directory-tree crawl auto-fired
+    # alongside an ftp-client session -- see _auto_run_ftp_tree) so
+    # sync_from_project() doesn't also give it a redundant graph node of
+    # its own sitting right next to the node that already shows it.
+    graph_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"

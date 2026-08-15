@@ -407,6 +407,44 @@ def test_execution_parents_under_the_finding_it_was_run_to_follow_up_on():
     assert ("attempted", host.id, tech.id) not in relations
 
 
+def test_graph_hidden_execution_gets_no_node_of_its_own():
+    # ftp-directory-tree auto-fired alongside an ftp-client session already
+    # renders inline on that session's own Inspector -- a second graph node
+    # for the same crawl would just sit next to it showing nothing new.
+    from app.models import Execution, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.28")
+    db.add(t); db.flush()
+    db.add(Execution(target_id=t.id, template_id="ftp-directory-tree",
+                     command="python -m app.ftp_tree ...", cwd="/tmp", status="completed",
+                     graph_hidden=True))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+
+def test_execution_node_is_pruned_once_it_turns_graph_hidden():
+    from app.models import Execution, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.29")
+    db.add(t); db.flush()
+    ex = Execution(target_id=t.id, template_id="ftp-directory-tree",
+                   command="python -m app.ftp_tree ...", cwd="/tmp", status="completed")
+    db.add(ex); db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphNode).filter_by(type="technique").count() == 1
+
+    ex.graph_hidden = True
+    db.flush()
+    service.sync_from_project(db, p.id)
+
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+
 def test_execution_falls_back_to_host_when_the_explicit_parent_is_a_credential():
     from app.models import Credential, Execution, Target
     db = database()

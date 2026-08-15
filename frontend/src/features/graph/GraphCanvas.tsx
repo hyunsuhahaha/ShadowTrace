@@ -99,9 +99,10 @@ export function GraphCanvas(props: {
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Four activity languages, one per meaning: green = actively searching
     // (scan output still streaming, outcome unknown), red = armed and
-    // waiting on something external (Responder), blue = already connected
-    // and settled (reuses the app's existing anchor/selection blue rather
-    // than inventing a hue), violet = hashcat grinding a wordlist -- distinct
+    // waiting on something external (Responder), blue = an interactive
+    // shell attached and settled -- any InteractiveSession, floating PTY or
+    // desktop (reuses the app's existing anchor/selection blue rather than
+    // inventing a hue), violet = hashcat grinding a wordlist -- distinct
     // from the other three so it doesn't read as "just another scan."
     const signal = "#59f59a";
     const listenerSignal = "#ff4d67";
@@ -113,7 +114,12 @@ export function GraphCanvas(props: {
     };
     const signalKindOf = (a: NodeActivity | null): SignalKind | null => !a ? null
       : a.kind === "listener" ? "listener" : a.kind === "crack" ? "crack"
-      : a.status === "launched" ? "connected" : "scan";
+      // A live shell reads as settled/attached, not still searching --
+      // every InteractiveSession activity is kind:"shell" regardless of
+      // whether it's a floating PTY ("running") or a desktop launch
+      // ("launched"), so both get the same calm breathing-ring treatment
+      // instead of only "launched" qualifying before.
+      : a.kind === "shell" ? "connected" : "scan";
     const signalHex = (kind: SignalKind) =>
       kind === "listener" ? listenerSignal : kind === "connected" ? connectedSignal
       : kind === "crack" ? crackSignal : signal;

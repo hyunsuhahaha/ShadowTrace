@@ -172,6 +172,9 @@ class ArchiveExtractIn(BaseModel):
     # a zip-slip entry ("../../etc/passwd") can't escape anywhere.
     entry: str = Field(min_length=1, max_length=4096)
     graph_node_id: str | None = Field(default=None, max_length=40)
+    # A cracked-and-promoted password has nowhere else to go back into --
+    # zipfile.ZipFile.read() takes it straight as bytes, no re-upload needed.
+    password: str = Field(default="", max_length=200)
 
 class InteractiveSessionOut(ORM):
     id: int; target_id: int; service_id: int | None; template_id: str

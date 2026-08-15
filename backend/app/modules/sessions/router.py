@@ -257,7 +257,12 @@ async def _auto_run_ftp_tree(
             return
         row = Execution(target_id=target.id, service_id=service.id,
                          template_id=item["id"], command=command, cwd=str(target_dir),
-                         status="queued", graph_parent_node_id=graph_parent_node_id)
+                         status="queued", graph_parent_node_id=graph_parent_node_id,
+                         # Inspector already renders this crawl's result inline
+                         # on the ftp-client session node that triggered it --
+                         # a second graph node for the same tree would just sit
+                         # next to it showing nothing new.
+                         graph_hidden=True)
         db.add(row); db.commit(); db.refresh(row)
         output = _output_path(output_dir, "", item["id"])
         execution_id = row.id

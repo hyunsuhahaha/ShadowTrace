@@ -1,7 +1,8 @@
+import asyncio
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from pydantic import ValidationError
 
@@ -537,6 +538,40 @@ def test_ftp_client_auto_tree_is_not_queued_twice_for_the_same_target_and_servic
         variables={}), background_tasks=background_tasks, db=db)
 
     assert len(background_tasks.tasks) == 0
+
+
+def test_auto_ftp_tree_execution_is_flagged_graph_hidden(tmp_path, monkeypatch):
+    # Inspector already renders this crawl's result inline on the ftp-client
+    # session node that triggered it -- a second graph node for the same
+    # tree would just sit next to it showing nothing new (see
+    # test_graph_hidden_execution_gets_no_node_of_its_own in
+    # test_graph_service.py for the sync-side half of this).
+    engine = create_engine(f"sqlite:///{tmp_path / 'sessions.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(sessions_router, "SessionLocal", factory)
+    monkeypatch.setattr(sessions_router, "WORKSPACE_DIR", tmp_path)
+
+    async def fake_run_execution(*args, **kwargs):
+        return None
+    monkeypatch.setattr(sessions_router, "run_execution", fake_run_execution)
+
+    with factory() as db:
+        project = Project(name="Lab", description="")
+        db.add(project); db.flush()
+        box = Target(project_id=project.id, name="Box", ip="10.10.10.61")
+        db.add(box); db.flush()
+        service = Service(target_id=box.id, port=21, protocol="tcp", state="open",
+                           name="ftp", product="", version="", extra_info="",
+                           scripts="{}", notes="", tags="[]")
+        db.add(service); db.commit()
+        box_id, service_id = box.id, service.id
+
+    asyncio.run(sessions_router._auto_run_ftp_tree(box_id, service_id))
+
+    with factory() as db:
+        row = db.query(Execution).filter_by(template_id="ftp-directory-tree").one()
+        assert row.graph_hidden is True
 
 
 def test_desktop_launch_of_ftp_client_does_not_queue_a_second_directory_tree(

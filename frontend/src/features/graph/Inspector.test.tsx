@@ -448,7 +448,7 @@ it("lets a zip's own contents become graph nodes instead of only offering a raw 
       entries: [{ name: "creds.txt", size: 512, encrypted: false }],
     }), { headers: { "Content-Type": "application/json" } }));
     if (url.endsWith("/api/evidence/124/extract") && init?.method === "POST") {
-      expect(JSON.parse(init.body as string)).toEqual({ entry: "creds.txt" });
+      expect(JSON.parse(init.body as string)).toEqual({ entry: "creds.txt", password: "" });
       return Promise.resolve(new Response(JSON.stringify({ finding_id: 40, evidence_id: 200 }), {
         status: 201, headers: { "Content-Type": "application/json" },
       }));
@@ -475,8 +475,11 @@ it("lets a zip's own contents become graph nodes instead of only offering a raw 
   expect(await screen.findByText("추가됨")).toBeTruthy();
 });
 
-it("marks a password-protected archive member as needing a crack first, disabled rather than clickable", async () => {
-  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+it("lets a cracked password unlock a password-protected archive member", async () => {
+  // Confirmed live: a plaintext recovered via Hash Cracking's zip2john flow
+  // used to have nowhere to go back into -- the entry just stayed stuck on
+  // "암호 필요" forever with no input for the password that was already known.
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/api/findings/11")) return Promise.resolve(new Response(JSON.stringify({
       evidence: [{ id: 15, evidence_id: 124, title: "파일 다운로드: protected.zip",
@@ -485,8 +488,16 @@ it("marks a password-protected archive member as needing a crack first, disabled
     if (url.endsWith("/api/evidence/124/archive")) return Promise.resolve(new Response(JSON.stringify({
       entries: [{ name: "secret.txt", size: 12, encrypted: true }],
     }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/evidence/124/extract") && init?.method === "POST") {
+      expect(JSON.parse(init.body as string)).toEqual(
+        { entry: "secret.txt", password: "hunter2" });
+      return Promise.resolve(new Response(JSON.stringify({ finding_id: 40, evidence_id: 200 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
     throw new Error(`Unhandled request: ${url}`);
-  }));
+  });
+  vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(<QueryClientProvider client={client}>
@@ -498,9 +509,17 @@ it("marks a password-protected archive member as needing a crack first, disabled
   </QueryClientProvider>);
 
   fireEvent.click(await screen.findByText("압축 해제"));
+  const button = await screen.findByText("암호로 해제");
+  expect((button as HTMLButtonElement).disabled).toBe(false);
 
-  const button = await screen.findByText("암호 필요");
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(await screen.findByPlaceholderText("크랙한 암호 (암호로 보호된 항목 해제용)"),
+    { target: { value: "hunter2" } });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+    "/api/evidence/124/extract", expect.objectContaining({ method: "POST" }),
+  ));
+  expect(await screen.findByText("추가됨")).toBeTruthy();
 });
 
 it("hands a password-protected zip straight to Hash Cracking instead of leaving the operator stuck", async () => {

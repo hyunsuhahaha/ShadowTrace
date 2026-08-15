@@ -400,7 +400,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         elif isinstance(row, (Service, Execution, InteractiveSession)):
             target = db.get(Target, row.target_id)
             owner_id = target.project_id if target else None
-        if model is not None and (row is None or owner_id != project_id):
+        stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
+        if model is not None and (row is None or owner_id != project_id or stale_hidden):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
             ).delete(synchronize_session=False)
@@ -634,6 +635,12 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 select(Execution).where(Execution.target_id.in_(target_ids))):
             if ("execution", ex.id) in dismissed:
                 continue
+            if ex.graph_hidden:
+                # Already shown inline on the node that triggered it (e.g. an
+                # ftp-client session's own auto-fetched file tree) -- see the
+                # orphan-healing pass above for a row that flips this on
+                # after it already got a node.
+                continue
             # A command run to follow up on a specific finding belongs
             # under that finding, not the generic host/service placement --
             # "attempted" only permits finding/service/host as a source (see
@@ -702,7 +709,11 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if live_status == "launched" and not _pid_alive(sess.pid):
                 live_status = "closed"
             activity = _runtime_activity(
-                "listener" if sess.template_id == "responder-listener" else "execution",
+                # A live shell reads as "attached", not "still searching" --
+                # the canvas gives kind="shell" the same calm breathing-ring
+                # treatment a settled desktop session used to get alone,
+                # never the scan sweep (GraphCanvas.tsx's signalKindOf).
+                "listener" if sess.template_id == "responder-listener" else "shell",
                 live_status, "RESPONDER" if sess.template_id == "responder-listener"
                 else sess.template_id or "SESSION", sess.started_at)
             existing = index.get(("session", sess.id))

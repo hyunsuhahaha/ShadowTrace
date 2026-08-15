@@ -73,6 +73,9 @@ it("parses only live graph activity metadata", () => {
   expect(getNodeActivity({ meta: JSON.stringify({ activity: {
     kind: "crack", status: "running", label: "NTLM",
   } }) })?.kind).toBe("crack");
+  expect(getNodeActivity({ meta: JSON.stringify({ activity: {
+    kind: "shell", status: "running", label: "ftp-client",
+  } }) })?.kind).toBe("shell");
 });
 
 it("routes hash credentials to cracking instead of post-exploitation", () => {

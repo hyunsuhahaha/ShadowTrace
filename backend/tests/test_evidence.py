@@ -236,6 +236,47 @@ def test_extract_archive_entry_sends_a_password_protected_member_to_hash_crackin
     assert "zip2john" in exc.value.detail
 
 
+def test_extract_archive_entry_unlocks_a_member_once_the_cracked_password_is_given(
+        tmp_path, monkeypatch):
+    # The whole point of zip2john/Hash Cracking recovering the password is to
+    # come back and actually read the file -- confirmed live there was
+    # previously nowhere to put a cracked password back in at all.
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    row = _protected_zip_evidence(db, project, target, tmp_path)
+
+    result = extract_archive_entry(
+        row.id, ArchiveExtractIn(entry="secret.txt", password="hunter2"), db=db)
+
+    evidence = db.get(Evidence, result["evidence_id"])
+    from pathlib import Path as _Path
+    assert _Path(evidence.file_path).read_bytes() == b"root:hunter2"
+
+
+def test_extract_archive_entry_reports_a_wrong_password_distinctly_from_no_password(
+        tmp_path, monkeypatch):
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    row = _protected_zip_evidence(db, project, target, tmp_path)
+
+    with pytest.raises(HTTPException) as exc:
+        extract_archive_entry(
+            row.id, ArchiveExtractIn(entry="secret.txt", password="wrong"), db=db)
+    assert exc.value.status_code == 422
+    assert "zip2john" not in exc.value.detail
+    assert "올바르지 않습니다" in exc.value.detail
+
+
 def test_evidence_zip2john_hands_the_archive_straight_to_hash_cracking_without_a_re_upload(
         tmp_path, monkeypatch):
     # No "download it, then re-upload the same file to Hash Cracking" round

@@ -242,13 +242,18 @@ export function Inspector(props: {
   });
   const [extractedEntries, setExtractedEntries] = useState<Set<string>>(new Set());
   const [archiveMessage, setArchiveMessage] = useState("");
-  useEffect(() => { setOpenArchiveId(null); setArchiveMessage(""); }, [n?.id]);
+  // One password field for the whole open archive (not per-entry) -- a zip's
+  // encrypted members normally all share the same password anyway, and this
+  // is the only place a cracked-via-zip2john password has anywhere to go
+  // back into once Hash Cracking has it.
+  const [archivePassword, setArchivePassword] = useState("");
+  useEffect(() => { setOpenArchiveId(null); setArchiveMessage(""); setArchivePassword(""); }, [n?.id]);
   const extractEntry = async (evidenceId: number, entryName: string) => {
     setArchiveMessage("");
     try {
       await api(`/evidence/${evidenceId}/extract`, {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({entry: entryName}),
+        body: JSON.stringify({entry: entryName, password: archivePassword}),
       });
       setExtractedEntries((current) => new Set(current).add(`${evidenceId}:${entryName}`));
       setArchiveMessage(`${entryName} 그래프에 남겼습니다`);
@@ -783,6 +788,7 @@ export function Inspector(props: {
                       {isZip && <button style={S.resultAction}
                         onClick={() => {
                           setArchiveMessage("");
+                          setArchivePassword("");
                           setOpenArchiveId(archiveOpen ? null : item.evidence_id);
                         }}>
                         {archiveOpen ? "압축 목록 닫기" : "압축 해제"}
@@ -797,11 +803,17 @@ export function Inspector(props: {
                     <div style={S.netexecTree}>
                       {archiveMessage && <div style={S.resultNotice}>{archiveMessage}</div>}
                       {!!archiveQuery.data?.entries.some((entry) => entry.encrypted) && (
-                        <div style={{ padding: "9px 12px" }}>
+                        <div style={{ padding: "9px 12px", display: "flex",
+                          flexDirection: "column", gap: 8 }}>
                           <button style={S.resultAction} disabled={zip2johnBusy}
                             onClick={() => void sendToHashCracking(item.evidence_id)}>
                             {zip2johnBusy ? "zip2john 실행 중…" : "🔓 Hash Cracking으로 보내기 (zip2john)"}
                           </button>
+                          <input type="password" placeholder="크랙한 암호 (암호로 보호된 항목 해제용)"
+                            value={archivePassword}
+                            onChange={(event) => setArchivePassword(event.target.value)}
+                            style={{ border: "1px solid #2a2a34", borderRadius: 6, padding: "5px 8px",
+                              background: "#0e0e12", color: "#e7e7ee", fontSize: 11 }} />
                         </div>
                       )}
                       {archiveQuery.isLoading ? (
@@ -824,11 +836,11 @@ export function Inspector(props: {
                             }}>
                             <code style={S.linkCode}>{entry.encrypted && "🔒 "}{entry.name}</code>
                             <span style={S.linkKind}>{(entry.size / 1024).toFixed(1)} KB</span>
-                            <button style={S.rowAction} disabled={done || entry.encrypted}
-                              title={entry.encrypted
-                                ? "암호로 보호됨 -- Hash Cracking의 zip2john으로 먼저 크랙하세요" : undefined}
+                            <button style={S.rowAction} disabled={done}
+                              title={entry.encrypted && !archivePassword
+                                ? "암호로 보호됨 -- 위에 크랙한 암호를 입력하세요" : undefined}
                               onClick={() => void extractEntry(item.evidence_id, entry.name)}>
-                              {done ? "추가됨" : entry.encrypted ? "암호 필요" : "노드로 추가"}
+                              {done ? "추가됨" : entry.encrypted ? "암호로 해제" : "노드로 추가"}
                             </button>
                           </div>
                         );

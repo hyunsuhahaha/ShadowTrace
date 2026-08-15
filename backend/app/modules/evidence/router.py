@@ -236,18 +236,21 @@ def extract_archive_entry(ident: int, body: ArchiveExtractIn, db: Session = Depe
         if info.file_size > MAX_FILE:
             raise HTTPException(413, "Archive entry is too large to extract")
         try:
-            content = archive.read(info)
+            content = archive.read(
+                info, pwd=body.password.encode() if body.password else None)
         except RuntimeError as exc:
             # zipfile raises a bare RuntimeError (no dedicated exception
             # type) for both "wrong/missing password" and "no password
-            # given" -- either way this app has no password to try itself,
-            # so hand the operator to the tool that already exists for this
-            # (HashCrackingWorkspace's zip2john upload) instead of guessing.
+            # given". A blank body.password means the operator hasn't tried
+            # one yet -- point at Hash Cracking; a non-blank one means the
+            # password they gave was wrong, not that none exists.
             if "password" not in str(exc).lower():
                 raise
-            raise HTTPException(
-                422, "이 항목은 암호로 보호되어 있습니다. Hash Cracking에서 "
-                "zip 원본을 zip2john으로 크랙한 뒤 다시 시도하세요.") from None
+            if not body.password:
+                raise HTTPException(
+                    422, "이 항목은 암호로 보호되어 있습니다. Hash Cracking에서 "
+                    "zip 원본을 zip2john으로 크랙한 뒤 암호를 입력하세요.") from None
+            raise HTTPException(422, "입력한 암호가 올바르지 않습니다.") from None
     entry_name = Path(info.filename.replace("\\", "/")).name or info.filename
     output_path = path.parent / f"extracted-{secrets.token_hex(6)}-{safe_part(entry_name)}"
     output_path.write_bytes(content)
