@@ -4,6 +4,7 @@ import {
   type CommandPaletteEntry, type ServiceSummary, type TargetSummary,
 } from "./commandPaletteIndex";
 import { setPendingServiceNav } from "./pendingServiceNav";
+import { revealAnchor } from "./anchorUtils";
 import "./command-palette.css";
 
 type ServiceOption = { service: ServiceSummary; target?: TargetSummary };
@@ -81,6 +82,7 @@ export default function CommandPalette({
       window.setTimeout(() => {
         const anchor = document.getElementById(anchorId);
         if (anchor) {
+          revealAnchor(anchor);
           anchor.scrollIntoView({ behavior: "smooth", block: "start" });
           onClose();
           return;

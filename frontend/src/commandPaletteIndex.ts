@@ -112,8 +112,12 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
     serviceKind: "any",
     label: "리버스 쉘", detail: "서비스 선택 후 페이지 하단에 표시 · 페이로드와 리스너 준비",
     category: "Service Enumeration 도구",
-    keywords: ["reverse shell", "reverse-shell", "revshell", "리버스쉘", "역방향 쉘",
-      "tty", "pty", "쉘 안정화", "shell stabilize", "stty", "pty.spawn"] },
+    keywords: ["reverse shell", "reverse-shell", "revshell", "리버스쉘", "역방향 쉘"] },
+  { id: "enumeration/reverse-shell-stabilize", route: "enumeration", anchorId: "revshell-stabilize",
+    serviceKind: "any",
+    label: "쉘 안정화 (TTY 업그레이드)", detail: "리버스 쉘 하단 · pty.spawn, stty raw로 풀 TTY 만들기",
+    category: "Service Enumeration 도구",
+    keywords: ["tty", "pty", "pty.spawn", "shell stabilize", "stty raw", "stty", "쉘 안정화", "tty upgrade", "풀 tty"] },
 ];
 
 export const commandPaletteIndex: CommandPaletteEntry[] = [

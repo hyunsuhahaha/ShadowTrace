@@ -79,10 +79,12 @@ import {useEnumerationQueries} from "./useEnumerationQueries";
 import {consumePendingServiceNav, type PendingServiceNav} from "./pendingServiceNav";
 import {focusInGraph} from "./pendingGraphFocus";
 import type {GraphRequestDraft} from "./features/graph/graphModel";
+import {revealAnchor} from "./anchorUtils";
 
 const scrollToAnchorSoon = (anchorId: string, attemptsLeft = 10) => {
   const anchor = document.getElementById(anchorId);
   if (anchor) {
+    revealAnchor(anchor);
     anchor.scrollIntoView({behavior: "smooth", block: "start"});
     return;
   }

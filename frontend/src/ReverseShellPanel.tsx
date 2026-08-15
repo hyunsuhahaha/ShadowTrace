@@ -96,8 +96,8 @@ export default function ReverseShellPanel({ onStartListener }: {
           업로드용 파일로 다운로드
         </button>
       </div>
-      <details className="revshellStabilize">
-        <summary>쉘 안정화 (Ctrl+C에도 안 죽게, 탭 완성·job control 살리기)</summary>
+      <details className="revshellStabilize" id="revshell-stabilize">
+        <summary>쉘 안정화 (TTY 업그레이드, Ctrl+C에도 안 죽게, 탭 완성·job control 살리기)</summary>
         <code className="revshellPayload">{STABILIZE_STEPS.join("\n")}</code>
       </details>
     </section>

@@ -722,7 +722,10 @@ API: `/projects`(POST), `/projects/{id}/graph`, `/projects/{id}/graph/sync`(POST
 `VpnControl.tsx`, `CommandPalette.tsx`, `MetasploitLock.tsx` 포함), `CommandPalette.tsx`
 (Ctrl-K 전역 팔레트, `commandPaletteIndex.ts`로 인덱싱), `MetasploitLock.tsx`(단일 대상
 Metasploit 잠금 배너), `ui.tsx`(Badge/Button/Card/EmptyState/ErrorState/LoadingState/
-PageHeader/statusCopy), `api.ts`(fetch 래퍼), `main.tsx`(Vite entry).
+PageHeader/statusCopy), `api.ts`(fetch 래퍼), `main.tsx`(Vite entry), `anchorUtils.ts`
+(`revealAnchor()` — Ctrl-K/딥링크 앵커가 접힌 `<details>` 안에 있을 때 조상 `<details>`를
+강제로 열어서 스크롤 대상이 실제로 보이게 함; `App.tsx`의 `scrollToAnchorSoon`과
+`CommandPalette.tsx`의 `activate()` 양쪽에서 앵커로 스크롤하기 직전에 호출).
 
 `ServiceIntelligencePanel.tsx`는 이전 서비스 조사 카드 UI의 회귀 테스트를 위해 남겨 둔
 legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 않는다. 기본 서비스
