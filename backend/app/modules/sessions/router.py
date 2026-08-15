@@ -214,7 +214,13 @@ def create_manual_terminal(
 async def interactive_session_socket(websocket: WebSocket, ident: int):
     with SessionLocal() as db:
         row = db.get(InteractiveSession, ident)
-        if not row or row.status != "ready":
+        # "running" is allowed too: pty_manager now tolerates a reconnect
+        # within a grace window instead of killing the process the instant a
+        # socket disconnects (e.g. a docked terminal panel getting dragged to
+        # detach remounts the component that owns the socket), and that
+        # reconnect is exactly a second request to this same endpoint while
+        # the row is already "running".
+        if not row or row.status not in ("ready", "running"):
             # uvicorn's websockets implementation only sends a real WS close
             # frame after accept() -- closing beforehand gets downgraded to a
             # bare HTTP 403, which browsers surface as a generic 1006
