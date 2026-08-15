@@ -683,48 +683,33 @@ def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
                    for relation, _, target in relations)
 
 
-@pytest.mark.parametrize("command", [
-    "nc -lvnp 4444",
-    "nc -nvlp 4444",
-    "sudo nc -lvnp 443",
-    "ncat -lvp 4444",
-    "nc --listen -p 4444",
-])
-def test_is_listener_command_recognizes_listen_flags(command):
-    assert service._is_listener_command(command) is True
-
-
-@pytest.mark.parametrize("command", [
-    "nc 10.0.0.1 4444",
-    "bash --noprofile --norc",
-    "impacket-psexec admin:pass@10.0.0.1",
-    "not valid \"shell",
-])
-def test_is_listener_command_rejects_non_listeners(command):
-    assert service._is_listener_command(command) is False
-
-
-def test_listener_connected_reads_the_sessions_own_log(tmp_path):
+def test_listener_log_state_reads_the_sessions_own_log(tmp_path):
     armed = tmp_path / "armed.log"
     armed.write_text("listening on [any] 4444 ...\n")
-    assert service._listener_connected(str(armed)) is False
+    assert service._listener_log_state(str(armed)) == "armed"
 
     connected = tmp_path / "connected.log"
     connected.write_text(
         "listening on [any] 4444 ...\nconnect to [1.2.3.4] from (UNKNOWN) [5.6.7.8] 1111\n")
-    assert service._listener_connected(str(connected)) is True
+    assert service._listener_log_state(str(connected)) == "connected"
 
-    assert service._listener_connected("") is False
-    assert service._listener_connected(str(tmp_path / "missing.log")) is False
+    unrelated = tmp_path / "unrelated.log"
+    unrelated.write_text("Microsoft Windows [Version 10.0.19045.1234]\n")
+    assert service._listener_log_state(str(unrelated)) is None
+
+    assert service._listener_log_state("") is None
+    assert service._listener_log_state(str(tmp_path / "missing.log")) is None
 
 
 def test_sync_reads_manual_nc_listener_as_armed_until_the_log_shows_a_connection(
         monkeypatch, tmp_path):
-    # A manual session's template_id is always "manual-shell" regardless of
-    # what command was actually run, and pty_manager marks it "launched" the
-    # instant the *local* nc process spawns -- long before any remote client
-    # connects. Without reading the nc listener's own log for its connection
-    # line, this always looked identical to an attached shell (kind="shell").
+    # openManualShell/openListenerShell (App.tsx) always create the session
+    # with no command in the request, then type the real "nc -lvnp ..."
+    # command into the resulting bash shell as PTY input -- so the session's
+    # own `command` column stays "/bin/bash --noprofile --norc" forever and
+    # can't be used to recognize a listener. Only the PTY log (which captures
+    # nc's own stdout regardless of how nc was launched) can tell "armed" from
+    # "connected".
     import os
     from app.models import InteractiveSession, Target
 
@@ -737,7 +722,7 @@ def test_sync_reads_manual_nc_listener_as_armed_until_the_log_shows_a_connection
     log = tmp_path / "session_1.log"
     log.write_text("listening on [any] 4444 ...\n")
     db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
-                              command="nc -lvnp 4444", cwd="/tmp",
+                              command="/bin/bash --noprofile --norc", cwd="/tmp",
                               status="launched", pid=os.getpid(), log_path=str(log)))
     db.flush()
 
@@ -761,7 +746,7 @@ def test_sync_reads_a_non_listener_manual_session_as_a_shell_immediately():
     t = Target(project_id=p.id, name="b", ip="10.0.0.14")
     db.add(t); db.flush()
     db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
-                              command="bash --noprofile --norc", cwd="/tmp",
+                              command="/bin/bash --noprofile --norc", cwd="/tmp",
                               status="launched", pid=os.getpid()))
     db.flush()
 
