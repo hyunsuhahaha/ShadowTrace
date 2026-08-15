@@ -393,8 +393,14 @@ export function GraphCanvas(props: {
         // `now` gave a wildly wrong elapsed value every time).
         const unlockedAt = justUnlockedAt(current);
         const unlockElapsed = unlockedAt ? Date.now() - Date.parse(unlockedAt) : Infinity;
-        const unlockWindow = 2200;
+        // Long enough to survive the invalidateQueries round-trip eating into
+        // it before the node's first paint, and to actually be noticed
+        // rather than a blink-and-you-miss-it flash.
+        const unlockWindow = 6000;
         const unlocking = unlockElapsed >= 0 && unlockElapsed < unlockWindow;
+        // Appears locked, then visibly unlocks, then settles into its real
+        // glyph -- not just a static "open" icon the whole time.
+        const unlockShowsLocked = unlocking && unlockElapsed < unlockWindow * 0.35;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         const credential = credentialBadge(current);
         if (credential) {
@@ -572,7 +578,8 @@ export function GraphCanvas(props: {
         ctx.setLineDash([]);
         ctx.fillStyle = "#0c0c10"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-        ctx.fillText(isFlag ? "🚩" : unlocking ? "🔓" : fileFindingGlyph(current) ?? GLYPH[current.type],
+        ctx.fillText(isFlag ? "🚩" : unlockShowsLocked ? "🔒" : unlocking ? "🔓"
+          : fileFindingGlyph(current) ?? GLYPH[current.type],
           n.x, n.y + 0.5);
         drawEvidenceBadge(evidenceCount(current), n.x + r * 0.7, n.y - r * 0.7);
         const alwaysLabel = ["service", "technique", "credential", "finding"].includes(current.type);
