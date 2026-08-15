@@ -102,6 +102,33 @@ def test_downloaded_web_app_source_is_also_previewable_as_text(tmp_path, monkeyp
     assert "P@ssw0rd123" in preview["content"]
 
 
+def test_extracted_css_is_previewable_too(tmp_path, monkeypatch):
+    # Confirmed live: .css was missing from TEXT_EXTENSIONS entirely, so an
+    # archive-extracted style.css always 415'd -- the Inspector's own
+    # graceful isError handling then just quietly hid the whole preview
+    # section instead of a visible error, which read as "this file has no
+    # content" rather than the actual bug.
+    import app.modules.evidence.router as router
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.commit()
+    uploaded = tempfile.SpooledTemporaryFile()
+    uploaded.write(b"body { background: #000; }")
+    uploaded.seek(0)
+    row = asyncio.run(upload_evidence(
+        project_id=project.id, target_id=target.id, title="style.css",
+        kind="attachment", description="", service_id=None,
+        source_type="archive_extract", source_id=1, sensitivity="normal",
+        include_report=False, file=UploadFile(filename="style.css", file=uploaded), db=db))
+
+    preview = evidence_preview(row.id, db)
+
+    assert "background: #000" in preview["content"]
+
+
 def _zip_evidence(db, project, target):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:

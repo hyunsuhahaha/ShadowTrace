@@ -382,8 +382,14 @@ export function GraphCanvas(props: {
         // rings -- this is a fact about how the node came to exist, not an
         // ongoing state, so it plays once and settles rather than pulsing
         // forever the way an active/flagged node does.
+        // now (this draw loop's own timer) is performance.now() -- monotonic
+        // since page load, not wall-clock -- while unlockedAt is a real ISO
+        // timestamp from the backend, so this has to compare against
+        // Date.now() specifically or the two time bases don't line up at
+        // all (confirmed live: the effect never fired, comparing against
+        // `now` gave a wildly wrong elapsed value every time).
         const unlockedAt = justUnlockedAt(current);
-        const unlockElapsed = unlockedAt ? now - Date.parse(unlockedAt) : Infinity;
+        const unlockElapsed = unlockedAt ? Date.now() - Date.parse(unlockedAt) : Infinity;
         const unlockWindow = 2200;
         const unlocking = unlockElapsed >= 0 && unlockElapsed < unlockWindow;
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes

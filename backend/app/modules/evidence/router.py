@@ -35,6 +35,7 @@ TEXT_EXTENSIONS = {
     ".php", ".phtml", ".asp", ".aspx", ".jsp", ".py", ".rb", ".js", ".ts",
     ".java", ".go", ".pl", ".c", ".cpp", ".h", ".sh", ".sql",
     ".html", ".htm", ".conf", ".cnf", ".ini", ".env", ".ps1",
+    ".css", ".jsx", ".tsx", ".toml", ".cfg", ".htaccess",
 }
 
 
