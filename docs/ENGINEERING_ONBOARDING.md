@@ -394,7 +394,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `JobStatus.tsx` | 단일 실행 상태 배너(경과시간, 프로세스 생존, stale 경고) |
 | `CredentialStoreForm.tsx` | `useCredentialStore` 훅과 연결된 자격증명 입력/저장 목록 |
 | `NetexecOutcome.tsx` | NetExec 성공 후 psexec/wmiexec/evil-winrm 등 다음 행동 제안 |
-| `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링 |
+| `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링, 접힌 `LinuxPrivescReference.tsx`(수동 권한 상승 체크리스트 — SUID/capability/cron/배포판별 서비스 설정 파일 경로, `linuxPrivescCommands.ts`가 데이터 소스) |
 | `LiveOutputPanel.tsx` | 실시간 출력 패널(`D\|`/`F\|` 태그 출력은 파일 트리로 렌더) |
 | `OperatorContext.tsx` | 그래프의 root/host ScanCenter와 service Enumeration이 공유하는 대상 프롬프트·실제 상태 fact·작업 액션 헤더 |
 | `FloatingTerminal.tsx` | AppShell 전역 다중 터미널 창 관리자와 `DetachableTerminal` seam — Scan, Graph Execution, Service output, Tools, Hash Cracking, Post-Exploitation, PTY를 ID별 독립 창으로 분리하고 라우트와 무관하게 이동·3방향 크기 조절·원위치 도킹 |

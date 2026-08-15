@@ -117,6 +117,20 @@ it("does not show a captured-hash section when nothing matched yet", async () =>
   expect(screen.queryByText("Hash Cracking으로 보내기")).toBeNull();
 });
 
+it("offers the Linux PrivEsc reference and forwards its commands through the same onSendCommand path", () => {
+  const onSendCommand = vi.fn();
+  render(
+    <PrivescSessionPanel session={{id: 7, command: "nc -lvnp 4445"}}
+      serverBusy={false} onToggleServer={vi.fn()}
+      onSendCommand={onSendCommand} onClose={vi.fn()} />,
+  );
+  expect(screen.getByText("Linux PrivEsc 참고 열기")).toBeTruthy();
+
+  fireEvent.click(screen.getAllByText("셸에 입력")[0]);
+
+  expect(onSendCommand).toHaveBeenCalledWith("id");
+});
+
 it("does not request a session log until the backend has a log path", async () => {
   const fetchMock = vi.fn(() => Promise.resolve(new Response(
     JSON.stringify([{id: 7, log_path: ""}]), {status: 200}))) as typeof fetch;

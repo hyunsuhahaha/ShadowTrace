@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import InteractiveTerminal from "./InteractiveTerminal";
+import LinuxPrivescReference from "./LinuxPrivescReference";
 import { extractNtlmv2Hashes } from "./ntlmHash";
 
 type PsexecSession = {id: number; command: string};
@@ -106,5 +107,9 @@ export default function PrivescSessionPanel({session, server, serverBusy,
         </div>
       </section>
     )}
+    <details className="sqlPayloadCategory">
+      <summary><b>Linux PrivEsc 참고 열기</b></summary>
+      <LinuxPrivescReference onSendCommand={onSendCommand} />
+    </details>
   </>;
 }
