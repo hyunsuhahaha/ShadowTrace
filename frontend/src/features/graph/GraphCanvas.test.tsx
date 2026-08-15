@@ -64,7 +64,7 @@ it("mounts and unmounts without throwing on an empty graph", () => {
   const { unmount } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
     credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.querySelector("canvas")).toBeTruthy();
   unmount();
 });
@@ -77,7 +77,7 @@ it("right-clicking blank canvas suppresses the browser menu and reports no node"
   const onContext = vi.fn();
   render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={onContext} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={onContext} />);
   const canvas = document.querySelector("canvas")!;
 
   const event = fireEvent.contextMenu(canvas, { clientX: 40, clientY: 60 });
@@ -94,17 +94,17 @@ it("re-renders when the node set changes without throwing", () => {
   const { rerender } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
     credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   rerender(<GraphCanvas data={data} hostCount={1} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.querySelector("canvas")).toBeTruthy();
 });
 
 it("shows the empty activity stream state when nothing is happening", () => {
   render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.body.textContent).toContain("아직 기록된 활동이 없습니다.");
 });
 
@@ -133,7 +133,7 @@ it("renders credential badges and directional access lineage without secrets", (
 
   render(<GraphCanvas data={data} hostCount={2} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
 
   const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
   expect(rendered).toContain("CORP\\administrator");
@@ -153,7 +153,7 @@ it("draws a memo as its own sticky note, not a circle+glyph node", () => {
 
   render(<GraphCanvas data={data} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
 
   const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
   expect(rendered).toContain("🗒️");
@@ -179,7 +179,7 @@ it("draws falling binary rain (not the ring pulse or scan sweep) for a running h
 
   render(<GraphCanvas data={data} hostCount={1} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
 
   const digitCalls = ctx.fillText.mock.calls.filter((call) => call[0] === "0" || call[0] === "1");
   expect(digitCalls.length).toBeGreaterThan(0);
@@ -205,7 +205,7 @@ it("marks nodes backed by human-attached evidence, not nodes without any", () =>
 
   render(<GraphCanvas data={data} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
 
   const rendered = ctx.fillText.mock.calls.map((call) => String(call[0]));
   expect(rendered).toContain("4");
@@ -226,7 +226,7 @@ it("accepts an objective path to highlight without throwing", () => {
 
   const { unmount } = render(<GraphCanvas data={data} hostCount={1} showHidden={false}
     credentialOverlay selected="root" onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()}
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()}
     objectivePath={{ nodeIds: ["root", "host", "goal"], edgeIds: ["rh", "hg"] }} />);
   expect(document.querySelector("canvas")).toBeTruthy();
   unmount();
@@ -236,7 +236,7 @@ it("dropping a dragged tree file calls onDropFile with its runId and path", () =
   const onDropFile = vi.fn();
   const { container } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
     credentialOverlay selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
   const stage = container.firstElementChild as HTMLElement;
   const dataTransfer = fileDragTransfer(
     { kind: "post-exploitation", runId: 12, path: "/home/bob/flag.txt" });
@@ -254,7 +254,7 @@ it("ignores a drop that isn't a tree-file drag", () => {
   const onDropFile = vi.fn();
   const { container } = render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false}
     credentialOverlay selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
-    onActivitySelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} onDropFile={onDropFile} />);
   const stage = container.firstElementChild as HTMLElement;
   const dataTransfer = fileDragTransfer(null);
 

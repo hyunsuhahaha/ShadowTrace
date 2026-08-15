@@ -10,6 +10,11 @@ import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
 export function GraphCanvas(props: {
   data: GraphOut; hostCount: number; showHidden: boolean; credentialOverlay: boolean;
   selected: string | null; onSelect: (id: string) => void;
+  // Ctrl/Cmd+click toggles a node into this set for bulk actions, separate
+  // from `selected` (the single node the Inspector focuses) -- a multi-
+  // selected node still updates `selected` too (see onClick) so the
+  // Inspector always shows whichever one was just clicked.
+  multiSelected: Set<string>; onToggleMultiSelect: (id: string) => void;
   focus: { id: string; nonce: number } | null;
   layoutMode: "graph" | "tree"; onActivitySelect: (id: string) => void;
   // null id -- the right-click landed on blank canvas, not a node -- still
@@ -548,6 +553,12 @@ export function GraphCanvas(props: {
           ctx.strokeStyle = "rgba(106,169,255,.4)"; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
         }
+        if (props.multiSelected.has(current.id)) {
+          // Solid teal, tighter radius than the anchor's dashed blue ring so
+          // the two never read as the same thing if a node is both.
+          ctx.beginPath(); ctx.arc(n.x, n.y, r + 13, 0, Math.PI * 2);
+          ctx.strokeStyle = "#5ce1e6"; ctx.lineWidth = 2; ctx.stroke();
+        }
         if (current.objective) {
           ctx.beginPath(); ctx.arc(n.x, n.y, r + 10, 0, Math.PI * 2);
           ctx.strokeStyle = current.status === "succeeded" ? "#f5c518" : "rgba(245,197,24,.5)";
@@ -699,7 +710,9 @@ export function GraphCanvas(props: {
         nodes.map((node) => [node.id, { x: node.x, y: node.y }])) }));
     const onClick = (ev: MouseEvent) => {
       const p = toWorld(ev), n = nodeAt(p.x, p.y);
-      if (n) props.onSelect(n.id);
+      if (!n) return;
+      if (ev.ctrlKey || ev.metaKey) props.onToggleMultiSelect(n.id);
+      props.onSelect(n.id);
     };
     const onContext = (ev: MouseEvent) => {
       // Confirmed live: right-clicking blank canvas used to fall straight

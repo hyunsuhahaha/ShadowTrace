@@ -50,6 +50,16 @@ export default function GraphWorkspace() {
     if (selected) localStorage.setItem("oscp-graph-selected", selected);
     else localStorage.removeItem("oscp-graph-selected");
   }, [selected]);
+  // Ctrl/Cmd+click toggles membership here, separate from `selected` (the
+  // Inspector's single focus) -- only an explicit toggle or the bulk bar's
+  // own "선택 해제" clears it, so a stray plain click elsewhere never
+  // silently throws away a selection mid-bulk-action.
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
+  const toggleMultiSelect = (id: string) => setMultiSelected((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [filter, setFilter] = useState<GraphFilter>({ query: "", type: "all",
     status: "all", focusDepth: 0, pinnedOnly: false });
   const [queueOpen, setQueueOpen] = useState(false);
@@ -509,6 +519,26 @@ export default function GraphWorkspace() {
             숨김 {hiddenCount}{showHidden ? " 표시중" : ""}
           </button>
         )}
+        {multiSelected.size > 0 && !noProject && replayAt == null && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ ...S.hiddenChip, background: "#123038", color: "#5ce1e6",
+              cursor: "default" }}>
+              {multiSelected.size}개 선택됨
+            </span>
+            <button style={S.hiddenChip} onClick={() => {
+              for (const id of multiSelected) setHidden.mutate({ id, hidden: true });
+              setMultiSelected(new Set());
+            }}>숨기기</button>
+            <button style={S.hiddenChip} onClick={() => {
+              if (!confirm(`선택한 ${multiSelected.size}개 노드와 연결 관계를 제거할까요?`)) return;
+              for (const id of multiSelected) deleteNode.mutate(id);
+              setMultiSelected(new Set());
+            }}>삭제</button>
+            <button style={S.hiddenChip} onClick={() => setMultiSelected(new Set())}>
+              선택 해제
+            </button>
+          </div>
+        )}
         {!noProject && <ElapsedTimer
           startIso={data.nodes.find((n) => n.type === "project-root")?.created_at} />}
         <div style={S.legend}>
@@ -574,6 +604,7 @@ export default function GraphWorkspace() {
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
+            multiSelected={multiSelected} onToggleMultiSelect={toggleMultiSelect}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
             onDropFile={(payload) => void dropFile(payload)} dropFileBusy={dropFileBusy} />
