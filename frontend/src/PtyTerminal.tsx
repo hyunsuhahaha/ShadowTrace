@@ -24,6 +24,14 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
   const [connection, setConnection] = useState<
     "connecting" | "pty" | "active" | "closed" | "error"
   >("connecting");
+  // window.confirm() is unreliable here: some browsers/embeds silently
+  // return false without ever showing the dialog (e.g. after Chrome's
+  // "prevent additional dialogs" auto-suppression kicks in), which made
+  // the button look completely dead. A same-panel two-click confirm
+  // always renders, so there's no dialog to suppress.
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(confirmTimer.current), []);
 
   useEffect(() => {
     panel.current?.scrollIntoView({behavior: "smooth", block: "center"});
@@ -145,9 +153,13 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
   }, [inputRequest]);
 
   const stop = async () => {
-    if (["pty", "active"].includes(connection) && !window.confirm(
-      "활성 세션을 종료합니다. 재획득이 어려울 수 있습니다. 종료할까요?",
-    )) return;
+    if (["pty", "active"].includes(connection) && !confirmingStop) {
+      setConfirmingStop(true);
+      confirmTimer.current = setTimeout(() => setConfirmingStop(false), 4000);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmingStop(false);
     await fetch(`/api/interactive-sessions/${sessionId}/stop`, {method: "POST"});
     onClose();
   };
@@ -173,8 +185,10 @@ export default function PtyTerminal({sessionId, onClose, initialInput = "",
         <button type="button" title="글자 확대" aria-label="터미널 글자 확대"
           onClick={() => setTerminalFontSize(fontSize + 1)}>+</button>
       </div>
-      <button onClick={stop}>{["closed", "error"].includes(connection)
-        ? "터미널 닫기" : "연결 종료"}</button>
+      <button onClick={stop} className={confirmingStop ? "ptyStopArmed" : undefined}>
+        {["closed", "error"].includes(connection) ? "터미널 닫기"
+          : confirmingStop ? "정말 종료? (다시 클릭)" : "연결 종료"}
+      </button>
     </div>
     <div className="ptyTerminal" ref={container} />
   </section>;
