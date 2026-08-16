@@ -591,9 +591,26 @@ Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 �
 타이핑, 아니면 복사 전용으로 폴백)까지 그 자리에서 제공한다. 예전엔 이 노드 유형을
 선택하면 항상 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 곧장
 임베드해 Inspector 자체가 렌더되지 않았는데(Post-Exploitation 이동 없이 라이브 셸을
-바로 만질 방법이 없었음), 지금은 그 폴더·파일 트리 뷰가 Inspector 안의 "폴더·파일 트리
-보기" 버튼(`GraphWorkspace.tsx`의 `fileTreePanel` 상태, `onBack`으로 복귀)으로 대체돼
-필요할 때만 연다.
+바로 만질 방법이 없었음), 지금은 그 SSH 카탈로그 기반 폴더·파일 트리 뷰가 "다른
+자격증명으로 조회 (SSH)" 버튼(`GraphWorkspace.tsx`의 `fileTreePanel` 상태, `onBack`으로
+복귀)으로 대체돼 필요할 때만 연다.
+같은 자리의 "폴더·파일 트리 조회 (현재 셸)" 버튼은 그 SSH 경로와 별개로, 저장된
+자격증명이 아예 없는 순수 리버스쉘(`nc -lvnp` 등)에서도 동작하는 진짜 대안이다 —
+이미 열려 있는 PTY에 마커로 감싼 `find` 한 줄(`echo ___TREE_START_<marker>___; find
+/home /root /tmp /var/www -mindepth 1 \( -type d -printf 'D|%p\n' \) -o -printf
+'F|%p\n' | head -2000; echo ___TREE_END_<marker>___`, `linux_file_tree` 카탈로그
+명령과 같은 스코프)을 입력(다른 트리거들과 같은 "검토 후 Enter" 원칙, 자동 실행 아님)한
+뒤, 세션 자신의 영속 로그(`/interactive-sessions/{id}/log`)를 1.5초 간격으로 폴링해
+그 마커 쌍 사이만 잘라 `parseTaggedTreeLines`로 파싱하고 `FileTreeView`로 그린다. PTY는
+실행 전에 입력한 명령 자체를 그대로 되돌려 찍기 때문에 로그에 각 마커가 두 번(에코된
+명령 줄 + 실제 출력) 나타난다 — `indexOf`가 아니라 `lastIndexOf`로 뒤쪽(진짜 출력) 것을
+집어야 한다는 게 라이브 검증 없이 놓치기 쉬운 부분이라 회귀 테스트가 그 순서를 그대로
+재현한다. 같은 턴에 `linux_file_tree`(SSH 카탈로그 버전) 자체도 실제로 실행해보지
+않으면 안 보이는 버그가 있었다는 게 드러났다 — `find -printf '%y|%p'`의 `%y`는
+소문자(`f`/`d`)를 찍는데 파서(`parseTaggedTreeLines`)와 파일 내용 읽기
+(`_read_tree_file`)는 둘 다 대문자 `F|`/`D|`만 인식해서, 실제 SSH로 돌리면 트리가
+항상 빈 채로 나왔다 — `credential_hunt.yaml`도 같이 고쳐 `-type d`/그 외로 명시적으로
+분기해 대문자 태그를 직접 찍게 했다.
 `manual-shell`은 리버스쉘 리스너·SSH 퀵커넥트·redis-cli 등 `/interactive-sessions/manual`로
 여는 모든 세션이 공유하는 합성 `template_id`라 카탈로그에 실제 항목이 없다 — 그래프 라벨은
 `graph/service.py`의 `_session_label()`이 이 경우만 `sess.command`(예: `nc -lvnp 4444`, 60자

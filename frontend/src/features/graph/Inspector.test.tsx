@@ -1061,6 +1061,61 @@ it("also offers WinPEAS, SUID/GTFOBins analysis, and the Linux PrivEsc checklist
   expect(await screen.findByText(/전송: id/)).toBeTruthy();
 });
 
+it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH credential needed", async () => {
+  // The "다른 자격증명으로 조회 (SSH)" button next to this one requires a
+  // stored credential and a fresh SSH/wmiexec connection -- useless for a
+  // bare `nc` reverse shell like this one, which has none. This is the
+  // fix: type a marker-wrapped find one-liner into the PTY the operator
+  // already has open, then read it back off the session's own persisted
+  // log and parse the D|/F| segment between the two markers.
+  vi.spyOn(Date, "now").mockReturnValue(999);
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 55, command: "nc -lvnp 4444", status: "running" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/log")) return Promise.resolve(new Response(
+      "postgres@vaccine:~$ echo ___TREE_START_999___; find ...; echo ___TREE_END_999___\n" +
+      "___TREE_START_999___\n" +
+      "D|/var/www\nD|/var/www/html\nF|/var/www/html/dashboard.php\n" +
+      "___TREE_END_999___\n" +
+      "postgres@vaccine:~$ "));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-55", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "nc -lvnp 4444", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 55 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #55");
+
+  const treeButton = screen.getByText("폴더·파일 트리 조회 (현재 셸)");
+  fireEvent.click(treeButton);
+  expect(await screen.findByText(/___TREE_START_999___/)).toBeTruthy();
+
+  expect(await screen.findByText("www")).toBeTruthy();
+  // Nested folders render collapsed (<details> without `open`) until a
+  // search query forces every level open -- same UX as the ftp-client tree.
+  fireEvent.change(screen.getByPlaceholderText("이름으로 검색…"),
+    { target: { value: "dashboard" } });
+  expect(await screen.findByText("dashboard.php")).toBeTruthy();
+
+  vi.restoreAllMocks();
+});
+
 it("shows a hash-crack job's live output and lets a cracked hash be promoted", async () => {
   const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

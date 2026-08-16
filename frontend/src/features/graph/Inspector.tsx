@@ -253,6 +253,52 @@ export function Inspector(props: {
   const sendToManualShell = (command: string) => {
     setManualShellInputRequest({id: Date.now(), data: command});
   };
+  // A real, live directory listing off the already-open shell -- no stored
+  // SSH/wmiexec credential needed, unlike the catalog-driven file_tree run
+  // ("폴더·파일 트리 보기" below). The command is typed (not auto-run, same
+  // "review then Enter" rule as every other PTY-inject button here), so once
+  // the operator submits it, this polls the session's own persisted log for
+  // the marker pair wrapping its output and parses just that slice -- the
+  // same D|/F| tag convention linux_file_tree/ftp_tree.py already use.
+  const [fileTreeBusy, setFileTreeBusy] = useState(false);
+  const [fileTreeMarker, setFileTreeMarker] = useState<string | null>(null);
+  const [fileTreeEntries, setFileTreeEntries] =
+    useState<{path: string; isDir: boolean}[] | null>(null);
+  const fileTreeLog = useQuery({
+    queryKey: ["graphManualShellFileTreeLog", sessionId, fileTreeMarker],
+    enabled: sessionId !== null && fileTreeBusy && fileTreeMarker !== null,
+    refetchInterval: 1500,
+    queryFn: async () => {
+      const response = await fetch(`/api/interactive-sessions/${sessionId}/log`);
+      return response.ok ? await response.text() : "";
+    },
+  });
+  useEffect(() => {
+    if (!fileTreeBusy || !fileTreeMarker || fileTreeLog.data === undefined) return;
+    const startTag = `___TREE_START_${fileTreeMarker}___`;
+    const endTag = `___TREE_END_${fileTreeMarker}___`;
+    // A PTY echoes back whatever's typed before it ever runs, so the raw log
+    // contains both tags twice: once inside the echoed input line (the
+    // command text literally has "echo ___TREE_START_...; find ...; echo
+    // ___TREE_END_...") and once for real as each echo's own printed
+    // output. The last occurrence of each is always the real one.
+    const startIndex = fileTreeLog.data.lastIndexOf(startTag);
+    const endIndex = fileTreeLog.data.lastIndexOf(endTag);
+    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) return;
+    setFileTreeEntries(parseTaggedTreeLines(
+      fileTreeLog.data.slice(startIndex + startTag.length, endIndex)));
+    setFileTreeBusy(false);
+  }, [fileTreeLog.data, fileTreeBusy, fileTreeMarker]);
+  const runManualShellFileTree = () => {
+    const marker = String(Date.now());
+    setFileTreeMarker(marker);
+    setFileTreeEntries(null);
+    setFileTreeBusy(true);
+    sendToManualShell(
+      `echo ___TREE_START_${marker}___; find /home /root /tmp /var/www -mindepth 1 ` +
+      `\\( -type d -printf 'D|%p\\n' \\) -o -printf 'F|%p\\n' 2>/dev/null | head -2000; ` +
+      `echo ___TREE_END_${marker}___`);
+  };
   const sessionQuery = useQuery({
     queryKey: ["graphInteractiveSession", sessionId],
     enabled: sessionId !== null,
@@ -1236,9 +1282,13 @@ export function Inspector(props: {
             onClick={() => setManualShellOpen(true)}>
             세션 열기
           </button>
+          <button type="button" disabled={!manualShellOpen || fileTreeBusy}
+            onClick={runManualShellFileTree}>
+            {fileTreeBusy ? "조회 중…" : "폴더·파일 트리 조회 (현재 셸)"}
+          </button>
           {props.onOpenFileTree && props.executionContext && <button type="button"
             onClick={() => props.onOpenFileTree!(props.executionContext!.targetId)}>
-            폴더·파일 트리 보기
+            다른 자격증명으로 조회 (SSH)
           </button>}
           <button type="button" disabled={privescServerBusy}
             onClick={() => void togglePrivescServer()}>
@@ -1266,6 +1316,14 @@ export function Inspector(props: {
           </button>
         </div>
       </section>}
+      {sessionId !== null && isManualShell && fileTreeEntries && (
+        <section className="lootFileTreeSnapshot" aria-label="현재 셸의 폴더·파일 트리">
+          <div><b>폴더·파일 트리</b><span>{fileTreeEntries.length}개 항목 · /home, /root, /tmp, /var/www</span></div>
+          {fileTreeEntries.length > 0
+            ? <FileTreeView searchable node={buildFileTree(fileTreeEntries, "/")} />
+            : <p className="empty">해당 경로에서 항목을 찾지 못했습니다.</p>}
+        </section>
+      )}
       {sessionId !== null && isManualShell && manualShellOpen && <InteractiveTerminal
         sessionId={sessionId} title={n?.label || "세션"}
         inputRequest={manualShellInputRequest} autoFloat
