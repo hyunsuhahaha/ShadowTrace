@@ -200,7 +200,8 @@ export function Inspector(props: {
   });
   const targets = useQuery({
     queryKey: ["graphLinkTargets"],
-    enabled: (executionId !== null || sessionId !== null) && !!props.executionContext,
+    enabled: (executionId !== null || sessionId !== null || credentialId !== null) &&
+      !!props.executionContext,
     queryFn: () => api<Array<{ id: number; project_id: number; ip: string;
       hostname?: string; os_guess?: string }>>("/targets"),
   });
@@ -777,6 +778,15 @@ export function Inspector(props: {
     if (!target || !service || !netexecUsername) return;
     await openManualSession(`ssh ${shellQuote(`${netexecUsername}@${target.ip}`)} -p ${service.port}`);
   };
+  // Credential nodes (e.g. a cracked hash-crack-job secret) have no service
+  // of their own to read a port from the way a NetExec-check node does --
+  // SSH defaults to 22 the same way a human would just try it first.
+  const openSshFromCredential = async () => {
+    if (!target || !credentialQuery.data?.username || !credentialQuery.data.secret) return;
+    await openManualSession(
+      `ssh ${shellQuote(`${credentialQuery.data.username}@${target.ip}`)}`,
+      undefined, `${credentialQuery.data.secret}\r`);
+  };
   const openMssql = async () => {
     if (!target || !service || !netexecUsername) return;
     const auth = impacketAuthArgs("", netexecUsername, netexecPassword, target.ip);
@@ -1127,6 +1137,10 @@ export function Inspector(props: {
                   onClick={() => void navigator.clipboard.writeText(credentialQuery.data!.secret)}>
                   {credentialQuery.data.secret_kind === "hash" ? "해시 복사" : "평문 복사"}
                 </button>
+                {credentialQuery.data.secret_kind !== "hash" && credentialQuery.data.username && target &&
+                  <button style={S.resultAction} onClick={() => void openSshFromCredential()}>
+                    SSH로 시도
+                  </button>}
               </div>
             </>}
       </section>}

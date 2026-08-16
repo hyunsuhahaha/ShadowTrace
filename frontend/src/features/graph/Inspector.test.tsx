@@ -244,6 +244,42 @@ it("makes a cracked credential and its plaintext directly inspectable", async ()
   expect(screen.getByText("SMB-NTLMv2-SSP")).toBeTruthy();
 });
 
+it("offers to try a cracked credential's plaintext over SSH -- Unified's mongo-dump password reuse never had this action", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/runbooks/credentials?project_id=3"))
+      return Promise.resolve(new Response(JSON.stringify([{
+        id: 12, username: "root", domain: "", secret: "unifi123",
+        secret_kind: "password", secret_hint: "MongoDB ace.admin bcrypt cracked",
+        source_kind: "hash_crack_job", source_detail: "hashcat bcrypt",
+        source_execution_kind: "hash_crack_job",
+      }]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets"))
+      return Promise.resolve(new Response(JSON.stringify([
+        { id: 10, project_id: 3, ip: "10.129.4.83" },
+      ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/manual") && init?.method === "POST")
+      return Promise.resolve(new Response(JSON.stringify({
+        id: 77, command: "ssh root@10.129.4.83",
+      }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector projectId={3} executionContext={{ targetId: 10 }} node={{
+      id: "credential-12", type: "credential", status: "succeeded",
+      label: "root", objective: false, hidden: false,
+      meta: JSON.stringify({ username: "root", credType: "password",
+        sourceExecutionKind: "hash_crack_job" }),
+      source_ref: JSON.stringify({ module: "core", kind: "credential", id: 12 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("SSH로 시도"));
+  expect(await screen.findByText("PTY #77")).toBeTruthy();
+});
+
 it("restores a NetExec outcome and the latest saved file tree on its graph node", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
