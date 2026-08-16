@@ -147,6 +147,14 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
 ];
 
 const postExploitationToolEntries: CommandPaletteEntry[] = [
+  // Anchors into PostExploitationWorkspace's always-rendered "LinPEAS 결과
+  // 분석" section (LinpeasAnalysisPanel) -- paste raw linpeas.sh output here
+  // to get it classified into critical/high/medium findings.
+  { id: "post-exploitation/linpeas", route: "post-exploitation",
+    anchorId: "linpeas-heading",
+    label: "LinPEAS 결과 분석", detail: "Post-Exploitation 하단 · linpeas.sh 출력 붙여넣기 → critical/high/medium 분류",
+    category: "Post-Exploitation 도구",
+    keywords: ["linpeas", "linpeas.sh", "권한 상승 스캔", "privesc scan"] },
   // Anchors into PostExploitationWorkspace's always-rendered LinuxPrivescReference
   // section -- unlike the Service Enumeration anchors above, this page doesn't
   // wait on a selected service, so no serviceKind is needed (see the

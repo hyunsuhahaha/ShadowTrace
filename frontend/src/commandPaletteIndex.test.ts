@@ -108,6 +108,18 @@ it("finds each DB engine's payload reference by name, deep-linked to its own cat
   }
 });
 
+it("finds the LinPEAS analysis panel by name, deep-linked into Post-Exploitation", () => {
+  for (const query of ["linpeas", "권한 상승 스캔"]) {
+    const results = searchCommandPalette(query);
+    const entry = results.find((item) => item.id === "post-exploitation/linpeas");
+    expect(entry, query).toBeTruthy();
+    expect(entry?.route).toBe("post-exploitation");
+    expect(entry?.subroute).toBeUndefined();
+    expect(entry?.anchorId).toBe("linpeas-heading");
+    expect(entry?.serviceKind).toBeUndefined();
+  }
+});
+
 it("finds the restricted-shell reference by an ls/cat-not-working style query, deep-linked into Post-Exploitation", () => {
   for (const query of ["rbash", "busybox", "noexec", "ls 안됨"]) {
     const results = searchCommandPalette(query);

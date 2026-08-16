@@ -7,8 +7,9 @@ import { FILE_DRAG_MIME } from "../../fileTree";
 
 vi.mock("../../XtermOutput", () => ({default: ({output}: {output: string}) =>
   <pre aria-label="Responder 세션 로그">{output}</pre>}));
-vi.mock("../../InteractiveTerminal", () => ({default: ({sessionId}: {sessionId: number}) =>
-  <div>PTY #{sessionId}</div>}));
+vi.mock("../../InteractiveTerminal", () => ({default: ({sessionId, inputRequest}:
+  {sessionId: number; inputRequest?: {data: string}}) =>
+  <div>PTY #{sessionId}{inputRequest && <span> · 전송: {inputRequest.data}</span>}</div>}));
 
 afterEach(() => {
   cleanup();
@@ -932,6 +933,66 @@ it("auto-populates a folder/file tree on an ftp-client session's own node", asyn
   await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
     "/api/executions/91/promote-ftp-file", expect.objectContaining({ method: "POST" }),
   ));
+});
+
+it("lets LinPEAS run and be analyzed directly from a manual-shell session node", async () => {
+  // openManualShell/openListenerShell/openSshShell in App.tsx all create their
+  // session through the generic manual endpoint, which always stamps
+  // template_id="manual-shell" -- reverse shells, SSH, psexec fallback shells
+  // all look like this on the graph. The privesc-server + LinPEAS/pspy
+  // trigger and the paste-and-analyze panel used to only be reachable from
+  // PrivescSessionPanel/PostExploitationWorkspace; this is the same feature
+  // surfaced inline on the session's own graph node instead.
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 55, command: "nc -lvnp 4444", status: "running" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/start") && init?.method === "POST") return Promise.resolve(
+      new Response(JSON.stringify({
+        running: true, base_url: "http://10.10.14.5:8123", available: { peass: true, pspy: true },
+      }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/10/linpeas") && init?.method === "POST") return Promise.resolve(
+      new Response(JSON.stringify({
+        critical: ["CVE-2025-38236"], high: [], medium: [], evidence_id: 3,
+      }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-55", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "nc -lvnp 4444", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 55 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(screen.queryByText("PTY #55")).toBeNull();
+  fireEvent.click(await screen.findByText("세션 열기"));
+  expect(await screen.findByText("PTY #55")).toBeTruthy();
+
+  const linpeasButton = screen.getByText("LinPEAS 명령 셸에 입력");
+  expect((linpeasButton as HTMLButtonElement).disabled).toBe(true);
+
+  fireEvent.click(screen.getByText("서버 시작"));
+  await waitFor(() => expect((linpeasButton as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(linpeasButton);
+  expect(await screen.findByText(/linpeas\.sh \| bash/)).toBeTruthy();
+
+  fireEvent.change(
+    screen.getByPlaceholderText("linpeas.sh 실행 결과 전체를 붙여넣으세요"),
+    { target: { value: "raw linpeas output" } },
+  );
+  fireEvent.click(screen.getByText("분석"));
+  expect(await screen.findByText(/CVE-2025-38236/)).toBeTruthy();
 });
 
 it("shows a hash-crack job's live output and lets a cracked hash be promoted", async () => {

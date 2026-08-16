@@ -74,6 +74,7 @@ export default function GraphWorkspace() {
   const [webRequest, setWebRequest] = useState<GraphRequestDraft | null>(null);
   const [hashPanel, setHashPanel] = useState<CredentialHandoff | null>(null);
   const [postPanel, setPostPanel] = useState<CredentialHandoff | null>(null);
+  const [fileTreePanel, setFileTreePanel] = useState<{ targetId: number } | null>(null);
   const [reportPanel, setReportPanel] = useState(false);
   const [dropFileError, setDropFileError] = useState("");
   const [dropFileBusy, setDropFileBusy] = useState(false);
@@ -81,6 +82,7 @@ export default function GraphWorkspace() {
     setWebRequest(null);
     setHashPanel(null);
     setPostPanel(null);
+    setFileTreePanel(null);
     setReportPanel(false);
   }, [selected]);
   const [paneWidth, setPaneWidth] = useState(() => {
@@ -659,6 +661,12 @@ export default function GraphWorkspace() {
             </Suspense></div>
           ) : webRequest ? (
             <GraphRequestPanel draft={webRequest} onBack={() => setWebRequest(null)} />
+          ) : fileTreePanel ? (
+            <div style={S.embedPane}><Suspense fallback={<Empty text="폴더·파일 트리 불러오는 중…" />}>
+              <EmbeddedPostExploitation embedded initialProjectId={projectId || undefined}
+                initialTargetId={fileTreePanel.targetId} initialCategory="file_tree"
+                onBack={() => setFileTreePanel(null)} />
+            </Suspense></div>
           ) : noProject ? (
             <OnboardingPane creating={createProject.isPending}
               onCreate={() => createProject.mutate()} />
@@ -677,26 +685,23 @@ export default function GraphWorkspace() {
             <div style={S.embedPane}>
               <Suspense fallback={<Empty text="도구 불러오는 중…" />}>
                 <EmbeddedEnumeration embedded onOpenRequestInGraph={(draft) => {
-                  setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
+                  setHashPanel(null); setPostPanel(null); setReportPanel(false); setFileTreePanel(null); setWebRequest(draft);
                 }} />
               </Suspense>
             </div>
-          ) : selectedNode?.type === "technique"
-              && nodeMeta(selectedNode).tool === "manual-shell"
-              && executionHandoff(selected) ? (
-            <div style={S.embedPane}><Suspense fallback={<Empty text="폴더·파일 트리 불러오는 중…" />}>
-              <EmbeddedPostExploitation embedded initialProjectId={projectId || undefined}
-                initialTargetId={executionHandoff(selected)!.targetId} initialCategory="file_tree" />
-            </Suspense></div>
           ) : (
             <Inspector node={selectedNode} projectId={projectId || undefined}
               links={selected ? deepLinks(selected) : []}
               executionContext={executionHandoff(selected)}
               onOpenRequest={(draft) => {
-                setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(draft);
+                setHashPanel(null); setPostPanel(null); setReportPanel(false); setFileTreePanel(null); setWebRequest(draft);
               }}
               onOpenHashCrack={(handoff) => {
                 setPostPanel(null); setReportPanel(false); setWebRequest(null); setHashPanel(handoff);
+              }}
+              onOpenFileTree={(targetId) => {
+                setHashPanel(null); setPostPanel(null); setReportPanel(false); setWebRequest(null);
+                setFileTreePanel({ targetId });
               }}
               busy={addNode.isPending}
               onToggleHidden={(id, hidden) => setHidden.mutate({ id, hidden })}

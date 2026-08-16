@@ -512,14 +512,18 @@ API: `/projects`, `/targets*`, `/runbooks/templates*`, `/runbooks/instances*`,
 저장된 자격증명 + 카탈로그 명령(설정파일 비밀번호, DB 자격증명, 백업, 브라우저/환경
 변수 시크릿, 다른 사용자 홈, Windows Credential Manager, SSH 키, 노트/로그, privesc 후
 해시, BloodHound 수집, 폴더/파일 트리)을 골라 SSH/wmiexec/secretsdump/bloodhound-python/
-nxc로 approve→execute 실행, 출력 스트리밍(트리 명령은 파일 트리 렌더). LinPEAS/SUID
-분석기도 포함, Finding으로 승격 가능. SUID/GTFOBins 분석 아래에 접힌
+nxc로 approve→execute 실행, 출력 스트리밍(트리 명령은 파일 트리 렌더). LinPEAS 붙여넣기
+분석은 `LinpeasAnalysisPanel.tsx`(critical/high/medium 분류, Finding 승격, `targetId`/
+`projectId`/`onAnalyzed` props로 독립된 컴포넌트) — `features/graph/Inspector.tsx`의
+`manual-shell` 세션 블록(§10.14)도 같은 컴포넌트를 재사용해 그래프에서 바로 결과를
+붙여넣을 수 있다. SUID/GTFOBins 분석기도 포함, Finding으로 승격 가능. SUID/GTFOBins 분석 아래에 접힌
 `LinuxPrivescReference.tsx`(`onSendCommand` 없이, 복사 전용)도 항상 렌더된다 —
 `PrivescSessionPanel.tsx`의 것과 달리 활성 세션·target 선택과 무관하게 항상 존재하는
 페이지라서, `linuxPrivescCommands.ts`의 6개 카테고리 전부가 Command Palette에서
 `post-exploitation/<category id>` 항목(예: "pg_hba.conf" 검색 → `config-paths`,
 "rbash"/"busybox"/"noexec" 검색 → `restricted-shell`)으로 개별 딥링크되는 유일한
-진입점이다.
+진입점이다. "linpeas" 검색은 별도 `post-exploitation/linpeas` 항목(`anchorId:
+"linpeas-heading"`)으로 `LinpeasAnalysisPanel.tsx`의 결과 분석 섹션까지 딥링크한다.
 API: `/projects`, `/targets`, `/runbooks/credentials?project_id=`,
 `/post-exploitation/catalog`, `/post-exploitation*`, `/targets/{id}/linpeas`,
 `/targets/{id}/suid-scan`, `/findings`.
@@ -574,8 +578,16 @@ credential ID와 사용자명을 초기값으로 넘긴다. Credential에서 시
 Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출처를 먼저 표시하고, 평문 또는
 해시를 명시적으로 확인·복사할 수 있게 한다. Canvas 라벨도 `CAPTURED`, `CRACKED`, `READY`로
 상태를 구분한다.
-`manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하며, 선택 즉시
-해당 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 임베드한다.
+`manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하고, 일반
+Inspector로 열린다 — Inspector가 세션 자체를 다시 붙일 수 있는 "세션 열기" 토글, tun0
+임시 파일서버(`PrivescSessionPanel.tsx`와 같은 `/privesc-server/*`)를 켜고 열린 세션의
+PTY에 LinPEAS/pspy 다운로드 명령을 직접 입력하는 트리거, 붙여넣기 기반
+`LinpeasAnalysisPanel.tsx`(§10.11 참고)를 그 자리에서 제공한다. 예전엔 이 노드 유형을
+선택하면 항상 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 곧장
+임베드해 Inspector 자체가 렌더되지 않았는데(Post-Exploitation 이동 없이 라이브 셸을
+바로 만질 방법이 없었음), 지금은 그 폴더·파일 트리 뷰가 Inspector 안의 "폴더·파일 트리
+보기" 버튼(`GraphWorkspace.tsx`의 `fileTreePanel` 상태, `onBack`으로 복귀)으로 대체돼
+필요할 때만 연다.
 `manual-shell`은 리버스쉘 리스너·SSH 퀵커넥트·redis-cli 등 `/interactive-sessions/manual`로
 여는 모든 세션이 공유하는 합성 `template_id`라 카탈로그에 실제 항목이 없다 — 그래프 라벨은
 `graph/service.py`의 `_session_label()`이 이 경우만 `sess.command`(예: `nc -lvnp 4444`, 60자
