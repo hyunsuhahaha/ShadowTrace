@@ -17,6 +17,8 @@ it("renders every category as a static, copyable reference", () => {
   expect(screen.getByText(
     "cat /etc/postgresql/*/main/pg_hba.conf 2>/dev/null",
   )).toBeTruthy();
+  expect(screen.getByText("Redis 설정")).toBeTruthy();
+  expect(screen.getByText("MongoDB 설정")).toBeTruthy();
 });
 
 it("copies a command to the clipboard without any network request", async () => {

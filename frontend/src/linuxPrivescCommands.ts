@@ -32,6 +32,12 @@ export const linuxPrivescCategories: PrivescCategory[] = [
         note: "Debian/Ubuntu 계열인지 RHEL/CentOS 계열인지에 따라 아래 " +
           "서비스 설정 파일 경로가 달라집니다." },
       { label: "PATH·환경변수", command: "echo $PATH; env" },
+      { label: "네트워크 인터페이스", command: "ip a 2>/dev/null || ifconfig -a",
+        note: "이 호스트를 통해 다른 내부 네트워크로 피벗할 수 있는지 확인." },
+      { label: "bash 히스토리에서 평문 비밀번호 찾기",
+        command: "cat ~/.bash_history /root/.bash_history 2>/dev/null | " +
+          "grep -iE 'pass|pwd|ssh |mysql |psql '",
+        note: "다른 사용자가 명령줄 인자로 비밀번호를 직접 입력한 흔적이 남아있는 경우가 많습니다." },
     ],
   },
   {
@@ -45,6 +51,9 @@ export const linuxPrivescCategories: PrivescCategory[] = [
       { label: "파일 capability 검색", command: "getcap -r / 2>/dev/null",
         note: "SUID만 보면 놓치는 경로입니다 -- capability만으로도 " +
           "루트급 동작(예: cap_setuid)이 가능한 바이너리가 있을 수 있습니다." },
+      { label: "sudo 버전 확인", command: "sudo --version",
+        note: "1.8.25~1.8.31(CVE-2019-18634), 1.8.2~1.8.31p2(CVE-2021-3156, " +
+          "Baron Samedit) 등 알려진 sudo 자체 취약점부터 대조해보세요." },
     ],
   },
   {
@@ -56,6 +65,11 @@ export const linuxPrivescCategories: PrivescCategory[] = [
       { label: "시스템 크론탭", command: "cat /etc/crontab 2>/dev/null" },
       { label: "크론 디렉터리", command: "ls -la /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ 2>/dev/null" },
       { label: "사용자 크론탭", command: "ls -la /var/spool/cron/crontabs/ 2>/dev/null" },
+      { label: "크론이 돌리는 스크립트 내용", command: "grep -rhoE '(/[a-zA-Z0-9._-]+)+\\.sh' " +
+        "/etc/crontab /etc/cron.d/ 2>/dev/null | sort -u | xargs -I{} sh -c 'echo ==={}===; cat {}' " +
+        "2>/dev/null",
+        note: "tar/rsync/7z 등을 와일드카드(*)로 호출하는 스크립트는 GTFOBins의 " +
+          "wildcard injection으로 루트 권한 실행을 얻을 수 있습니다." },
       { label: "루트로 도는 프로세스", command: "ps aux | grep '^root'" },
       { label: "쓰기 가능한 systemd 유닛", command: "find /etc/systemd/system /lib/systemd/system " +
         "-writable -type f 2>/dev/null" },
@@ -77,9 +91,41 @@ export const linuxPrivescCategories: PrivescCategory[] = [
         note: "RHEL 계열은 데이터·설정이 같은 디렉터리에 있는 경우가 많습니다." },
       { label: "MySQL/MariaDB 설정", command: "cat /etc/mysql/my.cnf /etc/mysql/mariadb.conf.d/*.cnf " +
         "2>/dev/null" },
+      { label: "Redis 설정", command: "cat /etc/redis/redis.conf 2>/dev/null",
+        note: "인증 없이 접근 가능(unauthenticated)한지, requirepass가 비어있는지부터 확인하세요." },
+      { label: "MongoDB 설정", command: "cat /etc/mongod.conf /etc/mongodb.conf 2>/dev/null",
+        note: "배포판·설치 방식에 따라 파일명이 mongod.conf/mongodb.conf로 갈립니다." },
       { label: "Apache 설정 (Debian)", command: "cat /etc/apache2/apache2.conf 2>/dev/null" },
       { label: "Apache 설정 (RHEL, httpd)", command: "cat /etc/httpd/conf/httpd.conf 2>/dev/null" },
+      { label: "Nginx 설정", command: "cat /etc/nginx/nginx.conf 2>/dev/null" },
+      { label: "Tomcat 사용자·비밀번호", command: "find / -name tomcat-users.xml 2>/dev/null " +
+        "-exec cat {} \\;",
+        note: "manager/admin 계정이 평문으로 들어있는 경우가 많습니다 -- Tomcat Manager " +
+          "war 배포 RCE로 바로 이어지는 흔한 경로입니다." },
       { label: "SSH 서버 설정", command: "cat /etc/ssh/sshd_config 2>/dev/null" },
+      { label: "Samba(SMB) 설정", command: "cat /etc/samba/smb.conf 2>/dev/null",
+        note: "익명/게스트 쓰기 가능한 공유([share] 섹션의 writable/guest ok)가 있는지 확인." },
+      { label: "NFS 공유 목록", command: "cat /etc/exports 2>/dev/null",
+        note: "no_root_squash가 걸린 공유는 클라이언트에서 root로 파일을 심어 privesc할 수 있습니다." },
+      { label: "vsftpd 설정", command: "cat /etc/vsftpd.conf 2>/dev/null" },
+      { label: "ProFTPD 설정", command: "cat /etc/proftpd/proftpd.conf 2>/dev/null" },
+      { label: "rsyncd 설정", command: "cat /etc/rsyncd.conf 2>/dev/null",
+        note: "인증 없는 모듈(auth users 미설정)이 있으면 그대로 파일을 읽고 쓸 수 있습니다." },
+      { label: "SNMP 설정", command: "cat /etc/snmp/snmpd.conf 2>/dev/null",
+        note: "커뮤니티 문자열(public/private 등)이 평문으로 저장돼 있습니다." },
+      { label: "OpenLDAP 설정 (Debian, cn=config)", command: "ls /etc/ldap/slapd.d/ 2>/dev/null; " +
+        "cat /etc/ldap/slapd.d/cn=config/olcDatabase*.ldif 2>/dev/null" },
+      { label: "OpenLDAP 설정 (RHEL, 구형)", command: "cat /etc/openldap/slapd.conf 2>/dev/null" },
+      { label: "Exim 설정 (Debian)", command: "cat /etc/exim4/exim4.conf.template 2>/dev/null" },
+      { label: "Postfix 설정", command: "cat /etc/postfix/main.cf 2>/dev/null" },
+      { label: "Docker 데몬 설정", command: "cat /etc/docker/daemon.json 2>/dev/null; " +
+        "groups | grep -o docker",
+        note: "현재 사용자가 docker 그룹에 속해 있으면 그 자체로 루트 권한 상승 경로입니다 " +
+          "(호스트 루트를 마운트한 컨테이너를 직접 띄울 수 있음)." },
+      { label: "VNC 저장된 비밀번호", command: "find / -name '*.vnc' -o -name 'passwd' -path '*vnc*' " +
+        "2>/dev/null",
+        note: "찾은 파일은 이 앱의 VNC 비밀번호 복호화 도구(Decoders)에 그대로 넣어보세요 " +
+          "(DES-ECB로 약하게 암호화돼 있어 복호화 가능)." },
     ],
   },
   {
