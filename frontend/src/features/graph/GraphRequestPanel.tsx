@@ -4,6 +4,8 @@ import { GraphRequestDraft } from "./graphModel";
 import { S } from "./graphStyles";
 import Log4ShellPayloadReference from "../../Log4ShellPayloadReference";
 import JndiRceListenerPanel from "../../JndiRceListenerPanel";
+import LangflowRcePayloadReference from "../../LangflowRcePayloadReference";
+import JwtForgePanel from "../../JwtForgePanel";
 
 type GraphExchange = {
   id: number; status_code?: number | null; duration_ms: number; size: number;
@@ -22,7 +24,7 @@ export function GraphRequestPanel(props: {
   // this panel just gained a second tab that reuses those two components
   // directly, same as how a service node's Inspector reuses
   // LinpeasAnalysisPanel/SuidAnalysisPanel instead of re-navigating.
-  const [tab, setTab] = useState<"request" | "log4shell">("request");
+  const [tab, setTab] = useState<"request" | "log4shell" | "langflow" | "jwt">("request");
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState(props.draft.url);
   const [headers, setHeaders] = useState("{}");
@@ -91,6 +93,27 @@ export function GraphRequestPanel(props: {
     reader.readAsDataURL(file);
   };
 
+  const useLangflowPayload = (opts: { path: string; body: string }) => {
+    try {
+      const target = new URL(url);
+      target.pathname = opts.path;
+      setUrl(target.toString());
+    } catch {
+      // url isn't a full origin yet (e.g. still the placeholder) -- the
+      // operator still gets the right method/body/tab, just has to type
+      // the host themselves once.
+    }
+    setMethod("POST");
+    setBodyMode("json");
+    setBody(opts.body);
+    setTab("request");
+  };
+  const useJwtAsAuthHeader = (token: string) => {
+    let parsed: Record<string, unknown> = {};
+    try { parsed = JSON.parse(headers || "{}"); } catch { /* start fresh below */ }
+    setHeaders(JSON.stringify({ ...parsed, Authorization: `Bearer ${token}` }, null, 2));
+    setTab("request");
+  };
   const requestPayload = () => ({
     project_id: props.draft.projectId, target_id: props.draft.targetId,
     service_id: props.draft.serviceId, name: `${method} ${new URL(url).pathname || "/"}`,
@@ -149,7 +172,9 @@ export function GraphRequestPanel(props: {
   return <section style={S.requestPanel} aria-label="Graph Web Request">
     <div style={S.requestPanelHead}>
       <div><small style={S.requestEyebrow}>WEB REQUEST</small>
-        <h3 style={{ margin: "4px 0 0" }}>{tab === "request" ? "요청 편집기" : "Log4Shell"}</h3></div>
+        <h3 style={{ margin: "4px 0 0" }}>{{
+          request: "요청 편집기", log4shell: "Log4Shell", langflow: "Langflow RCE", jwt: "JWT 위조",
+        }[tab]}</h3></div>
       <button style={S.requestBack} onClick={props.onBack}>← 실행 결과</button>
     </div>
     <div style={S.requestTechniqueActions} role="tablist" aria-label="Request 패널 탭">
@@ -157,11 +182,19 @@ export function GraphRequestPanel(props: {
         onClick={() => setTab("request")}>요청 편집기</button>
       <button role="tab" style={S.requestTechniqueButton} aria-selected={tab === "log4shell"}
         onClick={() => setTab("log4shell")}>Log4Shell · JNDI 리스너</button>
+      <button role="tab" style={S.requestTechniqueButton} aria-selected={tab === "langflow"}
+        onClick={() => setTab("langflow")}>Langflow RCE (CVE-2026-33017)</button>
+      <button role="tab" style={S.requestTechniqueButton} aria-selected={tab === "jwt"}
+        onClick={() => setTab("jwt")}>JWT alg:none 위조</button>
     </div>
     {tab === "log4shell" ? <>
       <Log4ShellPayloadReference />
       <JndiRceListenerPanel />
-    </> : <>
+    </> : tab === "langflow" ? (
+      <LangflowRcePayloadReference onUseInRequest={useLangflowPayload} />
+    ) : tab === "jwt" ? (
+      <JwtForgePanel onUseAsAuthHeader={useJwtAsAuthHeader} />
+    ) : <>
     <div style={S.requestLine}>
       <select value={method} onChange={(e) => setMethod(e.target.value)} style={S.requestMethod}>
         {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

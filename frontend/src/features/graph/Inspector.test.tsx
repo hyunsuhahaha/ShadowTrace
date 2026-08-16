@@ -1194,6 +1194,83 @@ it("also offers the Windows PrivEsc checklist on the same manual-shell node -- e
   expect(await screen.findByText(/전송: .type \(Get-PSReadlineOption\)/)).toBeTruthy();
 });
 
+it("also offers the MCP tool-registration checklist on the same manual-shell node -- HTB Fireflow's mcp-user pivot", async () => {
+  // MCP servers on a box are typically bound to localhost, so unlike the
+  // JWT-forge/Langflow-RCE tabs (which send from the Kali box over HTTP)
+  // these curl templates run from an already-open shell -- same "셸에 입력"
+  // wiring as Linux/Windows PrivEsc reference.
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 71, command: "ssh nightfall@fireflow.htb",
+        status: "running" }]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/71/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-71", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "ssh nightfall@fireflow.htb", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 71 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #71");
+
+  fireEvent.click(screen.getByText("MCP 서버 악성 tool 등록 참고 열기"));
+  expect(screen.getByText("위조 토큰으로 악성 tool 등록·호출")).toBeTruthy();
+  fireEvent.click(screen.getByText("리버스쉘 tool 등록 (템플릿)")
+    .closest(".sqlPayloadRow")!.querySelector("button:last-child")!);
+  expect(await screen.findByText(/전송: .curl/)).toBeTruthy();
+});
+
+it("also offers the Kubernetes pod-pivot checklist on the same manual-shell node -- HTB Fireflow's kubelet exec step", async () => {
+  // Same reference-only shape as the MCP checklist above: RBAC self-check,
+  // hostPath privileged-pod discovery, then the kubelet exec websocket
+  // script -- run from the shell already open inside the pod.
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 71, command: "ssh nightfall@fireflow.htb",
+        status: "running" }]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/71/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-71", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "ssh nightfall@fireflow.htb", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 71 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #71");
+
+  fireEvent.click(screen.getByText("Kubernetes 파드 피벗 참고 열기"));
+  expect(screen.getByText("kubelet exec API로 특권 파드 진입")).toBeTruthy();
+  fireEvent.click(screen.getByText("kubelet exec로 파드 안 인터랙티브 쉘")
+    .closest(".sqlPayloadRow")!.querySelector("button:last-child")!);
+  expect(await screen.findByText(/전송: .python3/)).toBeTruthy();
+});
+
 it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH credential needed", async () => {
   // The "다른 자격증명으로 조회 (SSH)" button next to this one requires a
   // stored credential and a fresh SSH/wmiexec connection -- useless for a

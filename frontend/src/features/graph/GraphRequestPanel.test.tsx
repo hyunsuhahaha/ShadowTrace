@@ -122,3 +122,55 @@ it("offers Log4Shell payloads and the JNDI RCE listener without leaving the grap
   expect(await screen.findByText("JNDI 실전 RCE 리스너 (rogue LDAP)")).toBeTruthy();
   expect(screen.getByText("리스너 시작")).toBeTruthy();
 });
+
+it("fills the request editor with the CVE-2026-33017 Langflow RCE payload on click -- Fireflow's foothold", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/vpn/status")) return Promise.resolve(new Response(
+      JSON.stringify({ tun0: "tun0 UNKNOWN 10.10.15.56/23" }),
+      { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <GraphRequestPanel draft={{ projectId: 3, targetId: 10, serviceId: 20,
+      url: "https://fireflow.htb/login" }} onBack={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(screen.getByText("Langflow RCE (CVE-2026-33017)"));
+  expect(await screen.findByText("엔드포인트")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("요청 편집기에 채우기"));
+
+  expect(await screen.findByLabelText("Request URL")).toBeTruthy();
+  expect((screen.getByLabelText("Request URL") as HTMLInputElement).value)
+    .toMatch(/^https:\/\/fireflow\.htb\/api\/v1\/build_public_tmp\/.+\/flow$/);
+  expect(screen.getByDisplayValue("POST")).toBeTruthy();
+  expect((screen.getByLabelText("Body mode") as HTMLSelectElement).value).toBe("json");
+  const bodyText = (screen.getByLabelText("BODY") as HTMLTextAreaElement).value;
+  expect(bodyText).toContain("10.10.15.56");
+  expect(bodyText).toContain("ExploitComp");
+});
+
+it("forges an alg:none JWT and fills it into the Authorization header -- Fireflow's MCP admin bypass", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/vpn/status")) return Promise.resolve(new Response(
+      JSON.stringify({ tun0: "" }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <GraphRequestPanel draft={{ projectId: 3, targetId: 10, serviceId: 20,
+      url: "https://fireflow.htb:8000/auth" }} onBack={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(screen.getByText("JWT alg:none 위조"));
+  expect(await screen.findByText("서명 없는 토큰 만들기")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("Authorization 헤더로 채우기"));
+
+  expect(await screen.findByLabelText("HEADERS · JSON")).toBeTruthy();
+  const headers = JSON.parse((screen.getByLabelText("HEADERS · JSON") as HTMLTextAreaElement).value);
+  expect(headers.Authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.$/);
+});
