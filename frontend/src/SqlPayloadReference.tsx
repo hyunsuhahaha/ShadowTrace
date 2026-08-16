@@ -52,7 +52,8 @@ export default function SqlPayloadReference({ onSendToIntruder }: {
             ? <>탐지된 tun0 IP <code>{lhost}</code>를 <code>{"{LHOST}"}</code> 자리에 자동으로 채웁니다.</>
             : <>tun0 IP를 아직 못 찾았습니다 — VPN이 연결돼 있는지 확인하거나, <code>{"{LHOST}"}</code>가
               들어간 페이로드는 직접 IP로 바꿔서 사용하세요.</>}
-          {" "}(PostgreSQL COPY FROM PROGRAM 리버스 쉘에만 해당)
+          {" "}(리버스 쉘 페이로드가 있는 항목에만 해당 — PostgreSQL COPY FROM PROGRAM,
+          MSSQL xp_cmdshell, MySQL OUTFILE 웹셸/UDF)
         </p>
         <div className="netexecCredForm">
           <input value={lport} onChange={(e) => setLport(e.target.value)}

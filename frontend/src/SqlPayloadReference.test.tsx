@@ -41,6 +41,23 @@ it("fills LHOST and LPORT into the postgres COPY FROM PROGRAM reverse shell payl
   expect(screen.getByText(resolved)).toBeTruthy();
 });
 
+it("fills LHOST and LPORT into the MSSQL xp_cmdshell and MySQL reverse shell payloads too", async () => {
+  vi.stubGlobal("fetch", stubVpnStatus("10.10.14.5"));
+  render(<SqlPayloadReference />);
+  await screen.findByText(/^10\.10\.14\.5$/);
+
+  const mssql = findSqlPayloadCategory("mssql-xp-cmdshell")!;
+  const mssqlShell = mssql.payloads.find((item) => item.label.startsWith("리버스 쉘")
+    && !item.payload.startsWith("';"))!;
+  expect(screen.getByText(mssqlShell.payload
+    .replaceAll("{LHOST}", "10.10.14.5").replaceAll("{LPORT}", "4444"))).toBeTruthy();
+
+  const udf = findSqlPayloadCategory("mysql-udf-rce")!;
+  const udfShell = udf.payloads.find((item) => item.payload.includes("{LHOST}"))!;
+  expect(screen.getByText(udfShell.payload
+    .replace("{LHOST}", "10.10.14.5").replace("{LPORT}", "4444"))).toBeTruthy();
+});
+
 it("copies a resolved payload to the clipboard without sending any network request beyond vpn/status", async () => {
   const writeText = vi.fn(() => Promise.resolve());
   vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });

@@ -434,7 +434,7 @@ API: `/targets`, `/web/requests*`(CRUD, duplicate, exchanges, send), `/web/excha
 | 하위 컴포넌트/모듈 | 역할 |
 |---|---|
 | `IntruderPanel.tsx` | Intruder 클론: sniper/battering-ram/pitchfork/cluster-bomb, payload position, match/filter, 저장 후보군, `/web/intruder/{runId}` 실행 제어 |
-| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 postgres COPY FROM PROGRAM 리버스 쉘 항목에만 있음) |
+| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 리버스 쉘 페이로드가 있는 항목에만 있음: PostgreSQL COPY FROM PROGRAM, MSSQL xp_cmdshell, MySQL SELECT INTO OUTFILE 웹셸/UDF sys_exec — `sqlPayloads.ts`) |
 | `LfiPayloadReference.tsx` | LFI/경로 순회 페이로드 치트시트, tun0 IP 자동 채움 |
 | `Log4ShellPayloadReference.tsx` | CVE-2021-44228 JNDI probe 카탈로그 |
 | `ProxyPanel.tsx` | mitmproxy 패시브 캡처(시작/중지, CA 인증서 다운로드), 클라우드 지문 배지 |
