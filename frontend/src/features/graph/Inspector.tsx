@@ -1296,6 +1296,10 @@ export function Inspector(props: {
                 <div style={S.captureHead}><b>{item.plain}</b></div>
                 <div style={S.captureMeta}>{item.hash}</div>
                 <div style={S.captureActions}>
+                  <button style={S.resultAction}
+                    onClick={() => void navigator.clipboard.writeText(item.plain)}>
+                    복사
+                  </button>
                   <input placeholder="사용자명" value={crackUsernames[item.hash] || ""}
                     disabled={promoted}
                     onChange={(event) => setCrackUsernames(

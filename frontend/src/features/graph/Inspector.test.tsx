@@ -975,3 +975,35 @@ it("shows a hash-crack job's live output and lets a cracked hash be promoted", a
   ));
   expect(await screen.findByText(/admin 그래프에 남겼습니다/)).toBeTruthy();
 });
+
+it("copies a cracked plaintext to the clipboard without needing to drag-select it", async () => {
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/hash-cracking/42")) return Promise.resolve(new Response(JSON.stringify({
+      status: "running", exit_code: null, cracked_count: 1, hash_count: 1,
+      command_display: "hashcat -m 17200 ...",
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/hash-cracking/42/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "hashcat (v7.1.2) starting...", stderr: "",
+      cracked: [{ hash: "$pkzip$1*...*$/pkzip$", plain: "hunter2" }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const writeText = vi.fn(() => Promise.resolve());
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "crack-42", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "해시 크래킹 · PKZIP/ZipCrypto",
+      source_ref: JSON.stringify({ module: "hash_cracking", kind: "hash_crack_job", id: 42 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(await screen.findByText("hunter2")).toBeTruthy();
+  fireEvent.click(screen.getByText("복사"));
+
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("hunter2"));
+});
