@@ -338,6 +338,18 @@ non-2xx 오류 처리와 JSON decode를 제공한다
 | `#graph`, `#dashboard` | `features/graph/GraphWorkspace.tsx` (기본 홈 라우트) |
 | 그 외 / 빈 hash | `ScanCenter.tsx` (default case) |
 
+**`window.prompt()`/`alert()` 금지 패턴**: 이 앱은 `window.prompt()`/`alert()`를
+쓰지 않는다 — bare/root Kali Chrome(또는 dialog가 차단된 브라우저)에서는 native
+dialog가 아예 뜨지 않고 `prompt()`가 조용히 `null`을 반환해, 버튼을 눌러도 아무
+일도 없는 것처럼 보인다(`AppShell.tsx`의 프로젝트 추가 모달에 원래 있던 주석).
+2026-08-16 세션에서 실제 사용자 흐름을 다시 걸어보다 이 정확한 증상으로 재현된 뒤
+5곳을 in-app 모달로 교체했다: `App.tsx`의 `createTarget`("+ 대상") IP 입력과
+`run()`의 `{username}` 대화형 인증 이름 입력, `OperationsWorkspace.tsx`의 동시
+스캔 수 설정, `RunbookWorkspace.tsx`의 Template 복제 이름, `ScanCenter.tsx`의 스캔
+alias·태그 편집. 새 입력 하나가 필요하면 `AppShell.tsx`의 `creatingProject`/
+`newProjectName`/`createError` 3종 state + `className="modal"` `role="dialog"`
+패턴을 그대로 따른다 — `confirm()`(삭제 확인 등)은 아직 별도 감사 대상으로 남아있다.
+
 ### 10.1 `App.tsx` — Service Enumeration (`#enumeration`)
 
 Project → Target → Service를 고른 뒤, 검토된 명령 템플릿(nmap 후속 조사, 자격증명
@@ -570,6 +582,24 @@ handoff를 추가로 제공하며, handoff 시 그래프를 벗어나지 않고 
 편집·저장·전송·응답 검토까지 수행한다. GraphRequestPanel은 `/vpn/status`의 tun0 IPv4를
 UNC 경로로 URL 커서 또는 `page=` 값에 삽입하는 SMB Direct Injection 단축과 존재하지 않는
 호스트명의 UNC 경로를 삽입하는 LLMNR 시도 단축도 제공한다.
+GraphRequestPanel엔 쿠키 편집 필드(`COOKIES · JSON`)와 `body_mode`(raw/json/form/
+multipart) 선택이 있다 — 백엔드(`web_testing/router.py`)는 둘 다 처음부터 지원했지만
+(httpx `cookies=`, `files=`), 그래프에서 핸드오프되는 이 패널만 `cookies: {}`로
+고정하고 body_mode도 raw뿐이라 실제로 쓸 방법이 없었다(쿠키 편집은 그래프 밖의 전체
+Web Testing 페이지 `WebWorkspace.tsx`에만 있었음 — 접근통제 우회용 쿠키 변조 같은
+작업마다 그래프를 벗어나야 했다). `multipart`를 고르면 `BODY` 텍스트영역 대신 필드명 +
+`<input type=file>` + 추가 필드(JSON)로 바뀌고, 프런트가 파일을 `FileReader`로
+base64 인코딩해 `body`에 `{fields, files: [{field, filename, content_type,
+content_b64}]}` 형태로 담아 보낸다 — 백엔드는 `body_mode == "multipart"`일 때 이걸
+파싱해 httpx `files=`로 실제 업로드 요청을 만든다(스냅샷엔 base64 원문 대신 바이트
+수만 남겨 커진 요청을 그대로 저장하지 않는다).
+`App.tsx`의 웹 서비스 패널에서 가장 눈에 띄는 CTA인 "Web Testing에서 열기" 버튼은
+`openLinkInRequest`를 거치지 않고 `location.hash="web"`로 무조건 그래프를 벗어났다
+— `http-link-extract` 결과 목록의 개별 링크 액션에만 그래프 내 GraphRequestPanel
+경로(`onOpenRequestInGraph`)가 연결돼 있었다. 쿠키/멀티파트 지원을 그래프 패널에
+추가해도 실제 사용자가 맨 처음 누르는 버튼이 그래프를 떠나면 소용없다는 걸 라이브
+재검증으로 확인하고, 이 버튼도 `openLinkInRequest(webUrl)`을 호출하도록 통일했다
+(embedded일 땐 버튼 라벨도 "Request 패널 열기"로 바뀐다).
 Finding과 credential 작업도 라우트를 바꾸지 않는다. Finding은 `ReportWorkspace.tsx`,
 credential은 `HashCrackingWorkspace.tsx`와 `PostExploitationWorkspace.tsx`를 각각
 `embedded` 인터페이스로 우측 패널에 lazy-load한다. 이 어댑터는 프로젝트·대상·해시·모드·
@@ -579,7 +609,13 @@ credential ID와 사용자명을 초기값으로 넘긴다. Credential에서 시
 이력을 아래로 재배치하며 숨기지 않는다.
 Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출처를 먼저 표시하고, 평문 또는
 해시를 명시적으로 확인·복사할 수 있게 한다. Canvas 라벨도 `CAPTURED`, `CRACKED`, `READY`로
-상태를 구분한다.
+상태를 구분한다. 평문(해시 아님)이고 사용자명이 있으면 "SSH로 시도" 버튼도 뜬다 —
+NetExec 자격증명 확인 노드의 `openSsh`는 체크 명령 argv에서 `-u`/`-p`를 정규식으로
+읽지만, hash-crack-job 등에서 나온 순수 credential 노드는 그런 명령 문자열이 없어
+같은 방식을 쓸 수 없다. 이 credential 전용 SSH 액션을 위해 `targets` 쿼리의
+`enabled` 조건도 execution/session 노드뿐 아니라 credential 노드에서도 켜지도록
+넓혔다(HTB Unified의 마지막 단계 — MongoDB에서 크랙한 비밀번호를 root SSH에
+재사용 — 를 그래프에서 클릭만으로 잇기 위해 추가).
 `manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하고, 일반
 Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 세션 뷰)와 같은
 구성을 그대로 그래프에 옮겨왔다: 노드 상태가 `attempt-failed`(백엔드 `failed`/
@@ -593,8 +629,16 @@ Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 �
 다운로드 명령을 직접 입력하는 트리거(manual-shell은 nc 리스너·SSH뿐 아니라 evil-winrm도
 거치는 합성 template_id라 Windows 셸도 흔함 — WinPEAS도 같이 넣음), 붙여넣기 기반
 `LinpeasAnalysisPanel.tsx`/`SuidAnalysisPanel.tsx`(§10.11 참고), 그리고 접힌
-`LinuxPrivescReference.tsx`(세션이 열려 있을 때만 `onSendCommand`를 넘겨 PTY로 직접
-타이핑, 아니면 복사 전용으로 폴백)까지 그 자리에서 제공한다. 예전엔 이 노드 유형을
+`LinuxPrivescReference.tsx`/`WindowsPrivescReference.tsx`(`windowsPrivescCommands.ts`가
+데이터 소스 — `linuxPrivescCommands.ts`와 완전히 같은 구조: `win-basic-info`/
+`win-powershell-history`/`win-services-tasks` 3개 카테고리, `id={winprivesc-<category
+id>}`로 Command Palette 딥링크, `PostExploitationWorkspace.tsx`에도 나란히 항상
+렌더됨. PowerShell 히스토리 조회 명령 자체는 `credential_hunt.yaml`의
+`windows_browser_script_env`로 이미 있었지만 SSH/wmiexec 카탈로그 실행 전용이라
+그래프의 manual-shell/evil-winrm 세션에서 열린 셸로는 보낼 방법이 없었다 — "이미
+있다"와 "그래프 UI 조작으로 이어진다"는 다른 질문이라는 걸 보여주는 사례,
+세션이 열려 있을 때만 `onSendCommand`를 넘겨 PTY로 직접 타이핑, 아니면 복사 전용으로
+폴백)까지 그 자리에서 제공한다. 예전엔 이 노드 유형을
 선택하면 항상 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 곧장
 임베드해 Inspector 자체가 렌더되지 않았는데(Post-Exploitation 이동 없이 라이브 셸을
 바로 만질 방법이 없었음), 지금은 그 SSH 카탈로그 기반 폴더·파일 트리 뷰가 "다른
