@@ -30,6 +30,19 @@ def _catalog_label(template_id: str | None, fallback: str) -> str:
     item = catalog.items.get(template_id or "")
     return (item or {}).get("name") or template_id or fallback
 
+# Every manually-opened session (a reverse shell listener, an SSH quick-connect,
+# a redis-cli/mongo/mysql probe shell, ...) shares the one synthetic
+# template_id "manual-shell" -- it was never a real catalog entry, so
+# _catalog_label's fallback chain landed on that literal id itself, and the
+# graph showed the same generic "manual-shell" label no matter what the
+# session's actual command was. Use the command line instead for that one
+# id; every other template_id (responder-listener, ftp-client, ...) already
+# has its own meaningful id and keeps going through _catalog_label as before.
+def _session_label(template_id: str | None, command: str | None) -> str:
+    if template_id == "manual-shell" and command:
+        return command if len(command) <= 60 else f"{command[:57]}..."
+    return _catalog_label(template_id, "session")
+
 # Executions are auto-nodified but their security outcome is never auto-judged
 # (product principle): a completed command is not a "success". Only technical
 # failure/interruption maps to attempt-failed; the user marks real outcomes.
@@ -813,6 +826,12 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 if (sess.status in {"failed", "interrupted"}
                         and existing.status == "in-progress"):
                     existing.status = "attempt-failed"
+                # Retroactively refine a node created before this label logic
+                # existed (still stuck on the raw "manual-shell" id) -- same
+                # "still-default label" refresh the service loop above does,
+                # never touches a label the operator has actually edited.
+                if existing.label == "manual-shell" and sess.command:
+                    existing.label = _session_label(sess.template_id, sess.command)
                 node = existing
             else:
                 meta = _activity_meta(json.dumps({
@@ -822,7 +841,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                                          "tool": sess.template_id or ""})
                 node = create_node(
                     db, project_id, "technique",
-                    label=_catalog_label(sess.template_id, "session"),
+                    label=_session_label(sess.template_id, sess.command),
                     status=_EXECUTION_STATUS.get(sess.status, "in-progress"),
                     source_ref=_source_ref("sessions", "session", sess.id),
                     meta=meta, provenance=provenance)

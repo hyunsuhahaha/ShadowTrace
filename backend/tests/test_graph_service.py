@@ -725,6 +725,88 @@ def test_sync_projects_interactive_sessions_as_technique_nodes(monkeypatch):
                    for relation, _, target in relations)
 
 
+def test_manual_shell_session_is_labeled_from_its_own_command_not_the_generic_template_id():
+    # Every manually-opened session (reverse shell listener, SSH quick-connect,
+    # redis-cli probe, ...) shares the synthetic template_id "manual-shell",
+    # which was never a real catalog entry -- the graph used to show the
+    # literal string "manual-shell" for all of them regardless of what was
+    # actually run.
+    from app.models import InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.29")
+    db.add(t); db.flush()
+    db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
+                              command="nc -lvnp 4444", cwd="/tmp", status="ready"))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert tech.label == "nc -lvnp 4444"
+
+
+def test_manual_shell_session_label_is_truncated_for_a_long_command():
+    from app.models import InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.30")
+    db.add(t); db.flush()
+    long_command = "impacket-mssqlclient " + "x" * 60
+    db.add(InteractiveSession(target_id=t.id, template_id="manual-shell",
+                              command=long_command, cwd="/tmp", status="ready"))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    assert len(tech.label) == 60
+    assert tech.label.endswith("...")
+    assert tech.label.startswith("impacket-mssqlclient ")
+
+
+def test_sync_retroactively_relabels_a_manual_shell_node_created_before_this_fix():
+    from app.models import InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.31")
+    db.add(t); db.flush()
+    session = InteractiveSession(target_id=t.id, template_id="manual-shell",
+                                 command="nc -lvnp 4444", cwd="/tmp", status="ready")
+    db.add(session); db.flush()
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    # Simulate a node that was created back when the label was still the
+    # generic "manual-shell" string, before this fix existed.
+    tech.label = "manual-shell"
+    db.commit()
+
+    service.sync_from_project(db, p.id)
+
+    db.refresh(tech)
+    assert tech.label == "nc -lvnp 4444"
+
+
+def test_sync_does_not_overwrite_a_manual_shell_label_the_operator_already_edited():
+    from app.models import InteractiveSession, Target
+    db = database()
+    p = project(db)
+    t = Target(project_id=p.id, name="b", ip="10.0.0.32")
+    db.add(t); db.flush()
+    session = InteractiveSession(target_id=t.id, template_id="manual-shell",
+                                 command="nc -lvnp 4444", cwd="/tmp", status="ready")
+    db.add(session); db.flush()
+    service.sync_from_project(db, p.id)
+    tech = db.query(GraphNode).filter_by(type="technique").one()
+    tech.label = "웹셸 리버스쉘 (커스텀 이름)"
+    db.commit()
+
+    service.sync_from_project(db, p.id)
+
+    db.refresh(tech)
+    assert tech.label == "웹셸 리버스쉘 (커스텀 이름)"
+
+
 def test_listener_log_state_reads_the_sessions_own_log(tmp_path):
     armed = tmp_path / "armed.log"
     armed.write_text("listening on [any] 4444 ...\n")

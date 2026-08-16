@@ -576,6 +576,13 @@ Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출
 상태를 구분한다.
 `manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하며, 선택 즉시
 해당 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 임베드한다.
+`manual-shell`은 리버스쉘 리스너·SSH 퀵커넥트·redis-cli 등 `/interactive-sessions/manual`로
+여는 모든 세션이 공유하는 합성 `template_id`라 카탈로그에 실제 항목이 없다 — 그래프 라벨은
+`graph/service.py`의 `_session_label()`이 이 경우만 `sess.command`(예: `nc -lvnp 4444`, 60자
+초과 시 말줄임)로 대체하고, 다른 template_id는 그대로 `_catalog_label()`을 쓴다. 이미
+"manual-shell" 그 자체로 저장된 기존 노드도 다음 sync에서 라벨이 그 문자열 그대로일 때만
+자동으로 재라벨링된다(사용자가 직접 고친 라벨은 건드리지 않음 — 서비스 노드의 "still-default
+label" 재정제와 같은 원칙).
 Windows 폴더·파일 트리 명령은 `C:\\` 루트를 명시적으로 포함해 드라이브 전체를 조회한다.
 완료된 트리는 실시간 shell 상태가 아니라 해당 실행 시각의 저장된 조회 결과로 표시한다.
 Time Machine 재생 중에도 Canvas/Outline 노드 선택은 허용하며, 우측 읽기 전용 패널에서 당시
