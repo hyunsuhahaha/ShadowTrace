@@ -18,8 +18,11 @@ from fastapi import HTTPException
 import app.executor as executor_module
 import app.modules.executions.router as executions_router
 from app.modules.executions.router import (
-    _ftp_tree_connection_args, _output_path, _validated_override, delete_execution,
+    _ftp_tree_connection_args, delete_execution,
     derive_output, execute, execution_output_file, promote_ftp_file,
+)
+from app.modules.executions.service import (
+    _validated_override, output_path_for as _output_path,
 )
 from app.modules.graph import service as graph_service
 
@@ -62,7 +65,7 @@ def test_output_path_avoids_overwriting_an_existing_file(tmp_path):
 
 
 def test_derive_output_writes_a_file_and_registers_evidence(tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
     db = database()
     project = Project(name="Forest", description="")
     db.add(project); db.flush()
@@ -97,7 +100,7 @@ def test_derive_output_rejects_an_empty_filename():
 
 def test_execution_output_file_reads_a_file_the_command_wrote_itself(
         tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
     db = database()
     project = Project(name="Forest", description="")
     db.add(project); db.flush()
@@ -119,7 +122,7 @@ def test_execution_output_file_reads_a_file_the_command_wrote_itself(
 
 def test_execution_output_file_404s_for_a_missing_or_traversal_name(
         tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
     db = database()
     project = Project(name="Forest", description="")
     db.add(project); db.flush()
@@ -178,11 +181,11 @@ def test_delete_execution_blocks_a_still_running_command():
 
 
 def test_execute_stores_the_graph_node_it_was_run_to_follow_up_on(tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
-    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
     async def noop(*args, **kwargs):
         pass
-    monkeypatch.setattr(executions_router, "run_execution", noop)
+    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
     db = database()
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
@@ -201,6 +204,36 @@ def test_execute_stores_the_graph_node_it_was_run_to_follow_up_on(tmp_path, monk
     assert row.graph_parent_node_id == "01ABCXYZFINDINGNODE0000001"
 
 
+def test_execute_nests_output_under_output_subdir_when_given(tmp_path, monkeypatch):
+    # AutoRecon's fan-out passes this so a service's results land under
+    # outputs/tcp445-smb/ instead of the flat outputs/ folder every manual
+    # run still uses (output_subdir omitted -- unaffected by this).
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
+    captured_output_paths = []
+    async def noop(execution_id, argv, cwd, output):
+        captured_output_paths.append(output)
+    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.flush()
+    service = Service(
+        target_id=target.id, port=445, protocol="tcp", state="open", name="microsoft-ds",
+        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
+    db.add(service); db.commit()
+
+    asyncio.run(execute(ExecutionIn(
+        target_id=target.id, service_id=service.id, template_id="smb-enum",
+        variables={}, run_as_root=False, output_subdir="tcp445-microsoft-ds"), db=db))
+
+    expected_dir = (tmp_path / "projects" / "Lab" / "targets" / "10.10.10.12" /
+                    "outputs" / "tcp445-microsoft-ds")
+    assert expected_dir.is_dir()
+    assert captured_output_paths[0].parent == expected_dir
+
+
 def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
         tmp_path, monkeypatch):
     # Vhost-routed sites often refuse or redirect bare-IP requests, so HTTP
@@ -208,11 +241,11 @@ def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
     # protocols (SMB here) keep hitting the IP — a hostname mismatch is far
     # less likely to change their response, and DNS may not even be set up
     # for them.
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
-    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
     async def noop(*args, **kwargs):
         pass
-    monkeypatch.setattr(executions_router, "run_execution", noop)
+    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
     db = database()
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
@@ -241,11 +274,11 @@ def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
 
 def test_execute_falls_back_to_ip_for_http_templates_without_a_confirmed_hostname(
         tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
-    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
     async def noop(*args, **kwargs):
         pass
-    monkeypatch.setattr(executions_router, "run_execution", noop)
+    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
     db = database()
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
@@ -263,11 +296,11 @@ def test_execute_falls_back_to_ip_for_http_templates_without_a_confirmed_hostnam
 
 
 def test_execute_runs_a_valid_operator_argv_edit(tmp_path, monkeypatch):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
-    monkeypatch.setattr(executions_router.shutil, "which", lambda _: "/usr/bin/true")
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
     async def noop(*args, **kwargs):
         pass
-    monkeypatch.setattr(executions_router, "run_execution", noop)
+    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
     db = database()
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
@@ -397,7 +430,7 @@ class _FakeFTP:
 
 
 def _ftp_tree_execution(db, tmp_path, monkeypatch, command=None):
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
     target = Target(project_id=project.id, name="Box", ip="10.129.7.93")
@@ -453,7 +486,7 @@ def test_promote_ftp_file_attaches_to_the_given_technique_node(tmp_path, monkeyp
 
 def test_promote_ftp_file_rejects_an_execution_that_is_not_an_ftp_tree(tmp_path, monkeypatch):
     db = database()
-    monkeypatch.setattr(executions_router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
     target = Target(project_id=project.id, name="Box", ip="10.129.7.93")

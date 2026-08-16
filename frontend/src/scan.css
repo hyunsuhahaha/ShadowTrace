@@ -114,3 +114,24 @@
   .tableHead,.tableRow{grid-template-columns:80px 100px 1fr}
   .tableHead span:last-child,.tableRow em{display:none}
 }
+
+.scanModeToggle{display:flex;gap:4px;margin-left:12px}
+.scanModeToggle button{background:var(--surface-raised);color:var(--muted);border:1px solid var(--line-strong);border-radius:var(--radius);padding:6px 9px;font-size:10px;cursor:pointer}
+.scanModeToggle button.active{color:var(--green);border-color:#355342;background:#142019}
+
+.autoReconPanel{margin-top:14px;border:1px solid var(--term-border);background:var(--term-bg);padding:14px}
+.autoReconPanel__hint{margin:10px 0 14px;color:#7d948a;font-size:11px;line-height:1.6}
+.autoReconTargetPicker{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);background:#0a0f11;padding:8px}
+.autoReconTargetPicker__actions{display:flex;gap:6px;margin-bottom:4px}
+.autoReconTargetRow{display:flex;align-items:baseline;gap:8px;padding:6px 7px;font-size:12px;cursor:pointer;border-radius:2px}
+.autoReconTargetRow:hover{background:#111c1f}
+.autoReconTargetRow span{color:var(--muted);font-size:10px}
+.autoReconPanel__scope{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:12px;border:1px solid #293932;background:#0d1412}
+.autoReconPanel__scope input{margin-top:2px}
+.autoReconPanel__scope span{color:#889c94;line-height:1.55;font-size:11px}
+.autoReconPanel__scope b{display:block;color:var(--term-cursor);font-size:8px;letter-spacing:.1em}
+.autoReconJobs{display:grid;gap:1px;margin-top:14px;border:1px solid var(--term-border)}
+.autoReconJobRow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;background:var(--term-bg)}
+.autoReconJobRow em{font-style:normal;color:var(--muted);font-size:10px;margin-left:8px}
+.autoReconJobRow small{color:#7d948a;font-size:10px}
+.autoReconJobRow--idle{cursor:default}

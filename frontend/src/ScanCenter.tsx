@@ -6,6 +6,7 @@ import ScanToolPicker from "./ScanToolPicker";
 import ScanProfileComposer from "./ScanProfileComposer";
 import ScanJobStatus from "./ScanJobStatus";
 import ScanHistoryPanel from "./ScanHistoryPanel";
+import AutoReconPanel from "./AutoReconPanel";
 import {useFloatingTerminal} from "./FloatingTerminal";
 import SmartTerminalOutput from "./SmartTerminalOutput";
 import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
@@ -62,7 +63,11 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     [processAlive, setProcessAlive] = useState<boolean>(),
     [streamState, setStreamState] = useState<
       "idle" | "connecting" | "connected" | "disconnected"
-    >("idle");
+    >("idle"),
+    [autoReconMode, setAutoReconMode] = useState(false),
+    [autoReconSelected, setAutoReconSelected] = useState<Set<number>>(new Set()),
+    [autoReconStarting, setAutoReconStarting] = useState(false),
+    [autoReconError, setAutoReconError] = useState("");
   const transcript = useRef<HTMLPreElement>(null);
   const transcriptPanel = useRef<HTMLDivElement>(null);
   const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
@@ -472,6 +477,48 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     setOutput(`$ ${job.command}\n`);
     await refresh();
   };
+  const toggleAutoReconTarget = (id: number) =>
+    setAutoReconSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const selectAllAutoReconTargets = () => setAutoReconSelected(new Set(
+    (targets.data || []).filter((t) => t.project_id === effectiveProjectId).map((t) => t.id)));
+  const clearAutoReconTargets = () => setAutoReconSelected(new Set());
+  const openAutoReconJob = (id: number, job: number) => {
+    setTargetId(id);
+    setScanId(job);
+  };
+  // Reuses the same tool/profile/ports/top_ports state ScanProfileComposer
+  // already manages for the single-target flow -- one POST /scans/run per
+  // selected target, tagged "autorecon" so fan_out_service_executions()
+  // recognizes the chain once each target's detail scan completes.
+  const startAutoRecon = async () => {
+    if (!profileId || !autoReconSelected.size) return;
+    setAutoReconStarting(true);
+    setAutoReconError("");
+    try {
+      for (const id of autoReconSelected) {
+        const r = await fetch("/api/scans/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_id: id, profile_id: profileId,
+            ports: profile?.arguments.includes("{ports}") ? ports : "",
+            top_ports: Number(topPorts), extra_arguments: [], tags: ["autorecon"],
+          }),
+        });
+        if (!r.ok) {
+          const targetLabel = targets.data?.find((t) => t.id === id)?.ip || `#${id}`;
+          setAutoReconError(`${targetLabel}: ${(await r.json()).detail}`);
+        }
+      }
+      await qc.invalidateQueries({ queryKey: ["autoReconScans"] });
+    } finally {
+      setAutoReconStarting(false);
+    }
+  };
   const stop = async (id: number) => {
       await fetch(`/api/scans/${id}/stop`, { method: "POST" });
       await refresh();
@@ -551,6 +598,16 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             ))}
         </select>
         <span className="tools">스캔 기록 {scans.data?.length || 0}개</span>
+        <span className="scanModeToggle" role="group" aria-label="스캔 모드">
+          <button type="button" className={!autoReconMode ? "active" : ""}
+            aria-pressed={!autoReconMode} onClick={() => setAutoReconMode(false)}>
+            단일 대상
+          </button>
+          <button type="button" className={autoReconMode ? "active" : ""}
+            aria-pressed={autoReconMode} onClick={() => setAutoReconMode(true)}>
+            AutoRecon (여러 대상)
+          </button>
+        </span>
       </nav>
       <main className="scanLayout">
         <ScanToolPicker tool={tool} masscanBlockedByVpn={masscanBlockedByVpn}
@@ -577,6 +634,17 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
               (Number(topPorts) >= 1 && Number(topPorts) <= 65535)
             )}
             onReviewScan={beginReview} />
+          {autoReconMode && <AutoReconPanel
+            targets={(targets.data || []).filter((t) => t.project_id === effectiveProjectId)}
+            selectedIds={autoReconSelected}
+            onToggle={toggleAutoReconTarget}
+            onSelectAll={selectAllAutoReconTargets}
+            onClear={clearAutoReconTargets}
+            onStart={() => void startAutoRecon()}
+            starting={autoReconStarting}
+            startError={autoReconError}
+            activeTargetId={targetId}
+            onOpenJob={openAutoReconJob} />}
           {!floatingScanId && <div key={selected?.id || "idle"} ref={transcriptPanel}
             className={`terminal scanTerminal scanTranscript${selected ? " scanTranscript--attached" : ""}`}>
             <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : "terminalStatus"}

@@ -34,7 +34,7 @@ from ...schemas import (
 from ...templates import catalog
 from ...time import utcnow
 from ..core.support import need, safe_part
-from ..executions.router import _output_path
+from ..executions.service import output_path_for
 from ..graph import service as graph_service
 
 router = APIRouter()
@@ -270,7 +270,7 @@ async def _auto_run_ftp_tree(
                          # next to it showing nothing new.
                          graph_hidden=True)
         db.add(row); db.commit(); db.refresh(row)
-        output = _output_path(output_dir, "", item["id"])
+        output = output_path_for(output_dir, "", item["id"])
         execution_id = row.id
     queues[execution_id] = asyncio.Queue()
     await run_execution(execution_id, argv, target_dir, output)

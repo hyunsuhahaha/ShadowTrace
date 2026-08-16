@@ -31,6 +31,10 @@ TOOLS={"nmap":"sudo apt install nmap","curl":"sudo apt install curl","wget":"sud
 "cloud_enum":"sudo apt install cloud-enum",
 "mycli":"sudo apt install mycli",
 "git-dumper":"pip install git-dumper (apt에 없음)",
+"sslscan":"sudo apt install sslscan","wpscan":"sudo apt install wpscan",
+"enum4linux":"sudo apt install enum4linux","smbmap":"sudo apt install smbmap",
+"onesixtyone":"sudo apt install onesixtyone","dnsrecon":"sudo apt install dnsrecon",
+"git":"sudo apt install git",
 "kerbrute":"apt에 없음 — https://github.com/ropnop/kerbrute/releases 에서 "
            "kerbrute_linux_amd64를 받아 PATH에 kerbrute로 저장"}
 @router.get("/api/system/status")

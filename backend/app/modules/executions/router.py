@@ -3,11 +3,8 @@ import ftplib
 import hashlib
 import io
 import json
-import re
 import secrets
 import shlex
-import shutil
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,73 +12,20 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...config import WORKSPACE_DIR
 from ...database import get_db
 from ...executor import (
     processes,
     queues,
-    run_execution,
     stop_execution,
 )
 from ...models import (Evidence, Execution, Finding, FindingEvidence, GraphNode,
                        Project, Service, Target)
 from ...schemas import ExecutionDeriveIn, ExecutionIn, ExecutionOut, EvidenceOut, FtpTreePromoteIn
-from ...templates import catalog
 from ..core.support import need, safe_part
 from ..graph import service as graph_service
+from . import service as execution_service
 
 router = APIRouter()
-REPOSITORY_DIR = Path(__file__).resolve().parents[4]
-SHELL_OPERATORS = {"|", "||", "&&", ";", ">", ">>", "<", "<<"}
-
-
-def _bound_value_count(argv: list[str], value: str, numeric: bool = False) -> int:
-    if not value:
-        return 0
-    pattern = re.compile(
-        rf"(?<!\d){re.escape(value)}(?!\d)" if numeric else re.escape(value)
-    )
-    return sum(len(pattern.findall(argument)) for argument in argv)
-
-
-def _validated_override(
-    raw: str, base_argv: list[str], host: str, service: Service | None,
-    context_values: tuple[str, ...] = (),
-) -> tuple[str, list[str]]:
-    try:
-        argv = shlex.split(raw.strip())
-    except ValueError as exc:
-        raise HTTPException(400, f"Invalid command syntax: {exc}") from exc
-    if not argv:
-        raise HTTPException(400, "Command cannot be empty")
-    if any(argument in SHELL_OPERATORS or re.match(r"^\d*(?:>|<)", argument)
-           for argument in argv):
-        raise HTTPException(400, "Shell operators require a separate shell session")
-    if Path(argv[0]).name != Path(base_argv[0]).name:
-        raise HTTPException(400, "ENGINE CHANGED · EXECUTION LOCKED")
-    for value in {host, *context_values}:
-        if _bound_value_count(argv, value) < _bound_value_count(base_argv, value):
-            raise HTTPException(400, "TARGET CHANGED · EXECUTION LOCKED")
-    if service:
-        port = str(service.port)
-        if (_bound_value_count(argv, port, numeric=True)
-                < _bound_value_count(base_argv, port, numeric=True)):
-            raise HTTPException(400, "SERVICE CHANGED · EXECUTION LOCKED")
-    return raw.strip(), argv
-
-
-def _output_path(output_dir: Path, raw_filename: str, template_id: str) -> Path:
-    if not raw_filename.strip():
-        return output_dir / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_part(template_id)}.txt"
-    base = safe_part(raw_filename.strip())
-    if base.lower().endswith(".txt"):
-        base = base[:-4] or "output"
-    candidate = output_dir / f"{base}.txt"
-    counter = 2
-    while candidate.exists():
-        candidate = output_dir / f"{base}-{counter}.txt"
-        counter += 1
-    return candidate
 
 
 @router.get("/api/executions", response_model=list[ExecutionOut])
@@ -99,56 +43,12 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
     if service and service.target_id != target.id:
         raise HTTPException(400, "Service does not belong to target")
     project = need(db, Project, target.project_id)
-    target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
-                  "targets" / safe_part(target.ip))
-    output_dir = target_dir / "outputs"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Sites that route by vhost (nearly all named HTTP hosts) refuse or
-    # redirect requests addressed by bare IP, so HTTP-family commands need
-    # the confirmed hostname once one exists — everything else (SMB, LDAP,
-    # RDP...) keeps hitting the IP directly since a hostname mismatch there
-    # is far less likely to change the response.
-    template = catalog.items.get(body.template_id)
-    use_hostname = (
-        target.hostname and template and template.get("service_key") == "http"
+    return execution_service.start_execution(
+        db, target, project, service, body.template_id, body.variables,
+        run_as_root=body.run_as_root, output_filename=body.output_filename,
+        output_subdir=body.output_subdir, command_override=body.command_override,
+        graph_node_id=body.graph_node_id,
     )
-    variables = {
-        **body.variables,
-        "host": target.hostname if use_hostname else target.ip,
-        "target_dir": str(target_dir),
-        "project_dir": str(target_dir.parents[1]),
-        "output_dir": str(output_dir),
-        "repo_dir": str(REPOSITORY_DIR),
-    }
-    if service:
-        variables.update(
-            port=str(service.port), protocol=service.protocol,
-            scheme="https" if service.name == "https" else "http",
-        )
-    item, command, argv = catalog.render(body.template_id, variables)
-    if body.command_override is not None:
-        command, argv = _validated_override(
-            body.command_override, argv, variables["host"], service, (target.ip,),
-        )
-    if not shutil.which(argv[0]):
-        raise HTTPException(409, f"Tool not installed: {argv[0]}")
-    if body.run_as_root:
-        if not shutil.which("sudo"):
-            raise HTTPException(409, "sudo is not installed")
-        argv = ["sudo", "-n", *argv]
-        command = shlex.join(argv)
-    row = Execution(
-        target_id=target.id, service_id=body.service_id,
-        template_id=item["id"], command=command, cwd=str(target_dir),
-        status="queued", graph_parent_node_id=body.graph_node_id,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    output = _output_path(output_dir, body.output_filename, item["id"])
-    queues[row.id] = asyncio.Queue()
-    asyncio.create_task(run_execution(row.id, argv, target_dir, output))
-    return row
 
 
 @router.get("/api/executions/{ident}/output")
@@ -207,9 +107,7 @@ def delete_execution(ident: int, db: Session = Depends(get_db)):
 def _execution_output_dir(db: Session, execution: Execution) -> tuple[Target, Path]:
     target = need(db, Target, execution.target_id)
     project = need(db, Project, target.project_id)
-    target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
-                  "targets" / safe_part(target.ip))
-    return target, target_dir / "outputs"
+    return target, execution_service.target_output_dir(project, target)
 
 
 @router.get("/api/executions/{ident}/file")
@@ -235,7 +133,8 @@ def derive_output(ident: int, body: ExecutionDeriveIn, db: Session = Depends(get
     execution = need(db, Execution, ident)
     target, output_dir = _execution_output_dir(db, execution)
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = _output_path(output_dir, body.filename, f"{execution.template_id}-derived")
+    path = execution_service.output_path_for(
+        output_dir, body.filename, f"{execution.template_id}-derived")
     content = body.content.encode("utf-8")
     path.write_bytes(content)
     row = Evidence(

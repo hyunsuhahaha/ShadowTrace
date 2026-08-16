@@ -242,7 +242,52 @@ POST /api/executions
 명령 catalog는 [`backend/templates/services.yaml`](../backend/templates/services.yaml)에서
 로드되며 matching과 rendering은 [`backend/app/templates.py`](../backend/app/templates.py),
 endpoint는 [`backend/app/modules/executions/router.py`](../backend/app/modules/executions/router.py),
-process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있다.
+process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있다. 실행 시작 로직
+자체(target_dir/output_dir 계산, `catalog.render()`, `Execution` 행 생성, task 기동)는
+`router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
+`start_execution()`에 있다 — 아래 AutoRecon 팬아웃처럼 HTTP 요청 없이 서버 쪽에서 실행을
+시작해야 하는 다른 호출자도 재사용할 수 있게 라우터에서 분리한 것.
+
+### AutoRecon (여러 대상 동시 정찰)
+
+Scan Center의 전체 포트 스캔 → 자동 상세 스캔 체이닝(`chain_kind`, 위 다이어그램)에 한 단계가
+더 붙는다: 체인의 **마지막** job이 완료되면(더 체이닝할 게 없을 때만 — 중간 단계는 아직
+서비스 이름이 확정되지 않았으므로), 그 대상의 열린 서비스마다 `services.yaml`에
+`autorecon: true`가 붙은 명령을 자동으로 병렬 실행한다.
+
+```text
+POST /api/scans/run (tags=["autorecon"])
+  → ScanJob 생성 (tags가 이 최초 job부터 붙어 있어야 함 -- 나중에 PATCH로
+    붙이면 완료가 더 빠른 스캔과 경쟁 상태가 생김)
+  → create_chain_job이 상세 스캔을 큐잉할 때 부모의 tags를 그대로 물려줌
+  → 체인의 마지막 job 완료 (job.status=="completed" and 더 chain 없음)
+  → fan_out_service_executions(db, job)
+      대상의 open Service마다 catalog.commands_for()로 매칭 명령을 구하고
+      item.get("autorecon")인 것만 골라 start_execution() 호출
+      (전용 세마포어 _autorecon_semaphore로 동시 실행 수 제한,
+      output_subdir=f"{protocol}{port}-{service}"로 outputs/tcp80-http/ 같은
+      서비스별 폴더에 결과 저장)
+  → 이후는 일반 Execution과 완전히 동일 (그래프 동기화도 그대로 재사용)
+```
+
+`fan_out_service_executions`는
+[`backend/app/modules/scan_center/service.py`](../backend/app/modules/scan_center/service.py)에
+있고, 호출 지점은 `ScanManager._run`
+([`backend/app/modules/scan_center/manager.py`](../backend/app/modules/scan_center/manager.py))의
+`create_chain_job` 바로 다음이다. `http-directory-fuzz`/`http-wpscan`처럼 `match: {services:
+[], ports: []}`로 일부러 서비스별 명령 목록에서 빠져 있는 항목(wordlist·워드프레스 감지처럼
+평소엔 사람이 값을 골라야 함)은 `commands_for()`가 못 찾으므로, 팬아웃이 http/https 서비스나
+product에 "wordpress"가 보이는 서비스에 한해 기본값(`AUTORECON_DEFAULT_WORDLIST`)을 채워
+직접 추가한다.
+
+프런트는 새 워크스페이스가 아니라 기존 `ScanCenter.tsx`에 모드 토글("단일 대상"/"AutoRecon")만
+추가했다 — 켜면 IP 입력 대신 이미 등록된 대상 체크박스 목록이 뜨고, 도구/프로파일/포트는
+`ScanProfileComposer`가 관리하는 기존 state를 그대로 공유한다. 새 컴포넌트는
+[`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 그 안의
+`AutoReconJobRow`가 대상별로 `/scans?target_id=`와 `/scans/{id}/service-executions`를
+폴링해 진행 상황(포트 스캔 상태 + 서비스 명령 완료/진행/실패 개수)을 보여준다. 행을 클릭하면
+그 대상/스캔을 `ScanCenter`의 기존 `targetId`/`scanId` state로 전환해, 이미 있는 SSE 트랜스크립트
+패널을 그대로 재사용한다 — 여러 터미널을 동시에 띄우는 새 UI는 만들지 않았다.
 
 ### Runbook
 
@@ -433,6 +478,7 @@ run, import), `/vpn/status`.
 | `ScanProfileComposer.tsx` | 대상 IP/이름 입력, 프로필 드롭다운, 포트 입력, XML 가져오기, 명령 미리보기, "스캔 검토" 버튼 |
 | `ScanJobStatus.tsx` | 선택 스캔의 실시간 상태 카드 + 완료 후 자동화 배너(증적/finding 수, 자동 연계 상세 스캔) |
 | `ScanHistoryPanel.tsx` | 스캔 큐/이력 목록(검색·상태 필터), 중지/재실행/삭제, base 비교 |
+| `AutoReconPanel.tsx` | AutoRecon 모드(nav의 "단일 대상"/"AutoRecon" 토글)에서만 렌더 — 대상 다중 선택 체크박스, SCOPE 확인, `POST /scans/run`(tags=["autorecon"]) 반복 호출, 대상별 진행 상황(`AutoReconJobRow`가 `/scans?target_id=`·`/scans/{id}/service-executions` 폴링) |
 | `scanCenterModel.ts` | 공용 타입(`Project`/`Target`/`Scan`/`Profile`/`Obs`/`Artifact`/`Automation`), 프로필 라벨/그룹 표, `elapsed()`/`bytes()`, `syncSelectedProject()` |
 | `VpnControl.tsx` | VPN 전역 위젯(`.ovpn` 업로드, 검토+연결, 해제, DNS 지정) — `AppShell.tsx`/`EnumerationScope.tsx`도 사용 |
 

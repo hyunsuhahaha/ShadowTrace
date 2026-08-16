@@ -1,18 +1,22 @@
 from __future__ import annotations
+import asyncio
 import hashlib
 import json
 import re
 import shlex
 from pathlib import Path
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
 from ...models import (
-    Evidence, Finding, FindingAsset, FindingEvidence, HostObservation, Project,
-    ScanArtifact, ScanJob, ScanProfile, Service, ServiceObservation, Target,
+    Evidence, Execution, Finding, FindingAsset, FindingEvidence, HostObservation,
+    Project, ScanArtifact, ScanJob, ScanProfile, Service, ServiceObservation, Target,
 )
 from ...nmap_parser import parse_nmap
+from ...templates import catalog
 from ...time import utcnow
+from ..executions import service as execution_service
 
 BUILTIN_PROFILES = [
     ("Top TCP services", "quick", "Fast version detection on the selected number of top TCP ports",
@@ -327,10 +331,83 @@ def create_chain_job(db: Session, job: ScanJob) -> tuple[int, list[str]] | None:
         return None
     chain_job = ScanJob(project_id=job.project_id, target_id=job.target_id,
                         profile_id=chain_profile.id, parent_scan_id=job.id,
-                        source="executed", status="queued", command=command)
+                        source="executed", status="queued", command=command,
+                        # AutoRecon's fan-out (see fan_out_service_executions)
+                        # only fires off the *last* job in a scan chain, so
+                        # the "autorecon" tag has to survive into this
+                        # follow-up detail scan too.
+                        tags=job.tags)
     db.add(chain_job)
     db.flush()
     return chain_job.id, argv
+
+
+AUTORECON_MAX_CONCURRENT = 6
+# Kali-standard small wordlist -- AutoRecon itself defaults to a similarly
+# small list for its unattended dirbusting pass; there's no operator around
+# to pick one, and a huge list would starve every other fanned-out command.
+AUTORECON_DEFAULT_WORDLIST = "/usr/share/wordlists/dirb/common.txt"
+_autorecon_semaphore = asyncio.Semaphore(AUTORECON_MAX_CONCURRENT)
+
+
+def fan_out_service_executions(db: Session, job: ScanJob) -> list[Execution]:
+    """AutoRecon-equivalent fan-out. Called once an "autorecon"-tagged scan
+    chain's *last* job (the one with -sC -sV service names, not the bare
+    port-discovery sweep) completes: for every open Service on the target,
+    resolve the services.yaml commands tagged autorecon: true via the same
+    Catalog.commands_for() the manual "available commands" list already
+    uses, and launch each one, grouping a service's results under its own
+    outputs/tcp80-http/ folder (AutoRecon's own scans/tcp80/ layout).
+    Items whose required variables aren't resolvable (e.g. {domain} with no
+    confirmed hostname yet) are skipped, not treated as failures -- the
+    operator can always run them manually once that value is known."""
+    try:
+        tags = json.loads(job.tags or "[]")
+    except (TypeError, ValueError):
+        tags = []
+    if "autorecon" not in tags:
+        return []
+    target = db.get(Target, job.target_id)
+    project = db.get(Project, job.project_id)
+    if not target or not project:
+        return []
+    services = db.scalars(select(Service).where(
+        Service.target_id == target.id, Service.state == "open")).all()
+    base_variables = {"username": "", "password": "", "wordlist": AUTORECON_DEFAULT_WORDLIST}
+    if target.hostname:
+        base_variables["domain"] = target.hostname
+    launched = []
+    http_services = set((catalog.groups.get("http") or {}).get(
+        "match", {}).get("services", []))
+    for svc in services:
+        wanted = [item for item in catalog.commands_for(
+            svc.name, svc.port, svc.protocol, product=svc.product,
+            cpe=json.loads(svc.cpe or "[]"), tls=svc.tls) if item.get("autorecon")]
+        # http-directory-fuzz and http-wpscan both have an empty match{} on
+        # purpose (they stay out of the manual per-service command list --
+        # dirbusting always needs a wordlist choice, wpscan only makes sense
+        # once WordPress is confirmed) so commands_for() never surfaces them;
+        # the fan-out adds them back explicitly with a wordlist default /
+        # product sniff a human would otherwise supply.
+        if svc.name in http_services:
+            directory_fuzz = catalog.items.get("http-directory-fuzz")
+            if directory_fuzz:
+                wanted.append(directory_fuzz)
+        if "wordpress" in (svc.product or "").lower():
+            wordpress_scan = catalog.items.get("http-wpscan")
+            if wordpress_scan:
+                wanted.append(wordpress_scan)
+        output_subdir = f"{svc.protocol}{svc.port}-{svc.name or 'unknown'}"
+        for item in wanted:
+            try:
+                execution = execution_service.start_execution(
+                    db, target, project, svc, item["id"], dict(base_variables),
+                    run_as_root=True, output_subdir=output_subdir,
+                    scan_job_id=job.id, semaphore=_autorecon_semaphore)
+            except (ValueError, HTTPException):
+                continue
+            launched.append(execution)
+    return launched
 
 
 def import_xml(db: Session, target: Target, project: Project, content: bytes,

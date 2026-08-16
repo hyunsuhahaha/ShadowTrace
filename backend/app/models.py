@@ -79,6 +79,11 @@ class Execution(Base):
     # sync_from_project() doesn't also give it a redundant graph node of
     # its own sitting right next to the node that already shows it.
     graph_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when AutoRecon's fan-out (scan_center.service.fan_out_service_executions)
+    # launched this execution, so its progress can be queried precisely via
+    # GET /api/scans/{scan_job_id}/service-executions instead of guessing
+    # from timestamps.
+    scan_job_id: Mapped[int | None] = mapped_column(ForeignKey("scan_jobs.id"), nullable=True)
 
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"

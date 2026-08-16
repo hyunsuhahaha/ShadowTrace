@@ -10,11 +10,11 @@ from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import (
-    AppSetting, Evidence, Finding, HostObservation, Project, ScanArtifact,
+    AppSetting, Evidence, Execution, Finding, HostObservation, Project, ScanArtifact,
     ScanJob, ScanProfile, ServiceObservation, Target,
 )
 from ...schemas import (
-    ObservationOut, ScanArtifactOut, ScanJobOut, ScanJobUpdate,
+    ExecutionOut, ObservationOut, ScanArtifactOut, ScanJobOut, ScanJobUpdate,
     ScanPreviewIn, ScanProfileOut, ScanSettings,
 )
 from .service import compare_jobs, import_xml, render_scan, scan_directory, seed_profiles
@@ -109,7 +109,7 @@ async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
         raise HTTPException(409, "pkexec is required for this privileged scan")
     job = ScanJob(project_id=target.project_id, target_id=target.id,
                   profile_id=profile.id, source="executed", status="queued",
-                  command=command)
+                  command=command, tags=json.dumps(body.tags))
     db.add(job); db.commit(); db.refresh(job)
     manager.enqueue(job.id, argv)
     return job
@@ -264,6 +264,16 @@ def observations(scan_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(ServiceObservation).where(
         ServiceObservation.scan_job_id == scan_id).order_by(
         ServiceObservation.port)).all()
+
+@router.get("/{scan_id}/service-executions", response_model=list[ExecutionOut])
+def service_executions(scan_id: int, db: Session = Depends(get_db)):
+    """The per-service commands AutoRecon's fan-out (fan_out_service_executions)
+    launched after this scan chain's detail scan completed -- lets the
+    frontend show "N개 실행됨 (완료/진행중/실패)" without guessing from
+    timestamps."""
+    need(db, ScanJob, scan_id)
+    return db.scalars(select(Execution).where(
+        Execution.scan_job_id == scan_id).order_by(Execution.id)).all()
 
 @router.get("/{scan_id}/export")
 def export_observations(scan_id: int, format: str = "json",
