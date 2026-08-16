@@ -995,6 +995,72 @@ it("lets LinPEAS run and be analyzed directly from a manual-shell session node",
   expect(await screen.findByText(/CVE-2025-38236/)).toBeTruthy();
 });
 
+it("also offers WinPEAS, SUID/GTFOBins analysis, and the Linux PrivEsc checklist on the same manual-shell node", async () => {
+  // Same "put the whole PrivescSessionPanel/PostExploitationWorkspace toolset
+  // on the session node" idea as the LinPEAS test above, but for the other
+  // members of the same two categories: WinPEAS is LinPEAS's sibling in the
+  // privesc-server trigger row (a manual-shell node can just as easily be a
+  // Windows shell -- evil-winrm goes through this same generic endpoint),
+  // SUID/GTFOBins is LinPEAS analysis's sibling paste-and-classify panel, and
+  // the Linux PrivEsc reference is the third piece PrivescSessionPanel bundles
+  // together (copy-only unless the session is open, same precondition as the
+  // script triggers).
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 55, command: "nc -lvnp 4444", status: "running" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/start") && init?.method === "POST") return Promise.resolve(
+      new Response(JSON.stringify({
+        running: true, base_url: "http://10.10.14.5:8123", available: { peass: true, pspy: true },
+      }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets/10/suid-scan") && init?.method === "POST") return Promise.resolve(
+      new Response(JSON.stringify({
+        matches: [{ path: "/usr/bin/find", binary: "find",
+          command: "find . -exec /bin/sh -p \\; -quit",
+          reference: "https://gtfobins.github.io/gtfobins/find/#suid" }], evidence_id: 7,
+      }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-55", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "nc -lvnp 4444", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 55 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  expect(await screen.findByText("PTY #55")).toBeTruthy();
+
+  const winpeasButton = screen.getByText("WinPEAS 명령 셸에 입력");
+  expect((winpeasButton as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText("서버 시작"));
+  await waitFor(() => expect((winpeasButton as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(winpeasButton);
+  expect(await screen.findByText(/winPEASany\.exe/)).toBeTruthy();
+
+  fireEvent.change(
+    screen.getByPlaceholderText("find / -perm -4000 -type f 2>/dev/null 결과를 붙여넣으세요"),
+    { target: { value: "/usr/bin/find" } },
+  );
+  fireEvent.click(screen.getByText("SUID 분석"));
+  expect(await screen.findByText("/usr/bin/find")).toBeTruthy();
+
+  fireEvent.click(screen.getByText("Linux PrivEsc 참고 열기"));
+  fireEvent.click(screen.getAllByText("셸에 입력")[0]);
+  expect(await screen.findByText(/전송: id/)).toBeTruthy();
+});
+
 it("shows a hash-crack job's live output and lets a cracked hash be promoted", async () => {
   const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

