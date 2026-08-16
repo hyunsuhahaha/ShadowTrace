@@ -150,7 +150,34 @@ const postExploitationToolEntries: CommandPaletteEntry[] = [
   // Anchors into PostExploitationWorkspace's always-rendered LinuxPrivescReference
   // section -- unlike the Service Enumeration anchors above, this page doesn't
   // wait on a selected service, so no serviceKind is needed (see the
-  // serviceKind comment on CommandPaletteEntry).
+  // serviceKind comment on CommandPaletteEntry). One entry per
+  // linuxPrivescCommands.ts category, anchorId always privesc-<category id>.
+  { id: "post-exploitation/basic-info", route: "post-exploitation",
+    anchorId: "privesc-basic-info",
+    label: "권한 상승 기본 정보 수집 참고", detail: "Post-Exploitation 하단 · id/sudo -l/uname -a/배포판 식별",
+    category: "Post-Exploitation 도구",
+    keywords: ["sudo -l", "uname", "os-release", "기본 정보", "배포판 식별"] },
+  { id: "post-exploitation/suid-cap", route: "post-exploitation",
+    anchorId: "privesc-suid-cap",
+    label: "SUID/Capabilities 참고", detail: "Post-Exploitation 하단 · SUID·SGID·capability 전체 검색, sudo 버전 CVE",
+    category: "Post-Exploitation 도구",
+    keywords: ["suid", "sgid", "capabilities", "getcap", "gtfobins", "baron samedit", "cve-2021-3156"] },
+  { id: "post-exploitation/cron-services", route: "post-exploitation",
+    anchorId: "privesc-cron-services",
+    label: "크론/서비스 설정 참고", detail: "Post-Exploitation 하단 · 크론탭, 쓰기 가능한 systemd 유닛, wildcard injection",
+    category: "Post-Exploitation 도구",
+    keywords: ["cron", "crontab", "크론", "systemd", "wildcard injection"] },
+  { id: "post-exploitation/config-paths", route: "post-exploitation",
+    anchorId: "privesc-config-paths",
+    label: "서비스 설정 파일 위치 참고", detail: "Post-Exploitation 하단 · 배포판별 postgres/mysql/apache/samba 등 설정 경로",
+    category: "Post-Exploitation 도구",
+    keywords: ["pg_hba.conf", "postgresql.conf", "my.cnf", "설정 파일 위치", "config 경로",
+      "debian ubuntu rhel centos", "smb.conf", "tomcat-users.xml"] },
+  { id: "post-exploitation/writable-shell", route: "post-exploitation",
+    anchorId: "privesc-writable-shell",
+    label: "쓰기 가능 파일/셸 안정화 참고", detail: "Post-Exploitation 하단 · root 소유 쓰기 가능 파일, pty.spawn TTY 업그레이드",
+    category: "Post-Exploitation 도구",
+    keywords: ["writable", "쓰기 가능", "pty.spawn", "stty raw", "tty upgrade", "풀 tty"] },
   { id: "post-exploitation/restricted-shell", route: "post-exploitation",
     anchorId: "privesc-restricted-shell",
     label: "제한된 셸 환경 참고", detail: "Post-Exploitation 하단 · rbash/BusyBox/noexec에서 ls·cat이 안 먹힐 때",

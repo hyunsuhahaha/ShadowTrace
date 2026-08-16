@@ -516,10 +516,10 @@ nxc로 approve→execute 실행, 출력 스트리밍(트리 명령은 파일 트
 분석기도 포함, Finding으로 승격 가능. SUID/GTFOBins 분석 아래에 접힌
 `LinuxPrivescReference.tsx`(`onSendCommand` 없이, 복사 전용)도 항상 렌더된다 —
 `PrivescSessionPanel.tsx`의 것과 달리 활성 세션·target 선택과 무관하게 항상 존재하는
-페이지라서, Command Palette가 "rbash"/"busybox"/"noexec" 검색으로 그 안의
-`restricted-shell` 카테고리(제한 셸/BusyBox/noexec에서 ls·cat이 안 먹힐 때)까지
-안정적으로 딥링크할 수 있는 유일한 진입점이다(`commandPaletteIndex.ts`의
-`post-exploitation/restricted-shell` 항목).
+페이지라서, `linuxPrivescCommands.ts`의 6개 카테고리 전부가 Command Palette에서
+`post-exploitation/<category id>` 항목(예: "pg_hba.conf" 검색 → `config-paths`,
+"rbash"/"busybox"/"noexec" 검색 → `restricted-shell`)으로 개별 딥링크되는 유일한
+진입점이다.
 API: `/projects`, `/targets`, `/runbooks/credentials?project_id=`,
 `/post-exploitation/catalog`, `/post-exploitation*`, `/targets/{id}/linpeas`,
 `/targets/{id}/suid-scan`, `/findings`.

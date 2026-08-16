@@ -120,6 +120,25 @@ it("finds the restricted-shell reference by an ls/cat-not-working style query, d
   }
 });
 
+it("finds the per-distro service config path reference by pg_hba.conf, the thing that started this whole checklist", () => {
+  for (const query of ["pg_hba.conf", "설정 파일 위치", "smb.conf", "my.cnf"]) {
+    const results = searchCommandPalette(query);
+    const entry = results.find((item) => item.id === "post-exploitation/config-paths");
+    expect(entry, query).toBeTruthy();
+    expect(entry?.route).toBe("post-exploitation");
+    expect(entry?.anchorId).toBe("privesc-config-paths");
+  }
+});
+
+it("makes every linuxPrivescCommands category individually findable, not just the newest one", () => {
+  const categoryEntries = commandPaletteIndex.filter((entry) =>
+    entry.route === "post-exploitation" && entry.anchorId?.startsWith("privesc-"));
+  expect(categoryEntries.map((entry) => entry.anchorId).sort()).toEqual([
+    "privesc-basic-info", "privesc-config-paths", "privesc-cron-services",
+    "privesc-restricted-shell", "privesc-suid-cap", "privesc-writable-shell",
+  ]);
+});
+
 it("matchesServiceKind treats plain http/https services as http, not dns", () => {
   expect(matchesServiceKind(service({ name: "http" }), "http")).toBe(true);
   expect(matchesServiceKind(service({ name: "https" }), "http")).toBe(true);
