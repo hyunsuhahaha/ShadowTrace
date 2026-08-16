@@ -76,8 +76,13 @@ class PtyManager:
     # shell. Instead, a session that loses its socket while its process is
     # still alive gets a short grace window: a reconnect within that window
     # reattaches to the same process instead of respawning, and only a
-    # reconnect-free timeout actually kills it.
-    RECONNECT_GRACE_SECONDS = 8
+    # reconnect-free timeout actually kills it. 45s (not the original 8s)
+    # to actually cover PtyTerminal.tsx's own reconnect backoff (which retries
+    # for ~40s) instead of the process dying mid-retry -- a plain network
+    # blip or backgrounded tab was outliving the old 8s window far more often
+    # than not, which is what made every session "feel" like it kept dying
+    # even though nothing on the target side had actually dropped.
+    RECONNECT_GRACE_SECONDS = 45
 
     def __init__(self):
         self.processes: dict[int, asyncio.subprocess.Process] = {}
