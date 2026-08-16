@@ -126,6 +126,31 @@
   referral 응답 확인, `javap`로 컴파일된 바이트코드에 LHOST/LPORT가 정확히 박혔는지
   확인까지 마쳤다. 실제 대상에 대한 RCE 성공만은 여전히 검증 불가능하다는 한계는
   솔직하게 남겨뒀다.
+- **"검증하면되잔" — "미검증"이라고 보고한 것도 검증 방법이 있으면 그냥 하라는 지적** —
+  Archetype SMB 공유 파일 열람을 "실 대상이 없어 라이브로 못 봤다"고 미검증 상태로
+  남겨뒀더니, 사용자가 "검증하면 되지 않냐"고 되물었다. 실제로 `impacket-smbserver`로
+  로컬에 익명 접속 가능한 `BACKUPS` 공유(진짜 Archetype 기법과 동일한 `prod.dtsConfig`
+  디코이 포함)를 띄우고, 그래프 UI에서 서비스 스캔 → `SmbShareResults`(알고 보니
+  "protocol toolbox"라는 `<details>`에 접혀 있어서 처음엔 못 찾음) → 공유 재귀 목록 →
+  파일 "원문 보기"까지 실제 버튼 클릭으로 완주했다. 이 과정에서 진짜 버그를 하나
+  찾았다: "원문 보기"가 쓰는 `smbget`엔 포트 옵션이 아예 없어서(--help로 확인) 445가
+  아닌 포트의 SMB엔 항상 `Connection refused`로 실패하고 있었다 — 다른 SMB 템플릿과
+  똑같이 `-p {port}`를 받는 `smbclient -c 'get ... -'`로 교체해 고쳤다. "실 대상이
+  없어서 검증 못 한다"는 것도 재검토 대상이다 — 로컬에 진짜 서버(SMB, LDAP, HTTP …)를
+  띄워서 진짜 프로토콜로 왕복시키는 방법이 있으면, "미검증"으로 남겨두지 말고 그 방법을
+  먼저 찾아본다.
+- **"모든걸 이어서 마저처리해" — 다음 gap으로 자동으로 이어감** — SMB 검증 도중 발견한
+  같은 유형의 gap(Unified의 MongoDB 문서 레벨 덤프 — `mongodb-db-tree`는 DB/컬렉션
+  이름만 나열하고 실제 문서(bcrypt 해시가 든 `ace.admin`)는 mongosh를 직접 열어야
+  했음)도 별도 승인을 기다리지 않고 이어서 처리했다. 이미 있던 `FileTreeView`의
+  `onOpenFile` 콜백을 재사용해 `UnauthAccessResult`(그래프의 mongodb-info 무인증 확인
+  결과 패널)에 연결하고, `SmbShareResults`와 똑같은 "클릭마다 새 captured 실행 →
+  폴링 → 결과 표시" 패턴으로 `mongodb-collection-dump` 템플릿을 추가했다. 로컬에 mongod가
+  없어 이번엔 TDD(가짜 pymongo 클라이언트)로만 검증했고, 실제 MongoDB로 왕복 검증은
+  사용자가 `sudo apt install mongodb`를 실행해준 뒤 마저 하기로 남겨뒀다 — SSH-from-
+  credential 때처럼, 라이브 검증 수단이 당장 없으면 TDD 검증까지만 하고 그 한계를
+  분명히 보고하는 것도 허용되는 결말이다(원칙 6은 "가능하면 라이브로 검증"이지
+  "라이브 검증 없이는 보고 자체를 미루라"가 아니다).
 
 ## 적용 방법
 

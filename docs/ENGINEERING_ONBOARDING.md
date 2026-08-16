@@ -392,7 +392,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `ReverseShellPanel.tsx` | 리버스쉘 페이로드 생성, webshell 다운로드, 안정화 치트시트. 리스너는 `nc -lvnp`(기본)와 `socat TCP-LISTEN:<port>,reuseaddr,fork -`(연결 하나 끊겨도 리스너 자체는 계속 듣고 있음, `fork` 덕분) 중 선택 — `onStartListener(command)`가 완성된 명령 문자열을 그대로 넘기므로 App.tsx는 `openManualShell(command)`만 호출한다(예전엔 포트만 받아 `nc` 명령을 여기서 직접 조립하는 `openListenerShell` 헬퍼가 있었지만, 리스너 종류 선택지가 생기면서 명령 조립 책임이 패널로 옮겨가 삭제됨) |
 | `ChiselPivotPanel.tsx` | chisel server/client 명령 생성(SOCKS·단일 포트) |
 | `ResponderPanel.tsx` | Kali 데스크톱 터미널에서 Responder 시작, 캡처 폴링 |
-| `SmbShareResults.tsx` | SMB 공유 목록, 연결·재귀 목록, 첫 공유 자동 스파이더 |
+| `SmbShareResults.tsx` | SMB 공유 목록, 연결·재귀 목록, 첫 공유 자동 스파이더. "원문 보기"(`viewSmbFile`)는 원래 `smbget`을 썼는데 `smbget`엔 포트 옵션이 아예 없어 445 아닌 포트에선 항상 `Connection refused`로 실패했다(로컬 테스트 SMB 서버로 실제 재현) — 다른 SMB 템플릿과 동일하게 `smbclient -N //{host}/{share} -p {port} -c 'get {path} -'`로 교체(status 라인은 stderr로만 가서 stdout엔 파일 원문만 남음) |
 | `ServiceList.tsx` | 대상의 서비스 목록(좌측 레일) |
 | `ExecutionHistory.tsx` | 실행 목록/상세 탭; `OutputColumnExtractor.tsx`(컬럼 추출·Evidence 저장)를 포함 |
 | `ExecutionMonitor.tsx` | 백그라운드 실행 중인 모든 명령을 보여주는 플로팅 패널 |
@@ -624,6 +624,19 @@ credential ID와 사용자명을 초기값으로 넘긴다. Credential에서 시
 다시 묻지 않고 기존 Credential에 평문과 HashCrackJob 출처를 연결한다. 원본 폼, 실행 터미널,
 결과, Evidence 저장, 이력 기능은 그대로 재사용한다. 패널 폭이 좁으면 container query로
 이력을 아래로 재배치하며 숨기지 않는다.
+`mongodb-info` 무인증 확인이 성공한 노드는 `UnauthAccessResult`로 mongosh 접속 버튼과
+`mongodb-db-tree`(DB·컬렉션 이름 나열, `backend/app/mongodb_tree.py`) 결과를 보여주는데,
+원래는 그 트리를 `<pre>`로 그냥 텍스트 덤프만 했다 — 실제 문서 내용(예: HTB Unified의
+`ace.admin` 컬렉션에 있는 UniFi 로그인 bcrypt 해시)을 보려면 mongosh를 직접 열어 타이핑해야
+했다. `UnauthAccessResult`에 `onOpenTreeFile` prop을 추가해 트리를 `FileTreeView`(다른
+파일 트리들과 같은 컴포넌트)로 바꾸고, 리프를 클릭하면 새 템플릿
+`mongodb-collection-dump`(`backend/app/mongodb_collection_dump.py`, pymongo로
+`db[collection].find().limit(20)`을 JSON으로 출력)를 `/executions`로 새로 실행해 결과를
+같은 패널 아래에 보여준다 — `SmbShareResults`/`viewSmbFile`과 동일하게 "클릭마다 새
+captured 실행을 만들고 폴링" 구조이며, `FileContentModal`(매뉴얼 셸의 살아있는 PTY 세션
+기반 파일 읽기)과는 다른 메커니즘이다(`mongodb-info` 무인증 확인엔 PTY 세션이 없음).
+`onOpenTreeFile`이 없으면 기존처럼 `<pre>` 그대로 렌더되므로 SNMP OID 트리 등 다른
+`UnauthAccessResult` 사용처는 영향 없음.
 Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출처를 먼저 표시하고, 평문 또는
 해시를 명시적으로 확인·복사할 수 있게 한다. Canvas 라벨도 `CAPTURED`, `CRACKED`, `READY`로
 상태를 구분한다. 평문(해시 아님)이고 사용자명이 있으면 "SSH로 시도" 버튼도 뜬다 —
