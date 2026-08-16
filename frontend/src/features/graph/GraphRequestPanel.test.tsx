@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 
@@ -92,4 +93,32 @@ it("uploads a file through the request panel -- multipart body mode never existe
   expect(parsedBody.fields).toEqual({ submit: "Upload" });
   expect(parsedBody.files).toEqual([{ field: "avatar", filename: "shell.php.jpg",
     content_type: "image/jpeg", content_b64: expect.any(String) }]);
+});
+
+it("offers Log4Shell payloads and the JNDI RCE listener without leaving the graph -- Unified's foothold", async () => {
+  // Log4ShellPayloadReference/JndiRceListenerPanel previously only lived
+  // inside the standalone #web route's log4shell tab (WebWorkspace.tsx),
+  // which this graph panel never embedded -- there was no route into
+  // either from a service node click at all.
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/vpn/status")) return Promise.resolve(new Response(
+      JSON.stringify({ tun0: "tun0 UNKNOWN 10.10.15.56/23" }),
+      { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/jndi-listener/status")) return Promise.resolve(new Response(
+      JSON.stringify({ running: false, javac_available: true }),
+      { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <GraphRequestPanel draft={{ projectId: 3, targetId: 10, serviceId: 20,
+      url: "https://unified.htb:8443/api/login" }} onBack={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(screen.getByText("Log4Shell · JNDI 리스너"));
+
+  expect(await screen.findByText("JNDI 프로브 카탈로그")).toBeTruthy();
+  expect(await screen.findByText("JNDI 실전 RCE 리스너 (rogue LDAP)")).toBeTruthy();
+  expect(screen.getByText("리스너 시작")).toBeTruthy();
 });

@@ -27,6 +27,11 @@ from .modules.privesc_server import (
     kill_orphaned_server, router as privesc_server_router,
     stop_privesc_server,
 )
+from .modules.jndi_listener import (
+    kill_orphaned_http_server as kill_orphaned_jndi_server,
+    router as jndi_listener_router,
+    stop_jndi_listener,
+)
 from .modules.exploit_research.router import (
     router as exploit_research_router, shutdown_local_runs,
 )
@@ -75,6 +80,7 @@ async def lifespan(_: FastAPI):
             scan_manager.set_concurrency(int(setting.value))
     recover_interrupted_jobs()
     kill_orphaned_server()
+    kill_orphaned_jndi_server()
     with SessionLocal() as db:
         for row in db.query(Execution).filter(
                 Execution.status.in_(("queued","running"))):
@@ -103,6 +109,7 @@ async def lifespan(_: FastAPI):
     await web_proxy_manager.shutdown()
     shutdown_local_runs()
     stop_privesc_server()
+    stop_jndi_listener()
 
 app = FastAPI(title="OSCP Workspace", version="0.1.0", lifespan=lifespan)
 app.include_router(scan_router)
@@ -119,6 +126,7 @@ app.include_router(operations_router)
 app.include_router(vpn_router)
 app.include_router(hosts_router)
 app.include_router(privesc_server_router)
+app.include_router(jndi_listener_router)
 app.include_router(exploit_research_router)
 app.include_router(runbook_workflow_router)
 app.include_router(runbook_execution_router)

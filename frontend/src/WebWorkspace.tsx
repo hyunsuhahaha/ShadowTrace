@@ -4,6 +4,7 @@ import IntruderPanel from "./IntruderPanel";
 import SqlPayloadReference from "./SqlPayloadReference";
 import LfiPayloadReference from "./LfiPayloadReference";
 import Log4ShellPayloadReference from "./Log4ShellPayloadReference";
+import JndiRceListenerPanel from "./JndiRceListenerPanel";
 import { shodanFaviconHash } from "./murmurHash";
 import ProxyPanel from "./ProxyPanel";
 import { parseCurl } from "./curlImport";
@@ -442,7 +443,10 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
           ) : workspaceTab === "lfi" ? (
             <LfiPayloadReference onSendToIntruder={sendToIntruder} />
           ) : workspaceTab === "log4shell" ? (
-            <Log4ShellPayloadReference onSendToIntruder={sendToIntruder} />
+            <>
+              <Log4ShellPayloadReference onSendToIntruder={sendToIntruder} />
+              <JndiRceListenerPanel />
+            </>
           ) : workspaceTab === "proxy" ? (
             <ProxyPanel projectId={targets.data?.find((t) => t.id === targetId)?.project_id}
               targetId={targetId} onOpenRequest={openCapturedRequest}

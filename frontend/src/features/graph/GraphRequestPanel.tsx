@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { GraphRequestDraft } from "./graphModel";
 import { S } from "./graphStyles";
+import Log4ShellPayloadReference from "../../Log4ShellPayloadReference";
+import JndiRceListenerPanel from "../../JndiRceListenerPanel";
 
 type GraphExchange = {
   id: number; status_code?: number | null; duration_ms: number; size: number;
@@ -11,6 +13,16 @@ type GraphExchange = {
 export function GraphRequestPanel(props: {
   draft: GraphRequestDraft; onBack: () => void;
 }) {
+  // Log4ShellPayloadReference/JndiRceListenerPanel previously only existed
+  // inside WebWorkspace.tsx's standalone #web route, which has no embedded
+  // mode -- there was no way to reach either from inside the graph at all,
+  // Oopsie-flow-style cookie/multipart support notwithstanding. Rather than
+  // teach WebWorkspace's whole chrome to embed (it owns saved-request
+  // folders, Intruder, a proxy tab -- much more than this panel's scope),
+  // this panel just gained a second tab that reuses those two components
+  // directly, same as how a service node's Inspector reuses
+  // LinpeasAnalysisPanel/SuidAnalysisPanel instead of re-navigating.
+  const [tab, setTab] = useState<"request" | "log4shell">("request");
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState(props.draft.url);
   const [headers, setHeaders] = useState("{}");
@@ -137,9 +149,19 @@ export function GraphRequestPanel(props: {
   return <section style={S.requestPanel} aria-label="Graph Web Request">
     <div style={S.requestPanelHead}>
       <div><small style={S.requestEyebrow}>WEB REQUEST</small>
-        <h3 style={{ margin: "4px 0 0" }}>요청 편집기</h3></div>
+        <h3 style={{ margin: "4px 0 0" }}>{tab === "request" ? "요청 편집기" : "Log4Shell"}</h3></div>
       <button style={S.requestBack} onClick={props.onBack}>← 실행 결과</button>
     </div>
+    <div style={S.requestTechniqueActions} role="tablist" aria-label="Request 패널 탭">
+      <button role="tab" style={S.requestTechniqueButton} aria-selected={tab === "request"}
+        onClick={() => setTab("request")}>요청 편집기</button>
+      <button role="tab" style={S.requestTechniqueButton} aria-selected={tab === "log4shell"}
+        onClick={() => setTab("log4shell")}>Log4Shell · JNDI 리스너</button>
+    </div>
+    {tab === "log4shell" ? <>
+      <Log4ShellPayloadReference />
+      <JndiRceListenerPanel />
+    </> : <>
     <div style={S.requestLine}>
       <select value={method} onChange={(e) => setMethod(e.target.value)} style={S.requestMethod}>
         {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
@@ -215,5 +237,6 @@ export function GraphRequestPanel(props: {
           <pre style={S.responsePre}>{responseBody || "(빈 응답)"}</pre>
         </> : <div style={S.requestEmpty}>요청을 전송하면 응답이 여기에 표시됩니다.</div>}
     </div>
+    </>}
   </section>;
 }
