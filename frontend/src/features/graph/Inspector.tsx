@@ -42,9 +42,15 @@ const FILE_TREE_SCOPE = ["/home", "/root", "/tmp", "/var/www", "/opt", "/srv",
 // already ran against the same target -- this just surfaces that result
 // (and a connect action, where one genuinely exists) instead of a plain
 // "성공" label with nothing to act on.
-function UnauthAccessResult({label, connectLabel, onConnect, treeLabel, tree}: {
+function UnauthAccessResult({label, connectLabel, onConnect, treeLabel, tree,
+  onOpenTreeFile, treeFileResult}: {
   label: string; connectLabel?: string; onConnect?: () => void;
   treeLabel?: string; tree?: {status: string; stdout: string};
+  // Optional: renders `tree` as a clickable D|/F| tree instead of a raw
+  // <pre> dump, and shows treeFileResult's output for whichever leaf was
+  // last clicked (mongodb-db-tree's ace.admin -> its bcrypt hash, say).
+  onOpenTreeFile?: (path: string) => void;
+  treeFileResult?: { path: string; stdout?: string; status: string };
 }) {
   return <section style={S.netexecNodeResult} aria-label={`${label} 결과`}>
     <div style={S.netexecNodeResultHead}>
@@ -59,7 +65,18 @@ function UnauthAccessResult({label, connectLabel, onConnect, treeLabel, tree}: {
         <b>{treeLabel}</b>
       </div>
       {!tree ? <div style={S.resultMessage}>자동 조회 중…</div>
-        : <pre style={S.terminalOutput}>{tree.stdout || "(빈 결과)"}</pre>}
+        : onOpenTreeFile
+          ? <FileTreeView onOpenFile={onOpenTreeFile}
+              node={buildFileTree(parseTaggedTreeLines(tree.stdout), "/")} />
+          : <pre style={S.terminalOutput}>{tree.stdout || "(빈 결과)"}</pre>}
+    </div>}
+    {treeFileResult && <div style={S.netexecTree}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "9px 12px" }}>
+        <b>{treeFileResult.path}</b>
+      </div>
+      {treeFileResult.status === "completed"
+        ? <pre style={S.terminalOutput}>{treeFileResult.stdout || "(빈 결과)"}</pre>
+        : <div style={S.resultMessage}>불러오는 중…</div>}
     </div>}
   </section>;
 }
@@ -222,6 +239,35 @@ export function Inspector(props: {
     {id: number; title: string; initialInput?: string} | null
   >(null);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+  // mongodb-db-tree only lists database/collection names -- there was no way
+  // to read a collection's actual documents (e.g. Unified's ace.admin bcrypt
+  // hash) short of opening mongosh and typing db.<collection>.find() by
+  // hand. This mirrors SmbShareResults' "run a fresh captured execution per
+  // click, poll it, show stdout" shape rather than FileContentModal's (that
+  // one reads from a live PTY session, which a mongodb-info unauth check
+  // never has).
+  const [mongoDump, setMongoDump] = useState<{ path: string; executionId: number } | null>(null);
+  const mongoDumpOutput = useQuery({
+    queryKey: ["graphMongoDump", mongoDump?.executionId],
+    enabled: mongoDump !== null,
+    refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.status || "")
+      ? 1500 : false,
+    queryFn: () => api<{ stdout?: string; stderr?: string; status: string }>(
+      `/executions/${mongoDump!.executionId}/output`),
+  });
+  const viewMongoCollection = async (path: string) => {
+    if (!props.executionContext) return;
+    const created = await api<{ id: number }>("/executions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_id: props.executionContext.targetId,
+        service_id: props.executionContext.serviceId,
+        template_id: "mongodb-collection-dump",
+        variables: { path }, run_as_root: false, graph_node_id: n?.id,
+      }),
+    });
+    setMongoDump({ path, executionId: created.id });
+  };
   const [retryError, setRetryError] = useState("");
   // Any shell opened via App.tsx's openManualShell/openSshShell (or a
   // ReverseShellPanel listener -- nc or socat, both just typed commands)
@@ -1215,7 +1261,12 @@ export function Inspector(props: {
       {executionId !== null && isMongoCheck && mongoSuccess && (
         <UnauthAccessResult label="MONGODB" connectLabel="mongosh로 접속하기"
           onConnect={() => void openMongoShell()}
-          treeLabel="데이터베이스·컬렉션 트리" tree={latestExecutionFor("mongodb-db-tree")} />
+          treeLabel="데이터베이스·컬렉션 트리" tree={latestExecutionFor("mongodb-db-tree")}
+          onOpenTreeFile={(path) => void viewMongoCollection(path)}
+          treeFileResult={mongoDump
+            ? { path: mongoDump.path, stdout: mongoDumpOutput.data?.stdout,
+                status: mongoDumpOutput.data?.status || "running" }
+            : undefined} />
       )}
       {executionId !== null && isSnmpCheck && snmpSuccess && (
         <UnauthAccessResult label="SNMP"

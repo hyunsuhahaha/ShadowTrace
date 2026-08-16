@@ -376,7 +376,7 @@ it("offers mongosh and shows the auto-fetched db tree once mongodb-info confirms
     }), { headers: { "Content-Type": "application/json" } }));
     if (url.includes("/api/executions?target_id=9")) return Promise.resolve(new Response(JSON.stringify([
       { id: 41, template_id: "mongodb-db-tree", service_id: 27, status: "completed",
-        stdout: "admin\n  system.users\nloot\n  creds\n" },
+        stdout: "D|ace\nF|ace/admin\nD|loot\nF|loot/creds\n" },
     ]), { headers: { "Content-Type": "application/json" } }));
     if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
       { id: 9, project_id: 2, ip: "10.129.8.5" },
@@ -401,7 +401,7 @@ it("offers mongosh and shows the auto-fetched db tree once mongodb-info confirms
     }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
   </QueryClientProvider>);
 
-  expect(await screen.findByText(/admin/)).toBeTruthy();
+  expect(await screen.findByText("ace")).toBeTruthy();
   fireEvent.click(screen.getByText("mongosh로 접속하기"));
 
   await waitFor(() => expect(posted).toHaveLength(1));
@@ -409,6 +409,56 @@ it("offers mongosh and shows the auto-fetched db tree once mongodb-info confirms
     target_id: 9, service_id: 27, command: "mongosh --host 10.129.8.5 --port 27017",
     graph_node_id: "execution-40",
   });
+});
+
+it("dumps a collection's documents on click -- Unified's ace.admin bcrypt hash never had a UI for this", async () => {
+  const posted: Array<{ body: Record<string, unknown> }> = [];
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/executions/40/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: "| mongodb-info: \n|   MongoDB version: 3.6.8\n", stderr: "", status: "completed", exit_code: 0,
+    }), { headers: { "Content-Type": "application/json" } }));
+    if (url.includes("/api/executions?target_id=9")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 41, template_id: "mongodb-db-tree", service_id: 27, status: "completed",
+        stdout: "D|ace\nF|ace/admin\n" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/targets")) return Promise.resolve(new Response(JSON.stringify([
+      { id: 9, project_id: 2, ip: "10.129.8.5" },
+    ]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/executions") && init?.method === "POST") {
+      const body = JSON.parse(init.body as string);
+      posted.push({ body });
+      return Promise.resolve(new Response(JSON.stringify({ id: 99 }), {
+        status: 201, headers: { "Content-Type": "application/json" },
+      }));
+    }
+    if (url.endsWith("/api/executions/99/output")) return Promise.resolve(new Response(JSON.stringify({
+      stdout: '{\n  "name": "admin",\n  "x_shadow": "$2a$10$fakehash"\n}\n', status: "completed",
+    }), { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 9, serviceId: 27 }} node={{
+      id: "execution-40", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "MongoDB 무인증 정보 확인",
+      meta: JSON.stringify({ tool: "mongodb-info" }),
+      source_ref: JSON.stringify({ module: "executions", kind: "execution", id: 40 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("ace"));
+  fireEvent.click(await screen.findByText("admin"));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  expect(posted[0].body).toEqual({
+    target_id: 9, service_id: 27, template_id: "mongodb-collection-dump",
+    variables: { path: "ace/admin" }, run_as_root: false, graph_node_id: "execution-40",
+  });
+  expect(await screen.findByText(/x_shadow/)).toBeTruthy();
+  expect(screen.getByText(/fakehash/)).toBeTruthy();
 });
 
 it("shows the auto-fetched OID tree for a confirmed SNMP community string, with no connect action", async () => {

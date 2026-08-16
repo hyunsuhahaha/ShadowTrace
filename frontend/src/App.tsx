@@ -1284,7 +1284,7 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
     setRunWithSudo(false);
     void run({
       id: "smb-share-file-view",
-      preview: `smbget -a -q --stdout smb://${target.ip}/${lastSpiderShare}/${path}`,
+      preview: `smbclient -N //${target.ip}/${lastSpiderShare} -p ${service.port} -c 'get ${path} -'`,
       target_level: false,
       variables: {share: lastSpiderShare, path},
     });
