@@ -25,7 +25,7 @@ export default function ReverseShellPanel({ onStartListener }: {
   onStartListener: (port: string) => void;
 }) {
   const [lhost, setLhost] = useState("");
-  const [lport, setLport] = useState("443");
+  const [lport, setLport] = useState("4444");
   const [kind, setKind] = useState<ShellPayloadKind>("nc-mkfifo");
   const [urlEncode, setUrlEncode] = useState(false);
   const [psEncode, setPsEncode] = useState(false);
