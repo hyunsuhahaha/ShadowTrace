@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
-import { sqlPayloadCategories } from "./sqlPayloads";
+import { sqlPayloadCategories, type SqlPayloadCategory } from "./sqlPayloads";
 
 // Same shape as LfiPayloadReference/Log4ShellPayloadReference: staging text
 // into Intruder's candidate list, never auto-detecting or auto-sending — the
 // user still marks the injection point, reviews the request count, and
 // confirms before anything is sent. See sqlPayloads.ts for why there is no
 // automatic detection or exploitation here (SQLmap and similar tools are
-// banned on the OSCP exam). {LHOST}/{LPORT} only appear in the postgres
-// COPY FROM PROGRAM category's reverse-shell payload -- resolve() is a
-// no-op for every other category.
-export default function SqlPayloadReference({ onSendToIntruder }: {
+// banned on the OSCP exam). {LHOST}/{LPORT} only appear in the RCE
+// categories' reverse-shell payloads (postgres/mssql/mysql) -- resolve() is
+// a no-op for every other category.
+//
+// `categories` defaults to the full catalog (Web Testing's own SQLi tab);
+// ServiceCommandSession passes a filtered subset (dbRceCategoriesFor) when a
+// DB-shaped service is selected, so an operator who's already authenticated
+// against that DB sees only the "type this into the client" RCE payloads,
+// not the web-injection variants or the unrelated fuzzing/UNION categories.
+export default function SqlPayloadReference({ onSendToIntruder, categories = sqlPayloadCategories }: {
   onSendToIntruder?: (payloads: string[]) => void;
+  categories?: SqlPayloadCategory[];
 }) {
   const [copied, setCopied] = useState<string>();
   const [lhost, setLhost] = useState<string>();
@@ -60,7 +67,7 @@ export default function SqlPayloadReference({ onSendToIntruder }: {
             placeholder="LPORT" aria-label="LPORT" />
         </div>
       </div>
-      {sqlPayloadCategories.map((category) => (
+      {categories.map((category) => (
         <details key={category.id} className="sqlPayloadCategory">
           <summary>
             <b>{category.title}</b>

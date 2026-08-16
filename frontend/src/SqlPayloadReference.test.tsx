@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import SqlPayloadReference from "./SqlPayloadReference";
-import { findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
+import { dbRceCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
 
 const authBypass = sqlPayloadCategories.find((category) => category.id === "auth-bypass")!;
 
@@ -39,6 +39,19 @@ it("fills LHOST and LPORT into the postgres COPY FROM PROGRAM reverse shell payl
   const revshell = category.payloads.find((item) => item.payload.startsWith("';"))!;
   const resolved = revshell.payload.replace("{LHOST}", "10.10.14.5").replace("{LPORT}", "4444");
   expect(screen.getByText(resolved)).toBeTruthy();
+});
+
+it("renders only the given categories when a filtered subset is passed in", async () => {
+  vi.stubGlobal("fetch", stubVpnStatus());
+  render(<SqlPayloadReference categories={dbRceCategoriesFor("postgresql")} />);
+  await screen.findByText(/^10\.10\.14\.5$/);
+
+  expect(screen.getByText("PostgreSQL COPY FROM PROGRAM")).toBeTruthy();
+  expect(screen.queryByText("UNION 기반 추출")).toBeNull();
+  expect(screen.queryByText("MSSQL xp_cmdshell")).toBeNull();
+  // The filtered set drops injection-context payloads -- only the
+  // already-authenticated variants should show up.
+  expect(screen.queryByText(/인젝션 컨텍스트/)).toBeNull();
 });
 
 it("fills LHOST and LPORT into the MSSQL xp_cmdshell and MySQL reverse shell payloads too", async () => {

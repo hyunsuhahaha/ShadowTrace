@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
+import { dbRceCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
 
 describe("manual SQLi payload catalog", () => {
   it("has unique, non-empty category ids", () => {
@@ -29,12 +29,17 @@ describe("manual SQLi payload catalog", () => {
     expect(ids).toContain("mysql-udf-rce");
   });
 
-  it("gives the PostgreSQL COPY FROM PROGRAM entry an injection-context payload", () => {
+  it("gives the PostgreSQL COPY FROM PROGRAM entry both a direct and an injection-context reverse shell", () => {
     const category = findSqlPayloadCategory("postgres-copy-program");
     expect(category?.engines).toEqual(["postgresql"]);
     const stacked = category?.payloads.find((item) => item.payload.startsWith("';"));
     expect(stacked?.payload).toContain("COPY cmd_exec FROM PROGRAM");
     expect(stacked?.payload).toContain("--");
+    expect(stacked?.context).toBe("injection");
+    const direct = category?.payloads.find((item) =>
+      item.context === "direct" && item.payload.includes("nc {LHOST} {LPORT}"));
+    expect(direct).toBeTruthy();
+    expect(direct?.payload.startsWith("'")).toBe(false);
   });
 
   it("gives MSSQL xp_cmdshell a reverse-shell payload whose SQL string literal is well-formed", () => {
@@ -75,5 +80,39 @@ describe("manual SQLi payload catalog", () => {
   it("looks up a category by id", () => {
     expect(findSqlPayloadCategory("union")?.title).toBe("UNION 기반 추출");
     expect(findSqlPayloadCategory("does-not-exist")).toBeUndefined();
+  });
+});
+
+describe("dbRceCategoriesFor", () => {
+  it("maps each DB engine's nmap service name to its own RCE categories only", () => {
+    expect(dbRceCategoriesFor("postgresql").map((c) => c.id)).toEqual(["postgres-copy-program"]);
+    expect(dbRceCategoriesFor("mysql").map((c) => c.id))
+      .toEqual(["mysql-outfile-webshell", "mysql-udf-rce"]);
+    expect(dbRceCategoriesFor("ms-sql-s").map((c) => c.id)).toEqual(["mssql-xp-cmdshell"]);
+  });
+
+  it("matches case-insensitively, same as nmap service strings can vary", () => {
+    expect(dbRceCategoriesFor("MySQL").map((c) => c.id)).toEqual(["mysql-outfile-webshell", "mysql-udf-rce"]);
+  });
+
+  it("returns nothing for a service with no DB RCE reference (ssh, redis, http, ...)", () => {
+    expect(dbRceCategoriesFor("ssh")).toEqual([]);
+    expect(dbRceCategoriesFor("redis")).toEqual([]);
+    expect(dbRceCategoriesFor("http")).toEqual([]);
+  });
+
+  it("drops every injection-context payload, keeping only the ones safe to paste directly into an authenticated client", () => {
+    for (const serviceName of ["postgresql", "mysql", "ms-sql-s"]) {
+      for (const category of dbRceCategoriesFor(serviceName)) {
+        expect(category.payloads.every((item) => item.context !== "injection")).toBe(true);
+        expect(category.payloads.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("does not mutate the underlying catalog when filtering", () => {
+    dbRceCategoriesFor("mysql");
+    const original = findSqlPayloadCategory("mysql-outfile-webshell");
+    expect(original?.payloads.some((item) => item.context === "injection")).toBe(true);
   });
 });

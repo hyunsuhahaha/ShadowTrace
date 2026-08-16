@@ -2030,6 +2030,7 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
             serviceKey={`${service.id}:${service.name}:${service.port}/${service.protocol}`}
             targetIp={target.ip} targetHostname={target.hostname}
             port={service.port} protocol={service.protocol}
+            serviceName={service.name}
             credentials={credStore.saved.data}
             onReview={reviewCommand} />}
           <JobStatus run={focusedRun} clock={clock} activeCount={activeRuns.length} />
