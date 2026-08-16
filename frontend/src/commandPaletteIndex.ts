@@ -87,6 +87,14 @@ const webToolEntries: CommandPaletteEntry[] = [
     label: "MSSQL 페이로드 참고", detail: "SQLi 참고 하단 · 기초 문법·정찰부터 xp_cmdshell RCE까지",
     category: "Web Testing 도구",
     keywords: ["mssql", "sql server", "sqlserver", "xp_cmdshell", "linked server", "impersonate"] },
+  { id: "web/sqli-redis", route: "web", subroute: "sqli", anchorId: "sqlpayload-redis-basics",
+    label: "Redis 페이로드 참고", detail: "SQLi 참고 하단 · 비인증 접속 정찰부터 SSH 키·크론 RCE까지",
+    category: "Web Testing 도구",
+    keywords: ["redis", "unauthenticated redis", "authorized_keys", "module load"] },
+  { id: "web/sqli-mongodb", route: "web", subroute: "sqli", anchorId: "sqlpayload-mongodb-basics",
+    label: "MongoDB 페이로드 참고", detail: "SQLi 참고 하단 · 기초 명령부터 NoSQL 인젝션까지",
+    category: "Web Testing 도구",
+    keywords: ["mongodb", "mongo", "nosql", "nosql injection", "노스퀄"] },
   { id: "web/lfi", route: "web", subroute: "lfi", label: "LFI 참고", detail: "Local File Inclusion 페이로드 참고자료", category: "Web Testing 도구",
     keywords: ["lfi", "local file inclusion", "path traversal", "파일 인클루전", "디렉토리 순회"] },
   { id: "web/log4shell", route: "web", subroute: "log4shell", label: "Log4Shell 참고", detail: "CVE-2021-44228 JNDI 페이로드 참고자료", category: "Web Testing 도구",
@@ -138,8 +146,20 @@ const enumerationToolEntries: CommandPaletteEntry[] = [
     keywords: ["tty", "pty", "pty.spawn", "shell stabilize", "stty raw", "stty", "쉘 안정화", "tty upgrade", "풀 tty"] },
 ];
 
+const postExploitationToolEntries: CommandPaletteEntry[] = [
+  // Anchors into PostExploitationWorkspace's always-rendered LinuxPrivescReference
+  // section -- unlike the Service Enumeration anchors above, this page doesn't
+  // wait on a selected service, so no serviceKind is needed (see the
+  // serviceKind comment on CommandPaletteEntry).
+  { id: "post-exploitation/restricted-shell", route: "post-exploitation",
+    anchorId: "privesc-restricted-shell",
+    label: "제한된 셸 환경 참고", detail: "Post-Exploitation 하단 · rbash/BusyBox/noexec에서 ls·cat이 안 먹힐 때",
+    category: "Post-Exploitation 도구",
+    keywords: ["rbash", "restricted shell", "제한 셸", "busybox", "noexec", "ls 안됨", "cat 안됨", "셸 탈출"] },
+];
+
 export const commandPaletteIndex: CommandPaletteEntry[] = [
-  ...navEntries, ...webToolEntries, ...enumerationToolEntries,
+  ...navEntries, ...webToolEntries, ...enumerationToolEntries, ...postExploitationToolEntries,
 ];
 
 const normalize = (value: string) => value.toLowerCase();

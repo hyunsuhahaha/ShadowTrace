@@ -29,7 +29,7 @@ export default function LinuxPrivescReference({ onSendCommand }: {
         </p>
       </div>
       {linuxPrivescCategories.map((category) => (
-        <details key={category.id} className="sqlPayloadCategory">
+        <details key={category.id} id={`privesc-${category.id}`} className="sqlPayloadCategory">
           <summary>
             <b>{category.title}</b>
           </summary>

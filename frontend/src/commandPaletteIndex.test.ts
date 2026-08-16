@@ -97,11 +97,25 @@ it("finds each DB engine's payload reference by name, deep-linked to its own cat
     ["postgre", "web/sqli-postgres", "sqlpayload-postgres-basics"],
     ["mysql", "web/sqli-mysql", "sqlpayload-mysql-basics"],
     ["mssql", "web/sqli-mssql", "sqlpayload-mssql-basics"],
+    ["redis", "web/sqli-redis", "sqlpayload-redis-basics"],
+    ["mongodb", "web/sqli-mongodb", "sqlpayload-mongodb-basics"],
   ] as const) {
     const results = searchCommandPalette(query);
     const entry = results.find((item) => item.id === id);
     expect(entry, `${query} -> ${id}`).toBeTruthy();
     expect(entry?.anchorId).toBe(anchor);
+    expect(entry?.serviceKind).toBeUndefined();
+  }
+});
+
+it("finds the restricted-shell reference by an ls/cat-not-working style query, deep-linked into Post-Exploitation", () => {
+  for (const query of ["rbash", "busybox", "noexec", "ls 안됨"]) {
+    const results = searchCommandPalette(query);
+    const entry = results.find((item) => item.id === "post-exploitation/restricted-shell");
+    expect(entry, query).toBeTruthy();
+    expect(entry?.route).toBe("post-exploitation");
+    expect(entry?.subroute).toBeUndefined();
+    expect(entry?.anchorId).toBe("privesc-restricted-shell");
     expect(entry?.serviceKind).toBeUndefined();
   }
 });

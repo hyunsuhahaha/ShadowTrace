@@ -19,6 +19,16 @@ it("renders every category as a static, copyable reference", () => {
   )).toBeTruthy();
   expect(screen.getByText("Redis 설정")).toBeTruthy();
   expect(screen.getByText("MongoDB 설정")).toBeTruthy();
+  expect(screen.getByText("제한된 셸/실행 환경 대응")).toBeTruthy();
+  expect(screen.getByText("busybox sh")).toBeTruthy();
+});
+
+it("gives every category a stable id for Command Palette deep-linking", () => {
+  const { container } = render(<LinuxPrivescReference />);
+
+  for (const category of linuxPrivescCategories) {
+    expect(container.querySelector(`#privesc-${category.id}`), category.id).toBeTruthy();
+  }
 });
 
 it("copies a command to the clipboard without any network request", async () => {

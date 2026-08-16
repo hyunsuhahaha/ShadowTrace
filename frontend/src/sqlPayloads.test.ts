@@ -30,6 +30,26 @@ describe("manual SQLi payload catalog", () => {
     expect(ids).toContain("postgres-copy-program");
     expect(ids).toContain("mysql-outfile-webshell");
     expect(ids).toContain("mysql-udf-rce");
+    expect(ids).toContain("redis-basics");
+    expect(ids).toContain("mongodb-basics");
+  });
+
+  it("gives Redis unauthenticated-access RCE techniques, all directly typeable (no injection variant exists)", () => {
+    const category = findSqlPayloadCategory("redis-basics");
+    expect(category?.engines).toEqual(["redis"]);
+    expect(category?.payloads.every((item) => item.context === "direct")).toBe(true);
+    expect(category?.payloads.some((item) => item.payload.includes("authorized_keys"))).toBe(true);
+    expect(category?.payloads.some((item) => /CONFIG SET dir.*cron/is.test(item.payload)
+      || item.payload.includes("crontabs"))).toBe(true);
+  });
+
+  it("gives MongoDB both direct recon commands and injection-context NoSQL auth bypass payloads", () => {
+    const category = findSqlPayloadCategory("mongodb-basics");
+    expect(category?.engines).toEqual(["mongodb"]);
+    expect(category?.payloads.some((item) => item.context === "direct")).toBe(true);
+    const injections = category?.payloads.filter((item) => item.context === "injection") ?? [];
+    expect(injections.length).toBeGreaterThan(0);
+    expect(injections.every((item) => item.payload.includes("$"))).toBe(true);
   });
 
   it("gives each DB engine a basics/recon category ahead of its RCE category", () => {
@@ -109,6 +129,8 @@ describe("dbPayloadCategoriesFor", () => {
       .toEqual(["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"]);
     expect(dbPayloadCategoriesFor("ms-sql-s").map((c) => c.id))
       .toEqual(["mssql-basics", "mssql-xp-cmdshell"]);
+    expect(dbPayloadCategoriesFor("redis").map((c) => c.id)).toEqual(["redis-basics"]);
+    expect(dbPayloadCategoriesFor("mongodb").map((c) => c.id)).toEqual(["mongodb-basics"]);
   });
 
   it("matches case-insensitively, same as nmap service strings can vary", () => {
@@ -116,14 +138,14 @@ describe("dbPayloadCategoriesFor", () => {
       .toEqual(["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"]);
   });
 
-  it("returns nothing for a service with no DB payload reference (ssh, redis, http, ...)", () => {
+  it("returns nothing for a service with no DB payload reference (ssh, ftp, http, ...)", () => {
     expect(dbPayloadCategoriesFor("ssh")).toEqual([]);
-    expect(dbPayloadCategoriesFor("redis")).toEqual([]);
+    expect(dbPayloadCategoriesFor("ftp")).toEqual([]);
     expect(dbPayloadCategoriesFor("http")).toEqual([]);
   });
 
   it("drops every injection-context payload, keeping only the ones safe to paste directly into an authenticated client", () => {
-    for (const serviceName of ["postgresql", "mysql", "ms-sql-s"]) {
+    for (const serviceName of ["postgresql", "mysql", "ms-sql-s", "redis", "mongodb"]) {
       for (const category of dbPayloadCategoriesFor(serviceName)) {
         expect(category.payloads.every((item) => item.context !== "injection")).toBe(true);
         expect(category.payloads.length).toBeGreaterThan(0);

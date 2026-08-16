@@ -394,7 +394,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `JobStatus.tsx` | 단일 실행 상태 배너(경과시간, 프로세스 생존, stale 경고) |
 | `CredentialStoreForm.tsx` | `useCredentialStore` 훅과 연결된 자격증명 입력/저장 목록 |
 | `NetexecOutcome.tsx` | NetExec 성공 후 psexec/wmiexec/evil-winrm 등 다음 행동 제안 |
-| `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링, 접힌 `LinuxPrivescReference.tsx`(수동 권한 상승 체크리스트 — SUID/capability/cron/배포판별 서비스 설정 파일 경로, `linuxPrivescCommands.ts`가 데이터 소스) |
+| `PrivescSessionPanel.tsx` | LinPEAS/WinPEAS/pspy 파일 서버 토글, 세션 로그에서 NetNTLMv2 해시 폴링, 접힌 `LinuxPrivescReference.tsx`(수동 권한 상승 체크리스트 6개 카테고리 — 기본 정보/SUID·capability/cron·서비스 설정/배포판별 서비스 설정 파일 경로/쓰기 가능 파일·tty 안정화/제한된 셸·실행 환경 대응(rbash·BusyBox·noexec), `linuxPrivescCommands.ts`가 데이터 소스). 세션이 있을 때만 뜨는 이 위치와 달리 `PostExploitationWorkspace.tsx`(§10.11)엔 항상 렌더되는 같은 컴포넌트가 하나 더 있다 |
 | `LiveOutputPanel.tsx` | 실시간 출력 패널(`D\|`/`F\|` 태그 출력은 파일 트리로 렌더) |
 | `OperatorContext.tsx` | 그래프의 root/host ScanCenter와 service Enumeration이 공유하는 대상 프롬프트·실제 상태 fact·작업 액션 헤더 |
 | `FloatingTerminal.tsx` | AppShell 전역 다중 터미널 창 관리자와 `DetachableTerminal` seam — Scan, Graph Execution, Service output, Tools, Hash Cracking, Post-Exploitation, PTY를 ID별 독립 창으로 분리하고 라우트와 무관하게 이동·3방향 크기 조절·원위치 도킹 |
@@ -434,7 +434,7 @@ API: `/targets`, `/web/requests*`(CRUD, duplicate, exchanges, send), `/web/excha
 | 하위 컴포넌트/모듈 | 역할 |
 |---|---|
 | `IntruderPanel.tsx` | Intruder 클론: sniper/battering-ram/pitchfork/cluster-bomb, payload position, match/filter, 저장 후보군, `/web/intruder/{runId}` 실행 제어 |
-| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 리버스 쉘 페이로드가 있는 항목에만 있음: PostgreSQL COPY FROM PROGRAM, MSSQL xp_cmdshell, MySQL SELECT INTO OUTFILE 웹셸/UDF sys_exec — `sqlPayloads.ts`). postgres/mysql/mssql 각각 RCE 카테고리 앞에 "기초 문법·정찰" 카테고리(버전·현재 사용자·계정 해시·파일 읽기/쓰기 등)도 있다. 각 RCE 페이로드는 `context: "direct"`(이미 인증된 클라이언트/UNION 등에 바로 입력) 또는 `"injection"`(웹 파라미터로 인젝션)으로 태그돼 있다. `categories` prop으로 카테고리 서브셋을 넘길 수 있어 `ServiceCommandSession.tsx`가 DB 서비스일 때 `dbPayloadCategoriesFor()`로 필터링한(인젝션 변형 제외) 서브셋을 재사용해 임베드한다. 각 카테고리 `<details>`엔 `id={sqlpayload-<category.id>}`가 있어 Command Palette가 "postgres"/"mysql"/"mssql" 검색으로 해당 카테고리까지 직접 딥링크(펼침+스크롤)한다 — `commandPaletteIndex.ts`의 `web/sqli-postgres`/`web/sqli-mysql`/`web/sqli-mssql` 항목 |
+| `SqlPayloadReference.tsx` | SQLi 페이로드 치트시트(복사/Intruder 전송, 자동 실행 없음), tun0 IP + LPORT 자동 채움({LHOST}/{LPORT}는 리버스 쉘 페이로드가 있는 항목에만 있음: PostgreSQL COPY FROM PROGRAM, MSSQL xp_cmdshell, MySQL SELECT INTO OUTFILE 웹셸/UDF sys_exec, Redis SSH 키·크론 심기/모듈 로드 — `sqlPayloads.ts`). postgres/mysql/mssql 각각 RCE 카테고리 앞에 "기초 문법·정찰" 카테고리(버전·현재 사용자·계정 해시·파일 읽기/쓰기 등)가 있고, redis/mongodb는 RCE와 정찰을 한 카테고리(`redis-basics`/`mongodb-basics`)에 합쳐놨다 — mongodb-basics만 NoSQL 인젝션(`$ne`/`$regex`) 인젝션 컨텍스트 페이로드도 포함. 각 페이로드는 `context: "direct"`(이미 인증된 클라이언트/UNION 등에 바로 입력) 또는 `"injection"`(웹 파라미터로 인젝션)으로 태그돼 있다(redis-basics는 전부 direct, 주입 경로가 없음). `categories` prop으로 카테고리 서브셋을 넘길 수 있어 `ServiceCommandSession.tsx`가 DB 서비스일 때 `dbPayloadCategoriesFor()`로 필터링한(인젝션 변형 제외) 서브셋을 재사용해 임베드한다. 각 카테고리 `<details>`엔 `id={sqlpayload-<category.id>}`가 있어 Command Palette가 "postgres"/"mysql"/"mssql"/"redis"/"mongodb" 검색으로 해당 카테고리까지 직접 딥링크(펼침+스크롤)한다 — `commandPaletteIndex.ts`의 `web/sqli-postgres`/`web/sqli-mysql`/`web/sqli-mssql`/`web/sqli-redis`/`web/sqli-mongodb` 항목 |
 | `LfiPayloadReference.tsx` | LFI/경로 순회 페이로드 치트시트, tun0 IP 자동 채움 |
 | `Log4ShellPayloadReference.tsx` | CVE-2021-44228 JNDI probe 카탈로그 |
 | `ProxyPanel.tsx` | mitmproxy 패시브 캡처(시작/중지, CA 인증서 다운로드), 클라우드 지문 배지 |
@@ -513,7 +513,13 @@ API: `/projects`, `/targets*`, `/runbooks/templates*`, `/runbooks/instances*`,
 변수 시크릿, 다른 사용자 홈, Windows Credential Manager, SSH 키, 노트/로그, privesc 후
 해시, BloodHound 수집, 폴더/파일 트리)을 골라 SSH/wmiexec/secretsdump/bloodhound-python/
 nxc로 approve→execute 실행, 출력 스트리밍(트리 명령은 파일 트리 렌더). LinPEAS/SUID
-분석기도 포함, Finding으로 승격 가능.
+분석기도 포함, Finding으로 승격 가능. SUID/GTFOBins 분석 아래에 접힌
+`LinuxPrivescReference.tsx`(`onSendCommand` 없이, 복사 전용)도 항상 렌더된다 —
+`PrivescSessionPanel.tsx`의 것과 달리 활성 세션·target 선택과 무관하게 항상 존재하는
+페이지라서, Command Palette가 "rbash"/"busybox"/"noexec" 검색으로 그 안의
+`restricted-shell` 카테고리(제한 셸/BusyBox/noexec에서 ls·cat이 안 먹힐 때)까지
+안정적으로 딥링크할 수 있는 유일한 진입점이다(`commandPaletteIndex.ts`의
+`post-exploitation/restricted-shell` 항목).
 API: `/projects`, `/targets`, `/runbooks/credentials?project_id=`,
 `/post-exploitation/catalog`, `/post-exploitation*`, `/targets/{id}/linpeas`,
 `/targets/{id}/suid-scan`, `/findings`.

