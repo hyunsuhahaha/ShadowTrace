@@ -495,7 +495,7 @@ API: `/projects`, `/targets`, `/services/{id}/searchsploit`, `/targets/{id}/wes-
 
 | 하위 컴포넌트 | 역할 |
 |---|---|
-| `InteractiveTerminal.tsx` | `PtyTerminal`을 `DetachableTerminal`에 연결하는 wrapper; `autoFloat` 세션은 AppShell 전역 xterm으로 즉시 분리되어 노드·워크스페이스 전환에도 유지됨; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용 |
+| `InteractiveTerminal.tsx` | `PtyTerminal`을 `DetachableTerminal`에 연결하는 wrapper; `autoFloat` 세션은 AppShell 전역 xterm으로 즉시 분리되어 노드·워크스페이스 전환에도 유지됨; `PrivescSessionPanel.tsx`(App.tsx의 손자)도 사용. `floatTerminal()`은 뜨는 순간의 `props`를 딱 한 번만 캡처하므로, `DetachableTerminal`이 이미 갖고 있던 "떠 있는 동안도 `updateTerminal()`로 content 갱신" 이펙트를 `autoFloat` 경로에도 똑같이 붙여놨다(deps: `inputRequest`/`initialInput`/`title`/`isFloating`) — 없으면 이미 뜬 터미널에 나중에 새 `inputRequest`를 보내도(그래프 Inspector의 manual-shell 트리거 등) 얼어붙은 옛 props만 보고 있어서 조용히 무시된다 |
 
 ### 10.10 `RunbookWorkspace.tsx` — Runbooks (`#runbooks`)
 
@@ -599,9 +599,9 @@ Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 �
 이미 열려 있는 PTY에 마커로 감싼 `find` 한 줄(`echo ___TREE_START_<marker>___; find
 /home /root /tmp /var/www -mindepth 1 \( -type d -printf 'D|%p\n' \) -o -printf
 'F|%p\n' | head -2000; echo ___TREE_END_<marker>___`, `linux_file_tree` 카탈로그
-명령과 같은 스코프)을 입력(다른 트리거들과 같은 "검토 후 Enter" 원칙, 자동 실행 아님)한
-뒤, 세션 자신의 영속 로그(`/interactive-sessions/{id}/log`)를 1.5초 간격으로 폴링해
-그 마커 쌍 사이만 잘라 `parseTaggedTreeLines`로 파싱하고 `FileTreeView`로 그린다. PTY는
+명령과 같은 스코프)을 입력한 뒤, 세션 자신의 영속 로그(`/interactive-sessions/{id}/log`)를
+1.5초 간격으로 폴링해 그 마커 쌍 사이만 잘라 `parseTaggedTreeLines`로 파싱하고
+`FileTreeView`로 그린다(30초 안에 마커를 못 찾으면 포기하고 에러 메시지 표시). PTY는
 실행 전에 입력한 명령 자체를 그대로 되돌려 찍기 때문에 로그에 각 마커가 두 번(에코된
 명령 줄 + 실제 출력) 나타난다 — `indexOf`가 아니라 `lastIndexOf`로 뒤쪽(진짜 출력) 것을
 집어야 한다는 게 라이브 검증 없이 놓치기 쉬운 부분이라 회귀 테스트가 그 순서를 그대로
@@ -611,6 +611,20 @@ Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 �
 (`_read_tree_file`)는 둘 다 대문자 `F|`/`D|`만 인식해서, 실제 SSH로 돌리면 트리가
 항상 빈 채로 나왔다 — `credential_hunt.yaml`도 같이 고쳐 `-type d`/그 외로 명시적으로
 분기해 대문자 태그를 직접 찍게 했다.
+이 블록의 모든 트리거가 공유하는 `sendToManualShell(command, autoRun?)`은 항상 `\x15`
+(Ctrl-U, readline의 kill-to-start-of-line)를 명령 앞에 붙여 PTY로 보낸다 — 클릭할
+때마다 대기 중이던 줄을 지우고 새 명령으로 교체하기 위함이다(없으면 LinPEAS를 두 번
+누르거나 LinPEAS 다음 WinPEAS를 누르는 식으로 서로 다른 트리거를 연달아 누를 때마다
+전 명령 뒤에 계속 이어붙어서 실행 안 되는 한 줄짜리 쓰레기 텍스트만 쌓였다 — 실제
+라이브 세션에서 이렇게 재현됐다). `autoRun`은 기본 false(다른 트리거들과 같은 "검토 후
+Enter" 원칙 — LinPEAS/WinPEAS/pspy/`LinuxPrivescReference`는 제3자 스크립트를
+받아 실행하거나 카탈로그 전체를 검토 없이 자동 실행하기엔 범위가 넓어서 사람이 확인하고
+직접 Enter를 눌러야 한다); 폴더·파일 트리 트리거만 `autoRun: true`로 호출한다 —
+이 명령은 앱이 고정으로 만든, 사용자가 편집할 수 없는 순수 읽기 전용 `find`라 검토
+단계가 안전상 의미가 없고, 그냥 `ls`/`dir`를 직접 치는 것과 리스크가 다르지 않기
+때문이다(명령 끝에 `\r`을 붙여 전송). 이 두 가지(클리어 후 교체, 트리거별 자동 실행
+여부) 모두 실제 라이브 세션에서 사용자가 겪은 문제를 보고 고친 것이라 §11.1의
+"실제로 실행해서 검증" 원칙 사례로 `OBVIOUSNESS_STANDARD.md`에도 기록돼 있다.
 `manual-shell`은 리버스쉘 리스너·SSH 퀵커넥트·redis-cli 등 `/interactive-sessions/manual`로
 여는 모든 세션이 공유하는 합성 `template_id`라 카탈로그에 실제 항목이 없다 — 그래프 라벨은
 `graph/service.py`의 `_session_label()`이 이 경우만 `sess.command`(예: `nc -lvnp 4444`, 60자

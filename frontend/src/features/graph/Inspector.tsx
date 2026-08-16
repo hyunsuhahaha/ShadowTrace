@@ -251,8 +251,20 @@ export function Inspector(props: {
   // (see PtyTerminal), so this only makes sense once the operator has
   // opened the terminal themselves and given it a moment to connect --
   // same precondition PrivescSessionPanel's own send button relies on.
-  const sendToManualShell = (command: string) => {
-    setManualShellInputRequest({id: Date.now(), data: command});
+  // Typed, not auto-executed by default (the operator still reviews +
+  // presses Enter themselves) -- appropriate for LinPEAS/WinPEAS/pspy/the
+  // PrivEsc reference catalog, which download+run third-party scripts or
+  // cover a wide catalog of commands the app can't vet the risk of one by
+  // one. autoRun is only for callers passing a single hardcoded, read-only,
+  // app-authored command (the file-tree `find` below) where that review
+  // step is friction with no real safety benefit -- it's no different from
+  // the operator just typing `ls` themselves.
+  // \x15 is Ctrl-U, readline's own kill-to-start-of-line: without it,
+  // clicking any trigger twice (or two different ones back to back) just
+  // appended onto whatever was already sitting there unexecuted, piling up
+  // into one unusable run-on line instead of replacing it.
+  const sendToManualShell = (command: string, autoRun = false) => {
+    setManualShellInputRequest({id: Date.now(), data: `\x15${command}${autoRun ? "\r" : ""}`});
   };
   // A real, live directory listing off the already-open shell -- no stored
   // SSH/wmiexec credential needed, unlike the catalog-driven file_tree run
@@ -265,6 +277,8 @@ export function Inspector(props: {
   const [fileTreeMarker, setFileTreeMarker] = useState<string | null>(null);
   const [fileTreeEntries, setFileTreeEntries] =
     useState<{path: string; isDir: boolean}[] | null>(null);
+  const [fileTreeError, setFileTreeError] = useState("");
+  const fileTreeStartedAt = useRef(0);
   const fileTreeLog = useQuery({
     queryKey: ["graphManualShellFileTreeLog", sessionId, fileTreeMarker],
     enabled: sessionId !== null && fileTreeBusy && fileTreeMarker !== null,
@@ -285,20 +299,31 @@ export function Inspector(props: {
     // output. The last occurrence of each is always the real one.
     const startIndex = fileTreeLog.data.lastIndexOf(startTag);
     const endIndex = fileTreeLog.data.lastIndexOf(endTag);
-    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) return;
+    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+      // Nothing typed into the terminal executes on its own -- if the
+      // operator never presses Enter (or the shell died), this would
+      // otherwise poll "조회 중…" forever with no way out.
+      if (Date.now() - fileTreeStartedAt.current > 30_000) {
+        setFileTreeBusy(false);
+        setFileTreeError("30초 안에 실행 결과를 찾지 못했습니다 · 터미널에서 Enter를 눌렀는지 확인하세요");
+      }
+      return;
+    }
     setFileTreeEntries(parseTaggedTreeLines(
       fileTreeLog.data.slice(startIndex + startTag.length, endIndex)));
     setFileTreeBusy(false);
   }, [fileTreeLog.data, fileTreeBusy, fileTreeMarker]);
   const runManualShellFileTree = () => {
     const marker = String(Date.now());
+    fileTreeStartedAt.current = Date.now();
     setFileTreeMarker(marker);
     setFileTreeEntries(null);
+    setFileTreeError("");
     setFileTreeBusy(true);
     sendToManualShell(
       `echo ___TREE_START_${marker}___; find /home /root /tmp /var/www -mindepth 1 ` +
       `\\( -type d -printf 'D|%p\\n' \\) -o -printf 'F|%p\\n' 2>/dev/null | head -2000; ` +
-      `echo ___TREE_END_${marker}___`);
+      `echo ___TREE_END_${marker}___`, true);
   };
   const sessionQuery = useQuery({
     queryKey: ["graphInteractiveSession", sessionId],
@@ -1278,6 +1303,16 @@ export function Inspector(props: {
             ? `tun0에서 서비스 중 · ${privescServer.base_url}`
             : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."}</small>
         </header>
+        <p role="alert" style={{
+          margin: "0 0 8px", padding: "6px 10px", background: "#3a2a00",
+          border: "1px solid #a86a00", borderRadius: 4, color: "#ffd479", fontSize: 12,
+        }}>
+          ⚠ "폴더·파일 트리 조회"는 클릭하면 바로 실행됩니다(읽기 전용 조회라 확인 없이 자동
+          실행). LinPEAS/WinPEAS/pspy는 셸에 <b>입력만</b> 됩니다 — 아래 열려있는 터미널을
+          직접 클릭하고 <b>Enter를 눌러야</b> 실제로 실행됩니다(제3자 스크립트를 내려받아
+          실행하는 명령이라 검토 단계를 둠). 여러 번 누르면 줄이 지워지고 최신 명령으로
+          교체됩니다(쌓이지 않음).
+        </p>
         <div className="privescServerActions">
           <button type="button" disabled={manualShellOpen}
             onClick={() => setManualShellOpen(true)}>
@@ -1287,6 +1322,7 @@ export function Inspector(props: {
             onClick={runManualShellFileTree}>
             {fileTreeBusy ? "조회 중…" : "폴더·파일 트리 조회 (현재 셸)"}
           </button>
+          {fileTreeError && <small role="alert">{fileTreeError}</small>}
           {props.onOpenFileTree && props.executionContext && <button type="button"
             onClick={() => props.onOpenFileTree!(props.executionContext!.targetId)}>
             다른 자격증명으로 조회 (SSH)

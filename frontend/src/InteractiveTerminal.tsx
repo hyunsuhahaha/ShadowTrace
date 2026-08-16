@@ -35,6 +35,17 @@ export default function InteractiveTerminal(props: PtyTerminalProps & {
     new DOMRect(Math.max(8, innerWidth - 760), 72, 720, 460));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.autoFloat, props.sessionId, isFloating]);
+  // The float above only captures props once, at the moment it first floats
+  // -- exactly like DetachableTerminal's own updateTerminal effect, an
+  // already-floating window needs its content refreshed whenever a prop the
+  // operator can still act on (like sending a new inputRequest into the
+  // live PTY) changes after that, or those later updates silently vanish
+  // into a closure the floated window never re-renders from.
+  useEffect(() => {
+    if (isFloating) floatingState?.updateTerminal(floatingId,
+      <InteractiveTerminal {...props} floating autoFloat={false} />);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.inputRequest, props.initialInput, props.title, isFloating]);
   if (props.floating) return terminal;
   // Renders null on every pass for an autoFloat session, including the very
   // first one (not just once isFloating/wasFloating catches up) -- falling

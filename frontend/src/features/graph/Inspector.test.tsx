@@ -9,7 +9,10 @@ vi.mock("../../XtermOutput", () => ({default: ({output}: {output: string}) =>
   <pre aria-label="Responder 세션 로그">{output}</pre>}));
 vi.mock("../../InteractiveTerminal", () => ({default: ({sessionId, inputRequest}:
   {sessionId: number; inputRequest?: {data: string}}) =>
-  <div>PTY #{sessionId}{inputRequest && <span> · 전송: {inputRequest.data}</span>}</div>}));
+  <div>PTY #{sessionId}
+    {inputRequest && <span> · 전송: {inputRequest.data}</span>}
+    {inputRequest && <span data-testid="raw-input-request" data-command={inputRequest.data} />}
+  </div>}));
 
 afterEach(() => {
   cleanup();
@@ -1059,7 +1062,7 @@ it("also offers WinPEAS, SUID/GTFOBins analysis, and the Linux PrivEsc checklist
 
   fireEvent.click(screen.getByText("Linux PrivEsc 참고 열기"));
   fireEvent.click(screen.getAllByText("셸에 입력")[0]);
-  expect(await screen.findByText(/전송: id/)).toBeTruthy();
+  expect(await screen.findByText(/전송: .id/)).toBeTruthy();
 });
 
 it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH credential needed", async () => {
@@ -1115,6 +1118,62 @@ it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH 
   expect(await screen.findByText("dashboard.php")).toBeTruthy();
 
   vi.restoreAllMocks();
+});
+
+it("clears the pending line before each trigger instead of piling commands up, and auto-runs only the read-only file-tree query", async () => {
+  // A user report: clicking LinPEAS twice (or LinPEAS then WinPEAS) kept
+  // appending onto whatever was already sitting unexecuted at the prompt,
+  // turning into one unusable run-on line -- nothing ever actually ran,
+  // and it looked like the buttons did nothing at all. Every trigger now
+  // leads with Ctrl-U (\x15) to clear the line first. Separately, the
+  // file-tree query is the one trigger that's a hardcoded, read-only `find`
+  // -- unlike LinPEAS/WinPEAS (fetch and run a third-party script), it gets
+  // to skip the "operator reviews and presses Enter" step and just runs.
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 55, command: "nc -lvnp 4444", status: "running" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({
+        running: true, base_url: "http://10.10.14.5:8123", available: { peass: true, pspy: true },
+      }), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/55/log")) return Promise.resolve(new Response(""));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-55", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "nc -lvnp 4444", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 55 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #55");
+  await waitFor(() => expect(
+    (screen.getByText("LinPEAS 명령 셸에 입력") as HTMLButtonElement).disabled).toBe(false));
+
+  fireEvent.click(screen.getByText("LinPEAS 명령 셸에 입력"));
+  const afterLinpeas = screen.getByTestId("raw-input-request").getAttribute("data-command")!;
+  expect(afterLinpeas.startsWith("\x15")).toBe(true);
+  expect(afterLinpeas.endsWith("\r")).toBe(false);
+
+  fireEvent.click(screen.getByText("WinPEAS 명령 셸에 입력"));
+  const afterWinpeas = screen.getByTestId("raw-input-request").getAttribute("data-command")!;
+  expect(afterWinpeas.startsWith("\x15")).toBe(true);
+  expect(afterWinpeas).not.toContain(afterLinpeas.slice(1));
+
+  fireEvent.click(screen.getByText("폴더·파일 트리 조회 (현재 셸)"));
+  const afterTree = screen.getByTestId("raw-input-request").getAttribute("data-command")!;
+  expect(afterTree.startsWith("\x15")).toBe(true);
+  expect(afterTree.endsWith("\r")).toBe(true);
 });
 
 it("shows a hash-crack job's live output and lets a cracked hash be promoted", async () => {
