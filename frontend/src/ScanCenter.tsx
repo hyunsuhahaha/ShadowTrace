@@ -48,6 +48,12 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     [serviceFilter, setServiceFilter] = useState(""),
     [portFilter, setPortFilter] = useState(""),
     [openOnly, setOpenOnly] = useState(true),
+    // In-app modal instead of window.prompt() -- native OS dialogs can fail
+    // to surface at all on a bare/root Kali Chrome, so the button just
+    // silently hangs with zero visible sign anything happened.
+    [metadataOpen, setMetadataOpen] = useState(false),
+    [aliasDraft, setAliasDraft] = useState(""),
+    [tagsDraft, setTagsDraft] = useState(""),
     [changedOnly, setChangedOnly] = useState(false),
     [sort, setSort] = useState<"port" | "service">("port"),
     [portsCopied, setPortsCopied] = useState(false),
@@ -489,21 +495,21 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
       if (scanId === id) setScanId(undefined);
       await refresh();
     },
+    openMetadata = () => {
+      if (!selected) return;
+      setAliasDraft(selected.alias || "");
+      setTagsDraft(JSON.parse(selected.tags || "[]").join(", "));
+      setMetadataOpen(true);
+    },
     saveMetadata = async () => {
       if (!selected) return;
-      const alias = prompt("Scan alias", selected.alias);
-      if (alias === null) return;
-      const tagsInput = prompt(
-        "태그(쉼표로 구분)",
-        JSON.parse(selected.tags || "[]").join(", "),
-      );
-      if (tagsInput === null) return;
-      const tags = tagsInput.split(",").map((x) => x.trim()).filter(Boolean);
+      const tags = tagsDraft.split(",").map((x) => x.trim()).filter(Boolean);
       await fetch(`/api/scans/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alias, tags }),
+        body: JSON.stringify({ alias: aliasDraft, tags }),
       });
+      setMetadataOpen(false);
       await refresh();
     };
   return (
@@ -715,7 +721,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             <div className="artifactPanel">
               <div>
                 <b>산출물</b>
-                <button onClick={saveMetadata}>별칭 및 태그</button>
+                <button onClick={openMetadata}>별칭 및 태그</button>
                 <a href={`/api/scans/${scanId}/export?format=csv`}>CSV</a>
                 <a href={`/api/scans/${scanId}/export?format=json`}>JSON</a>
                 {xmlArtifact && (
@@ -796,6 +802,28 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
               <small><kbd>esc</kbd> cancel · <kbd>ctrl</kbd> + <kbd>↵</kbd> dispatch</small>
               <div><button onClick={() => setReview(false)}>취소</button>
                 <button className="executionReview__execute" disabled={!scope} onClick={execute}>[ DISPATCH ↵ ]</button></div>
+            </footer>
+          </div>
+        </div>
+      )}
+      {metadataOpen && (
+        <div className="modal" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="scan-metadata-title">
+            <span>스캔 메타데이터</span>
+            <h2 id="scan-metadata-title">별칭 및 태그</h2>
+            <label htmlFor="scan-alias-input">Alias</label>
+            <input id="scan-alias-input" autoFocus value={aliasDraft}
+              onChange={(e) => setAliasDraft(e.target.value)} />
+            <label htmlFor="scan-tags-input">태그(쉼표로 구분)</label>
+            <input id="scan-tags-input" value={tagsDraft}
+              onChange={(e) => setTagsDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void saveMetadata(); }
+                if (e.key === "Escape") setMetadataOpen(false);
+              }} />
+            <footer>
+              <button onClick={() => setMetadataOpen(false)}>취소</button>
+              <button onClick={() => void saveMetadata()}>저장</button>
             </footer>
           </div>
         </div>

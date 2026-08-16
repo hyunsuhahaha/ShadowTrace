@@ -105,6 +105,10 @@ export default function RunbookWorkspace(){
   const[credentialHint,setCredentialHint]=useState("");
   const[credentialRecommendations,setCredentialRecommendations]=useState<CredentialRecommendation[]>([]);
   const[toolsOpen,setToolsOpen]=useState(false);
+  // In-app modal instead of window.prompt() -- native OS dialogs can fail to
+  // surface at all on a bare/root Kali Chrome, so 복제 just silently hangs.
+  const[cloningTemplate,setCloningTemplate]=useState<Template>();
+  const[cloneNameDraft,setCloneNameDraft]=useState("");
   const[libraryMode,setLibraryMode]=useState<"scoped"|"all">("scoped");
   const[showExcluded,setShowExcluded]=useState(false);
 
@@ -253,10 +257,17 @@ export default function RunbookWorkspace(){
     const anchor=document.createElement("a");anchor.href=url;anchor.download=`${item.name}.runbook.json`;
     anchor.click();URL.revokeObjectURL(url);
   };
-  const cloneTemplate=async(item:Template)=>{
-    const cloneName=prompt("복제 Template 이름",`${item.name} copy`);
-    if(!cloneName?.trim())return;
-    await api(`/runbooks/templates/${item.id}/clone`,json({name:cloneName.trim()}));await refresh();
+  const openCloneTemplate=(item:Template)=>{
+    setCloneNameDraft(`${item.name} copy`);
+    setCloningTemplate(item);
+  };
+  const submitCloneTemplate=async()=>{
+    const item=cloningTemplate;
+    const cloneName=cloneNameDraft.trim();
+    if(!item||!cloneName)return;
+    await api(`/runbooks/templates/${item.id}/clone`,json({name:cloneName}));
+    setCloningTemplate(undefined);
+    await refresh();
   };
   const archiveTemplate=async(item:Template)=>{
     if(!confirm(`${item.name}을 Library에서 보관 처리할까요? 기존 Instance는 유지됩니다.`))return;
@@ -407,7 +418,7 @@ export default function RunbookWorkspace(){
               setSelectedId(relevance.instance_id!);setView("instances");
             }}>실행 화면 열기</Button>}
             {item.latest_version_id&&<Button onClick={()=>void exportTemplate(item)}>내보내기</Button>}
-            {item.latest_version_id&&<Button onClick={()=>void cloneTemplate(item)}>복제</Button>}
+            {item.latest_version_id&&<Button onClick={()=>openCloneTemplate(item)}>복제</Button>}
             {!item.builtin_key&&<Button variant="quiet"
               onClick={()=>void archiveTemplate(item)}>보관</Button>}
           </div>
@@ -542,6 +553,24 @@ export default function RunbookWorkspace(){
           </div>)}</details>}
       </main>
     </section>}
+    {cloningTemplate&&<div className="modal" role="presentation">
+      <div role="dialog" aria-modal="true" aria-labelledby="clone-template-title">
+        <span>Template 복제</span>
+        <h2 id="clone-template-title">복제 Template 이름</h2>
+        <label htmlFor="clone-template-name">이름</label>
+        <input id="clone-template-name" autoFocus value={cloneNameDraft}
+          onChange={e=>setCloneNameDraft(e.target.value)}
+          onKeyDown={e=>{
+            if(e.key==="Enter"){e.preventDefault();void submitCloneTemplate();}
+            if(e.key==="Escape")setCloningTemplate(undefined);
+          }}/>
+        <footer>
+          <Button onClick={()=>setCloningTemplate(undefined)}>취소</Button>
+          <Button variant="primary" disabled={!cloneNameDraft.trim()}
+            onClick={()=>void submitCloneTemplate()}>복제</Button>
+        </footer>
+      </div>
+    </div>}
   </div>;
 }
 

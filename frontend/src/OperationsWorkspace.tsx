@@ -23,7 +23,12 @@ type Audit = {
 export default function OperationsWorkspace() {
   const [query, setQuery] = useState(""),
     [backup, setBackup] = useState<{ name: string; size: number }>(),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    // In-app modal instead of window.prompt() -- native OS dialogs can fail
+    // to surface at all on a bare/root Kali Chrome, so the button just
+    // silently hangs with zero visible sign anything happened.
+    [concurrencyOpen, setConcurrencyOpen] = useState(false),
+    [concurrencyValue, setConcurrencyValue] = useState("");
   const results = useQuery({
       queryKey: ["globalSearch", query],
       queryFn: () =>
@@ -42,19 +47,27 @@ export default function OperationsWorkspace() {
       setError(String(e));
     }
   };
-  const setConcurrency = async () => {
+  const openConcurrency = async () => {
     try {
       setError("");
       const current = await api<{ concurrency: number }>("/scans/settings");
-      const input = prompt("최대 동시 스캔 수(1–8)", String(current.concurrency));
-      if (input === null) return;
-      const value = Number(input);
-      if (!Number.isInteger(value) || value < 1 || value > 8) return;
+      setConcurrencyValue(String(current.concurrency));
+      setConcurrencyOpen(true);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  const submitConcurrency = async () => {
+    const value = Number(concurrencyValue);
+    if (!Number.isInteger(value) || value < 1 || value > 8) return;
+    try {
+      setError("");
       await api("/scans/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concurrency: value }),
       });
+      setConcurrencyOpen(false);
     } catch (e) {
       setError(String(e));
     }
@@ -96,7 +109,7 @@ export default function OperationsWorkspace() {
           </div>
           <h2>백업</h2>
           <button onClick={createBackup}>전체 백업 생성</button>
-          <button onClick={setConcurrency}>동시 스캔 수 설정</button>
+          <button onClick={() => void openConcurrency()}>동시 스캔 수 설정</button>
           {backup && (
             <a
               className="backupDownload"
@@ -125,6 +138,32 @@ export default function OperationsWorkspace() {
           </div>
         </section>
       </main>
+      {concurrencyOpen && (
+        <div className="modal" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="concurrency-title">
+            <span>스캔 설정</span>
+            <h2 id="concurrency-title">최대 동시 스캔 수</h2>
+            <label htmlFor="concurrency-input">1–8</label>
+            <input
+              id="concurrency-input"
+              autoFocus
+              type="number"
+              min={1}
+              max={8}
+              value={concurrencyValue}
+              onChange={(e) => setConcurrencyValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void submitConcurrency(); }
+                if (e.key === "Escape") setConcurrencyOpen(false);
+              }}
+            />
+            <footer>
+              <button onClick={() => setConcurrencyOpen(false)}>취소</button>
+              <button onClick={() => void submitConcurrency()}>저장</button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
