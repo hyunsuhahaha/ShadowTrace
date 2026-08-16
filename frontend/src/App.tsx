@@ -1100,10 +1100,6 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
       credStore.domain, credStore.username, credStore.password, target.ip);
     await openManualShell(`impacket-${tool} ${auth}`);
   };
-  const openListenerShell = async (port: string) => {
-    if (!targetId || !serviceId || !port.trim()) return;
-    await openManualShell(`nc -lvnp ${port.trim()}`);
-  };
   const openSshShell = async () => {
     if (!target || !service || !credStore.username.trim()) return;
     await openManualShell(
@@ -2063,7 +2059,7 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
             onOpenTerminalMycli={service?.name?.toLowerCase() === "mysql" ? openMysqlTerminalMycli : undefined}
           />
           {!!service && <ReverseShellPanel
-            onStartListener={(port) => void openListenerShell(port)} />}
+            onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <ChiselPivotPanel
             onStartListener={(command) => void openManualShell(command)} />}
           {!!service && <ResponderPanel targetId={targetId} evidenceMsg={evidenceMsg}

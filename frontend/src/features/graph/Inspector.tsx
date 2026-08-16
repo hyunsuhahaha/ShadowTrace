@@ -214,7 +214,8 @@ export function Inspector(props: {
   >(null);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [retryError, setRetryError] = useState("");
-  // Any shell opened via App.tsx's openManualShell/openListenerShell/openSshShell
+  // Any shell opened via App.tsx's openManualShell/openSshShell (or a
+  // ReverseShellPanel listener -- nc or socat, both just typed commands)
   // (reverse shells, SSH, psexec, ...) always rides through the generic manual
   // endpoint and gets template_id="manual-shell", regardless of what command
   // actually spawned it -- so this is the one tool value that reliably means

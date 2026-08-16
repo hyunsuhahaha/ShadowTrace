@@ -936,8 +936,9 @@ it("auto-populates a folder/file tree on an ftp-client session's own node", asyn
 });
 
 it("lets LinPEAS run and be analyzed directly from a manual-shell session node", async () => {
-  // openManualShell/openListenerShell/openSshShell in App.tsx all create their
-  // session through the generic manual endpoint, which always stamps
+  // openManualShell/openSshShell in App.tsx (and ReverseShellPanel's nc/socat
+  // listener buttons) all create their session through the generic manual
+  // endpoint, which always stamps
   // template_id="manual-shell" -- reverse shells, SSH, psexec fallback shells
   // all look like this on the graph. The privesc-server + LinPEAS/pspy
   // trigger and the paste-and-analyze panel used to only be reachable from

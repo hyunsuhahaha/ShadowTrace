@@ -28,12 +28,21 @@ it("switches payload kind and URL-encodes it for use as a GET parameter", () => 
   ))).toBeTruthy();
 });
 
-it("starts the listener on the typed port", () => {
+it("starts an nc listener on the typed port by default", () => {
   const onStartListener = vi.fn();
   render(<ReverseShellPanel onStartListener={onStartListener} />);
   fireEvent.change(screen.getByLabelText("LPORT"), { target: { value: "9001" } });
   fireEvent.click(screen.getByText("리스너 준비 (nc -lvnp)"));
-  expect(onStartListener).toHaveBeenCalledWith("9001");
+  expect(onStartListener).toHaveBeenCalledWith("nc -lvnp 9001");
+});
+
+it("switches to a socat listener that survives a dropped connection", () => {
+  const onStartListener = vi.fn();
+  render(<ReverseShellPanel onStartListener={onStartListener} />);
+  fireEvent.change(screen.getByLabelText("LPORT"), { target: { value: "9001" } });
+  fireEvent.change(screen.getByLabelText("리스너 종류"), { target: { value: "socat" } });
+  fireEvent.click(screen.getByText("리스너 준비 (socat)"));
+  expect(onStartListener).toHaveBeenCalledWith("socat TCP-LISTEN:9001,reuseaddr,fork -");
 });
 
 it("shows the -enc checkbox only for the PowerShell kind and encodes the payload when checked", () => {

@@ -21,12 +21,27 @@ const STABILIZE_STEPS = [
 // command injection, upload) and having a listener ready for it is close to
 // universal across every box, so — unlike the other panels here — this
 // isn't gated to a particular service type.
+// Plain `nc -lvnp` dies the instant the one connection it caught closes --
+// any network blip on the target side means starting a whole new listener
+// by hand. socat's `fork` keeps the listener itself alive across drops (a
+// fresh inbound connection just gets picked up automatically), at the cost
+// of being a less commonly-preinstalled tool -- offered as an alternative,
+// not a replacement, since nc is still the safer default when unsure.
+const LISTENER_KINDS = [
+  { id: "nc", label: "nc", short: "nc -lvnp",
+    build: (port: string) => `nc -lvnp ${port}` },
+  { id: "socat", label: "socat (연결 끊겨도 리스너 유지)", short: "socat",
+    build: (port: string) => `socat TCP-LISTEN:${port},reuseaddr,fork -` },
+] as const;
+type ListenerKind = typeof LISTENER_KINDS[number]["id"];
+
 export default function ReverseShellPanel({ onStartListener }: {
-  onStartListener: (port: string) => void;
+  onStartListener: (command: string) => void;
 }) {
   const [lhost, setLhost] = useState("");
   const [lport, setLport] = useState("4444");
   const [kind, setKind] = useState<ShellPayloadKind>("nc-mkfifo");
+  const [listenerKind, setListenerKind] = useState<ListenerKind>("nc");
   const [urlEncode, setUrlEncode] = useState(false);
   const [psEncode, setPsEncode] = useState(false);
   const [webshellKind, setWebshellKind] = useState<WebshellFileKind>("php");
@@ -67,8 +82,16 @@ export default function ReverseShellPanel({ onStartListener }: {
             <option key={item.id} value={item.id}>{item.label}</option>
           ))}
         </select>
-        <button disabled={!lport.trim()} onClick={() => onStartListener(lport.trim())}>
-          리스너 준비 (nc -lvnp)
+        <select value={listenerKind}
+          onChange={(e) => setListenerKind(e.target.value as ListenerKind)}
+          aria-label="리스너 종류">
+          {LISTENER_KINDS.map((item) => (
+            <option key={item.id} value={item.id}>{item.label}</option>
+          ))}
+        </select>
+        <button disabled={!lport.trim()} onClick={() => onStartListener(
+          LISTENER_KINDS.find((item) => item.id === listenerKind)!.build(lport.trim()))}>
+          리스너 준비 ({LISTENER_KINDS.find((item) => item.id === listenerKind)!.short})
         </button>
       </div>
       <label className="revshellEncode">

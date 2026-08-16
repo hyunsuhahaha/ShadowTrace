@@ -377,7 +377,7 @@ API: `/projects`, `/targets`, `/targets/{id}/services`, `/targets/{id}/hostname`
 | `PypykatzLsassPanel.tsx` | lsass 덤프 업로드 후 `pypykatz` 실행 |
 | `RecycleBinDecoder.tsx` | `$RECYCLE.BIN`의 `$I` 인덱스 파싱 |
 | `GiteaHashFormatter.tsx` | Gitea `passwd`/`salt` → hashcat `-m 10900` 포맷 변환 |
-| `ReverseShellPanel.tsx` | 리버스쉘 페이로드 생성, webshell 다운로드, 안정화 치트시트 |
+| `ReverseShellPanel.tsx` | 리버스쉘 페이로드 생성, webshell 다운로드, 안정화 치트시트. 리스너는 `nc -lvnp`(기본)와 `socat TCP-LISTEN:<port>,reuseaddr,fork -`(연결 하나 끊겨도 리스너 자체는 계속 듣고 있음, `fork` 덕분) 중 선택 — `onStartListener(command)`가 완성된 명령 문자열을 그대로 넘기므로 App.tsx는 `openManualShell(command)`만 호출한다(예전엔 포트만 받아 `nc` 명령을 여기서 직접 조립하는 `openListenerShell` 헬퍼가 있었지만, 리스너 종류 선택지가 생기면서 명령 조립 책임이 패널로 옮겨가 삭제됨) |
 | `ChiselPivotPanel.tsx` | chisel server/client 명령 생성(SOCKS·단일 포트) |
 | `ResponderPanel.tsx` | Kali 데스크톱 터미널에서 Responder 시작, 캡처 폴링 |
 | `SmbShareResults.tsx` | SMB 공유 목록, 연결·재귀 목록, 첫 공유 자동 스파이더 |
