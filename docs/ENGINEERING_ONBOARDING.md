@@ -600,6 +600,23 @@ content_b64}]}` 형태로 담아 보낸다 — 백엔드는 `body_mode == "multi
 추가해도 실제 사용자가 맨 처음 누르는 버튼이 그래프를 떠나면 소용없다는 걸 라이브
 재검증으로 확인하고, 이 버튼도 `openLinkInRequest(webUrl)`을 호출하도록 통일했다
 (embedded일 땐 버튼 라벨도 "Request 패널 열기"로 바뀐다).
+`GraphRequestPanel`엔 "요청 편집기"/"Log4Shell · JNDI 리스너" 탭도 있다 — Log4Shell
+카탈로그(`Log4ShellPayloadReference.tsx`)와 신규 `JndiRceListenerPanel.tsx`는
+원래 `WebWorkspace.tsx`(`#web` 독립 라우트)에만 있었고 `WebWorkspace`는 `embedded` prop
+자체가 없어 그래프 안에서 도달할 방법이 아예 없었다(HTB Unified의 Log4Shell foothold를
+매핑하다 발견). WebWorkspace 전체를 embeddable하게 만드는 대신, 이미 그래프 네이티브인
+GraphRequestPanel에 그 두 컴포넌트를 그대로 재사용하는 두 번째 탭을 붙였다.
+`JndiRceListenerPanel.tsx`는 `backend/app/modules/jndi_listener.py`의
+`/api/jndi-listener/{start,stop,status}`를 호출한다 — 이 백엔드 모듈은 marshalsec이나
+별도 다운로드 없이 순수 Python 소켓으로 최소 LDAP 서버(bind는 전부 성공, search는 전부
+`javaNamingReference` referral 하나로 응답)를 구현하고, `javac`(런타임에 확인,
+없으면 `sudo apt install default-jdk` 안내)로 LHOST/LPORT를 박은 `Exploit.java`를
+컴파일해 별도 `http.server` 서브프로세스로 서빙한다. 구조는 `privesc_server.py`와
+동일한 `_process`/`_port` 전역 + `_state()` 패턴을 따르되, LDAP 절반은 서브프로세스가
+아니라 스레드다(외부 바이너리가 없어 소켓을 직접 붙잡고 있어야 함). 실제 취약한 대상이
+없어 RCE 성공까지는 검증할 수 없지만, `ldapsearch`(독립 실 LDAP 클라이언트)로 실제
+bind+search 왕복과 referral 속성을, `javap`로 컴파일된 클래스에 LHOST/LPORT가 정확히
+박혔는지를 로컬에서 확인했다.
 Finding과 credential 작업도 라우트를 바꾸지 않는다. Finding은 `ReportWorkspace.tsx`,
 credential은 `HashCrackingWorkspace.tsx`와 `PostExploitationWorkspace.tsx`를 각각
 `embedded` 인터페이스로 우측 패널에 lazy-load한다. 이 어댑터는 프로젝트·대상·해시·모드·
@@ -914,6 +931,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `modules/system.py` | 필수 CLI 도구 설치 여부 + VPN 상태 | 단일 route `/api/system/status` |
 | `modules/vpn.py` | OpenVPN 설정 업로드/연결/해제(`nmcli`), 위험한 `.ovpn` 지시어 제거 | `/api/vpn` |
 | `modules/privesc_server.py` | `tun0`에만 바인딩되는 별도 `http.server` subprocess로 LinPEAS/WinPEAS/pspy 제공 | `/api/privesc-server` |
+| `modules/jndi_listener.py` | Log4Shell(CVE-2021-44228) 실전 RCE용 rogue LDAP(순수 소켓, 스레드) + 컴파일된 `Exploit.class` HTTP 서버(subprocess) | `/api/jndi-listener` |
 
 `scan_center/service.py`의 `_safe()`와 `import_xml`/`ingest_xml`은 core, evidence,
 exploit_research, findings, hash_cracking, post_exploitation, privesc_analysis, tunnels,
