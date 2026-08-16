@@ -26,6 +26,12 @@ export type CommandPaletteEntry = {
   // Which of the current target's services this anchor only renders under —
   // lets the palette offer every matching service across the project when
   // the currently selected one isn't it, instead of just failing silently.
+  // Only meaningful for anchors that live inside a service-conditional panel
+  // (Service Enumeration's fuzz/etc. headings); an anchor into a static,
+  // always-rendered reference page (e.g. a SQLi payload category) has no
+  // service dependency and leaves this unset — activate() just falls back
+  // to a plain "not found" notice instead of a service picker if it's ever
+  // missing.
   serviceKind?: ServiceKind;
   label: string;
   detail: string;
@@ -69,6 +75,18 @@ const webToolEntries: CommandPaletteEntry[] = [
     keywords: ["intruder", "brute force", "fuzz", "퍼징", "인트루더"] },
   { id: "web/sqli", route: "web", subroute: "sqli", label: "SQLi 참고", detail: "SQL Injection 페이로드 참고자료", category: "Web Testing 도구",
     keywords: ["sql injection", "sqli", "sqlmap", "sql", "인젝션"] },
+  { id: "web/sqli-postgres", route: "web", subroute: "sqli", anchorId: "sqlpayload-postgres-basics",
+    label: "PostgreSQL 페이로드 참고", detail: "SQLi 참고 하단 · 기초 문법·정찰부터 COPY FROM PROGRAM RCE까지",
+    category: "Web Testing 도구",
+    keywords: ["postgres", "postgresql", "postgre", "pg_shadow", "copy from program"] },
+  { id: "web/sqli-mysql", route: "web", subroute: "sqli", anchorId: "sqlpayload-mysql-basics",
+    label: "MySQL 페이로드 참고", detail: "SQLi 참고 하단 · 기초 문법·정찰부터 OUTFILE 웹셸·UDF RCE까지",
+    category: "Web Testing 도구",
+    keywords: ["mysql", "mariadb", "load_file", "into outfile", "sys_exec", "udf"] },
+  { id: "web/sqli-mssql", route: "web", subroute: "sqli", anchorId: "sqlpayload-mssql-basics",
+    label: "MSSQL 페이로드 참고", detail: "SQLi 참고 하단 · 기초 문법·정찰부터 xp_cmdshell RCE까지",
+    category: "Web Testing 도구",
+    keywords: ["mssql", "sql server", "sqlserver", "xp_cmdshell", "linked server", "impersonate"] },
   { id: "web/lfi", route: "web", subroute: "lfi", label: "LFI 참고", detail: "Local File Inclusion 페이로드 참고자료", category: "Web Testing 도구",
     keywords: ["lfi", "local file inclusion", "path traversal", "파일 인클루전", "디렉토리 순회"] },
   { id: "web/log4shell", route: "web", subroute: "log4shell", label: "Log4Shell 참고", detail: "CVE-2021-44228 JNDI 페이로드 참고자료", category: "Web Testing 도구",

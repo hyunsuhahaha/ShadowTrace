@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import SqlPayloadReference from "./SqlPayloadReference";
-import { dbRceCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
+import { dbPayloadCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
 
 const authBypass = sqlPayloadCategories.find((category) => category.id === "auth-bypass")!;
 
@@ -43,9 +43,10 @@ it("fills LHOST and LPORT into the postgres COPY FROM PROGRAM reverse shell payl
 
 it("renders only the given categories when a filtered subset is passed in", async () => {
   vi.stubGlobal("fetch", stubVpnStatus());
-  render(<SqlPayloadReference categories={dbRceCategoriesFor("postgresql")} />);
+  render(<SqlPayloadReference categories={dbPayloadCategoriesFor("postgresql")} />);
   await screen.findByText(/^10\.10\.14\.5$/);
 
+  expect(screen.getByText("PostgreSQL 기초 문법 · 정찰")).toBeTruthy();
   expect(screen.getByText("PostgreSQL COPY FROM PROGRAM")).toBeTruthy();
   expect(screen.queryByText("UNION 기반 추출")).toBeNull();
   expect(screen.queryByText("MSSQL xp_cmdshell")).toBeNull();

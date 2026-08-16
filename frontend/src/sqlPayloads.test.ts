@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dbRceCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
+import { dbPayloadCategoriesFor, findSqlPayloadCategory, sqlPayloadCategories } from "./sqlPayloads";
 
 describe("manual SQLi payload catalog", () => {
   it("has unique, non-empty category ids", () => {
@@ -18,15 +18,33 @@ describe("manual SQLi payload catalog", () => {
     }
   });
 
-  it("covers manual SQLi and DB-specific RCE, since SQLmap is exam-banned", () => {
+  it("covers manual SQLi and DB-specific recon/RCE, since SQLmap is exam-banned", () => {
     const ids = sqlPayloadCategories.map((category) => category.id);
     expect(ids).toContain("union");
     expect(ids).toContain("boolean-blind");
     expect(ids).toContain("time-blind");
+    expect(ids).toContain("postgres-basics");
+    expect(ids).toContain("mssql-basics");
+    expect(ids).toContain("mysql-basics");
     expect(ids).toContain("mssql-xp-cmdshell");
     expect(ids).toContain("postgres-copy-program");
     expect(ids).toContain("mysql-outfile-webshell");
     expect(ids).toContain("mysql-udf-rce");
+  });
+
+  it("gives each DB engine a basics/recon category ahead of its RCE category", () => {
+    for (const [basicsId, engine] of [
+      ["postgres-basics", "postgresql"], ["mysql-basics", "mysql"], ["mssql-basics", "mssql"],
+    ] as const) {
+      const category = findSqlPayloadCategory(basicsId);
+      expect(category?.engines).toEqual([engine]);
+      // Every basics category should at least confirm version and identity --
+      // the two things you always want before deciding an RCE technique
+      // applies at all.
+      expect(category?.payloads.some((item) =>
+        /version|@@version/i.test(item.payload))).toBe(true);
+      expect(category?.payloads.some((item) => item.context === "direct")).toBe(true);
+    }
   });
 
   it("gives the PostgreSQL COPY FROM PROGRAM entry both a direct and an injection-context reverse shell", () => {
@@ -83,27 +101,30 @@ describe("manual SQLi payload catalog", () => {
   });
 });
 
-describe("dbRceCategoriesFor", () => {
-  it("maps each DB engine's nmap service name to its own RCE categories only", () => {
-    expect(dbRceCategoriesFor("postgresql").map((c) => c.id)).toEqual(["postgres-copy-program"]);
-    expect(dbRceCategoriesFor("mysql").map((c) => c.id))
-      .toEqual(["mysql-outfile-webshell", "mysql-udf-rce"]);
-    expect(dbRceCategoriesFor("ms-sql-s").map((c) => c.id)).toEqual(["mssql-xp-cmdshell"]);
+describe("dbPayloadCategoriesFor", () => {
+  it("maps each DB engine's nmap service name to its own basics + RCE categories only", () => {
+    expect(dbPayloadCategoriesFor("postgresql").map((c) => c.id))
+      .toEqual(["postgres-basics", "postgres-copy-program"]);
+    expect(dbPayloadCategoriesFor("mysql").map((c) => c.id))
+      .toEqual(["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"]);
+    expect(dbPayloadCategoriesFor("ms-sql-s").map((c) => c.id))
+      .toEqual(["mssql-basics", "mssql-xp-cmdshell"]);
   });
 
   it("matches case-insensitively, same as nmap service strings can vary", () => {
-    expect(dbRceCategoriesFor("MySQL").map((c) => c.id)).toEqual(["mysql-outfile-webshell", "mysql-udf-rce"]);
+    expect(dbPayloadCategoriesFor("MySQL").map((c) => c.id))
+      .toEqual(["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"]);
   });
 
-  it("returns nothing for a service with no DB RCE reference (ssh, redis, http, ...)", () => {
-    expect(dbRceCategoriesFor("ssh")).toEqual([]);
-    expect(dbRceCategoriesFor("redis")).toEqual([]);
-    expect(dbRceCategoriesFor("http")).toEqual([]);
+  it("returns nothing for a service with no DB payload reference (ssh, redis, http, ...)", () => {
+    expect(dbPayloadCategoriesFor("ssh")).toEqual([]);
+    expect(dbPayloadCategoriesFor("redis")).toEqual([]);
+    expect(dbPayloadCategoriesFor("http")).toEqual([]);
   });
 
   it("drops every injection-context payload, keeping only the ones safe to paste directly into an authenticated client", () => {
     for (const serviceName of ["postgresql", "mysql", "ms-sql-s"]) {
-      for (const category of dbRceCategoriesFor(serviceName)) {
+      for (const category of dbPayloadCategoriesFor(serviceName)) {
         expect(category.payloads.every((item) => item.context !== "injection")).toBe(true);
         expect(category.payloads.length).toBeGreaterThan(0);
       }
@@ -111,7 +132,7 @@ describe("dbRceCategoriesFor", () => {
   });
 
   it("does not mutate the underlying catalog when filtering", () => {
-    dbRceCategoriesFor("mysql");
+    dbPayloadCategoriesFor("mysql");
     const original = findSqlPayloadCategory("mysql-outfile-webshell");
     expect(original?.payloads.some((item) => item.context === "injection")).toBe(true);
   });

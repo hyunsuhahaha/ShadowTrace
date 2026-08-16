@@ -11,7 +11,7 @@ import { sqlPayloadCategories, type SqlPayloadCategory } from "./sqlPayloads";
 // a no-op for every other category.
 //
 // `categories` defaults to the full catalog (Web Testing's own SQLi tab);
-// ServiceCommandSession passes a filtered subset (dbRceCategoriesFor) when a
+// ServiceCommandSession passes a filtered subset (dbPayloadCategoriesFor) when a
 // DB-shaped service is selected, so an operator who's already authenticated
 // against that DB sees only the "type this into the client" RCE payloads,
 // not the web-injection variants or the unrelated fuzzing/UNION categories.
@@ -68,7 +68,7 @@ export default function SqlPayloadReference({ onSendToIntruder, categories = sql
         </div>
       </div>
       {categories.map((category) => (
-        <details key={category.id} className="sqlPayloadCategory">
+        <details key={category.id} id={`sqlpayload-${category.id}`} className="sqlPayloadCategory">
           <summary>
             <b>{category.title}</b>
             <small>{category.engines.join(" · ")}</small>

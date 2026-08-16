@@ -9,9 +9,23 @@ const service = (overrides: Partial<Parameters<typeof matchesServiceKind>[0]> = 
 it("has a unique id and a valid route for every entry", () => {
   const ids = commandPaletteIndex.map((entry) => entry.id);
   expect(new Set(ids).size).toBe(ids.length);
+  const bySubroute = new Map<string, number>();
+  commandPaletteIndex.forEach((entry) => {
+    if (!entry.subroute) return;
+    const key = `${entry.route}/${entry.subroute}`;
+    bySubroute.set(key, (bySubroute.get(key) || 0) + 1);
+  });
   commandPaletteIndex.forEach((entry) => {
     expect(entry.route).toBeTruthy();
-    if (entry.subroute) expect(entry.id).toBe(`${entry.route}/${entry.subroute}`);
+    if (!entry.subroute) return;
+    const key = `${entry.route}/${entry.subroute}`;
+    // A subroute reached by exactly one entry keeps id === route/subroute
+    // (recent-items tracking keys off this elsewhere). Several entries can
+    // anchor into the same subroute (e.g. each DB engine's payload
+    // reference, all under #web/sqli): the canonical page entry still uses
+    // the bare key, and every other one prefixes its own id with it.
+    if (bySubroute.get(key) === 1) expect(entry.id).toBe(key);
+    else expect(entry.id === key || entry.id.startsWith(`${key}-`), entry.id).toBe(true);
   });
 });
 
@@ -64,10 +78,32 @@ it("returns nothing for a query that matches no entry", () => {
   expect(searchCommandPalette("xyzzyquux")).toEqual([]);
 });
 
-it("every anchored (service-scoped) entry declares a serviceKind", () => {
-  commandPaletteIndex.filter((entry) => entry.anchorId).forEach((entry) => {
-    expect(entry.serviceKind, entry.id).toBeTruthy();
-  });
+it("every anchor into a service-conditional panel declares a serviceKind", () => {
+  // Service Enumeration's fuzz/etc. panels only render once a matching
+  // service is selected, so their entries need serviceKind to offer a
+  // picker when the anchor isn't there yet. An anchor into a static,
+  // always-rendered reference page (e.g. a SQLi payload category, no
+  // service dependency at all) legitimately has none -- see the
+  // CommandPaletteEntry.serviceKind comment.
+  commandPaletteIndex
+    .filter((entry) => entry.anchorId && entry.category === "Service Enumeration 도구")
+    .forEach((entry) => {
+      expect(entry.serviceKind, entry.id).toBeTruthy();
+    });
+});
+
+it("finds each DB engine's payload reference by name, deep-linked to its own category", () => {
+  for (const [query, id, anchor] of [
+    ["postgre", "web/sqli-postgres", "sqlpayload-postgres-basics"],
+    ["mysql", "web/sqli-mysql", "sqlpayload-mysql-basics"],
+    ["mssql", "web/sqli-mssql", "sqlpayload-mssql-basics"],
+  ] as const) {
+    const results = searchCommandPalette(query);
+    const entry = results.find((item) => item.id === id);
+    expect(entry, `${query} -> ${id}`).toBeTruthy();
+    expect(entry?.anchorId).toBe(anchor);
+    expect(entry?.serviceKind).toBeUndefined();
+  }
 });
 
 it("matchesServiceKind treats plain http/https services as http, not dns", () => {

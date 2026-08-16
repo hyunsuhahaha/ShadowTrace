@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
 import SqlPayloadReference from "./SqlPayloadReference";
-import {dbRceCategoriesFor} from "./sqlPayloads";
+import {dbPayloadCategoriesFor} from "./sqlPayloads";
 
 export type ServiceCommand = {
   id: string;
@@ -53,8 +53,9 @@ export default function ServiceCommandSession({commands, serviceKey, targetIp,
   port: number;
   protocol: string;
   // nmap's own service-detection name (postgresql/mysql/ms-sql-s/...) --
-  // only used to look up a matching DB RCE reference (see the collapsed
-  // section below), same string services.yaml's `database:` match uses.
+  // only used to look up a matching DB payload reference (recon/basics +
+  // RCE; see the collapsed section below), same string services.yaml's
+  // `database:` match uses.
   serviceName?: string;
   // Known project credentials (Credential Store) offered as one-click
   // username fills for whichever interactive client profile this service
@@ -119,7 +120,7 @@ export default function ServiceCommandSession({commands, serviceKey, targetIp,
     select(quickConnectProfile.id);
     setValues((current) => ({...current, username}));
   };
-  const dbRceCategories = serviceName ? dbRceCategoriesFor(serviceName) : [];
+  const dbPayloadCategories = serviceName ? dbPayloadCategoriesFor(serviceName) : [];
 
   return <section className="serviceCommandSession" aria-label="서비스 명령 세션">
     <header>
@@ -177,9 +178,9 @@ export default function ServiceCommandSession({commands, serviceKey, targetIp,
     </div>
     <footer><p># {selected.description || `${port}/${protocol} 컨텍스트에 바인딩된 명령`}</p>
       <button type="button" disabled={!canRun} onClick={stage}>[ RUN ↵ ]</button></footer>
-    {!!dbRceCategories.length && <details className="sqlPayloadCategory">
-      <summary><b>DB 원격 코드 실행 참고 열기</b></summary>
-      <SqlPayloadReference categories={dbRceCategories} />
+    {!!dbPayloadCategories.length && <details className="sqlPayloadCategory">
+      <summary><b>DB 페이로드 참고 열기</b></summary>
+      <SqlPayloadReference categories={dbPayloadCategories} />
     </details>}
   </section>;
 }
