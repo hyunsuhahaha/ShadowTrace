@@ -1310,18 +1310,9 @@ export function Inspector(props: {
           <h2 id="graph-privesc-server-heading">권한 상승 스크립트 서버 (LinPEAS/WinPEAS/pspy)</h2>
           <small>{privescServer?.running
             ? `tun0에서 서비스 중 · ${privescServer.base_url}`
-            : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."}</small>
+            : "대상이 접근할 수 있도록 tun0에만 임시 파일서버를 엽니다."} · LinPEAS/WinPEAS/pspy는
+            셸에 입력만 되며 터미널에서 직접 Enter를 눌러야 실행됩니다.</small>
         </header>
-        <p role="alert" style={{
-          margin: "0 0 8px", padding: "6px 10px", background: "#3a2a00",
-          border: "1px solid #a86a00", borderRadius: 4, color: "#ffd479", fontSize: 12,
-        }}>
-          ⚠ "폴더·파일 트리 조회"는 클릭하면 바로 실행됩니다(읽기 전용 조회라 확인 없이 자동
-          실행). LinPEAS/WinPEAS/pspy는 셸에 <b>입력만</b> 됩니다 — 아래 열려있는 터미널을
-          직접 클릭하고 <b>Enter를 눌러야</b> 실제로 실행됩니다(제3자 스크립트를 내려받아
-          실행하는 명령이라 검토 단계를 둠). 여러 번 누르면 줄이 지워지고 최신 명령으로
-          교체됩니다(쌓이지 않음).
-        </p>
         <div className="privescServerActions">
           <button type="button" disabled={manualShellOpen}
             onClick={() => setManualShellOpen(true)}>
