@@ -38,6 +38,19 @@ export const linuxPrivescCategories: PrivescCategory[] = [
         command: "cat ~/.bash_history /root/.bash_history 2>/dev/null | " +
           "grep -iE 'pass|pwd|ssh |mysql |psql '",
         note: "다른 사용자가 명령줄 인자로 비밀번호를 직접 입력한 흔적이 남아있는 경우가 많습니다." },
+      { label: "웹 루트·설정 디렉터리에서 비밀번호 문자열 검색",
+        command: "grep -rnwiE '/var/www|/etc' -e 'password|passwd|pwd|secret|api_key' " +
+          "2>/dev/null | grep -v 'Binary file'",
+        note: "config-paths 카테고리처럼 어느 서비스인지 짐작이 갈 때만 특정 파일을 보는 게 " +
+          "아니라, 아예 짐작이 안 갈 때 웹 루트/설정 디렉터리 전체를 훑는 용도입니다. " +
+          "결과가 너무 많으면 -l(파일명만)로 먼저 범위를 좁히세요." },
+      { label: "설정·백업 파일 이름으로 전체 검색",
+        command: "find / -type f \\( -name '*config*' -o -name '*.conf' -o " +
+          "-name '*backup*' -o -name '*.bak' \\) 2>/dev/null" },
+      { label: "숨김 파일 전체 검색",
+        command: "find / -name '.*' -type f 2>/dev/null",
+        note: "설정을 숨김 디렉터리(.config, .ssh 등)나 숨김 파일에 두는 경우를 놓치지 " +
+          "않기 위함입니다. 결과가 매우 많으니 grep으로 더 좁혀서 보세요." },
     ],
   },
   {

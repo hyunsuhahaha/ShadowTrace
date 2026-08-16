@@ -21,6 +21,7 @@ it("renders every category as a static, copyable reference", () => {
   expect(screen.getByText("MongoDB 설정")).toBeTruthy();
   expect(screen.getByText("제한된 셸/실행 환경 대응")).toBeTruthy();
   expect(screen.getByText("busybox sh")).toBeTruthy();
+  expect(screen.getByText("find / -name '.*' -type f 2>/dev/null")).toBeTruthy();
 });
 
 it("gives every category a stable id for Command Palette deep-linking", () => {
