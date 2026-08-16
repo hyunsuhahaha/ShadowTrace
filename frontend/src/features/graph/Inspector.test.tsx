@@ -1271,6 +1271,45 @@ it("also offers the Kubernetes pod-pivot checklist on the same manual-shell node
   expect(await screen.findByText(/전송: .python3/)).toBeTruthy();
 });
 
+it("also offers the Gitea template-sync path-traversal checklist on the same manual-shell node -- HTB Nexus's root pivot", async () => {
+  // Same reference-only shape as the K8s checklist above: create an API
+  // token, mark a repo as a template, inject a path-traversal tree entry
+  // via `git update-index --cacheinfo`, then wait for the root-owned sync
+  // timer -- run from the shell already open on the box.
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 71, command: "ssh jones@nexus.htb",
+        status: "running" }]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/71/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-71", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "ssh jones@nexus.htb", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 71 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #71");
+
+  fireEvent.click(screen.getByText("Gitea template 동기화 path traversal 참고 열기"));
+  expect(screen.getByText("path traversal 트리 만들어 push")).toBeTruthy();
+  fireEvent.click(screen.getByText("traversal 경로로 인덱스에 직접 삽입")
+    .closest(".sqlPayloadRow")!.querySelector("button:last-child")!);
+  expect(await screen.findByText(/전송: .cd .tmp.pwn/)).toBeTruthy();
+});
+
 it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH credential needed", async () => {
   // The "다른 자격증명으로 조회 (SSH)" button next to this one requires a
   // stored credential and a fresh SSH/wmiexec connection -- useless for a

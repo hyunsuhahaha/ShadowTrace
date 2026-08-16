@@ -617,6 +617,28 @@ GraphRequestPanel에 그 두 컴포넌트를 그대로 재사용하는 두 번�
 없어 RCE 성공까지는 검증할 수 없지만, `ldapsearch`(독립 실 LDAP 클라이언트)로 실제
 bind+search 왕복과 referral 속성을, `javap`로 컴파일된 클래스에 LHOST/LPORT가 정확히
 박혔는지를 로컬에서 확인했다.
+같은 이유(HTB 박스 풀이 흐름이 그래프 UI 어디에도 이어질 곳이 없었음)로 이후
+`GraphRequestPanel`엔 두 탭이 더 붙었다 — "Langflow RCE"(`LangflowRcePayloadReference.tsx`,
+CVE-2026-33017 `build_public_tmp` 페이로드, `langflowRcePayload.ts`가 데이터 소스)와
+"JWT alg:none 위조"(`JwtForgePanel.tsx`, `jwtForge.ts` — 순수 클라이언트 base64 인코딩이라
+백엔드 호출 없음, 위조한 토큰을 바로 Authorization 헤더에 꽂는 핸드오프 포함). `Inspector.tsx`의
+manual-shell 세션 노드엔 `LinuxPrivescReference`/`WindowsPrivescReference`와 완전히 같은
+복사-전용(+세션이 열려 있으면 `onSendCommand`로 PTY 직접 전송) 모양의 참고 체크리스트가 세
+개 더 접혀 들어간다 — `McpExploitReference.tsx`(`mcpExploitCommands.ts`, MCP 서버는 박스마다
+스키마가 달라 표준 REST가 없으므로 확정 명령이 아니라 시작 템플릿), `K8sPivotReference.tsx`
+(`k8sPivotCommands.ts`, 파드 RBAC 자기권한 확인 → hostPath 특권 파드 탐색 → kubelet
+exec 웹소켓 API로 그 파드 진입까지 4개 카테고리), `GiteaTemplateSyncReference.tsx`
+(`giteaTemplateSyncCommands.ts`, Gitea API 토큰 발급 → template 레포 생성 →
+`git update-index --cacheinfo`로 일반 `git add`로는 못 만드는 `../` 트리 항목을 인덱스에
+직접 삽입해 root-owned 동기화 타이머의 path traversal을 트리거 → push까지). 이 넷은
+전부 HTB 박스(Fireflow/Nexus) 풀이 과정을 매핑하다가 이 앱에 전례 없던 도메인으로 확인돼
+그래프에 갓 붙은 것들이라, `docs/ARCHITECTURE.md`의 모듈 표에는 아직 없다.
+정상적으로 서빙 중인 Gitea 같은 저장소(노출된 `.git`이 아니라)에서 커밋 히스토리까지
+포함해 클론하는 `git-history-clone`/`git-history-log` catalog 명령도 `services.yaml`의
+`web` 섹션에 새로 붙었다 — `git-dumper-clone`/`git-dump-tree`와 나란히 있지만
+git-dumper는 노출된 `.git/` 디렉터리를 대상으로 하고, 이 둘은 `{domain}`(Host 헤더로 vhost
+지정, `http-vhost-fuzz`와 같은 토큰)과 `{path}`(owner/repo.git)를 받아 정식 clone을 수행한다
+— 지워진 커밋의 자격증명을 찾을 때 쓴다.
 Finding과 credential 작업도 라우트를 바꾸지 않는다. Finding은 `ReportWorkspace.tsx`,
 credential은 `HashCrackingWorkspace.tsx`와 `PostExploitationWorkspace.tsx`를 각각
 `embedded` 인터페이스로 우측 패널에 lazy-load한다. 이 어댑터는 프로젝트·대상·해시·모드·
