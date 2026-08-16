@@ -1299,7 +1299,7 @@ export function Inspector(props: {
         </section>
       </DetachableTerminal>}
       {retrySession && <InteractiveTerminal sessionId={retrySession.id}
-        title={`Responder 재시작 · ${retrySession.command}`} autoFloat
+        title={`다시 시작 · ${retrySession.command}`} autoFloat
         onClose={() => setRetrySession(null)} />}
       {manualSession && <InteractiveTerminal sessionId={manualSession.id}
         title={manualSession.title} initialInput={manualSession.initialInput} autoFloat
@@ -1314,10 +1314,17 @@ export function Inspector(props: {
             셸에 입력만 되며 터미널에서 직접 Enter를 눌러야 실행됩니다.</small>
         </header>
         <div className="privescServerActions">
-          <button type="button" disabled={manualShellOpen}
-            onClick={() => setManualShellOpen(true)}>
-            세션 열기
-          </button>
+          {n.status === "attempt-failed" ? (
+            <button type="button" onClick={() => void retry()}>
+              다시 시작 ({n.label})
+            </button>
+          ) : (
+            <button type="button" disabled={manualShellOpen}
+              onClick={() => setManualShellOpen(true)}>
+              세션 열기
+            </button>
+          )}
+          {retryError && <small role="alert">{retryError}</small>}
           <button type="button" disabled={!manualShellOpen || fileTreeBusy}
             onClick={runManualShellFileTree}>
             {fileTreeBusy ? "조회 중…" : "폴더·파일 트리 조회 (현재 셸)"}

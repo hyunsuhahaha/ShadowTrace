@@ -582,7 +582,13 @@ Credential 노드 Inspector는 저장된 인증정보의 크래킹 여부와 출
 상태를 구분한다.
 `manual-shell` 세션 노드는 들어오는 `attempted` 관계로 대상·서비스를 복원하고, 일반
 Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 세션 뷰)와 같은
-구성을 그대로 그래프에 옮겨왔다: 세션 자체를 다시 붙일 수 있는 "세션 열기" 토글, tun0
+구성을 그대로 그래프에 옮겨왔다: 노드 상태가 `attempt-failed`(백엔드 `failed`/
+`interrupted` 매핑, `graph/service.py`)면 "세션 열기" 대신 "다시 시작 (\<명령\>)" 버튼이
+뜬다 — Responder 리스너 전용인 줄 알았던 `retry()`/`POST /interactive-sessions/{id}/retry`가
+실제로는 이미 완전히 범용이라(같은 command/target/service/graph_parent로 새 세션 row만
+만듦) manual-shell에 그대로 재사용했다. 죽은 프로세스에 "세션 열기"로 재접속을 시도하면
+당연히 실패하는데도 이 노드 유형만 재시작 버튼이 없었던 게 갭. 살아있는 세션엔 그대로
+"세션 열기" 토글, tun0
 임시 파일서버(같은 `/privesc-server/*`)를 켜고 열린 세션의 PTY에 LinPEAS/WinPEAS/pspy
 다운로드 명령을 직접 입력하는 트리거(manual-shell은 nc 리스너·SSH뿐 아니라 evil-winrm도
 거치는 합성 template_id라 Windows 셸도 흔함 — WinPEAS도 같이 넣음), 붙여넣기 기반

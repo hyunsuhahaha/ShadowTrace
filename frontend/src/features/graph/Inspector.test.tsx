@@ -1120,6 +1120,47 @@ it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH 
   vi.restoreAllMocks();
 });
 
+it("offers a 다시 시작 button on a dead manual-shell session, same as responder already has", async () => {
+  // A dead nc listener (or any manual-shell session whose underlying
+  // process exited -- interrupted/failed/stopped all map to graph status
+  // "attempt-failed") had no way back except leaving the node and opening
+  // a whole new listener from scratch. retry() and its POST endpoint were
+  // already generic (Responder already used them), just never wired up
+  // for this node type -- "세션 열기" only re-attaches to a still-live
+  // process, it can't resurrect a dead one.
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 65, command: "nc -lvnp 4444", status: "interrupted" }]),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/65/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/65/retry") && init?.method === "POST")
+      return Promise.resolve(new Response(JSON.stringify({ id: 66, command: "nc -lvnp 4444" }),
+        { status: 201, headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-65", type: "technique", status: "attempt-failed", objective: false, hidden: false,
+      label: "nc -lvnp 4444", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 65 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  expect(screen.queryByText("세션 열기")).toBeNull();
+  fireEvent.click(await screen.findByText("다시 시작 (nc -lvnp 4444)"));
+
+  expect(await screen.findByText("PTY #66")).toBeTruthy();
+});
+
 it("clears the pending line before each trigger instead of piling commands up, and auto-runs only the read-only file-tree query", async () => {
   // A user report: clicking LinPEAS twice (or LinPEAS then WinPEAS) kept
   // appending onto whatever was already sitting unexecuted at the prompt,
