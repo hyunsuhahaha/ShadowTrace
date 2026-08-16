@@ -1065,6 +1065,49 @@ it("also offers WinPEAS, SUID/GTFOBins analysis, and the Linux PrivEsc checklist
   expect(await screen.findByText(/전송: .id/)).toBeTruthy();
 });
 
+it("also offers the Windows PrivEsc checklist on the same manual-shell node -- evil-winrm sessions are manual-shell too", async () => {
+  // manual-shell isn't Linux-specific: openEvilWinrmShell in App.tsx goes
+  // through the exact same generic /interactive-sessions/manual endpoint.
+  // The Linux checklist (pg_hba.conf etc.) was already wired in; the
+  // Windows equivalent (PowerShell history -- the single most common
+  // "service account password turns out to be the domain admin's too"
+  // discovery, e.g. HTB Archetype) had no graph-reachable home at all
+  // before this, only the SSH/wmiexec-only catalog runner in
+  // PostExploitationWorkspace.
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/interactive-sessions?target_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([{ id: 70, command: "evil-winrm -i 10.129.4.83 -u Administrator",
+        status: "running" }]), { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/interactive-sessions/70/ftp-downloads")) return Promise.resolve(
+      new Response(JSON.stringify({ files: [] }),
+        { headers: { "Content-Type": "application/json" } }));
+    if (url.endsWith("/api/privesc-server/status")) return Promise.resolve(
+      new Response(JSON.stringify({ running: false }),
+        { headers: { "Content-Type": "application/json" } }));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector executionContext={{ targetId: 10 }} node={{
+      id: "session-70", type: "technique", status: "in-progress", objective: false, hidden: false,
+      label: "evil-winrm -i 10.129.4.83 -u Administrator", meta: JSON.stringify({ tool: "manual-shell" }),
+      source_ref: JSON.stringify({ module: "sessions", kind: "session", id: 70 }),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  fireEvent.click(await screen.findByText("세션 열기"));
+  await screen.findByText("PTY #70");
+
+  fireEvent.click(screen.getByText("Windows PrivEsc 참고 열기"));
+  expect(screen.getByText("PowerShell 히스토리·저장된 자격증명")).toBeTruthy();
+  fireEvent.click(screen.getByText("type (Get-PSReadlineOption).HistorySavePath")
+    .closest(".sqlPayloadRow")!.querySelector("button:last-child")!);
+  expect(await screen.findByText(/전송: .type \(Get-PSReadlineOption\)/)).toBeTruthy();
+});
+
 it("reads a real folder/file tree off the already-open manual-shell PTY, no SSH credential needed", async () => {
   // The "다른 자격증명으로 조회 (SSH)" button next to this one requires a
   // stored credential and a fresh SSH/wmiexec connection -- useless for a

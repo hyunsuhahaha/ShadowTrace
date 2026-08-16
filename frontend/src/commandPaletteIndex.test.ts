@@ -151,6 +151,15 @@ it("makes every linuxPrivescCommands category individually findable, not just th
   ]);
 });
 
+it("makes every windowsPrivescCommands category individually findable too", () => {
+  const categoryEntries = commandPaletteIndex.filter((entry) =>
+    entry.route === "post-exploitation" && entry.anchorId?.startsWith("winprivesc-"));
+  expect(categoryEntries.map((entry) => entry.anchorId).sort()).toEqual([
+    "winprivesc-win-basic-info", "winprivesc-win-powershell-history",
+    "winprivesc-win-services-tasks",
+  ]);
+});
+
 it("matchesServiceKind treats plain http/https services as http, not dns", () => {
   expect(matchesServiceKind(service({ name: "http" }), "http")).toBe(true);
   expect(matchesServiceKind(service({ name: "https" }), "http")).toBe(true);

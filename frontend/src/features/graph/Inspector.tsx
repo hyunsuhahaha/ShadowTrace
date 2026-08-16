@@ -7,6 +7,7 @@ import InteractiveTerminal from "../../InteractiveTerminal";
 import LinpeasAnalysisPanel from "../../LinpeasAnalysisPanel";
 import SuidAnalysisPanel from "../../SuidAnalysisPanel";
 import LinuxPrivescReference from "../../LinuxPrivescReference";
+import WindowsPrivescReference from "../../WindowsPrivescReference";
 import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults, parseMysqlProbeSuccess } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
@@ -1379,6 +1380,10 @@ export function Inspector(props: {
       {sessionId !== null && isManualShell && <details className="sqlPayloadCategory">
         <summary><b>Linux PrivEsc 참고 열기</b></summary>
         <LinuxPrivescReference onSendCommand={manualShellOpen ? sendToManualShell : undefined} />
+      </details>}
+      {sessionId !== null && isManualShell && <details className="sqlPayloadCategory">
+        <summary><b>Windows PrivEsc 참고 열기</b></summary>
+        <WindowsPrivescReference onSendCommand={manualShellOpen ? sendToManualShell : undefined} />
       </details>}
       {executionId !== null && <DetachableTerminal id={`graph-execution-${executionId}`}
         label={`${n.label} 실행 결과`}

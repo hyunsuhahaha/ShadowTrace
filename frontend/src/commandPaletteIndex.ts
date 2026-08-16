@@ -191,6 +191,24 @@ const postExploitationToolEntries: CommandPaletteEntry[] = [
     label: "제한된 셸 환경 참고", detail: "Post-Exploitation 하단 · rbash/BusyBox/noexec에서 ls·cat이 안 먹힐 때",
     category: "Post-Exploitation 도구",
     keywords: ["rbash", "restricted shell", "제한 셸", "busybox", "noexec", "ls 안됨", "cat 안됨", "셸 탈출"] },
+  // windowsPrivescCommands.ts 카테고리 -- 같은 패턴, anchorId는 winprivesc-<category id>.
+  { id: "post-exploitation/win-basic-info", route: "post-exploitation",
+    anchorId: "winprivesc-win-basic-info",
+    label: "Windows 권한 상승 기본 정보 참고", detail: "Post-Exploitation 하단 · whoami /priv, systeminfo, net user",
+    category: "Post-Exploitation 도구",
+    keywords: ["whoami", "systeminfo", "net user", "seimpersonate", "기본 정보"] },
+  { id: "post-exploitation/win-powershell-history", route: "post-exploitation",
+    anchorId: "winprivesc-win-powershell-history",
+    label: "PowerShell 히스토리 참고", detail: "Post-Exploitation 하단 · ConsoleHost_history.txt, Unattend.xml, web.config",
+    category: "Post-Exploitation 도구",
+    keywords: ["powershell history", "consolehost_history", "psreadline", "unattend.xml",
+      "cmdkey", "web.config", "평문 비밀번호"] },
+  { id: "post-exploitation/win-services-tasks", route: "post-exploitation",
+    anchorId: "winprivesc-win-services-tasks",
+    label: "Windows 서비스/예약 작업 참고", detail: "Post-Exploitation 하단 · unquoted service path, accesschk, AlwaysInstallElevated",
+    category: "Post-Exploitation 도구",
+    keywords: ["unquoted service path", "accesschk", "schtasks", "alwaysinstallelevated",
+      "서비스 권한", "예약 작업"] },
 ];
 
 export const commandPaletteIndex: CommandPaletteEntry[] = [
