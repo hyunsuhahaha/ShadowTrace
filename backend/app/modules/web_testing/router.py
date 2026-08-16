@@ -175,6 +175,19 @@ def masked_snapshot(row: HttpRequest, url: str, query: dict[str, str],
                 }, ensure_ascii=False)
         except json.JSONDecodeError:
             pass
+    elif row.body_mode == "multipart" and body:
+        # content_b64 can be the whole uploaded file -- keep the snapshot
+        # (persisted to disk, shown in the UI) to a byte count instead.
+        try:
+            parsed = json.loads(body)
+            safe_body = json.dumps({
+                "fields": parsed.get("fields", {}),
+                "files": [{"field": item.get("field"), "filename": item.get("filename"),
+                           "bytes": len(item.get("content_b64", ""))}
+                          for item in parsed.get("files", [])],
+            }, ensure_ascii=False)
+        except json.JSONDecodeError:
+            pass
     return json.dumps({"method": row.method, "url": url, "query": safe_query,
                        "headers": safe_headers, "cookies": safe_cookies,
                        "body": safe_body, "body_mode": row.body_mode},
@@ -228,6 +241,20 @@ async def send_once(db: Session, row: HttpRequest,
             kwargs["json"] = json.loads(body)
         elif row.body_mode == "form" and body:
             kwargs["data"] = dict(item.split("=", 1) for item in body.split("&"))
+        elif row.body_mode == "multipart" and body:
+            # {"fields": {...}, "files": [{"field", "filename", "content_b64",
+            # "content_type"?}]} -- e.g. a webshell disguised as an upload,
+            # the step this app had no way to actually send before.
+            payload = json.loads(body)
+            if payload.get("fields"):
+                kwargs["data"] = payload["fields"]
+            files = {item["field"]: (
+                item.get("filename") or "file",
+                base64.b64decode(item["content_b64"]),
+                item.get("content_type") or "application/octet-stream",
+            ) for item in payload.get("files", [])}
+            if files:
+                kwargs["files"] = files
         elif body:
             kwargs["content"] = body.encode()
         async with httpx.AsyncClient(

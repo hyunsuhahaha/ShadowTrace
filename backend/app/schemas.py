@@ -223,7 +223,7 @@ class HttpRequestIn(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     cookies: dict[str, str] = Field(default_factory=dict)
     body: str = Field(default="", max_length=2_000_000)
-    body_mode: str = Field(default="raw", pattern=r"^(raw|json|form)$")
+    body_mode: str = Field(default="raw", pattern=r"^(raw|json|form|multipart)$")
     tls_verify: bool = True
     proxy: str = Field(default="", max_length=2000)
     timeout: int = Field(default=30, ge=1, le=300)
