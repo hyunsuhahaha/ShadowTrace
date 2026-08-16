@@ -168,6 +168,20 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
     () => localStorage.getItem("oscp-service-workspace-collapsed") === "true",
   );
   const [confirm, setConfirm] = useState<any>();
+  // In-app modal instead of window.prompt() -- prompt() is a native OS dialog
+  // and on a bare/root Kali Chrome it can fail to surface at all, so the
+  // "대상 추가" button just silently hangs with zero visible sign anything
+  // happened. Same fix AppShell.tsx already applies to project creation.
+  const [creatingTarget, setCreatingTarget] = useState(false);
+  const [newTargetIp, setNewTargetIp] = useState("");
+  const [createTargetError, setCreateTargetError] = useState("");
+  // Same prompt()-hangs-silently issue as target creation, hit by every
+  // interactive {username} template (ssh-client, mysql-client(-mycli),
+  // mssql-client-windows-auth/sql-auth) -- these fire right after the
+  // reviewer clicks EXECUTE in CommandReviewModal, so a hung native dialog
+  // there reads as "execute did nothing."
+  const [usernamePromptCommand, setUsernamePromptCommand] = useState<any>();
+  const [usernamePromptValue, setUsernamePromptValue] = useState("");
   const [runWithSudo, setRunWithSudoState] = useState(true);
   // run() reads runWithSudoRef (not the state var) so direct-run helpers that
   // call setRunWithSudo(false) immediately before run(...) in the same tick
@@ -466,14 +480,14 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
   });
   const createTarget = useMutation({
-    mutationFn: () =>
+    mutationFn: (ip: string) =>
       api<Target>("/targets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project_id: projectId,
           name: "새 대상",
-          ip: prompt("대상 IP", "10.10.10.10") || "",
+          ip,
           hostname: "",
           os_guess: "",
           vpn: "tun0",
@@ -482,6 +496,21 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["targets"] }),
   });
+  const openCreateTarget = () => {
+    setNewTargetIp("10.10.10.10");
+    setCreateTargetError("");
+    setCreatingTarget(true);
+  };
+  const submitCreateTarget = async () => {
+    const trimmed = newTargetIp.trim();
+    if (!trimmed) { setCreateTargetError("IP를 입력하세요."); return; }
+    try {
+      await createTarget.mutateAsync(trimmed);
+      setCreatingTarget(false);
+    } catch (reason) {
+      setCreateTargetError(String(reason).replace(/^Error:\s*/, ""));
+    }
+  };
   const run = async (explicitCommand?: any) => {
     const c = explicitCommand ?? confirm;
     if (!c || !targetId) return;
@@ -494,12 +523,9 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
       try {
         const variables: any = {...(c.variables || {})};
         if (c.command.includes("{username}") && !variables.username) {
-          const username = prompt(
-            "사용자 이름(인증 과정은 대화형으로 진행됩니다)",
-            "",
-          );
-          if (!username) return;
-          variables.username = username;
+          setUsernamePromptValue("");
+          setUsernamePromptCommand(c);
+          return;
         }
         const session = await api<any>(
           c.command_override ? "/interactive-sessions/manual" : "/interactive-sessions", {
@@ -746,6 +772,13 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
       delete activeEventSourcesRef.current[templateId];
       s.close();
     };
+  };
+  const submitUsernamePrompt = () => {
+    const username = usernamePromptValue.trim();
+    if (!username) return;
+    const c = usernamePromptCommand;
+    setUsernamePromptCommand(undefined);
+    void run({...c, variables: {...(c.variables || {}), username}});
   };
   const saveService = async () => {
     if (!serviceId) return;
@@ -1887,7 +1920,7 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
           localStorage.setItem("oscp-workspace-project", String(id));
           dispatchEvent(new CustomEvent("oscp-project-change", {detail: id}));
         }}
-        onCreateTarget={() => createTarget.mutate()}
+        onCreateTarget={openCreateTarget}
         onSelectTarget={setTargetId}
         onUpload={upload}
       />}
@@ -2004,12 +2037,9 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
               })()}
               {isWebService&&webUrl&&<div className="webServiceActions">
                 <a href={webUrl} target="_blank" rel="noreferrer">사이트 열기 ↗</a>
-                <button onClick={()=>{
-                  localStorage.setItem("oscp-web-launch",JSON.stringify({
-                    targetId:target?.id,serviceId:service?.id,url:webUrl,
-                  }));
-                  location.hash="web";
-                }}>Web Testing에서 열기</button>
+                <button onClick={()=>openLinkInRequest(webUrl)}>
+                  {embedded?"Request 패널 열기":"Web Testing에서 열기"}
+                </button>
               </div>}
               {isWinrm&&<div className="webServiceActions webServiceActions--hostname">
                 <span>WinRM(HTTP.sys) 리스너 · 브라우저로 열람 불가 · 아래 NetExec 자격증명 확인으로 진행하세요</span>
@@ -2367,6 +2397,64 @@ export default function App({ embedded = false, onOpenRequestInGraph }: {
         onSudo={setRunWithSudo} outputFilename={outputFilename}
         onOutputFilename={setOutputFilename} onCancel={() => setConfirm(null)}
         onRun={() => void run()} />
+      {creatingTarget && (
+        <div className="modal" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="create-target-title">
+            <span>새 대상</span>
+            <h2 id="create-target-title">대상 추가</h2>
+            <label htmlFor="new-target-ip">IP</label>
+            <input
+              id="new-target-ip"
+              autoFocus
+              value={newTargetIp}
+              disabled={createTarget.isPending}
+              onChange={(e) => setNewTargetIp(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void submitCreateTarget(); }
+                if (e.key === "Escape") setCreatingTarget(false);
+              }}
+            />
+            {createTargetError && <p className="webError" role="alert">{createTargetError}</p>}
+            <footer>
+              <button disabled={createTarget.isPending} onClick={() => setCreatingTarget(false)}>
+                취소
+              </button>
+              <button
+                disabled={createTarget.isPending || !newTargetIp.trim()}
+                onClick={() => void submitCreateTarget()}
+              >
+                {createTarget.isPending ? "만드는 중…" : "추가"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+      {usernamePromptCommand && (
+        <div className="modal" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="username-prompt-title">
+            <span>대화형 인증</span>
+            <h2 id="username-prompt-title">사용자 이름</h2>
+            <p>인증 과정(비밀번호 등)은 이어지는 터미널에서 직접 진행합니다.</p>
+            <label htmlFor="username-prompt-input">사용자 이름</label>
+            <input
+              id="username-prompt-input"
+              autoFocus
+              value={usernamePromptValue}
+              onChange={(e) => setUsernamePromptValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); submitUsernamePrompt(); }
+                if (e.key === "Escape") setUsernamePromptCommand(undefined);
+              }}
+            />
+            <footer>
+              <button onClick={() => setUsernamePromptCommand(undefined)}>취소</button>
+              <button disabled={!usernamePromptValue.trim()} onClick={submitUsernamePrompt}>
+                접속
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
