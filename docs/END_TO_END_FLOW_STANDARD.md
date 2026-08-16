@@ -146,11 +146,18 @@
   `onOpenFile` 콜백을 재사용해 `UnauthAccessResult`(그래프의 mongodb-info 무인증 확인
   결과 패널)에 연결하고, `SmbShareResults`와 똑같은 "클릭마다 새 captured 실행 →
   폴링 → 결과 표시" 패턴으로 `mongodb-collection-dump` 템플릿을 추가했다. 로컬에 mongod가
-  없어 이번엔 TDD(가짜 pymongo 클라이언트)로만 검증했고, 실제 MongoDB로 왕복 검증은
-  사용자가 `sudo apt install mongodb`를 실행해준 뒤 마저 하기로 남겨뒀다 — SSH-from-
-  credential 때처럼, 라이브 검증 수단이 당장 없으면 TDD 검증까지만 하고 그 한계를
-  분명히 보고하는 것도 허용되는 결말이다(원칙 6은 "가능하면 라이브로 검증"이지
-  "라이브 검증 없이는 보고 자체를 미루라"가 아니다).
+  없어 처음엔 TDD(가짜 pymongo 클라이언트)로만 검증했고, 그 한계를 분명히 보고했다 —
+  SSH-from-credential 때처럼, 라이브 검증 수단이 당장 없으면 TDD 검증까지만 하고
+  한계를 보고하는 것도 허용되는 결말이다(원칙 6은 "가능하면 라이브로 검증"이지
+  "라이브 검증 없이는 보고 자체를 미루라"가 아니다). 사용자가 `sudo apt install
+  mongodb`를 실행해준("다운로드완료") 뒤 실제로 마저 검증했다 — 로컬 mongod를
+  띄우고 실제 Unified 기법 그대로 `ace.admin`에 디코이 bcrypt 해시를 넣은 뒤, 그래프
+  UI로 mongodb-info → 트리 → `ace` 펼치기 → `admin` 클릭까지 실제로 걸었다. 이
+  과정에서 nmap의 `mongodb-info` NSE 스크립트가 `portrule = shortport.port_or_service
+  ({27017}, ...)`로 포트 27017에만 반응한다는 걸 발견하고(처음엔 충돌을 피하려 27117을
+  썼다가 스크립트가 아예 안 도는 원인이 됨) 표준 포트로 다시 띄워 해결했다 — 이것도
+  로컬 테스트 서버 자체의 환경 특성이지 앱 버그는 아니었다. 실제 문서 내용(가짜
+  bcrypt 해시 포함)이 클릭 몇 번 만에 그래프 패널에 그대로 뜨는 것까지 확인했다.
 
 ## 적용 방법
 
