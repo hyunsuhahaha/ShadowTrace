@@ -597,11 +597,17 @@ Inspector로 열린다 — Inspector가 `PrivescSessionPanel.tsx`(App.tsx 쪽 �
 같은 자리의 "폴더·파일 트리 조회 (현재 셸)" 버튼은 그 SSH 경로와 별개로, 저장된
 자격증명이 아예 없는 순수 리버스쉘(`nc -lvnp` 등)에서도 동작하는 진짜 대안이다 —
 이미 열려 있는 PTY에 마커로 감싼 `find` 한 줄(`echo ___TREE_START_<marker>___; find
-/home /root /tmp /var/www -mindepth 1 \( -type d -printf 'D|%p\n' \) -o -printf
-'F|%p\n' | head -2000; echo ___TREE_END_<marker>___`, `linux_file_tree` 카탈로그
+${FILE_TREE_SCOPE} -mindepth 1 \( -type d -printf 'D|%p\n' \) -o -printf
+'F|%p\n' | head -5000; echo ___TREE_END_<marker>___`, `linux_file_tree` 카탈로그
 명령과 같은 스코프)을 입력한 뒤, 세션 자신의 영속 로그(`/interactive-sessions/{id}/log`)를
 1.5초 간격으로 폴링해 그 마커 쌍 사이만 잘라 `parseTaggedTreeLines`로 파싱하고
-`FileTreeView`로 그린다(30초 안에 마커를 못 찾으면 포기하고 에러 메시지 표시). PTY는
+`FileTreeView`로 그린다(45초 안에 마커를 못 찾으면 포기하고 에러 메시지 표시).
+`FILE_TREE_SCOPE`(Inspector.tsx 모듈 상수, `credential_hunt.yaml`의
+`linux_file_tree`와 동일)는 `/home /root /tmp /var/www /opt /srv /var/backups /etc`
+— 처음엔 앞의 넷뿐이었는데, `pg_hba.conf`처럼 `/etc` 아래 있는 설정 파일까지 놓치지
+않으려고 사용자 요청으로 `/etc`까지 넓혔다(노이즈 감수 — `/etc`가 압도적으로 커서
+`head` 컷오프를 다 먹어버릴 수 있어 스코프 목록 맨 뒤에 두고, 작고 신호가 높은 폴더가
+먼저 채워지게 순서를 잡았다). PTY는
 실행 전에 입력한 명령 자체를 그대로 되돌려 찍기 때문에 로그에 각 마커가 두 번(에코된
 명령 줄 + 실제 출력) 나타난다 — `indexOf`가 아니라 `lastIndexOf`로 뒤쪽(진짜 출력) 것을
 집어야 한다는 게 라이브 검증 없이 놓치기 쉬운 부분이라 회귀 테스트가 그 순서를 그대로

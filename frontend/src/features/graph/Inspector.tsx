@@ -27,6 +27,13 @@ type StoredCredential = {
   source_execution_kind?: string;
 };
 
+// Deliberately wider than linux_file_tree's catalog scope -- /etc especially
+// is noisy (thousands of unrelated system files on a typical distro), but
+// the operator explicitly asked to eat that noise rather than miss config
+// files like pg_hba.conf that live outside /home, /root, /tmp, /var/www.
+const FILE_TREE_SCOPE = ["/home", "/root", "/tmp", "/var/www", "/opt", "/srv",
+  "/var/backups", "/etc"];
+
 // Shared shape for every "does this protocol allow unauthenticated (or
 // just-confirmed) access" check -- mongodb/snmp/mysql-probe/webdav/
 // ldap-anonymous/svn all follow the same pattern App.tsx's own auto-run
@@ -303,9 +310,9 @@ export function Inspector(props: {
       // Nothing typed into the terminal executes on its own -- if the
       // operator never presses Enter (or the shell died), this would
       // otherwise poll "조회 중…" forever with no way out.
-      if (Date.now() - fileTreeStartedAt.current > 30_000) {
+      if (Date.now() - fileTreeStartedAt.current > 45_000) {
         setFileTreeBusy(false);
-        setFileTreeError("30초 안에 실행 결과를 찾지 못했습니다 · 터미널에서 Enter를 눌렀는지 확인하세요");
+        setFileTreeError("45초 안에 실행 결과를 찾지 못했습니다 · 세션이 응답하는지 확인하세요");
       }
       return;
     }
@@ -320,9 +327,11 @@ export function Inspector(props: {
     setFileTreeEntries(null);
     setFileTreeError("");
     setFileTreeBusy(true);
+    // FILE_TREE_SCOPE is ordered smaller/higher-signal first so those fill
+    // the head cap before a big /etc exhausts it.
     sendToManualShell(
-      `echo ___TREE_START_${marker}___; find /home /root /tmp /var/www -mindepth 1 ` +
-      `\\( -type d -printf 'D|%p\\n' \\) -o -printf 'F|%p\\n' 2>/dev/null | head -2000; ` +
+      `echo ___TREE_START_${marker}___; find ${FILE_TREE_SCOPE.join(" ")} -mindepth 1 ` +
+      `\\( -type d -printf 'D|%p\\n' \\) -o -printf 'F|%p\\n' 2>/dev/null | head -5000; ` +
       `echo ___TREE_END_${marker}___`, true);
   };
   const sessionQuery = useQuery({
@@ -1355,7 +1364,7 @@ export function Inspector(props: {
       </section>}
       {sessionId !== null && isManualShell && fileTreeEntries && (
         <section className="lootFileTreeSnapshot" aria-label="현재 셸의 폴더·파일 트리">
-          <div><b>폴더·파일 트리</b><span>{fileTreeEntries.length}개 항목 · /home, /root, /tmp, /var/www</span></div>
+          <div><b>폴더·파일 트리</b><span>{fileTreeEntries.length}개 항목 · {FILE_TREE_SCOPE.join(", ")}</span></div>
           {fileTreeEntries.length > 0
             ? <FileTreeView searchable node={buildFileTree(fileTreeEntries, "/")} />
             : <p className="empty">해당 경로에서 항목을 찾지 못했습니다.</p>}
