@@ -87,6 +87,19 @@
     `ensure_compatible_schema()`는 그 체계보다 먼저 있던 소수의 원시 테이블에만 쓰는
     레거시 경로라는 걸 문서를 읽지 않고 추측만으로 판단해서 생긴 실수였다.
 
+11. (2026-08-16 세션) 그래프 Inspector의 `manual-shell` 세션 노드에 LinPEAS 실행
+    트리거 + 붙여넣기 분석 패널을 추가했다. 그런데 이 두 기능은 각각 더 큰 카테고리의
+    한 항목일 뿐이었다 — `PrivescSessionPanel.tsx`의 "스크립트 서버 트리거"는
+    LinPEAS/WinPEAS/pspy 세 개가 한 세트고, `PostExploitationWorkspace.tsx`의
+    "붙여넣기 분석기"는 LinPEAS/SUID 두 개가 한 세트다. 처음엔 LinPEAS(+독립적으로
+    이미 있던 pspy)만 옮기고 WinPEAS·SUID 분석·`LinuxPrivescReference.tsx` 체크리스트는
+    빠뜨렸다 — manual-shell이 evil-winrm 세션도 포함한다는 걸 알고 있었는데도(실제로
+    라이브 검증에 쓴 세션이 evil-winrm이었다) WinPEAS를 챙기지 않았다. 사용자가 "동일
+    카테고리에 다른 기능에도 이게 쓰인다면 다 넣어"라고 지적하고 나서야 나머지 셋을
+    채웠다. 원칙 2(패턴 전수조사)/3(기존 UX 패턴 일관 적용)에 따르면, 하나의 트리거
+    묶음에서 한 항목을 새 위치로 옮기는 시점에 "이 묶음의 나머지 형제들도 같이 옮겨야
+    하는가"를 스스로 먼저 점검했어야 했다 — 사례 10과 같은 유형의 반복.
+
 ## 원칙
 
 1. **약속 감사(Promise Audit)** — 카탈로그 설명, docstring, 주석이 "자동으로 X 합니다"
