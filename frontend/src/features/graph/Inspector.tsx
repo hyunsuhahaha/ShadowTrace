@@ -15,6 +15,7 @@ import XtermOutput from "../../XtermOutput";
 import { parseLinkExtractResults, parseMysqlProbeSuccess } from "../../serviceIntel";
 import { buildFileTree, FileTreeView, parseTaggedTreeLines } from "../../fileTree";
 import FileContentModal from "../../FileContentModal";
+import FloatingFilePreview from "../../FloatingFilePreview";
 import NetexecOutcome, { type NetexecProtocol } from "../../NetexecOutcome";
 import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
@@ -1408,21 +1409,10 @@ export function Inspector(props: {
         title={manualSession.title} initialInput={manualSession.initialInput} autoFloat
         onClose={() => setManualSession(null)} />}
       {autoReconResultJobId !== null && openAutoReconPath !== null && (
-        <div className="modal" role="dialog" aria-label={`AutoRecon 파일 · ${openAutoReconPath}`}
-          onClick={() => setOpenAutoReconPath(null)}>
-          <div onClick={(event) => event.stopPropagation()}>
-            <span>AUTORECON FILE</span>
-            <h2 style={{wordBreak: "break-all", fontSize: 15}}>{openAutoReconPath}</h2>
-            <iframe className="autoReconFilePreview" title={openAutoReconPath}
-              sandbox="" src={`/api/autorecon/results/${autoReconResultJobId}/preview?path=${encodeURIComponent(openAutoReconPath)}`} />
-            <footer>
-              <a className="button" href={`/api/autorecon/results/${autoReconResultJobId}/download?path=${encodeURIComponent(openAutoReconPath)}`}>
-                다운로드
-              </a>
-              <button onClick={() => setOpenAutoReconPath(null)}>닫기</button>
-            </footer>
-          </div>
-        </div>
+        <FloatingFilePreview path={openAutoReconPath}
+          previewUrl={`/api/autorecon/results/${autoReconResultJobId}/preview?path=${encodeURIComponent(openAutoReconPath)}`}
+          downloadUrl={`/api/autorecon/results/${autoReconResultJobId}/download?path=${encodeURIComponent(openAutoReconPath)}`}
+          onClose={() => setOpenAutoReconPath(null)} />
       )}
       {sessionId !== null && isManualShell && <section className="privescServer"
         aria-labelledby="graph-privesc-server-heading">

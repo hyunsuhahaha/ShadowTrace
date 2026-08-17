@@ -22,6 +22,8 @@ afterEach(() => {
 
 it("browses AutoRecon's native result directories from the completed result node", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    if (String(input).includes("/api/autorecon/results/17/preview")) return Promise.resolve(
+      new Response("# report", {headers: {"Content-Type": "text/plain"}}));
     if (String(input).endsWith("/api/autorecon/results/17")) return Promise.resolve(
       new Response(JSON.stringify({job_id: 17, run_id: 4, root: "/workspace/ar/4/10.0.0.8",
         entries: [
@@ -59,8 +61,8 @@ it("browses AutoRecon's native result directories from the completed result node
   }));
   fireEvent.click(reportFile);
   const dialog = screen.getByRole("dialog", {name: "AutoRecon 파일 · report/report.md"});
-  expect(dialog.querySelector("iframe")?.getAttribute("src")).toBe(
-    "/api/autorecon/results/17/preview?path=report%2Freport.md");
+  expect(dialog.classList.contains("modal")).toBe(false);
+  expect(dialog.querySelectorAll("[data-resize-direction]")).toHaveLength(8);
 });
 
 it("shows a memo node as a freeform note instead of a domain finding/technique", async () => {

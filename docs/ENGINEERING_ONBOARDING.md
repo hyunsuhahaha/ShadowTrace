@@ -622,6 +622,7 @@ API: `/projects`, `/targets`, `/runbooks/credentials?project_id=`,
 | 하위 컴포넌트 | 역할 |
 |---|---|
 | `fileTree.tsx` | `D\|`/`F\|` 태그 라인 → 접기 가능 파일 트리 파서/렌더러; `LiveOutputPanel.tsx`/`NetexecOutcome.tsx`(App.tsx의 손자)도 사용 |
+| `FloatingFilePreview.tsx` / `floating-file-preview.css` | AutoRecon 결과 파일용 이동·8방향 크기 조절 작업창; 텍스트/XML 터미널 렌더링과 `Ctrl+F` 내부 검색, 이미지/PDF 미리보기 |
 
 ### 10.12 `HashCrackingWorkspace.tsx` — Hash Cracking (`#hash-cracking`)
 
