@@ -77,6 +77,41 @@ export function NodeQuickMenu(props: { node: GraphNode; x: number; y: number; on
   </div>;
 }
 
+export function DeleteNodeDialog(props: { label: string; count?: number; busy?: boolean; error?: string;
+  onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !props.busy) props.onCancel();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [props.busy, props.onCancel]);
+  return <div style={S.overlay} role="presentation"
+    onPointerDown={() => !props.busy && props.onCancel()}>
+    <section role="dialog" aria-modal="true" aria-labelledby="delete-node-title"
+      style={{width: 420, maxWidth: "calc(100vw - 32px)", marginTop: 80,
+        border: "1px solid #5b3034", background: "#101314", padding: 20}}
+      onPointerDown={(event) => event.stopPropagation()}>
+      <small style={{color: "#ff8a8a", font: "600 9px ui-monospace,monospace",
+        letterSpacing: ".08em"}}>DESTRUCTIVE GRAPH ACTION</small>
+      <h2 id="delete-node-title" style={{margin: "10px 0 6px", fontSize: 17}}>노드를 제거할까요?</h2>
+      <p style={{margin: 0, color: "#8d9b96", fontSize: 12, lineHeight: 1.6}}>
+        {props.count && props.count > 1 ? `선택한 ${props.count}개 노드` : `「${props.label}」 노드`}와
+        연결 관계가 그래프에서 제거됩니다.
+      </p>
+      {props.error && <p role="alert" style={{color: "#ff8a8a", fontSize: 11}}>{props.error}</p>}
+      <footer style={{display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20}}>
+        <button type="button" autoFocus disabled={props.busy} onClick={props.onCancel}
+          style={S.resultAction}>취소</button>
+        <button type="button" disabled={props.busy} onClick={props.onConfirm}
+          style={{...S.resultAction, borderColor: "#8b4048", color: "#ff9a9a"}}>
+          {props.busy ? "제거 중…" : "노드 제거"}
+        </button>
+      </footer>
+    </section>
+  </div>;
+}
+
 
 // Right-clicking blank canvas (no node under the cursor) still deserves a
 // menu instead of falling through to the browser's own -- just the one

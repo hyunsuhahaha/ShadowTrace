@@ -7,8 +7,8 @@ import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 import { S } from "./graphStyles";
 import { OutlineView } from "./OutlineView";
-import { AddNodeForm, BlankCanvasQuickMenu, ElapsedTimer, Empty, NodeQuickMenu, OnboardingPane,
-  Tab, TaskQueue } from "./graphLeaves";
+import { AddNodeForm, BlankCanvasQuickMenu, DeleteNodeDialog, ElapsedTimer, Empty, NodeQuickMenu,
+  OnboardingPane, Tab, TaskQueue } from "./graphLeaves";
 import { Inspector } from "./Inspector";
 import { GraphRequestPanel } from "./GraphRequestPanel";
 import { GraphCanvas } from "./GraphCanvas";
@@ -67,6 +67,7 @@ export default function GraphWorkspace() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<
     { id: string | null; x: number; y: number } | null>(null);
+  const [deleteCandidates, setDeleteCandidates] = useState<GraphNode[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   const [credentialOverlay, setCredentialOverlay] = useState(true);
   const [pathHighlight, setPathHighlight] = useState(false);
@@ -202,9 +203,12 @@ export default function GraphWorkspace() {
     onSuccess: invalidateGraph,
   });
   const deleteNode = useMutation({
-    mutationFn: (id: string) => api(`/graph/nodes/${id}`, { method: "DELETE" }),
-    onSuccess: (_data, id) => {
-      if (selected === id) setSelected(null);
+    mutationFn: (ids: string[]) => Promise.all(
+      ids.map((id) => api(`/graph/nodes/${id}`, { method: "DELETE" }))),
+    onSuccess: (_data, ids) => {
+      if (selected && ids.includes(selected)) setSelected(null);
+      setDeleteCandidates([]);
+      setMultiSelected(new Set());
       invalidateGraph();
     },
   });
@@ -549,9 +553,9 @@ export default function GraphWorkspace() {
               setMultiSelected(new Set());
             }}>숨기기</button>
             <button style={S.hiddenChip} onClick={() => {
-              if (!confirm(`선택한 ${multiSelected.size}개 노드와 연결 관계를 제거할까요?`)) return;
-              for (const id of multiSelected) deleteNode.mutate(id);
-              setMultiSelected(new Set());
+              deleteNode.reset();
+              setDeleteCandidates([...multiSelected].map((id) => nodeById.get(id)).filter(
+                (node): node is GraphNode => !!node && node.type !== "project-root"));
             }}>삭제</button>
             <button style={S.hiddenChip} onClick={() => setMultiSelected(new Set())}>
               선택 해제
@@ -743,8 +747,7 @@ export default function GraphWorkspace() {
           onPin={() => { const node = nodeById.get(menuNodeId)!;
             setDetails.mutate({ id: node.id, pinned: !node.pinned }); setContextMenu(null); }}
           onHide={() => { setHidden.mutate({ id: menuNodeId, hidden: true }); setContextMenu(null); }}
-          onDelete={() => { const node = nodeById.get(menuNodeId)!;
-            if (confirm(`「${node.label}」 노드와 연결 관계를 제거할까요?`)) deleteNode.mutate(node.id);
+          onDelete={() => { deleteNode.reset(); setDeleteCandidates([nodeById.get(menuNodeId)!]);
             setContextMenu(null); }}
           onStatus={(status) => { setStatus.mutate({ id: menuNodeId, status }); setContextMenu(null); }} />;
       })()}
@@ -755,6 +758,11 @@ export default function GraphWorkspace() {
             setContextMenu(null); }}
           onAddMemo={() => { addMemo.mutate(); setContextMenu(null); }} />
       )}
+      {replayAt == null && deleteCandidates.length > 0 && <DeleteNodeDialog
+        label={deleteCandidates[0].label} count={deleteCandidates.length}
+        busy={deleteNode.isPending} error={deleteNode.error ? String(deleteNode.error) : undefined}
+        onCancel={() => !deleteNode.isPending && setDeleteCandidates([])}
+        onConfirm={() => deleteNode.mutate(deleteCandidates.map((node) => node.id))} />}
       {replayAt == null && addOpen && selectedNode && (
         <div style={S.overlay} onClick={() => setAddOpen(false)}>
           <div style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
