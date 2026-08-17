@@ -33,6 +33,8 @@ const EmbeddedHashCracking = lazy(() => import("../../HashCrackingWorkspace"));
 const EmbeddedPostExploitation = lazy(() => import("../../PostExploitationWorkspace"));
 const EmbeddedReports = lazy(() => import("../../ReportWorkspace"));
 
+type AutoReconRun = { status: string };
+
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
 // swap is M4 and isolated to <GraphCanvas>). No new dependencies in this slice.
@@ -260,6 +262,14 @@ export default function GraphWorkspace() {
     enabled: !!projectId && graph.isSuccess,
     queryFn: () => api<GraphTimelineEvent[]>(`/projects/${projectId}/graph/timeline`),
   });
+  const autoReconRuns = useQuery({
+    queryKey: ["autoReconRuns", projectId],
+    enabled: !!projectId && replayAt == null,
+    queryFn: () => api<AutoReconRun[]>(`/autorecon?project_id=${projectId}`),
+    refetchInterval: 2000,
+  });
+  const autoReconActive = autoReconRuns.data?.some((run) =>
+    run.status === "queued" || run.status === "running") ?? false;
 
   const nodeById = useMemo(() => {
     const map = new Map<string, GraphNode>();
@@ -605,6 +615,7 @@ export default function GraphWorkspace() {
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
+            autoReconActive={autoReconActive}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
             multiSelected={multiSelected} onToggleMultiSelect={toggleMultiSelect}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}

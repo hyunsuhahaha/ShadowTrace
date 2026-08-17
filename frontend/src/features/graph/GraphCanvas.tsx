@@ -24,6 +24,7 @@ export function GraphCanvas(props: {
   objectivePath?: ObjectivePath | null;
   onDropFile?: (payload: FileDragPayload) => void;
   dropFileBusy?: boolean;
+  autoReconActive?: boolean;
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -33,6 +34,8 @@ export function GraphCanvas(props: {
   useEffect(() => { focusReq.current = props.focus; }, [props.focus]);
   const selectedRef = useRef(props.selected);
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
+  const autoReconActiveRef = useRef(!!props.autoReconActive);
+  useEffect(() => { autoReconActiveRef.current = !!props.autoReconActive; }, [props.autoReconActive]);
   const pathRef = useRef<ObjectivePath | null>(props.objectivePath ?? null);
   useEffect(() => { pathRef.current = props.objectivePath ?? null; }, [props.objectivePath]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
@@ -230,6 +233,51 @@ export function GraphCanvas(props: {
     const draw = (now = performance.now()) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
+      if (autoReconActiveRef.current) {
+        // Enlarge the supplied AutoRecon mark into a screen-space targeting
+        // assembly: split-color orbits, diagonal relay nodes and a square core.
+        const cx = W / 2, cy = H / 2, radius = Math.min(W, H) * .34;
+        const rotation = reduceMotion ? 0 : now / 9000;
+        const cyan = "rgba(55,174,255,.48)", violet = "rgba(133,45,232,.48)";
+        ctx.save();
+        ctx.translate(cx, cy); ctx.rotate(rotation);
+        ctx.lineWidth = Math.max(2, radius * .012);
+        [radius, radius * .72, radius * .43].forEach((r) => {
+          ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, Math.PI * 2); ctx.strokeStyle = cyan; ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI); ctx.strokeStyle = violet; ctx.stroke();
+        });
+        ctx.lineWidth = Math.max(2, radius * .018);
+        for (let i = 0; i < 4; i++) {
+          const angle = Math.PI / 4 + i * Math.PI / 2;
+          const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * radius * .2, Math.sin(angle) * radius * .2);
+          ctx.lineTo(x, y); ctx.strokeStyle = i < 2 ? violet : cyan; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, radius * .075, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(7,9,10,.9)"; ctx.fill(); ctx.strokeStyle = i < 2 ? violet : cyan; ctx.stroke();
+        }
+        ctx.rotate(-rotation * 1.8);
+        for (let i = 0; i < 4; i++) {
+          const angle = i * Math.PI / 2;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * radius * .13, Math.sin(angle) * radius * .13);
+          ctx.lineTo(Math.cos(angle) * radius * .4, Math.sin(angle) * radius * .4);
+          ctx.strokeStyle = i < 2 ? cyan : violet; ctx.stroke();
+          ctx.beginPath(); ctx.arc(Math.cos(angle) * radius * .4, Math.sin(angle) * radius * .4,
+            radius * .038, 0, Math.PI * 2); ctx.stroke();
+        }
+        const core = radius * .19;
+        ctx.shadowColor = "#8a35f0"; ctx.shadowBlur = 22;
+        ctx.strokeStyle = "rgba(139,53,240,.78)"; ctx.lineWidth = Math.max(3, radius * .022);
+        ctx.strokeRect(-core / 2, -core / 2, core, core);
+        ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(55,174,255,.64)"; ctx.lineWidth = 1;
+        ctx.strokeRect(-core * .34, -core * .34, core * .68, core * .68);
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = "rgba(139,255,190,.72)";
+        ctx.font = "600 9px ui-monospace,monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillText("AUTORECON // ORBITAL ACQUISITION", 18, 18);
+        ctx.fillStyle = "rgba(111,214,209,.46)"; ctx.fillText("4 RELAYS LINKED  ·  CORE ENUMERATION ACTIVE", 18, 34);
+        ctx.restore();
+      }
       ctx.translate(panX, panY);
       ctx.scale(zoomRef.current, zoomRef.current);  // camera zoom: sizes AND spacing
       const activePath = pathRef.current;

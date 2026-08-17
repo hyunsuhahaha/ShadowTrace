@@ -28,7 +28,7 @@ function stubCanvasContext() {
     clearRect: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(),
     beginPath: vi.fn(), closePath: vi.fn(), arc: vi.fn(), fill: vi.fn(),
     stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), quadraticCurveTo: vi.fn(),
-    save: vi.fn(), restore: vi.fn(), scale: vi.fn(), translate: vi.fn(),
+    save: vi.fn(), restore: vi.fn(), scale: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
     setTransform: vi.fn(), setLineDash: vi.fn(), fillText: vi.fn(),
     createRadialGradient: vi.fn(() => gradient),
     measureText: vi.fn(() => ({ width: 40 })),
@@ -106,6 +106,15 @@ it("shows the empty activity stream state when nothing is happening", () => {
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(document.body.textContent).toContain("아직 기록된 활동이 없습니다.");
+});
+
+it("draws the orbital relay mark while AutoRecon is active", () => {
+  const ctx = stubCanvasContext();
+  render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
+    autoReconActive selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+    onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
+  expect(ctx.fillText.mock.calls.map((call) => String(call[0])))
+    .toContain("AUTORECON // ORBITAL ACQUISITION");
 });
 
 it("renders credential badges and directional access lineage without secrets", () => {
