@@ -527,10 +527,38 @@ def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
 
     labels = {node.label: node for node in db.query(GraphNode).all()}
     assert "AutoRecon Run #1" in labels
-    assert "AutoRecon · Quick TCP Scan" in labels
+    assert "AutoRecon · Quick TCP Scan" not in labels
     relations = {(edge.relation, edge.source, edge.target)
                  for edge in db.query(GraphEdge).all()}
     assert ("scans", labels["AutoRecon Run #1"].id, labels["10.0.0.71"].id) in relations
+
+
+def test_sync_projects_removes_existing_autorecon_machine_artifact_nodes():
+    from app.models import ScanArtifact, ScanJob, Target
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.72")
+    db.add(target); db.flush()
+    job = ScanJob(project_id=p.id, target_id=target.id, source="autorecon",
+                  status="completed", command="autorecon 10.0.0.72")
+    db.add(job); db.flush()
+    artifact = ScanArtifact(scan_job_id=job.id, kind="xml", path="/tmp/nmap.xml",
+                            sha256="c" * 64, size=100,
+                            original_name="tcp_80_http_nmap.xml")
+    db.add(artifact); db.flush()
+    host = service.create_node(db, p.id, "host", label=target.ip,
+                               source_ref=json.dumps({"module": "core", "kind": "target",
+                                                      "id": target.id}))
+    duplicate = service.create_node(
+        db, p.id, "technique", label="AutoRecon · tcp_80_http_nmap.xml",
+        source_ref=json.dumps({"module": "scan_center", "kind": "scan_artifact",
+                               "id": artifact.id}))
+    service.create_edge(db, p.id, host.id, duplicate.id, "attempted")
+
+    service.sync_from_project(db, p.id)
+
+    assert db.get(GraphNode, duplicate.id) is None
+    assert db.query(ScanArtifact).filter_by(id=artifact.id).one()
 
 
 def test_execution_parents_under_the_finding_it_was_run_to_follow_up_on():

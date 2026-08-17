@@ -46,6 +46,18 @@ def _autorecon_artifact_label(artifact: ScanArtifact) -> str:
     name = artifact.original_name or Path(artifact.path).name
     return f"AutoRecon · {_AUTORECON_ARTIFACT_LABELS.get(name, name)}"
 
+
+def _autorecon_artifact_is_graph_feature(artifact: ScanArtifact) -> bool:
+    """Keep machine-readable scan inputs as evidence, not duplicate nodes.
+
+    Services and per-tool Executions already project the useful information
+    parsed from these files. Human-facing follow-up commands, reports, loot,
+    and exploit material remain graph features.
+    """
+    name = (artifact.original_name or Path(artifact.path).name).lower()
+    return artifact.kind != "xml" and not name.endswith(
+        (".xml", ".nmap", ".gnmap", ".log"))
+
 # Every manually-opened session (a reverse shell listener, an SSH quick-connect,
 # a redis-cli/mongo/mysql probe shell, ...) shares the one synthetic
 # template_id "manual-shell" -- it was never a real catalog entry, so
@@ -859,13 +871,22 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         for artifact, job in artifact_rows:
             if ("scan_artifact", artifact.id) in dismissed:
                 continue
+            existing = index.get(("scan_artifact", artifact.id))
+            if not _autorecon_artifact_is_graph_feature(artifact):
+                if existing is not None:
+                    db.query(GraphEdge).filter(
+                        (GraphEdge.source == existing.id)
+                        | (GraphEdge.target == existing.id)
+                    ).delete(synchronize_session=False)
+                    db.delete(existing)
+                    del index[("scan_artifact", artifact.id)]
+                continue
             parent = host_for(job.target_id)
             if parent is None:
                 continue
             meta = json.dumps({"tool": "autorecon-artifact", "kind": artifact.kind,
                                "path": artifact.path, "size": artifact.size,
                                "scanJobId": job.id, "evidenceCount": 1})
-            existing = index.get(("scan_artifact", artifact.id))
             if existing is not None:
                 existing.meta = meta
                 continue
