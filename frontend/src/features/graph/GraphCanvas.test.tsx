@@ -30,7 +30,7 @@ function stubCanvasContext() {
     stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), quadraticCurveTo: vi.fn(),
     save: vi.fn(), restore: vi.fn(), scale: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
     setTransform: vi.fn(), setLineDash: vi.fn(), fillText: vi.fn(),
-    createRadialGradient: vi.fn(() => gradient),
+    createRadialGradient: vi.fn(() => gradient), createLinearGradient: vi.fn(() => gradient),
     measureText: vi.fn(() => ({ width: 40 })),
     fillStyle: "", strokeStyle: "", lineWidth: 0, font: "", globalAlpha: 1,
     shadowBlur: 0, shadowColor: "", textAlign: "left", textBaseline: "top",
@@ -121,7 +121,7 @@ it("centres the AutoRecon orbital relay on its target host", () => {
     autoReconTargetIds={[7]} selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(ctx.fillText.mock.calls.map((call) => String(call[0])))
-    .toContain("AUTORECON // CORE LOCK");
+    .toContain("AUTORECON // TARGET CORE LINKED");
   expect(ctx.translate).toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
 });
 

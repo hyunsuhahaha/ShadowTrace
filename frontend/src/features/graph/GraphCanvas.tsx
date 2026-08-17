@@ -244,52 +244,68 @@ export function GraphCanvas(props: {
         } catch { return false; }
       });
       for (const host of autoReconHosts) {
-        const phase = reduceMotion ? 0 : now / 5200, pulse = reduceMotion ? .5 : (Math.sin(now / 260) + 1) / 2;
-        const cyan = "#37aeff", violet = "#8b35f0";
+        const phase = reduceMotion ? 0 : now / 4200, pulse = reduceMotion ? .55 : (Math.sin(now / 310) + 1) / 2;
+        const outer = 780, middle = 560, inner = 340;
+        const cyan = "#35b7ff", blue = "#5278ff", violet = "#9238ee";
         ctx.save(); ctx.translate(host.x, host.y);
-        ctx.shadowBlur = 20 + pulse * 18; ctx.shadowColor = violet;
-        [340, 590, 840].forEach((radius, ring) => {
-          const direction = ring === 1 ? -1 : 1, angle = phase * direction + ring * .7;
-          ctx.lineWidth = ring === 2 ? 2.4 : 1.6;
-          ctx.beginPath(); ctx.arc(0, 0, radius, angle, angle + Math.PI * .92);
-          ctx.strokeStyle = "rgba(55,174,255,.72)"; ctx.stroke();
-          ctx.beginPath(); ctx.arc(0, 0, radius, angle + Math.PI, angle + Math.PI * 1.92);
-          ctx.strokeStyle = "rgba(139,53,240,.72)"; ctx.stroke();
-          for (let packet = 0; packet < 3; packet++) {
-            const a = angle + packet * Math.PI * 2 / 3;
-            const x = Math.cos(a) * radius, y = Math.sin(a) * radius;
-            ctx.beginPath(); ctx.arc(x, y, 2.5 + pulse * 1.5, 0, Math.PI * 2);
-            ctx.fillStyle = packet === 1 ? violet : cyan; ctx.fill();
-          }
+        const gradient = ctx.createLinearGradient(-outer, -outer, outer, outer);
+        gradient.addColorStop(0, cyan); gradient.addColorStop(.48, blue); gradient.addColorStop(1, violet);
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+        // One coherent mark: the supplied icon's three circles, diagonal X,
+        // four cardinal relays and nested square core all share one stroke system.
+        ctx.shadowColor = blue; ctx.shadowBlur = 34 + pulse * 16;
+        ctx.strokeStyle = gradient; ctx.lineWidth = 12;
+        [outer, middle, inner].forEach((radius) => {
+          ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
         });
-        ctx.rotate(phase * .65);
+
+        ctx.lineWidth = 16;
         for (let i = 0; i < 4; i++) {
           const angle = Math.PI / 4 + i * Math.PI / 2;
-          const x = Math.cos(angle) * 840, y = Math.sin(angle) * 840;
-          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 84, Math.sin(angle) * 84); ctx.lineTo(x, y);
-          ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.58)" : "rgba(139,53,240,.58)";
-          ctx.lineWidth = 3; ctx.stroke();
-          const travel = reduceMotion ? .7 : (now / 900 + i * .23) % 1;
-          ctx.beginPath(); ctx.arc(Math.cos(angle) * (84 + 756 * travel),
-            Math.sin(angle) * (84 + 756 * travel), 7, 0, Math.PI * 2);
-          ctx.fillStyle = "#d5efff"; ctx.fill();
-          ctx.beginPath(); ctx.arc(x, y, 34 + pulse * 12, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(7,9,10,.86)"; ctx.fill();
-          ctx.strokeStyle = i % 2 ? cyan : violet; ctx.lineWidth = 3; ctx.stroke();
-          ctx.beginPath(); ctx.arc(x, y, 56 + pulse * 24, 0, Math.PI * 2);
-          ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.22)" : "rgba(139,53,240,.22)";
-          ctx.lineWidth = 1; ctx.stroke();
+          const x = Math.cos(angle) * outer, y = Math.sin(angle) * outer;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 118, Math.sin(angle) * 118); ctx.lineTo(x, y);
+          ctx.strokeStyle = gradient; ctx.stroke();
+          const travel = reduceMotion ? .62 : (phase + i * .2) % 1;
+          ctx.beginPath(); ctx.arc(Math.cos(angle) * (118 + 662 * travel),
+            Math.sin(angle) * (118 + 662 * travel), 9, 0, Math.PI * 2);
+          ctx.fillStyle = "#e5f7ff"; ctx.fill();
+          const active = reduceMotion ? .5 : Math.max(0, 1 - Math.abs(((phase * 4 + i) % 4) - 2));
+          ctx.beginPath(); ctx.arc(x, y, 43 + active * 8, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(7,9,10,.94)"; ctx.fill(); ctx.strokeStyle = gradient; ctx.lineWidth = 14; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 61 + active * 22, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(113,91,255,${.08 + active * .24})`; ctx.lineWidth = 4; ctx.stroke();
         }
-        ctx.rotate(-phase * 1.4);
-        const core = 140 + pulse * 18;
-        ctx.shadowColor = violet; ctx.shadowBlur = 30 + pulse * 22;
-        ctx.strokeStyle = "rgba(139,53,240,.92)"; ctx.lineWidth = 5;
-        ctx.strokeRect(-core / 2, -core / 2, core, core);
-        ctx.strokeStyle = "rgba(55,174,255,.9)"; ctx.lineWidth = 1.5;
-        ctx.strokeRect(-core * .37, -core * .37, core * .74, core * .74);
-        ctx.shadowBlur = 0; ctx.fillStyle = "rgba(139,255,190,.8)";
-        ctx.font = "600 9px ui-monospace,monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-        ctx.fillText("AUTORECON // CORE LOCK", 0, -900);
+
+        ctx.lineWidth = 14;
+        for (let i = 0; i < 4; i++) {
+          const angle = i * Math.PI / 2, x = Math.cos(angle) * inner, y = Math.sin(angle) * inner;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 108, Math.sin(angle) * 108); ctx.lineTo(x, y);
+          ctx.strokeStyle = gradient; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 27, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(7,9,10,.94)"; ctx.fill(); ctx.strokeStyle = gradient; ctx.lineWidth = 12; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 37 + pulse * 8, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(99,115,255,.2)"; ctx.lineWidth = 3; ctx.stroke();
+        }
+
+        // Bright orbit tracers add energy without changing the reference silhouette.
+        [outer, middle, inner].forEach((radius, i) => {
+          const angle = phase * Math.PI * 2 * (i === 1 ? -1 : 1) + i * .8;
+          ctx.beginPath(); ctx.arc(0, 0, radius, angle, angle + .42);
+          ctx.strokeStyle = i === 2 ? "#d4e9ff" : i === 1 ? violet : cyan;
+          ctx.lineWidth = 22 - i * 4; ctx.shadowColor = ctx.strokeStyle as string; ctx.shadowBlur = 40; ctx.stroke();
+        });
+
+        const core = 214;
+        ctx.shadowColor = violet; ctx.shadowBlur = 48 + pulse * 34;
+        ctx.fillStyle = "rgba(9,12,24,.86)"; ctx.fillRect(-core / 2, -core / 2, core, core);
+        ctx.strokeStyle = gradient; ctx.lineWidth = 18; ctx.strokeRect(-core / 2, -core / 2, core, core);
+        ctx.shadowColor = cyan; ctx.shadowBlur = 26;
+        ctx.strokeStyle = "rgba(79,187,255,.94)"; ctx.lineWidth = 7;
+        ctx.strokeRect(-72, -72, 144, 144);
+        ctx.shadowBlur = 0; ctx.fillStyle = "rgba(213,239,255,.88)";
+        ctx.font = "700 12px ui-monospace,monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.fillText("AUTORECON // TARGET CORE LINKED", 0, -900);
         ctx.restore();
       }
       const activePath = pathRef.current;
