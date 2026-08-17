@@ -290,7 +290,9 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       ScanArtifact/Evidence로 등록한다.
   → 실행 중 activity는 별도 Run 노드가 아니라 대상 Host 메타에 기록돼 Host 중심 스캔
     이펙트를 구동한다. 종료 후에는 대상별 `AutoRecon 결과물` technique을 Host 아래 만들고
-    `/api/autorecon/results/{scan_job_id}`에서 scans/exploit/loot/report 트리를 탐색·다운로드한다.
+    `/api/autorecon/results/{scan_job_id}`에서 scans/exploit/loot/report 트리를 탐색한다.
+    파일 클릭은 `/preview` 인라인 뷰어, 다운로드는 `/download`, 캔버스 드래그는 `/promote`로
+    Evidence + Draft Finding을 만들어 결과물 노드 아래에 영구 배치한다.
     서비스별 Execution은 Service 하위 technique으로 투영한다. 모든 원본 산출물은
     개별 중복 노드 대신 결과물 노드의 파일 트리와 Evidence에서 관리한다.
 ```

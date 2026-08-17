@@ -459,6 +459,11 @@ export default function GraphWorkspace() {
           method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify({path: payload.path, graph_node_id: selected}),
         });
+      } else if (payload.kind === "autorecon-result") {
+        await api(`/autorecon/results/${payload.jobId}/promote`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({path: payload.path, graph_node_id: payload.graphNodeId}),
+        });
       } else if (payload.kind === "archive") {
         await api(`/evidence/${payload.evidenceId}/extract`, {
           method: "POST", headers: {"Content-Type": "application/json"},

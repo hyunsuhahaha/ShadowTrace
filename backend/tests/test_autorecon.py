@@ -6,9 +6,14 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import AutoReconRun, Execution, Project, ScanArtifact, ScanJob, Service, Target
+from app.models import (AutoReconRun, Evidence, Execution, Finding, GraphEdge, GraphNode, Project,
+                        ScanArtifact, ScanJob, Service, Target)
 from fastapi import HTTPException
-from app.modules.autorecon.router import _parse_help_options, download_result, result_tree
+from app.modules.autorecon.router import (
+    ResultFileIn, _parse_help_options, download_result, preview_result,
+    promote_result, result_tree,
+)
+from app.modules.graph import service as graph_service
 from app.modules.autorecon.service import (
     import_autorecon_run, render_autorecon_command, run_output_dir,
 )
@@ -113,6 +118,19 @@ def test_result_tree_and_download_are_scoped_to_the_target_directory(tmp_path):
         "report", "report/notes.txt"}
     response = download_result(job.id, "report/notes.txt", db)
     assert Path(response.path) == report
+    preview = preview_result(job.id, "report/notes.txt", db)
+    assert preview.body == b"done"
+    result_node = graph_service.create_node(
+        db, project.id, "technique", label="AutoRecon 결과물",
+        source_ref=json.dumps({"module": "autorecon", "kind": "autorecon_results",
+                               "id": job.id}))
+    promoted = promote_result(job.id, ResultFileIn(
+        path="report/notes.txt", graph_node_id=result_node.id), db)
+    assert promoted["finding_id"] == db.query(Finding).one().id
+    assert db.query(Evidence).one().file_path == str(report)
+    finding_node = db.query(GraphNode).filter_by(type="finding").one()
+    assert db.query(GraphEdge).filter_by(
+        source=result_node.id, target=finding_node.id, relation="yielded").one()
     with pytest.raises(HTTPException) as error:
         download_result(job.id, "../secret.txt", db)
     assert error.value.status_code == 404

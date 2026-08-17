@@ -33,8 +33,6 @@ it("browses AutoRecon's native result directories from the completed result node
         ]}), {headers: {"Content-Type": "application/json"}}));
     throw new Error(`Unhandled request: ${String(input)}`);
   }));
-  const open = vi.fn();
-  vi.stubGlobal("open", open);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(<QueryClientProvider client={client}>
@@ -51,10 +49,17 @@ it("browses AutoRecon's native result directories from the completed result node
   expect(panel.textContent).toContain("2개 파일");
   expect(screen.getByText("scans")).toBeTruthy();
   expect(screen.getByText("report")).toBeTruthy();
-  fireEvent.click(screen.getByText("report.md"));
-  expect(open).toHaveBeenCalledWith(
-    "/api/autorecon/results/17/download?path=report%2Freport.md",
-    "_blank", "noopener,noreferrer");
+  const reportFile = screen.getByText("report.md");
+  const transfer = {setData: vi.fn(), effectAllowed: ""};
+  fireEvent.dragStart(reportFile.closest("button")!, {dataTransfer: transfer});
+  expect(transfer.setData).toHaveBeenCalledWith(FILE_DRAG_MIME, JSON.stringify({
+    kind: "autorecon-result", jobId: 17, path: "report/report.md",
+    graphNodeId: "results-17",
+  }));
+  fireEvent.click(reportFile);
+  const dialog = screen.getByRole("dialog", {name: "AutoRecon 파일 · report/report.md"});
+  expect(dialog.querySelector("iframe")?.getAttribute("src")).toBe(
+    "/api/autorecon/results/17/preview?path=report%2Freport.md");
 });
 
 it("shows a memo node as a freeform note instead of a domain finding/technique", async () => {

@@ -123,11 +123,12 @@ export function Inspector(props: {
   const findingId = source?.kind === "finding" ? source.id : null;
   const hashCrackJobId = source?.kind === "hash_crack_job" ? source.id : null;
   const autoReconResultJobId = source?.kind === "autorecon_results" ? source.id : null;
+  const [openAutoReconPath, setOpenAutoReconPath] = useState<string | null>(null);
   const autoReconResults = useQuery({
     queryKey: ["autoReconResults", autoReconResultJobId],
     enabled: autoReconResultJobId !== null,
     queryFn: () => api<{job_id: number; run_id: number; root: string;
-      entries: Array<{path: string; is_dir: boolean; size: number}>}>(
+      entries: Array<{path: string; is_dir: boolean; size: number; media_type: string}>}>(
       `/autorecon/results/${autoReconResultJobId}`),
   });
   const findingQuery = useQuery({
@@ -1364,9 +1365,9 @@ export function Inspector(props: {
                 node={buildFileTree((autoReconResults.data?.entries || []).map((entry) => ({
                   path: entry.path, isDir: entry.is_dir,
                 })), "/")}
-                onOpenFile={(path) => window.open(
-                  `/api/autorecon/results/${autoReconResultJobId}/download?path=${encodeURIComponent(path)}`,
-                  "_blank", "noopener,noreferrer")} />
+                onOpenFile={setOpenAutoReconPath}
+                dragPayload={(path) => ({kind: "autorecon-result",
+                  jobId: autoReconResultJobId, path, graphNodeId: n.id})} />
             </div>}
         </section>
       )}
@@ -1404,6 +1405,23 @@ export function Inspector(props: {
       {manualSession && <InteractiveTerminal sessionId={manualSession.id}
         title={manualSession.title} initialInput={manualSession.initialInput} autoFloat
         onClose={() => setManualSession(null)} />}
+      {autoReconResultJobId !== null && openAutoReconPath !== null && (
+        <div className="modal" role="dialog" aria-label={`AutoRecon 파일 · ${openAutoReconPath}`}
+          onClick={() => setOpenAutoReconPath(null)}>
+          <div onClick={(event) => event.stopPropagation()}>
+            <span>AUTORECON FILE</span>
+            <h2 style={{wordBreak: "break-all", fontSize: 15}}>{openAutoReconPath}</h2>
+            <iframe className="autoReconFilePreview" title={openAutoReconPath}
+              sandbox="" src={`/api/autorecon/results/${autoReconResultJobId}/preview?path=${encodeURIComponent(openAutoReconPath)}`} />
+            <footer>
+              <a className="button" href={`/api/autorecon/results/${autoReconResultJobId}/download?path=${encodeURIComponent(openAutoReconPath)}`}>
+                다운로드
+              </a>
+              <button onClick={() => setOpenAutoReconPath(null)}>닫기</button>
+            </footer>
+          </div>
+        </div>
+      )}
       {sessionId !== null && isManualShell && <section className="privescServer"
         aria-labelledby="graph-privesc-server-heading">
         <header>

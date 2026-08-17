@@ -1,25 +1,35 @@
 import asyncio
 from functools import lru_cache
+import hashlib
 import json
+import mimetypes
 import re
 import shlex
 import shutil
 import subprocess
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
-from ...models import AutoReconRun, Project, ScanJob, Target
+from ...models import (AutoReconRun, Evidence, Finding, FindingEvidence, GraphNode,
+                       Project, ScanJob, Target)
 from ...schemas import AutoReconRunIn, AutoReconRunOut
 from ..core.support import need
+from ..graph import service as graph_service
 from .manager import manager
 from .service import render_autorecon_command, run_output_dir
 
 TERMINAL_STATUSES = {"completed", "failed", "stopped", "interrupted"}
 
 router = APIRouter(prefix="/api/autorecon", tags=["AutoRecon"])
+
+
+class ResultFileIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2048)
+    graph_node_id: str | None = Field(default=None, max_length=40)
 
 
 def _parse_help_options(help_text: str) -> list[dict[str, str]]:
@@ -98,6 +108,15 @@ def _result_context(db: Session, job_id: int) -> tuple[ScanJob, AutoReconRun, Pa
     return job, run, Path(run.output_dir) / target.ip
 
 
+def _result_file(db: Session, job_id: int, relative_path: str) -> tuple[ScanJob, Path]:
+    job, _, root = _result_context(db, job_id)
+    root = root.resolve()
+    candidate = (root / relative_path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        raise HTTPException(404, "Result file not found")
+    return job, candidate
+
+
 @router.get("/results/{job_id}")
 def result_tree(job_id: int, db: Session = Depends(get_db)):
     job, run, root = _result_context(db, job_id)
@@ -108,22 +127,70 @@ def result_tree(job_id: int, db: Session = Depends(get_db)):
                 stat = path.stat()
             except OSError:
                 continue
+            media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             entries.append({"path": path.relative_to(root).as_posix(),
                             "is_dir": path.is_dir(),
-                            "size": 0 if path.is_dir() else stat.st_size})
+                            "size": 0 if path.is_dir() else stat.st_size,
+                            "media_type": "inode/directory" if path.is_dir() else media_type})
     return {"job_id": job.id, "run_id": run.id, "root": str(root),
             "entries": entries}
 
 
 @router.get("/results/{job_id}/download")
 def download_result(job_id: int, path: str, db: Session = Depends(get_db)):
-    _, _, root = _result_context(db, job_id)
-    root = root.resolve()
-    candidate = (root / path).resolve()
-    if not candidate.is_relative_to(root) or not candidate.is_file():
-        raise HTTPException(404, "Result file not found")
+    _, candidate = _result_file(db, job_id, path)
     return FileResponse(candidate, filename=candidate.name,
                         media_type="application/octet-stream")
+
+
+@router.get("/results/{job_id}/preview")
+def preview_result(job_id: int, path: str, db: Session = Depends(get_db)):
+    _, candidate = _result_file(db, job_id, path)
+    media_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+    headers = {"X-Content-Type-Options": "nosniff",
+               "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"}
+    if media_type.startswith("image/") or media_type == "application/pdf":
+        return FileResponse(candidate, media_type=media_type, headers=headers)
+    if (media_type.startswith("text/") or candidate.suffix.lower() in
+            {".log", ".nmap", ".gnmap", ".xml", ".json", ".yaml", ".yml", ".toml"}):
+        content = candidate.read_bytes()[:2_000_000].decode(errors="replace")
+        return PlainTextResponse(content, headers=headers)
+    raise HTTPException(415, "This file type cannot be previewed safely")
+
+
+@router.post("/results/{job_id}/promote", status_code=201)
+def promote_result(job_id: int, body: ResultFileIn, db: Session = Depends(get_db)):
+    job, candidate = _result_file(db, job_id, body.path)
+    target = need(db, Target, job.target_id)
+    content = candidate.read_bytes()
+    evidence = Evidence(
+        project_id=job.project_id, target_id=target.id,
+        title=f"AutoRecon 파일: {body.path}",
+        description=f"AutoRecon 결과 디렉터리에서 그래프로 배치 · ScanJob #{job.id}",
+        kind="attachment", source_type="autorecon_scan", source_id=job.id,
+        file_path=str(candidate), original_name=candidate.name,
+        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
+        hostname=target.hostname or target.ip, include_report=False)
+    db.add(evidence); db.flush()
+    finding = Finding(
+        project_id=job.project_id, target_id=target.id,
+        title=f"AutoRecon 파일: {body.path}", status="Draft",
+        reproduction_steps=f"AutoRecon 결과 경로: {body.path}")
+    db.add(finding); db.flush()
+    db.add(FindingEvidence(finding_id=finding.id, evidence_id=evidence.id, is_primary=True))
+    source_node = db.get(GraphNode, body.graph_node_id) if body.graph_node_id else None
+    if (source_node and source_node.project_id == job.project_id
+            and source_node.type == "technique"):
+        finding_node = graph_service.create_node(
+            db, job.project_id, "finding", label=finding.title,
+            source_ref=json.dumps({"module": "findings", "kind": "finding",
+                                   "id": finding.id}, sort_keys=True),
+            meta=json.dumps({"severity": finding.severity,
+                             "category": finding.category, "evidenceCount": 1}))
+        graph_service.create_edge(db, job.project_id, source_node.id,
+                                  finding_node.id, "yielded", status="succeeded")
+    db.commit()
+    return {"finding_id": finding.id, "evidence_id": evidence.id}
 
 
 @router.get("", response_model=list[AutoReconRunOut])

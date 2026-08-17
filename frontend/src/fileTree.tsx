@@ -8,6 +8,7 @@ import { useState } from "react";
 export const FILE_DRAG_MIME = "application/x-oscp-tree-file";
 export type FileDragPayload =
   | { kind: "post-exploitation"; runId: number; path: string }
+  | { kind: "autorecon-result"; jobId: number; path: string; graphNodeId: string | null }
   | { kind: "archive"; evidenceId: number; entry: string }
   | { kind: "ftp-download"; sessionId: number; filename: string; graphNodeId: string | null }
   | { kind: "ftp-tree"; executionId: number; path: string; graphNodeId: string | null };
