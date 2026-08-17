@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFloatingTerminal } from "./FloatingTerminal";
 import { Badge, Button, ErrorState } from "./ui";
-import { get, terminal, type Target } from "./scanCenterModel";
+import { get, serverTime, terminal, type Target } from "./scanCenterModel";
 
 type AutoReconRun = {
   id: number; project_id: number; target_ids: string; command: string;
@@ -21,8 +21,8 @@ function runTargets(run: AutoReconRun, targets: Target[]): Target[] {
 }
 
 export function formatAutoReconElapsed(run: AutoReconRun, clock = Date.now()): string {
-  const start = new Date(run.started_at || run.created_at).getTime();
-  const end = run.ended_at ? new Date(run.ended_at).getTime() : clock;
+  const start = serverTime(run.started_at || run.created_at);
+  const end = run.ended_at ? serverTime(run.ended_at) : clock;
   if (!Number.isFinite(start) || !Number.isFinite(end)) return "0초";
   const seconds = Math.max(0, Math.floor((end - start) / 1000));
   const minutes = Math.floor(seconds / 60);

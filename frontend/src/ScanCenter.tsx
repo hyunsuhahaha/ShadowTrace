@@ -9,7 +9,7 @@ import ScanHistoryPanel from "./ScanHistoryPanel";
 import AutoReconPanel from "./AutoReconPanel";
 import {useFloatingTerminal} from "./FloatingTerminal";
 import SmartTerminalOutput from "./SmartTerminalOutput";
-import { ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
+import { Button, ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import {
   bytes, elapsed, get, selectVisibleScan, syncSelectedProject, terminal, toolProfileGroups,
   type Artifact, type Automation, type Obs, type Profile, type Project,
@@ -284,6 +284,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   }, [output]);
   const beginDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!selected || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("button")) return;
     detachDrag.current = {x: event.clientX, y: event.clientY, pointerId: event.pointerId};
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -648,6 +649,10 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
                   ? `${statusLabel[selected.status] || selected.status} · ${elapsed(selected, clock)}`
                   : "대기"}
               </small>
+              {selected && ["queued", "running", "processing"].includes(selected.status) &&
+                <Button type="button" variant="quiet" onClick={() => void stop(selected.id)}>
+                  중지
+                </Button>}
               {lastEventAt && selected && <i key={lastEventAt}
                 className="scanTranscript__rx" aria-hidden="true" />}
             </div>

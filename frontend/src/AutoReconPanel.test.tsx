@@ -15,6 +15,13 @@ it("formats AutoRecon elapsed time in minutes and seconds", () => {
   new Date("2026-08-16T00:03:07Z").getTime())).toBe("3분 7초");
 });
 
+it("treats timezone-less AutoRecon timestamps as server UTC", () => {
+  expect(formatAutoReconElapsed({started_at: "2026-08-16T00:00:00", created_at: "",
+    id: 1, project_id: 10, target_ids: "[]", command: "autorecon", output_dir: "",
+    status: "running", stopped: false, error: "", imported_count: 0},
+  Date.parse("2026-08-16T00:01:05Z"))).toBe("1분 5초");
+});
+
 const targets: Target[] = [
   {id: 1, project_id: 10, name: "DC01", ip: "10.10.10.10"},
   {id: 2, project_id: 10, name: "", ip: "10.10.10.11"},
