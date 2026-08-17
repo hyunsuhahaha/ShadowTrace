@@ -24,7 +24,7 @@ export function GraphCanvas(props: {
   objectivePath?: ObjectivePath | null;
   onDropFile?: (payload: FileDragPayload) => void;
   dropFileBusy?: boolean;
-  autoReconActive?: boolean;
+  autoReconTargetIds?: number[];
 }) {
   const { data, hostCount, showHidden } = props;
   // These are read through refs inside the render loop so selection/zoom changes
@@ -34,8 +34,8 @@ export function GraphCanvas(props: {
   useEffect(() => { focusReq.current = props.focus; }, [props.focus]);
   const selectedRef = useRef(props.selected);
   useEffect(() => { selectedRef.current = props.selected; }, [props.selected]);
-  const autoReconActiveRef = useRef(!!props.autoReconActive);
-  useEffect(() => { autoReconActiveRef.current = !!props.autoReconActive; }, [props.autoReconActive]);
+  const autoReconTargetIdsRef = useRef(props.autoReconTargetIds ?? []);
+  useEffect(() => { autoReconTargetIdsRef.current = props.autoReconTargetIds ?? []; }, [props.autoReconTargetIds]);
   const pathRef = useRef<ObjectivePath | null>(props.objectivePath ?? null);
   useEffect(() => { pathRef.current = props.objectivePath ?? null; }, [props.objectivePath]);
   const zoomRef = useRef(1);  // camera zoom (mouse wheel + Ctrl +/-); persists across re-init
@@ -233,53 +233,65 @@ export function GraphCanvas(props: {
     const draw = (now = performance.now()) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      if (autoReconActiveRef.current) {
-        // Enlarge the supplied AutoRecon mark into a screen-space targeting
-        // assembly: split-color orbits, diagonal relay nodes and a square core.
-        const cx = W / 2, cy = H / 2, radius = Math.min(W, H) * .34;
-        const rotation = reduceMotion ? 0 : now / 9000;
-        const cyan = "rgba(55,174,255,.48)", violet = "rgba(133,45,232,.48)";
-        ctx.save();
-        ctx.translate(cx, cy); ctx.rotate(rotation);
-        ctx.lineWidth = Math.max(2, radius * .012);
-        [radius, radius * .72, radius * .43].forEach((r) => {
-          ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, Math.PI * 2); ctx.strokeStyle = cyan; ctx.stroke();
-          ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI); ctx.strokeStyle = violet; ctx.stroke();
-        });
-        ctx.lineWidth = Math.max(2, radius * .018);
-        for (let i = 0; i < 4; i++) {
-          const angle = Math.PI / 4 + i * Math.PI / 2;
-          const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
-          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * radius * .2, Math.sin(angle) * radius * .2);
-          ctx.lineTo(x, y); ctx.strokeStyle = i < 2 ? violet : cyan; ctx.stroke();
-          ctx.beginPath(); ctx.arc(x, y, radius * .075, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(7,9,10,.9)"; ctx.fill(); ctx.strokeStyle = i < 2 ? violet : cyan; ctx.stroke();
-        }
-        ctx.rotate(-rotation * 1.8);
-        for (let i = 0; i < 4; i++) {
-          const angle = i * Math.PI / 2;
-          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * radius * .13, Math.sin(angle) * radius * .13);
-          ctx.lineTo(Math.cos(angle) * radius * .4, Math.sin(angle) * radius * .4);
-          ctx.strokeStyle = i < 2 ? cyan : violet; ctx.stroke();
-          ctx.beginPath(); ctx.arc(Math.cos(angle) * radius * .4, Math.sin(angle) * radius * .4,
-            radius * .038, 0, Math.PI * 2); ctx.stroke();
-        }
-        const core = radius * .19;
-        ctx.shadowColor = "#8a35f0"; ctx.shadowBlur = 22;
-        ctx.strokeStyle = "rgba(139,53,240,.78)"; ctx.lineWidth = Math.max(3, radius * .022);
-        ctx.strokeRect(-core / 2, -core / 2, core, core);
-        ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(55,174,255,.64)"; ctx.lineWidth = 1;
-        ctx.strokeRect(-core * .34, -core * .34, core * .68, core * .68);
-        ctx.restore();
-        ctx.save();
-        ctx.fillStyle = "rgba(139,255,190,.72)";
-        ctx.font = "600 9px ui-monospace,monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillText("AUTORECON // ORBITAL ACQUISITION", 18, 18);
-        ctx.fillStyle = "rgba(111,214,209,.46)"; ctx.fillText("4 RELAYS LINKED  ·  CORE ENUMERATION ACTIVE", 18, 34);
-        ctx.restore();
-      }
       ctx.translate(panX, panY);
       ctx.scale(zoomRef.current, zoomRef.current);  // camera zoom: sizes AND spacing
+      const activeTargetIds = new Set(autoReconTargetIdsRef.current);
+      const autoReconHosts = nodes.filter((node) => {
+        if (node.type !== "host" || !node.source_ref) return false;
+        try {
+          const ref = JSON.parse(node.source_ref) as { module?: string; kind?: string; id?: number };
+          return ref.module === "core" && ref.kind === "target" && activeTargetIds.has(Number(ref.id));
+        } catch { return false; }
+      });
+      for (const host of autoReconHosts) {
+        const phase = reduceMotion ? 0 : now / 5200, pulse = reduceMotion ? .5 : (Math.sin(now / 260) + 1) / 2;
+        const cyan = "#37aeff", violet = "#8b35f0";
+        ctx.save(); ctx.translate(host.x, host.y);
+        ctx.shadowBlur = 20 + pulse * 18; ctx.shadowColor = violet;
+        [82, 136, 196].forEach((radius, ring) => {
+          const direction = ring === 1 ? -1 : 1, angle = phase * direction + ring * .7;
+          ctx.lineWidth = ring === 2 ? 2.4 : 1.6;
+          ctx.beginPath(); ctx.arc(0, 0, radius, angle, angle + Math.PI * .92);
+          ctx.strokeStyle = "rgba(55,174,255,.72)"; ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, radius, angle + Math.PI, angle + Math.PI * 1.92);
+          ctx.strokeStyle = "rgba(139,53,240,.72)"; ctx.stroke();
+          for (let packet = 0; packet < 3; packet++) {
+            const a = angle + packet * Math.PI * 2 / 3;
+            const x = Math.cos(a) * radius, y = Math.sin(a) * radius;
+            ctx.beginPath(); ctx.arc(x, y, 2.5 + pulse * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = packet === 1 ? violet : cyan; ctx.fill();
+          }
+        });
+        ctx.rotate(phase * .65);
+        for (let i = 0; i < 4; i++) {
+          const angle = Math.PI / 4 + i * Math.PI / 2;
+          const x = Math.cos(angle) * 196, y = Math.sin(angle) * 196;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 42, Math.sin(angle) * 42); ctx.lineTo(x, y);
+          ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.58)" : "rgba(139,53,240,.58)";
+          ctx.lineWidth = 3; ctx.stroke();
+          const travel = reduceMotion ? .7 : (now / 900 + i * .23) % 1;
+          ctx.beginPath(); ctx.arc(Math.cos(angle) * (42 + 154 * travel),
+            Math.sin(angle) * (42 + 154 * travel), 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#d5efff"; ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, 13 + pulse * 5, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(7,9,10,.86)"; ctx.fill();
+          ctx.strokeStyle = i % 2 ? cyan : violet; ctx.lineWidth = 3; ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, 20 + pulse * 10, 0, Math.PI * 2);
+          ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.22)" : "rgba(139,53,240,.22)";
+          ctx.lineWidth = 1; ctx.stroke();
+        }
+        ctx.rotate(-phase * 1.4);
+        const core = 62 + pulse * 8;
+        ctx.shadowColor = violet; ctx.shadowBlur = 30 + pulse * 22;
+        ctx.strokeStyle = "rgba(139,53,240,.92)"; ctx.lineWidth = 5;
+        ctx.strokeRect(-core / 2, -core / 2, core, core);
+        ctx.strokeStyle = "rgba(55,174,255,.9)"; ctx.lineWidth = 1.5;
+        ctx.strokeRect(-core * .37, -core * .37, core * .74, core * .74);
+        ctx.shadowBlur = 0; ctx.fillStyle = "rgba(139,255,190,.8)";
+        ctx.font = "600 9px ui-monospace,monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.fillText("AUTORECON // CORE LOCK", 0, -220);
+        ctx.restore();
+      }
       const activePath = pathRef.current;
       const pathEdgeIds = activePath ? new Set(activePath.edgeIds) : null;
       const pathNodeIds = activePath ? new Set(activePath.nodeIds) : null;

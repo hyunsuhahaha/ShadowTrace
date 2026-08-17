@@ -108,13 +108,21 @@ it("shows the empty activity stream state when nothing is happening", () => {
   expect(document.body.textContent).toContain("아직 기록된 활동이 없습니다.");
 });
 
-it("draws the orbital relay mark while AutoRecon is active", () => {
+it("centres the AutoRecon orbital relay on its target host", () => {
   const ctx = stubCanvasContext();
-  render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
-    autoReconActive selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
+  const data: GraphOut = {root_node_id: "root", nodes: [
+    {id: "root", type: "project-root", status: "untried", label: "Lab",
+      objective: false, source_ref: "", hidden: false},
+    {id: "host", type: "host", status: "untried", label: "10.0.0.5",
+      objective: false, hidden: false,
+      source_ref: JSON.stringify({module: "core", kind: "target", id: 7})},
+  ], edges: [{id: "rh", source: "root", target: "host", relation: "discovered", status: "untried"}]};
+  render(<GraphCanvas data={data} hostCount={1} showHidden={false} credentialOverlay
+    autoReconTargetIds={[7]} selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
   expect(ctx.fillText.mock.calls.map((call) => String(call[0])))
-    .toContain("AUTORECON // ORBITAL ACQUISITION");
+    .toContain("AUTORECON // CORE LOCK");
+  expect(ctx.translate).toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
 });
 
 it("renders credential badges and directional access lineage without secrets", () => {

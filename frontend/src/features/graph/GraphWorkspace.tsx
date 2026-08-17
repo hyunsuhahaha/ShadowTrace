@@ -33,7 +33,7 @@ const EmbeddedHashCracking = lazy(() => import("../../HashCrackingWorkspace"));
 const EmbeddedPostExploitation = lazy(() => import("../../PostExploitationWorkspace"));
 const EmbeddedReports = lazy(() => import("../../ReportWorkspace"));
 
-type AutoReconRun = { status: string };
+type AutoReconRun = { status: string; target_ids: string };
 
 // Vertical slice: nmap-derived host/service nodes -> API -> Graph + Outline.
 // Graph renders on Canvas 2D (renderer boundary from spec 3.4; the Pixi/WebGL
@@ -268,8 +268,15 @@ export default function GraphWorkspace() {
     queryFn: () => api<AutoReconRun[]>(`/autorecon?project_id=${projectId}`),
     refetchInterval: 2000,
   });
-  const autoReconActive = autoReconRuns.data?.some((run) =>
-    run.status === "queued" || run.status === "running") ?? false;
+  const autoReconTargetIds = useMemo(() => {
+    const ids = new Set<number>();
+    autoReconRuns.data?.filter((run) => run.status === "queued" || run.status === "running")
+      .forEach((run) => {
+        try { (JSON.parse(run.target_ids || "[]") as number[]).forEach((id) => ids.add(id)); }
+        catch { /* malformed persisted run -- no target effect */ }
+      });
+    return [...ids];
+  }, [autoReconRuns.data]);
 
   const nodeById = useMemo(() => {
     const map = new Map<string, GraphNode>();
@@ -615,7 +622,7 @@ export default function GraphWorkspace() {
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
-            autoReconActive={autoReconActive}
+            autoReconTargetIds={autoReconTargetIds}
             selected={selected} onSelect={setSelected} focus={focus} layoutMode={view}
             multiSelected={multiSelected} onToggleMultiSelect={toggleMultiSelect}
             onContext={(id, x, y) => replayAt == null && setContextMenu({ id, x, y })}
