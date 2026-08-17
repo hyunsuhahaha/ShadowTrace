@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -11,6 +12,8 @@ from ...schemas import AutoReconRunIn, AutoReconRunOut
 from ..core.support import need
 from .manager import manager
 from .service import render_autorecon_command, run_output_dir
+
+TERMINAL_STATUSES = {"completed", "failed", "stopped", "interrupted"}
 
 router = APIRouter(prefix="/api/autorecon", tags=["AutoRecon"])
 
@@ -54,16 +57,34 @@ async def start_run(body: AutoReconRunIn, db: Session = Depends(get_db)):
 
 @router.get("/{run_id}/events")
 async def run_events(run_id: int, db: Session = Depends(get_db)):
-    need(db, AutoReconRun, run_id)
+    run = need(db, AutoReconRun, run_id)
     queue = manager.subscribe(run_id)
+    stdout_path = Path(run.output_dir) / "stdout.txt" if run.output_dir else None
+    stderr_path = Path(run.output_dir) / "stderr.txt" if run.output_dir else None
 
     async def stream():
         try:
+            # Replays everything captured so far as one "snapshot" event --
+            # without this, reopening this panel (switching workspaces and
+            # back, or just re-selecting the run) started a brand new
+            # subscription with no history, so the transcript looked like it
+            # had been wiped even though the run itself was still going.
+            if stdout_path and stdout_path.is_file():
+                data = stdout_path.read_bytes()[-manager.stream_limit:].decode(errors="replace")
+                if stderr_path and stderr_path.is_file() and stderr_path.stat().st_size:
+                    data += "\n[stderr]\n" + stderr_path.read_bytes()[
+                        -manager.stream_limit:].decode(errors="replace")
+                yield f"data: {json.dumps({'stream': 'snapshot', 'data': data})}\n\n"
+            yield f"data: {json.dumps({'stream': 'status', 'status': run.status, 'exit_code': run.exit_code, 'error': run.error, 'imported_count': run.imported_count})}\n\n"
+            if run.status in TERMINAL_STATUSES:
+                return
             while True:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=10)
                 except asyncio.TimeoutError:
-                    item = {"stream": "heartbeat"}
+                    process = manager.processes.get(run_id)
+                    item = {"stream": "heartbeat",
+                            "process_alive": bool(process and process.returncode is None)}
                 yield f"data: {json.dumps(item)}\n\n"
                 if item.get("stream") == "status":
                     break

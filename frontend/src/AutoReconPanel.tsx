@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFloatingTerminal } from "./FloatingTerminal";
 import { Badge, Button, ErrorState } from "./ui";
 import { get, terminal, type Target } from "./scanCenterModel";
 
@@ -39,7 +40,10 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
     "idle" | "connecting" | "connected" | "disconnected"
   >("idle");
   const transcript = useRef<HTMLPreElement>(null);
+  const transcriptPanel = useRef<HTMLDivElement>(null);
+  const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
   const qc = useQueryClient();
+  const {floatingScanId, floatingEndpoint, floatScan} = useFloatingTerminal();
 
   const runs = useQuery({
     queryKey: ["autoReconRuns", projectId],
@@ -48,21 +52,35 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
     refetchInterval: 4000,
   });
   const activeRun = runs.data?.find((r) => r.id === activeRunId);
+  const activeRunTargets = activeRun ? runTargets(activeRun, targets) : [];
+  const isFloated = floatingEndpoint === "autorecon" && floatingScanId === activeRunId;
 
   // Mirrors ScanCenter's own single-scan SSE useEffect (same event shape:
-  // {stream: "stdout"|"stderr"|"status", ...}) -- a real `autorecon`
-  // invocation is one process for however many targets were selected, so
-  // there's exactly one transcript to show, not one per target.
+  // {stream: "stdout"|"stderr"|"status"|"snapshot"|"imported", ...}) -- a
+  // real `autorecon` invocation is one process for however many targets
+  // were selected, so there's exactly one transcript to show, not one per
+  // target. Once floated, FloatingTerminalProvider owns this run's SSE
+  // connection instead (see FloatingTerminal.tsx) -- skip subscribing again
+  // here so the two don't fight over the same event stream.
   useEffect(() => {
-    if (!activeRunId) return;
+    if (!activeRunId || isFloated) return;
     setStreamState("connecting");
     setOutput("");
     const events = new EventSource(`/api/autorecon/${activeRunId}/events`);
     events.onopen = () => setStreamState("connected");
     events.onmessage = async (e) => {
       const item = JSON.parse(e.data);
+      // The backend replays everything captured so far as one "snapshot"
+      // event on every new connection -- without it, switching to another
+      // workspace and back (which unmounts this component) looked like the
+      // log had been wiped, even though the run itself was still going.
+      if (item.stream === "snapshot") setOutput(item.data);
       if (item.stream === "stdout") setOutput((v) => v + item.data);
       if (item.stream === "stderr") setOutput((v) => v + `[stderr] ${item.data}`);
+      if (item.stream === "imported") {
+        await qc.invalidateQueries({ queryKey: ["autoReconRuns", projectId] });
+        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+      }
       if (item.stream === "status") {
         setStreamState("idle");
         setOutput((v) => v + (item.error ? `\n[${item.status}] ${item.error}\n`
@@ -74,7 +92,7 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
     };
     events.onerror = () => { setStreamState("disconnected"); events.close(); };
     return () => events.close();
-  }, [activeRunId, projectId, qc]);
+  }, [activeRunId, projectId, qc, isFloated]);
 
   useEffect(() => {
     const panel = transcript.current;
@@ -84,6 +102,37 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   const stopRun = async (id: number) => {
     await fetch(`/api/autorecon/${id}/stop`, { method: "POST" });
     await qc.invalidateQueries({ queryKey: ["autoReconRuns", projectId] });
+  };
+
+  const beginDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!activeRun || event.button !== 0) return;
+    // The header also holds the "중지" button -- don't start a drag capture
+    // from a press that's actually aimed at it.
+    if ((event.target as HTMLElement).closest("button")) return;
+    detachDrag.current = {x: event.clientX, y: event.clientY, pointerId: event.pointerId};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = detachDrag.current;
+    if (!start || !activeRun || !transcriptPanel.current) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) return;
+    const firstTarget = activeRunTargets[0];
+    floatScan({
+      scanId: activeRun.id, projectId: projectId || 0,
+      targetId: firstTarget?.id || 0,
+      targetIp: activeRunTargets.map((t) => t.ip).join(", ") || "multiple targets",
+      command: activeRun.command, source: "autorecon", status: activeRun.status,
+      exitCode: activeRun.exit_code ?? undefined, linkType: "local",
+      initialOutput: output, endpoint: "autorecon",
+    }, transcriptPanel.current.getBoundingClientRect());
+    detachDrag.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const finishDetach = (event: ReactPointerEvent<HTMLDivElement>) => {
+    detachDrag.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   return (
@@ -101,8 +150,8 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
       <p className="autoReconPanel__hint">
         선택한 대상 전체를 실제 AutoRecon(Tib3rius) 한 번의 실행으로 넘깁니다 — 전체 포트
         스캔 후 발견된 서비스마다 맞는 열거 도구를 자동으로 병렬 실행하고, 결과를 대상별
-        폴더(scans/tcp&lt;포트&gt;/)에 정리합니다. 완료되면 서비스와 각 명령 결과가 그래프에
-        자동으로 반영됩니다.
+        폴더(scans/tcp&lt;포트&gt;/)에 정리합니다. 실행 중에도 15초마다 지금까지 나온 결과를
+        그래프에 반영합니다.
       </p>
       <div className="autoReconTargetPicker">
         <div className="autoReconTargetPicker__actions">
@@ -147,8 +196,9 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
         {!runs.isLoading && !runs.data?.length &&
           <p className="empty">아직 실행한 AutoRecon이 없습니다.</p>}
       </div>
-      {activeRun && <div className="terminal autoReconTranscript">
-        <div className="terminalStatus">
+      {activeRun && !isFloated && <div ref={transcriptPanel} className="terminal autoReconTranscript">
+        <div className="terminalStatus" onPointerDown={beginDetach} onPointerMove={moveDetach}
+          onPointerUp={finishDetach} onPointerCancel={finishDetach}>
           <span className="termDots" aria-hidden="true">
             <i className="termDot" /><i className="termDot termDot--yellow" />
             <i className="termDot termDot--green" />
@@ -169,6 +219,8 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
           {output || "..."}
         </pre>
       </div>}
+      {activeRun && isFloated &&
+        <p className="empty">플로팅 창으로 이동됨 — [ 원위치 ] 버튼으로 되돌릴 수 있습니다.</p>}
     </section>
   );
 }

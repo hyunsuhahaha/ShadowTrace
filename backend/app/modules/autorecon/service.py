@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import time
 from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,6 +8,14 @@ from ...config import WORKSPACE_DIR
 from ...models import AutoReconRun, Execution, Project, ScanJob, Service, Target
 from ..core.support import safe_part
 from ..scan_center.service import capture_scan_evidence, ingest_xml
+
+# A plugin's output file can still be mid-write when a poll lands on it
+# (feroxbuster in particular streams matches out over minutes) -- importing
+# a half-written file would capture it forever, since import_autorecon_run
+# is dedup'd by output_path and never revisits a path it's already seen.
+# Skipping anything modified more recently than this just defers it to the
+# next poll, once the plugin has actually finished with it.
+_QUIET_PERIOD_SECONDS = 8
 
 
 def run_output_dir(project: Project, run_id: int) -> Path:
@@ -29,17 +38,45 @@ def render_autorecon_command(targets: list[Target], output_dir: Path) -> list[st
             "--only-scans-dir", "-o", str(output_dir)]
 
 
+def _bookkeeping_scan_job(db: Session, project: Project, target: Target,
+                          run: AutoReconRun) -> ScanJob:
+    """One ScanJob per (run, target), reused across every poll of the same
+    run -- run.command is unique per AutoReconRun (it embeds that run's own
+    output_dir), so it doubles as a stable lookup key without a new column."""
+    job = db.scalar(select(ScanJob).where(
+        ScanJob.project_id == project.id, ScanJob.target_id == target.id,
+        ScanJob.source == "autorecon", ScanJob.command == run.command))
+    if job:
+        return job
+    job = ScanJob(project_id=project.id, target_id=target.id, source="autorecon",
+                  status="completed", command=run.command)
+    db.add(job)
+    db.flush()
+    return job
+
+
 def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
-    """Walk a completed autorecon run's real output tree and turn it into
-    the same Service/ServiceObservation/Execution/graph-node shapes a manual
-    scan + per-command run would have produced. Reuses ingest_xml/
-    capture_scan_evidence wholesale (Service upsert, positive-NSE Finding
-    auto-capture) via a bookkeeping-only ScanJob per target, in the same
+    """Walk an autorecon run's real output tree and turn whatever's landed
+    so far into the same Service/ServiceObservation/Execution/graph-node
+    shapes a manual scan + per-command run would have produced. Reuses
+    ingest_xml/capture_scan_evidence wholesale (Service upsert, positive-NSE
+    Finding auto-capture) via a bookkeeping ScanJob per target, in the same
     order ScanManager._run already uses for a manual scan -- rather than
-    re-deriving any of that logic here."""
+    re-deriving any of that logic here.
+
+    Safe to call repeatedly against the same still-running run (the
+    AutoReconManager poll loop does, every few seconds): the bookkeeping
+    ScanJob is reused rather than recreated, ingest_xml/capture_scan_evidence
+    are already dedup'd internally (Service upsert by port, Finding dedup by
+    an internal_notes marker), and each result file is only ever turned into
+    one Execution (matched by output_path) no matter how many times this
+    runs. Returns the number of *new* Executions created by this call, not a
+    running total -- callers accumulate into run.imported_count themselves.
+    """
     project = db.get(Project, run.project_id)
     target_ids = json.loads(run.target_ids or "[]")
     imported = 0
+    now = time.time()
     for target_id in target_ids:
         target = db.get(Target, target_id)
         if not target:
@@ -47,13 +84,13 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         scans_dir = Path(run.output_dir) / target.ip / "scans"
         if not scans_dir.is_dir():
             continue
-        job = ScanJob(project_id=project.id, target_id=target.id, source="autorecon",
-                      status="completed", command=run.command)
-        db.add(job)
-        db.flush()
+        job = _bookkeeping_scan_job(db, project, target, run)
         xml_path = scans_dir / "xml" / "_full_tcp_nmap.xml"
         if xml_path.is_file() and xml_path.stat().st_size:
-            ingest_xml(db, job, target, project, xml_path.read_bytes(), xml_path.name)
+            try:
+                ingest_xml(db, job, target, project, xml_path.read_bytes(), xml_path.name)
+            except ValueError:
+                pass  # nmap -oX still mid-write; the next poll will retry
         capture_scan_evidence(db, job)
         for port_dir in sorted(scans_dir.glob("tcp*")):
             if not port_dir.is_dir():
@@ -67,6 +104,11 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
                 Service.protocol == "tcp"))
             for result_file in sorted(port_dir.iterdir()):
                 if result_file.is_dir() or result_file.suffix not in (".txt", ".html"):
+                    continue
+                if now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS:
+                    continue
+                if db.scalar(select(Execution.id).where(
+                        Execution.output_path == str(result_file))):
                     continue
                 # AutoRecon names files tcp_<port>_<service>_<plugin>.txt --
                 # strip both prefixes so the label reads as just the plugin.

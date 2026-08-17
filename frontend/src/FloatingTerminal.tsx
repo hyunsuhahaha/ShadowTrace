@@ -19,6 +19,12 @@ type ScanSession = {
   linkType: string;
   initialOutput: string;
   returnHash?: string;
+  // Which backend owns this session's SSE stream -- "scans" (default, Scan
+  // Center's own single-target jobs) or "autorecon" (AutoReconPanel's real
+  // multi-target runs). Both endpoints emit the same event shape (stdout/
+  // stderr/status/snapshot), so this only changes the URL and a couple of
+  // display strings, not the streaming logic itself.
+  endpoint?: "scans" | "autorecon";
 };
 type Frame = {x: number; y: number; width: number; height: number};
 type FloatingContent = {
@@ -38,6 +44,7 @@ type FloatingContent = {
 };
 type FloatingTerminalContextValue = {
   floatingScanId?: number;
+  floatingEndpoint?: "scans" | "autorecon";
   isTerminalFloating: (id: string) => boolean;
   floatScan: (session: ScanSession, rect: DOMRect) => void;
   floatTerminal: (terminal: Omit<FloatingContent, "kind" | "returnHash">, rect: DOMRect) => void;
@@ -111,13 +118,14 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
     if (!session) return;
     setOutput(session.initialOutput || "");
     setStream("ATTACHING");
-    const events = new EventSource(`/api/scans/${session.scanId}/events`);
+    const events = new EventSource(`/api/${session.endpoint || "scans"}/${session.scanId}/events`);
     events.onopen = () => setStream("RX LIVE");
     events.onmessage = (event) => {
       const item = JSON.parse(event.data);
       if (item.stream === "snapshot") setOutput(item.data);
       if (item.stream === "stdout") setOutput((value) => value + item.data);
       if (item.stream === "stderr") setOutput((value) => value + `[stderr] ${item.data}`);
+      if (item.stream === "imported") dispatchEvent(new CustomEvent("oscp-graph-refresh"));
       if (item.stream === "status") {
         setFloating((current) => current && current.session.scanId === session.scanId
           ? {session: {...current.session,
@@ -126,12 +134,13 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
         if (["completed", "failed", "stopped", "interrupted"].includes(item.status)) {
           setStream("STREAM CLOSED");
           events.close();
+          dispatchEvent(new CustomEvent("oscp-graph-refresh"));
         }
       }
     };
     events.onerror = () => { setStream("LINK LOST"); events.close(); };
     return () => events.close();
-  }, [session?.scanId]);
+  }, [session?.scanId, session?.endpoint]);
   useEffect(() => {
     const resize = () => {
       const clamped = clampFrame(frameRef.current);
@@ -265,6 +274,7 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   </>;
 
   return <Context.Provider value={{floatingScanId: session?.scanId,
+    floatingEndpoint: session?.endpoint,
     isTerminalFloating, floatScan, floatTerminal, updateTerminal, closeTerminal}}>
     {children}
     {floatingTerminals.map(({terminal, frame: itemFrame}) => createPortal(
@@ -293,7 +303,9 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
         <header className="floatingTerminal__bar" onPointerDown={begin("move")}>
           <span className="termDots" aria-hidden="true"><i className="termDot" />
             <i className="termDot termDot--yellow" /><i className="termDot termDot--green" /></span>
-          <div><b>&gt; scan://{session.targetIp}/session/{session.scanId}</b></div>
+          <div><b>&gt; {session.endpoint === "autorecon"
+            ? `autorecon://${session.targetIp}/run/${session.scanId}`
+            : `scan://${session.targetIp}/session/${session.scanId}`}</b></div>
           <small>{statusCopy[session.status] || session.status}</small>
           <div className="floatingTerminal__fontControls" aria-label="터미널 글자 크기">
             <button type="button" title="글자 축소" aria-label="터미널 글자 축소"

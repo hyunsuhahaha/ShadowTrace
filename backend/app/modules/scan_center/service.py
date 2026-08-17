@@ -155,11 +155,19 @@ def ingest_xml(db: Session, job: ScanJob, target: Target, project: Project,
     folder = scan_directory(project, target, job.id)
     xml_path = folder / "nmap.xml"
     xml_path.write_bytes(content)
-    db.add(ScanArtifact(
-        scan_job_id=job.id, kind="xml", path=str(xml_path),
-        sha256=hashlib.sha256(content).hexdigest(), size=len(content),
-        original_name=Path(original_name).name[:255],
-    ))
+    content_sha256 = hashlib.sha256(content).hexdigest()
+    # ingest_xml can be called more than once against the same job (e.g.
+    # AutoRecon's incremental import polls a still-growing nmap XML) --
+    # skip re-registering an artifact whose content hasn't actually changed
+    # since the last call, rather than piling up identical rows.
+    if not db.scalar(select(ScanArtifact.id).where(
+            ScanArtifact.scan_job_id == job.id, ScanArtifact.kind == "xml",
+            ScanArtifact.sha256 == content_sha256)):
+        db.add(ScanArtifact(
+            scan_job_id=job.id, kind="xml", path=str(xml_path),
+            sha256=content_sha256, size=len(content),
+            original_name=Path(original_name).name[:255],
+        ))
     db.add(HostObservation(scan_job_id=job.id, target_id=target.id,
                            ip=host["ip"], hostname=host["hostname"],
                            os_guess=host["os_guess"]))

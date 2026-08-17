@@ -1,9 +1,11 @@
 import json
+import os
+import time
 from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import AutoReconRun, Execution, Project, Service, Target
+from app.models import AutoReconRun, Execution, Project, ScanJob, Service, Target
 from app.modules.autorecon.service import (
     import_autorecon_run, render_autorecon_command, run_output_dir,
 )
@@ -26,6 +28,13 @@ def _fake_results_tree(base: Path, ip: str) -> None:
     tcp80.mkdir()
     (tcp80 / "tcp_80_http_whatweb.txt").write_text("WhatWeb report for http://127.0.0.1:80\n")
     (tcp80 / "tcp_80_http_nikto.txt").write_text("- Nikto v2.5.0\n---------------------------\n")
+    # import_autorecon_run skips anything modified within the last
+    # _QUIET_PERIOD_SECONDS (still-being-written plugin output) -- backdate
+    # these so the fixture reads as "settled" the way a real completed
+    # plugin file would by the time a poll (or the final import) reaches it.
+    settled = time.time() - 60
+    for result_file in tcp80.iterdir():
+        os.utime(result_file, (settled, settled))
 
 
 def test_render_autorecon_command_never_passes_single_target():
@@ -94,3 +103,60 @@ def test_import_autorecon_run_skips_a_target_with_no_results_tree(tmp_path):
 
     assert imported == 0
     assert db.query(Execution).count() == 0
+
+
+def test_import_autorecon_run_skips_a_result_file_thats_still_being_written(tmp_path):
+    # A plugin (feroxbuster in particular) can still be appending to its
+    # output file when a poll lands on it -- importing that half-written
+    # content would freeze it forever, since a file is never revisited once
+    # its output_path has an Execution. Leaving the file at its natural
+    # (just-now) mtime, unlike _fake_results_tree's settled fixture, should
+    # defer it instead of importing a partial result.
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    scans = tmp_path / "127.0.0.1" / "scans"
+    (scans / "xml").mkdir(parents=True)
+    (scans / "xml" / "_full_tcp_nmap.xml").write_bytes(
+        b"""<nmaprun><host><address addr="127.0.0.1"/><ports>
+        <port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port>
+        </ports></host></nmaprun>""")
+    tcp80 = scans / "tcp80"
+    tcp80.mkdir()
+    (tcp80 / "tcp_80_http_feroxbuster_dirbuster.txt").write_text("still going...\n")
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="running")
+    db.add(run); db.commit()
+
+    imported = import_autorecon_run(db, run)
+
+    assert imported == 0
+    assert db.query(Execution).count() == 0
+
+
+def test_import_autorecon_run_is_safe_to_call_repeatedly_without_duplicating(tmp_path):
+    # The manager's poll loop calls this every few seconds against the same
+    # still-running run -- it must not create a second bookkeeping ScanJob,
+    # a second Service/Finding/Evidence pass, or a second Execution for a
+    # file it already imported.
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    _fake_results_tree(tmp_path, "127.0.0.1")
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="running")
+    db.add(run); db.commit()
+
+    first = import_autorecon_run(db, run)
+    second = import_autorecon_run(db, run)
+
+    assert first == 2
+    assert second == 0
+    assert db.query(Execution).count() == 2
+    assert db.query(ScanJob).filter_by(source="autorecon").count() == 1

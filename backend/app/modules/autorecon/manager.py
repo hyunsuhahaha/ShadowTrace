@@ -1,11 +1,19 @@
 from __future__ import annotations
 import asyncio
+import contextlib
 import os
 import signal
+from pathlib import Path
 from ...database import SessionLocal
 from ...models import AutoReconRun
 from ...time import utcnow
 from .service import import_autorecon_run
+
+# How often to re-walk a still-running run's output tree and pull in
+# whatever's landed since the last pass -- independent of the live stdout
+# stream, so the graph doesn't sit empty for the whole (often many-minute)
+# run just because nothing's imported until the process exits.
+POLL_INTERVAL_SECONDS = 15.0
 
 # Much simpler than ScanManager (scan_center/manager.py): no chaining, no
 # mid-flight XML/artifact registration -- one subprocess per run, and the
@@ -39,6 +47,29 @@ class AutoReconManager:
         if subscribers:
             subscribers.discard(queue)
 
+    async def _poll_import(self, run_id: int) -> None:
+        """Runs alongside the subprocess for as long as it's alive, re-walking
+        the output tree every POLL_INTERVAL_SECONDS so services/results show
+        up in the graph well before the (often many-minute) run finishes.
+        import_autorecon_run is dedup-safe against being re-called on a
+        still-growing tree -- see its docstring."""
+        while True:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            with SessionLocal() as db:
+                run = db.get(AutoReconRun, run_id)
+                if not run or run.status not in ("queued", "running"):
+                    return
+                try:
+                    new_count = import_autorecon_run(db, run)
+                    run.imported_count += new_count
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    continue
+            if new_count:
+                await self._publish(run_id, {
+                    "stream": "imported", "imported_count": new_count})
+
     async def _run(self, run_id: int, argv: list[str]) -> None:
         async with self.semaphore:
             with SessionLocal() as db:
@@ -46,9 +77,11 @@ class AutoReconManager:
                 if not run or run.status == "stopped":
                     return
                 run.status = "running"; run.started_at = utcnow(); db.commit()
+                output_dir = Path(run.output_dir)
             await self._publish(run_id, {"stream": "status", "status": "running"})
             streamed = 0
             stream_notice_sent = False
+            stdout_path, stderr_path = output_dir / "stdout.txt", output_dir / "stderr.txt"
             try:
                 # stdin MUST be DEVNULL, not inherited/PIPE-unset -- without a
                 # real TTY on stdin, AutoRecon's keyboard-status thread calls
@@ -58,18 +91,28 @@ class AutoReconManager:
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     start_new_session=True)
                 self.processes[run_id] = process
-                async def pump(stream, kind: str):
+                async def pump(stream, path: Path, kind: str):
                     nonlocal streamed, stream_notice_sent
-                    while line := await stream.readline():
-                        if streamed < self.stream_limit:
-                            streamed += len(line)
-                            await self._publish(run_id, {
-                                "stream": kind, "data": line.decode(errors="replace")})
-                        elif not stream_notice_sent:
-                            stream_notice_sent = True
-                            await self._publish(run_id, {"stream": "stdout",
-                                "data": "\n[live output limit reached]\n"})
-                await asyncio.gather(pump(process.stdout, "stdout"), pump(process.stderr, "stderr"))
+                    with path.open("wb") as saved:
+                        while line := await stream.readline():
+                            saved.write(line); saved.flush()
+                            if streamed < self.stream_limit:
+                                streamed += len(line)
+                                await self._publish(run_id, {
+                                    "stream": kind, "data": line.decode(errors="replace")})
+                            elif not stream_notice_sent:
+                                stream_notice_sent = True
+                                await self._publish(run_id, {"stream": "stdout",
+                                    "data": "\n[live output limit reached; full output remains in stdout.txt]\n"})
+                poll_task = asyncio.create_task(self._poll_import(run_id))
+                try:
+                    await asyncio.gather(
+                        pump(process.stdout, stdout_path, "stdout"),
+                        pump(process.stderr, stderr_path, "stderr"))
+                finally:
+                    poll_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await poll_task
                 code = await process.wait()
                 with SessionLocal() as db:
                     run = db.get(AutoReconRun, run_id)
@@ -79,11 +122,16 @@ class AutoReconManager:
                     # AutoRecon can exit non-zero from a single flaky plugin
                     # while still producing plenty of useful output for the
                     # rest, and a stopped run may have partial results too.
-                    run.imported_count = import_autorecon_run(db, run)
+                    # Dedup-safe against the incremental polls above, so this
+                    # only picks up whatever the last poll hadn't gotten to
+                    # yet (including anything still inside the quiet-period
+                    # window at that point).
+                    run.imported_count += import_autorecon_run(db, run)
                     db.commit()
-                    status = run.status
+                    status, imported_count = run.status, run.imported_count
                 await self._publish(run_id, {
-                    "stream": "status", "status": status, "exit_code": code})
+                    "stream": "status", "status": status, "exit_code": code,
+                    "imported_count": imported_count})
             except Exception as exc:
                 with SessionLocal() as db:
                     run = db.get(AutoReconRun, run_id)

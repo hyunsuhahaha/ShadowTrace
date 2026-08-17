@@ -3,6 +3,7 @@ import {cleanup, fireEvent, render, screen} from "@testing-library/react";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {afterEach, expect, it, vi} from "vitest";
 import AutoReconPanel from "./AutoReconPanel";
+import {FloatingTerminalProvider} from "./FloatingTerminal";
 import type {Target} from "./scanCenterModel";
 
 afterEach(cleanup);
@@ -20,7 +21,9 @@ function renderPanel(overrides: Partial<Parameters<typeof AutoReconPanel>[0]> = 
     onSelectRun: vi.fn(),
     ...overrides,
   };
-  render(<QueryClientProvider client={client}><AutoReconPanel {...props} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><FloatingTerminalProvider>
+    <AutoReconPanel {...props} />
+  </FloatingTerminalProvider></QueryClientProvider>);
   return props;
 }
 
@@ -105,4 +108,102 @@ it("streams the active run's live output over SSE and shows the imported-count s
   const source = FakeEventSource.instances.at(-1)!;
   source.onmessage?.({data: JSON.stringify({stream: "stdout", data: "[*] Scanning 10.10.10.10\n"})});
   expect(await screen.findByText(/Scanning 10.10.10.10/)).toBeTruthy();
+});
+
+it("replays the backend's snapshot as the full transcript instead of appending it", async () => {
+  class FakeEventSource {
+    static instances: FakeEventSource[] = [];
+    onopen: (() => void) | null = null;
+    onmessage: ((e: {data: string}) => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) { FakeEventSource.instances.push(this); }
+    close() {}
+  }
+  vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
+    new Response(JSON.stringify([
+      {id: 5, project_id: 10, target_ids: "[1]", command: "autorecon 10.10.10.10",
+       output_dir: "/tmp/out", status: "running", stopped: false, error: "",
+       imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
+    ]), {headers: {"Content-Type": "application/json"}}))));
+  renderPanel({activeRunId: 5});
+
+  await screen.findByText("실행 #5 · running");
+  const source = FakeEventSource.instances.at(-1)!;
+  // Re-subscribing (e.g. after switching workspaces and back, which
+  // unmounts and remounts this component) starts with an empty local
+  // `output` state -- the backend's very first event on any new
+  // subscription is a "snapshot" carrying everything captured so far,
+  // which is what's supposed to repopulate the transcript instead of it
+  // looking wiped.
+  source.onmessage?.({data: JSON.stringify({
+    stream: "snapshot", data: "[*] Scanning target 10.10.10.10\n[*] Discovered open port tcp/22\n",
+  })});
+  expect(await screen.findByText(/Discovered open port tcp\/22/)).toBeTruthy();
+});
+
+it("refreshes the run list and the graph when an incremental import lands mid-run", async () => {
+  class FakeEventSource {
+    static instances: FakeEventSource[] = [];
+    onopen: (() => void) | null = null;
+    onmessage: ((e: {data: string}) => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) { FakeEventSource.instances.push(this); }
+    close() {}
+  }
+  vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return Promise.resolve(new Response(JSON.stringify([
+      {id: 5, project_id: 10, target_ids: "[1]", command: "autorecon 10.10.10.10",
+       output_dir: "/tmp/out", status: "running", stopped: false, error: "",
+       imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
+    ]), {headers: {"Content-Type": "application/json"}}));
+  }));
+  const graphRefresh = vi.fn();
+  addEventListener("oscp-graph-refresh", graphRefresh);
+  renderPanel({activeRunId: 5});
+
+  await screen.findByText("실행 #5 · running");
+  const callsBeforeImport = calls.length;
+  const source = FakeEventSource.instances.at(-1)!;
+  await source.onmessage?.({data: JSON.stringify({stream: "imported", imported_count: 3})});
+
+  expect(graphRefresh).toHaveBeenCalled();
+  await vi.waitFor(() => expect(calls.length).toBeGreaterThan(callsBeforeImport));
+  removeEventListener("oscp-graph-refresh", graphRefresh);
+});
+
+it("floats the transcript when the header is dragged, same as the single-target scan panel", async () => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({
+    matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    addListener: vi.fn(), removeListener: vi.fn(),
+  })));
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  Object.defineProperties(HTMLElement.prototype, {
+    setPointerCapture: {configurable: true, value: vi.fn()},
+    hasPointerCapture: {configurable: true, value: () => true},
+    releasePointerCapture: {configurable: true, value: vi.fn()},
+  });
+  vi.stubGlobal("EventSource", class {
+    onopen: (() => void) | null = null; onmessage: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) {}
+    close() {}
+  } as unknown as typeof EventSource);
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
+    new Response(JSON.stringify([
+      {id: 5, project_id: 10, target_ids: "[1]", command: "autorecon 10.10.10.10",
+       output_dir: "/tmp/out", status: "running", stopped: false, error: "",
+       imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
+    ]), {headers: {"Content-Type": "application/json"}}))));
+  renderPanel({activeRunId: 5});
+  const header = await screen.findByText("실행 #5 · running");
+
+  fireEvent.pointerDown(header, {button: 0, pointerId: 1, clientX: 50, clientY: 60});
+  fireEvent.pointerMove(header, {pointerId: 1, clientX: 90, clientY: 100});
+
+  expect(await screen.findByLabelText("플로팅 스캔 터미널 #5")).toBeTruthy();
+  expect(screen.getByText(/플로팅 창으로 이동됨/)).toBeTruthy();
 });

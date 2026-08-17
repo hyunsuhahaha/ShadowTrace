@@ -29,6 +29,15 @@ function DetachFromGraph() {
   }, new DOMRect(40, 60, 680, 420))}>분리</button>;
 }
 
+function DetachAutoReconRun() {
+  const {floatScan} = useFloatingTerminal();
+  return <button onClick={() => floatScan({
+    scanId: 7, projectId: 1, targetId: 3, targetIp: "10.129.255.39, 10.129.255.40",
+    command: "autorecon 10.129.255.39 10.129.255.40", source: "autorecon",
+    status: "running", linkType: "local", initialOutput: "", endpoint: "autorecon",
+  }, new DOMRect(40, 60, 680, 420))}>autorecon 분리</button>;
+}
+
 function GraphExecutionTerminal() {
   return <DetachableTerminal id="graph-execution-42" label="그래프 실행 결과">
     <section aria-label="실행 결과">
@@ -135,6 +144,24 @@ test("공용 터미널은 헤더 drag로 전역 floating 된다", () => {
 
   expect(screen.getByLabelText("플로팅 터미널 그래프 실행 결과")).toBeTruthy();
   expect(screen.getByText("OpenSSH 8.0p1")).toBeTruthy();
+});
+
+test("endpoint가 autorecon이면 /api/scans가 아니라 /api/autorecon 이벤트 스트림을 구독한다", () => {
+  class RecordingEventSource {
+    static urls: string[] = [];
+    onopen = null; onmessage = null; onerror = null;
+    constructor(url: string) { RecordingEventSource.urls.push(url); }
+    close = vi.fn();
+  }
+  vi.stubGlobal("EventSource", RecordingEventSource);
+  render(<FloatingTerminalProvider><DetachAutoReconRun /></FloatingTerminalProvider>);
+
+  fireEvent.click(screen.getByRole("button", {name: "autorecon 분리"}));
+
+  expect(RecordingEventSource.urls).toEqual(["/api/autorecon/7/events"]);
+  const terminal = screen.getByLabelText("플로팅 스캔 터미널 #7");
+  expect(terminal.querySelector(".floatingTerminal__bar")?.textContent)
+    .toContain("autorecon://10.129.255.39, 10.129.255.40/run/7");
 });
 
 test("여러 xterm 창을 동시에 유지하고 각각 닫는다", () => {
