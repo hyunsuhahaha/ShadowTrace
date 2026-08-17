@@ -640,7 +640,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             startError={autoReconError}
             activeRunId={autoReconRunId}
             onSelectRun={setAutoReconRunId} />}
-          {!floatingScanId && <div key={selected?.id || "idle"} ref={transcriptPanel}
+          {!floatingScanId && (selected || !autoReconMode) && <div key={selected?.id || "idle"} ref={transcriptPanel}
             className={`terminal scanTerminal scanTranscript${selected ? " scanTranscript--attached" : ""}`}>
             <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : "terminalStatus"}
               onPointerDown={beginDetach} onPointerMove={moveDetach}
