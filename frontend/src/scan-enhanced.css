@@ -50,7 +50,7 @@
    layout here. Without this the profile picker's description column collapses and
    the heading renders one glyph per line. */
 .scanPage--embedded .scanLayout { display: block; }
-.scanPage--embedded .scanProfiles { max-height: 160px; }
+.scanPage--embedded .scanProfiles { max-height: none; overflow: visible; }
 .scanPage--embedded .scanHistory { display: none; }
 .scanPage--embedded .scanCenter { padding: 18px; }
 .scanPage--embedded nav a { display: none; }
