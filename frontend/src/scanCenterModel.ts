@@ -179,6 +179,9 @@ export const bytes = (n: number) =>
 export const selectVisibleScan = (currentId: number | undefined, scans: Scan[]) =>
   currentId ?? scans[0]?.id;
 
+export const selectableScanJobs = (scans: Scan[]) =>
+  scans.filter((scan) => scan.source !== "autorecon");
+
 export const selectInitialScanTarget = (
   graphTargetId: number | undefined,
   projectId: number | undefined,

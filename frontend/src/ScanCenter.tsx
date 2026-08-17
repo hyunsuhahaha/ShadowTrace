@@ -11,8 +11,8 @@ import {useFloatingTerminal} from "./FloatingTerminal";
 import SmartTerminalOutput from "./SmartTerminalOutput";
 import { Button, ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import {
-  bytes, elapsed, get, selectInitialScanTarget, selectVisibleScan, syncSelectedProject, terminal,
-  toolProfileGroups,
+  bytes, elapsed, get, selectableScanJobs, selectInitialScanTarget, selectVisibleScan,
+  syncSelectedProject, terminal, toolProfileGroups,
   type Artifact, type Automation, type Obs, type Profile, type Project,
   type Scan, type Target, type VpnStatus,
 } from "./scanCenterModel";
@@ -115,6 +115,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
       queryFn: () => get<VpnStatus>("/vpn/status"),
       refetchInterval: 3000,
     });
+  const scanJobs = useMemo(() => selectableScanJobs(scans.data || []), [scans.data]);
   const masscanBlockedByVpn =
     !!vpnStatus.data?.connected && vpnStatus.data?.link_type === "tun";
   // The project is chosen once, in AppShell's header dropdown; every other
@@ -147,14 +148,14 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
       try { return JSON.parse(localStorage.getItem("oscp-scan-dock") || "null"); }
       catch { return null; }
     })();
-    if (pending?.scanId && scans.data.some((scan) => scan.id === pending.scanId)) {
+    if (pending?.scanId && scanJobs.some((scan) => scan.id === pending.scanId)) {
       setScanId(pending.scanId);
       localStorage.removeItem("oscp-scan-dock");
       requestAnimationFrame(() => transcriptPanel.current?.scrollIntoView({block: "center"}));
       return;
     }
-    setScanId(selectVisibleScan(scanId, scans.data));
-  }, [scans.data, scanId]);
+    setScanId(selectVisibleScan(scanId, scanJobs));
+  }, [scans.data, scanJobs, scanId]);
   useEffect(() => {
     if (tool === "masscan" && masscanBlockedByVpn) setTool("nmap");
   }, [tool, masscanBlockedByVpn]);
@@ -171,7 +172,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   }, [tool, profiles.data]);
   const profile = profiles.data?.find((x) => x.id === profileId),
     target = targets.data?.find((x) => x.id === targetId),
-    selected = scans.data?.find((x) => x.id === scanId),
+    selected = scanJobs.find((x) => x.id === scanId),
     payload = () => ({
       target_id: targetId,
       target_ip: targetIp.trim(),
@@ -310,7 +311,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   };
   const visibleScans = useMemo(
       () =>
-        (scans.data || []).filter(
+        scanJobs.filter(
           (s) =>
             (statusFilter === "all" || s.status === statusFilter) &&
             (!query ||
@@ -318,7 +319,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
                 .toLowerCase()
                 .includes(query.toLowerCase())),
         ),
-      [scans.data, statusFilter, query],
+      [scanJobs, statusFilter, query],
     ),
     changedPorts = useMemo(
       () =>
@@ -369,8 +370,8 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
       [obs.data],
     ),
     chainedScan = useMemo(
-      () => scans.data?.find((s) => s.parent_scan_id === selected?.id),
-      [scans.data, selected?.id],
+      () => scanJobs.find((s) => s.parent_scan_id === selected?.id),
+      [scanJobs, selected?.id],
     ),
     xmlArtifact = useMemo(
       () => artifacts.data?.find((a) => a.kind === "xml"),
@@ -594,7 +595,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
               </option>
             ))}
         </select>
-        <span className="tools">스캔 기록 {scans.data?.length || 0}개</span>
+        <span className="tools">스캔 기록 {scanJobs.length}개</span>
       </nav>
       <main className="scanLayout">
         <ScanToolPicker tool={tool} masscanBlockedByVpn={masscanBlockedByVpn}
@@ -689,7 +690,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
           <div className="scanStats">
             <div>
               <span>스캔</span>
-              <b>{scans.data?.length || 0}</b>
+              <b>{scanJobs.length}</b>
             </div>
             <div>
               <span>열린 포트</span>
@@ -807,7 +808,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
           </>}
         </section>
         <ScanHistoryPanel
-          visibleScans={visibleScans} allScans={scans.data} scanId={scanId}
+          visibleScans={visibleScans} allScans={scanJobs} scanId={scanId}
           isLoading={scans.isLoading} error={scans.error}
           query={query} statusFilter={statusFilter}
           onQueryChange={setQuery} onStatusFilterChange={setStatusFilter}

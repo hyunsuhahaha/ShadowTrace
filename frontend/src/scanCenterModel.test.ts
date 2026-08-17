@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { selectInitialScanTarget, selectVisibleScan, serverTime, syncSelectedProject,
+import { selectableScanJobs, selectInitialScanTarget, selectVisibleScan, serverTime, syncSelectedProject,
   type Scan } from "./scanCenterModel";
 
 describe("scan timestamps", () => {
@@ -23,6 +23,13 @@ describe("scan selection", () => {
 
   it("selects the newest visible scan only when nothing is selected", () => {
     expect(selectVisibleScan(undefined, [scan(25), scan(24)])).toBe(25);
+  });
+
+  it("keeps internal AutoRecon bookkeeping jobs out of Scan Center", () => {
+    expect(selectableScanJobs([
+      {id: 67, source: "autorecon"} as Scan,
+      {id: 66, source: "nmap"} as Scan,
+    ]).map((item) => item.id)).toEqual([66]);
   });
 });
 
