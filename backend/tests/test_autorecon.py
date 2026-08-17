@@ -163,7 +163,7 @@ def test_import_autorecon_run_is_safe_to_call_repeatedly_without_duplicating(tmp
     assert db.query(ScanJob).filter_by(source="autorecon").count() == 1
 
 
-def test_import_autorecon_run_still_imports_result_files_when_the_xml_is_truncated(tmp_path):
+def test_import_autorecon_run_uses_quick_xml_while_full_xml_is_truncated(tmp_path):
     # Regression test: a full -p- nmap scan against a real target can take
     # long enough that _full_tcp_nmap.xml is still mid-write (truncated,
     # unclosed tags) well after per-service result files have already
@@ -184,8 +184,13 @@ def test_import_autorecon_run_still_imports_result_files_when_the_xml_is_truncat
     (scans / "xml" / "_full_tcp_nmap.xml").write_bytes(
         b'<nmaprun><host><address addr="127.0.0.1"/><ports>\n'
         b'<port protocol="tcp" portid="80"><state state="open"/>')
+    (scans / "xml" / "_quick_tcp_nmap.xml").write_bytes(
+        b'<nmaprun><host><address addr="127.0.0.1"/><ports>'
+        b'<port protocol="tcp" portid="80"><state state="open"/>'
+        b'<service name="http"/></port></ports></host></nmaprun>')
     settled = time.time() - 60
     os.utime(scans / "xml" / "_full_tcp_nmap.xml", (settled, settled))
+    os.utime(scans / "xml" / "_quick_tcp_nmap.xml", (settled, settled))
     tcp80 = scans / "tcp80"
     tcp80.mkdir()
     (tcp80 / "tcp_80_http_whatweb.txt").write_text("WhatWeb report for http://127.0.0.1:80\n")
@@ -198,9 +203,44 @@ def test_import_autorecon_run_still_imports_result_files_when_the_xml_is_truncat
     imported = import_autorecon_run(db, run)
 
     assert imported == 1
+    service = db.query(Service).one()
     execution = db.query(Execution).one()
-    # No Service exists yet (the truncated XML never got parsed), so the
-    # service-name-prefix strip doesn't fire and the Execution still lands
-    # with service_id=None rather than being dropped entirely.
-    assert execution.template_id == "autorecon-http_whatweb"
+    assert execution.template_id == "autorecon-whatweb"
+    assert execution.service_id == service.id
+
+
+def test_import_autorecon_run_relinks_an_execution_imported_before_service(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    scans = tmp_path / "127.0.0.1" / "scans"
+    tcp80 = scans / "tcp80"
+    tcp80.mkdir(parents=True)
+    result = tcp80 / "tcp_80_http_whatweb.txt"
+    result.write_text("WhatWeb report for http://127.0.0.1:80\n")
+    settled = time.time() - 60
+    os.utime(result, (settled, settled))
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="running")
+    db.add(run); db.commit()
+
+    assert import_autorecon_run(db, run) == 1
+    execution = db.query(Execution).one()
     assert execution.service_id is None
+
+    xml_dir = scans / "xml"
+    xml_dir.mkdir()
+    quick_xml = xml_dir / "_quick_tcp_nmap.xml"
+    quick_xml.write_bytes(
+        b'<nmaprun><host><address addr="127.0.0.1"/><ports>'
+        b'<port protocol="tcp" portid="80"><state state="open"/>'
+        b'<service name="http"/></port></ports></host></nmaprun>')
+    os.utime(quick_xml, (settled, settled))
+
+    assert import_autorecon_run(db, run) == 0
+    db.refresh(execution)
+    assert execution.service_id == db.query(Service).one().id
+    assert execution.template_id == "autorecon-whatweb"

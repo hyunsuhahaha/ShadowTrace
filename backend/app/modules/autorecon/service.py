@@ -86,23 +86,35 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         if not scans_dir.is_dir():
             continue
         job = _bookkeeping_scan_job(db, project, target, run)
-        xml_path = scans_dir / "xml" / "_full_tcp_nmap.xml"
-        if (xml_path.is_file() and xml_path.stat().st_size
-                and now - xml_path.stat().st_mtime >= _QUIET_PERIOD_SECONDS):
+        xml_dir = scans_dir / "xml"
+        aggregate_xml = [xml_dir / "_full_tcp_nmap.xml",
+                         xml_dir / "_quick_tcp_nmap.xml"]
+        ingested_aggregate = False
+        for xml_path in aggregate_xml:
+            if (not xml_path.is_file() or not xml_path.stat().st_size
+                    or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+                continue
             try:
-                ingest_xml(db, job, target, project, xml_path.read_bytes(), xml_path.name)
+                ingest_xml(db, job, target, project,
+                           xml_path.read_bytes(), xml_path.name)
+                ingested_aggregate = True
+                break
             except (ValueError, ParseError):
-                # nmap -oX for a full 65535-port scan can still be mid-write
-                # even past the quiet-period check (a long scan can pause
-                # between flushes) -- the next poll retries. This used to be
-                # `except ValueError`, which never matched: ParseError is a
-                # SyntaxError subclass, not a ValueError, so a truncated XML
-                # file crashed this entire function and skipped the file
-                # import loop below on every single poll (confirmed live --
-                # a run sat at imported_count=0 for 4+ minutes with real
-                # per-service result files already sitting on disk,
-                # unimported, because this exception was never caught).
-                pass
+                # The full -p- scan is commonly still mid-write after the
+                # quick scan has already discovered services. Fall through
+                # to the next complete AutoRecon XML instead of leaving
+                # plugin executions attached directly to the host.
+                continue
+        if not ingested_aggregate:
+            for xml_path in sorted(scans_dir.glob("tcp*/xml/*.xml")):
+                if (not xml_path.stat().st_size
+                        or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+                    continue
+                try:
+                    ingest_xml(db, job, target, project,
+                               xml_path.read_bytes(), xml_path.name)
+                except (ValueError, ParseError):
+                    continue
         capture_scan_evidence(db, job)
         for port_dir in sorted(scans_dir.glob("tcp*")):
             if not port_dir.is_dir():
@@ -119,14 +131,19 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
                     continue
                 if now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS:
                     continue
-                if db.scalar(select(Execution.id).where(
-                        Execution.output_path == str(result_file))):
-                    continue
                 # AutoRecon names files tcp_<port>_<service>_<plugin>.txt --
                 # strip both prefixes so the label reads as just the plugin.
                 slug = result_file.stem.removeprefix(f"tcp_{port}_")
                 if service and slug.startswith(f"{service.name}_"):
                     slug = slug[len(service.name) + 1:]
+                existing = db.scalar(select(Execution).where(
+                    Execution.output_path == str(result_file)))
+                if existing:
+                    if service and existing.service_id is None:
+                        existing.service_id = service.id
+                        existing.template_id = f"autorecon-{slug}"[:100]
+                        existing.command = f"(AutoRecon) {slug}"
+                    continue
                 try:
                     content = result_file.read_text(errors="replace")[:2_000_000]
                 except OSError:
