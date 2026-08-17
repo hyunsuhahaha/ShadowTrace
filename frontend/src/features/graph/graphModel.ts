@@ -87,10 +87,9 @@ function findingFileName(node: Pick<GraphNode, "type" | "label">): string | unde
   return path.split(/[\\/]/).pop()?.trim() || undefined;
 }
 
-// A found flag deserves to look like one instead of blending into every
-// other Draft finding at the same dull gray "untried" status -- matches
-// the usual OSCP/HTB deliverable filenames.
-const FLAG_FILENAME = /^(flag\d*|local|proof|root|user)\.txt$/i;
+// Only an explicitly named flag.txt gets the flag treatment. Other common
+// text filenames can contain ordinary notes or AutoRecon output.
+const FLAG_FILENAME = /^flag\.txt$/i;
 export function isFlagFinding(node: Pick<GraphNode, "type" | "label">): boolean {
   return FLAG_FILENAME.test(findingFileName(node) ?? "");
 }
