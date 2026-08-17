@@ -721,7 +721,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 existing.meta = meta
                 continue
             node = create_node(
-                db, project_id, "technique", label="AutoRecon 결과물",
+                db, project_id, "technique", label=f"AutoRecon 결과물 #{run.id}",
                 status="succeeded" if run.status == "completed" else "attempt-failed",
                 source_ref=_source_ref("autorecon", "autorecon_results", job.id),
                 meta=meta, provenance=json.dumps({"source": "autorecon",

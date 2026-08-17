@@ -43,7 +43,10 @@ def _final_import_once(run_id: int) -> int:
         run = db.get(AutoReconRun, run_id)
         if not run:
             return 0
-        run.imported_count += import_autorecon_run(db, run)
+        # The subprocess has exited, so every writer is closed. Applying the
+        # live-run quiet period here loses all results from short runs forever
+        # because there is no later poll after terminal status.
+        run.imported_count += import_autorecon_run(db, run, require_quiet=False)
         db.commit()
         return run.imported_count
 

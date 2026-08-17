@@ -274,6 +274,8 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
     같은 SSE 이벤트 셰이프({"stream":"stdout"/"stderr"/"status", ...})로 스트리밍
     (stdin은 반드시 DEVNULL)
   → 프로세스 종료 시 import_autorecon_run(db, run) 호출
+      실행 중 폴링은 최근 8초 내 수정된 파일을 건너뛰지만, 프로세스 종료 후 최종 패스는
+      writer가 모두 닫혔으므로 quiet period 없이 즉시 임포트한다(짧은 실행 결과 유실 방지).
       never --single-target으로 실행하므로(대상 1개든 여러 개든) 결과는 항상
       <output_dir>/<대상 IP>/scans/... 형태 -- 라이브로 확인한 실제 레이아웃.
       대상마다 부기용 ScanJob(source="autorecon")을 하나 만들어 기존
@@ -289,7 +291,7 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       생성하며, 완료 후 전역 스캔 출력·운영 로그·report/exploit/loot 실제 파일은
       ScanArtifact/Evidence로 등록한다.
   → 실행 중 activity는 별도 Run 노드가 아니라 대상 Host 메타에 기록돼 Host 중심 스캔
-    이펙트를 구동한다. 종료 후에는 대상별 `AutoRecon 결과물` technique을 Host 아래 만들고
+    이펙트를 구동한다. 종료 후에는 대상별 `AutoRecon 결과물 #<run_id>` technique을 Host 아래 만들고
     `/api/autorecon/results/{scan_job_id}`에서 scans/exploit/loot/report 트리를 탐색한다.
     파일 클릭은 `/preview` 인라인 뷰어, 다운로드는 `/download`, 캔버스 드래그는 `/promote`로
     Evidence + Draft Finding을 만들어 결과물 노드 아래에 영구 배치한다.

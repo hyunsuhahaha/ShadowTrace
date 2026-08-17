@@ -121,7 +121,7 @@ def test_result_tree_and_download_are_scoped_to_the_target_directory(tmp_path):
     preview = preview_result(job.id, "report/notes.txt", db)
     assert preview.body == b"done"
     result_node = graph_service.create_node(
-        db, project.id, "technique", label="AutoRecon 결과물",
+        db, project.id, "technique", label="AutoRecon 결과물 #1",
         source_ref=json.dumps({"module": "autorecon", "kind": "autorecon_results",
                                "id": job.id}))
     promoted = promote_result(job.id, ResultFileIn(
@@ -236,6 +236,24 @@ def test_import_autorecon_run_skips_a_result_file_thats_still_being_written(tmp_
 
     assert imported == 0
     assert db.query(Execution).count() == 0
+
+
+def test_final_import_accepts_fresh_files_after_the_process_has_exited(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    result = tmp_path / target.ip / "scans" / "tcp80" / "tcp_80_http_whatweb.txt"
+    result.parent.mkdir(parents=True)
+    result.write_text("fresh but closed")
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="completed")
+    db.add(run); db.commit()
+
+    assert import_autorecon_run(db, run, require_quiet=False) == 1
+    assert db.query(Execution).one().service_id == db.query(Service).one().id
 
 
 def test_import_autorecon_run_is_safe_to_call_repeatedly_without_duplicating(tmp_path):

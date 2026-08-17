@@ -83,7 +83,7 @@ def _register_native_artifacts(db: Session, job: ScanJob, target_dir: Path) -> N
                             original_name=path.name[:255]))
 
 
-def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
+def import_autorecon_run(db: Session, run: AutoReconRun, *, require_quiet: bool = True) -> int:
     """Walk an autorecon run's real output tree and turn whatever's landed
     so far into the same Service/ServiceObservation/Execution/graph-node
     shapes a manual scan + per-command run would have produced. Reuses
@@ -105,6 +105,8 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
     target_ids = json.loads(run.target_ids or "[]")
     imported = 0
     now = time.time()
+    def settled(path: Path) -> bool:
+        return not require_quiet or now - path.stat().st_mtime >= _QUIET_PERIOD_SECONDS
     for target_id in target_ids:
         target = db.get(Target, target_id)
         if not target:
@@ -122,7 +124,7 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         for aggregate_xml in aggregate_groups:
             for xml_path in aggregate_xml:
                 if (not xml_path.is_file() or not xml_path.stat().st_size
-                        or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+                        or not settled(xml_path)):
                     continue
                 try:
                     ingest_xml(db, job, target, project,
@@ -131,8 +133,7 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
                 except (ValueError, ParseError):
                     continue
         for xml_path in sorted(scans_dir.glob("*p*/xml/*.xml")):
-            if (not xml_path.stat().st_size
-                    or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+            if not xml_path.stat().st_size or not settled(xml_path):
                 continue
             try:
                 ingest_xml(db, job, target, project,
@@ -144,7 +145,7 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         capture_scan_evidence(db, job)
         def import_result(result_file: Path, protocol: str, port: int) -> int:
             if (result_file.is_dir() or result_file.suffix not in (".txt", ".html")
-                    or now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+                    or not settled(result_file)):
                 return 0
             service = db.scalar(select(Service).where(
                 Service.target_id == target.id, Service.port == port,

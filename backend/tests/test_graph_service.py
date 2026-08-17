@@ -524,7 +524,7 @@ def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
 
     labels = {node.label: node for node in db.query(GraphNode).all()}
     assert "AutoRecon Run #1" not in labels
-    assert "AutoRecon 결과물" not in labels
+    assert "AutoRecon 결과물 #1" not in labels
     assert "AutoRecon · Quick TCP Scan" not in labels
     assert json.loads(labels["10.0.0.71"].meta)["activity"]["label"] == "AUTORECON"
 
@@ -532,7 +532,7 @@ def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
     service.sync_from_project(db, p.id)
 
     labels = {node.label: node for node in db.query(GraphNode).all()}
-    result = labels["AutoRecon 결과물"]
+    result = labels["AutoRecon 결과물 #1"]
     assert "activity" not in json.loads(labels["10.0.0.71"].meta)
     assert json.loads(result.source_ref)["kind"] == "autorecon_results"
     edge = db.query(GraphEdge).filter_by(target=result.id).one()
