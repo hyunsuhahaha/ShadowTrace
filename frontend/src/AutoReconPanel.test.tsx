@@ -66,6 +66,20 @@ it("keeps the start button disabled until scope is acknowledged and a target is 
   expect(props.onStart).toHaveBeenCalled();
 });
 
+it("passes native AutoRecon options with the start request", () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
+    new Response(JSON.stringify([]), {headers: {"Content-Type": "application/json"}}))));
+  const props = renderPanel({selectedIds: new Set([1])});
+  fireEvent.click(screen.getByText("AutoRecon 고급 옵션"));
+  fireEvent.change(screen.getByPlaceholderText(/--tags safe/), {
+    target: {value: "--tags safe --heartbeat 30"},
+  });
+  fireEvent.click(screen.getByText(/SCOPE ACKNOWLEDGEMENT/).closest("label")!
+    .querySelector("input")!);
+  fireEvent.click(screen.getByText(/AutoRecon 시작/));
+  expect(props.onStart).toHaveBeenCalledWith("--tags safe --heartbeat 30");
+});
+
 it("shows an empty state when the project has no AutoRecon runs yet", async () => {
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
     new Response(JSON.stringify([]), {headers: {"Content-Type": "application/json"}}))));

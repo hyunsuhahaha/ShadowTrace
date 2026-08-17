@@ -119,6 +119,7 @@
 .autoReconPanel__hint{margin:10px 0 14px;color:#7d948a;font-size:11px;line-height:1.6}
 .autoReconTargetPicker{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);background:#0a0f11;padding:8px}
 .autoReconTargetPicker__actions{display:flex;gap:6px;margin-bottom:4px}
+.autoReconOptions{margin-top:10px;border:1px solid var(--line);background:#090e0f;padding:9px 11px}.autoReconOptions summary{cursor:pointer;color:#91a59e;font-size:10px}.autoReconOptions label{display:grid;gap:6px;margin-top:10px}.autoReconOptions label span{color:var(--term-cursor);font-size:9px}.autoReconOptions textarea{min-height:64px;resize:vertical;border:1px solid #293932;background:#060a0b;color:var(--text);padding:9px;font:10px/1.5 ui-monospace,monospace}.autoReconOptions small{display:block;margin-top:6px;color:#62756e;font-size:8px;line-height:1.5}
 .autoReconTargetRow{display:flex;align-items:baseline;gap:8px;padding:6px 7px;font-size:12px;cursor:pointer;border-radius:2px}
 .autoReconTargetRow:hover{background:#111c1f}
 .autoReconTargetRow span{color:var(--muted);font-size:10px}

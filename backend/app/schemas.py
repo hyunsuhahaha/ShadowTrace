@@ -149,6 +149,7 @@ class ObservationOut(ORM):
 class AutoReconRunIn(BaseModel):
     project_id: int
     target_ids: list[int] = Field(min_length=1, max_length=50)
+    arguments: str = Field(default="", max_length=4000)
 
 class AutoReconRunOut(ORM):
     id: int; project_id: int; target_ids: str; command: str; output_dir: str

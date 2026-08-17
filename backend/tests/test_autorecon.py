@@ -5,7 +5,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import AutoReconRun, Execution, Project, ScanJob, Service, Target
+from app.models import AutoReconRun, Execution, Project, ScanArtifact, ScanJob, Service, Target
 from app.modules.autorecon.service import (
     import_autorecon_run, render_autorecon_command, run_output_dir,
 )
@@ -50,6 +50,18 @@ def test_render_autorecon_command_never_passes_single_target():
     assert "--single-target" not in argv
     assert "--disable-keyboard-control" in argv
     assert "--ignore-plugin-checks" in argv
+    assert "--only-scans-dir" not in argv
+
+
+def test_render_autorecon_command_passes_native_options_through():
+    target = Target(project_id=1, name="a", ip="10.10.10.10")
+    argv = render_autorecon_command(
+        [target], Path("/tmp/out"),
+        ["--tags", "safe", "--heartbeat", "15", "--timeout", "120"])
+    assert argv == [
+        "autorecon", "10.10.10.10", "--disable-keyboard-control",
+        "--ignore-plugin-checks", "--tags", "safe", "--heartbeat", "15",
+        "--timeout", "120", "-o", "/tmp/out"]
 
 
 def test_run_output_dir_is_scoped_by_project_and_run_id():
@@ -244,3 +256,61 @@ def test_import_autorecon_run_relinks_an_execution_imported_before_service(tmp_p
     db.refresh(execution)
     assert execution.service_id == db.query(Service).one().id
     assert execution.template_id == "autorecon-whatweb"
+
+
+def test_import_autorecon_run_imports_udp_services_and_results(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    scans = tmp_path / "127.0.0.1" / "scans"
+    xml_dir = scans / "xml"
+    xml_dir.mkdir(parents=True)
+    udp_xml = xml_dir / "_top_100_udp_nmap.xml"
+    udp_xml.write_bytes(
+        b'<nmaprun><host><address addr="127.0.0.1"/><ports>'
+        b'<port protocol="udp" portid="161"><state state="open"/>'
+        b'<service name="snmp"/></port></ports></host></nmaprun>')
+    udp161 = scans / "udp161"
+    udp161.mkdir()
+    result = udp161 / "udp_161_snmp_snmpwalk.txt"
+    result.write_text("SNMPv2-MIB::sysDescr.0 = Linux\n")
+    settled = time.time() - 60
+    os.utime(udp_xml, (settled, settled))
+    os.utime(result, (settled, settled))
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="running")
+    db.add(run); db.commit()
+
+    assert import_autorecon_run(db, run) == 1
+    service = db.query(Service).one()
+    execution = db.query(Execution).one()
+    assert (service.protocol, service.port, service.name) == ("udp", 161, "snmp")
+    assert execution.service_id == service.id
+    assert execution.template_id == "autorecon-snmpwalk"
+
+
+def test_import_autorecon_run_registers_native_logs_after_completion(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    scans = tmp_path / "127.0.0.1" / "scans"
+    scans.mkdir(parents=True)
+    commands = scans / "_commands.log"
+    commands.write_text("nmap -sV 127.0.0.1\n")
+    report = tmp_path / "127.0.0.1" / "report" / "report.md"
+    report.parent.mkdir()
+    report.write_text("# AutoRecon report\n")
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="completed")
+    db.add(run); db.commit()
+
+    import_autorecon_run(db, run)
+
+    paths = {Path(row.path) for row in db.query(ScanArtifact).all()}
+    assert {commands, report} <= paths

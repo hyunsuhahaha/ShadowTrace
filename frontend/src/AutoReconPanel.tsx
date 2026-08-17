@@ -37,7 +37,7 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   onToggle: (id: number) => void;
   onSelectAll: () => void;
   onClear: () => void;
-  onStart: () => void;
+  onStart: (argumentsText: string) => void;
   starting: boolean;
   startError?: string;
   activeRunId?: number;
@@ -50,6 +50,7 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   >("idle");
   const [clock, setClock] = useState(Date.now());
   const [lastEventAt, setLastEventAt] = useState<number>();
+  const [argumentsText, setArgumentsText] = useState("");
   const transcript = useRef<HTMLPreElement>(null);
   const transcriptPanel = useRef<HTMLDivElement>(null);
   const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
@@ -168,6 +169,15 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
         </span>
         <em>{selectedIds.size}개 선택됨</em>
       </div>
+      <details className="autoReconOptions">
+        <summary>AutoRecon 고급 옵션</summary>
+        <label>
+          <span>CLI 인자</span>
+          <textarea value={argumentsText} onChange={(e) => setArgumentsText(e.target.value)}
+            placeholder="--tags safe --heartbeat 30 --timeout 120" />
+        </label>
+        <small>대상과 출력 경로는 앱이 관리합니다. 나머지 AutoRecon 옵션은 원본 문법 그대로 전달됩니다.</small>
+      </details>
       <p className="autoReconPanel__hint">
         선택한 대상 전체를 실제 AutoRecon(Tib3rius) 한 번의 실행으로 넘깁니다 — 전체 포트
         스캔 후 발견된 서비스마다 맞는 열거 도구를 자동으로 병렬 실행하고, 결과를 대상별
@@ -195,7 +205,7 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
       </label>
       {startError && <ErrorState message={startError} />}
       <Button type="button" disabled={!scopeConfirmed || !selectedIds.size || starting}
-        onClick={onStart}>
+        onClick={() => onStart(argumentsText)}>
         {starting ? "시작하는 중…" : `AutoRecon 시작 (${selectedIds.size}개 대상)`}
       </Button>
       <div className="autoReconRuns">

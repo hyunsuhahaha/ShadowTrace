@@ -491,7 +491,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   // The real `autorecon` binary batches every target into one process/output
   // tree, so this is a single POST -- not a loop like the single-target
   // "review scan" flow above.
-  const startAutoRecon = async () => {
+  const startAutoRecon = async (argumentsText = "") => {
     if (!effectiveProjectId || !autoReconSelected.size) return;
     setAutoReconStarting(true);
     setAutoReconError("");
@@ -501,6 +501,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project_id: effectiveProjectId, target_ids: Array.from(autoReconSelected),
+          arguments: argumentsText,
         }),
       });
       if (!r.ok) {
@@ -605,7 +606,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             onToggle={toggleAutoReconTarget}
             onSelectAll={selectAllAutoReconTargets}
             onClear={clearAutoReconTargets}
-            onStart={() => void startAutoRecon()}
+            onStart={(argumentsText) => void startAutoRecon(argumentsText)}
             starting={autoReconStarting}
             startError={autoReconError}
             activeRunId={autoReconRunId}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -6,7 +7,7 @@ from xml.etree.ElementTree import ParseError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
-from ...models import AutoReconRun, Execution, Project, ScanJob, Service, Target
+from ...models import AutoReconRun, Execution, Project, ScanArtifact, ScanJob, Service, Target
 from ..core.support import safe_part
 from ..scan_center.service import capture_scan_evidence, ingest_xml
 
@@ -23,20 +24,24 @@ def run_output_dir(project: Project, run_id: int) -> Path:
     return WORKSPACE_DIR / "projects" / safe_part(project.name) / "autorecon" / str(run_id)
 
 
-def render_autorecon_command(targets: list[Target], output_dir: Path) -> list[str]:
+def render_autorecon_command(targets: list[Target], output_dir: Path,
+                             extra_args: list[str] | None = None) -> list[str]:
     # --disable-keyboard-control: without it AutoRecon tries to read live
     # keypresses from stdin and crashes with termios.error the moment it's
     # not attached to a real TTY (confirmed live -- this subprocess never is).
     # --ignore-plugin-checks: AutoRecon refuses to start at all if ANY
     # referenced tool is missing (e.g. oracle-scanner/tnscmd10g aren't
     # installed here); this degrades those specific plugins instead.
-    # --only-scans-dir: skip exploit/loot/report scaffolding we don't use.
     # Never pass --single-target, even for one target, so the output layout
     # (<output_dir>/<ip>/scans/...) is identical for 1 or N targets --
     # confirmed live, this is what the importer below relies on.
+    extra_args = extra_args or []
+    managed = {"-o", "--output", "-t", "--target-file", "--single-target"}
+    if any(arg in managed or arg.startswith("--output=") for arg in extra_args):
+        raise ValueError("Target and output layout are managed by OSCP Workspace")
     return ["autorecon", *(target.ip for target in targets),
             "--disable-keyboard-control", "--ignore-plugin-checks",
-            "--only-scans-dir", "-o", str(output_dir)]
+            *extra_args, "-o", str(output_dir)]
 
 
 def _bookkeeping_scan_job(db: Session, project: Project, target: Target,
@@ -54,6 +59,26 @@ def _bookkeeping_scan_job(db: Session, project: Project, target: Target,
     db.add(job)
     db.flush()
     return job
+
+
+def _register_native_artifacts(db: Session, job: ScanJob, target_dir: Path) -> None:
+    paths = [target_dir / "scans" / name for name in
+             ("_commands.log", "_manual_commands.txt", "_patterns.log")]
+    report_dir = target_dir / "report"
+    if report_dir.is_dir():
+        paths.extend(path for path in report_dir.rglob("*") if path.is_file())
+    for path in paths:
+        if not path.is_file():
+            continue
+        content = path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        if db.scalar(select(ScanArtifact.id).where(
+                ScanArtifact.scan_job_id == job.id,
+                ScanArtifact.path == str(path), ScanArtifact.sha256 == digest)):
+            continue
+        db.add(ScanArtifact(scan_job_id=job.id, kind="command_output",
+                            path=str(path), sha256=digest, size=len(content),
+                            original_name=path.name[:255]))
 
 
 def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
@@ -82,58 +107,58 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         target = db.get(Target, target_id)
         if not target:
             continue
-        scans_dir = Path(run.output_dir) / target.ip / "scans"
+        target_dir = Path(run.output_dir) / target.ip
+        scans_dir = target_dir / "scans"
         if not scans_dir.is_dir():
             continue
         job = _bookkeeping_scan_job(db, project, target, run)
         xml_dir = scans_dir / "xml"
-        aggregate_xml = [xml_dir / "_full_tcp_nmap.xml",
-                         xml_dir / "_quick_tcp_nmap.xml"]
-        ingested_aggregate = False
-        for xml_path in aggregate_xml:
-            if (not xml_path.is_file() or not xml_path.stat().st_size
-                    or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
-                continue
-            try:
-                ingest_xml(db, job, target, project,
-                           xml_path.read_bytes(), xml_path.name)
-                ingested_aggregate = True
-                break
-            except (ValueError, ParseError):
-                # The full -p- scan is commonly still mid-write after the
-                # quick scan has already discovered services. Fall through
-                # to the next complete AutoRecon XML instead of leaving
-                # plugin executions attached directly to the host.
-                continue
-        if not ingested_aggregate:
-            for xml_path in sorted(scans_dir.glob("tcp*/xml/*.xml")):
-                if (not xml_path.stat().st_size
+        aggregate_groups = [
+            [xml_dir / "_full_tcp_nmap.xml", xml_dir / "_quick_tcp_nmap.xml"],
+            [xml_dir / "_top_100_udp_nmap.xml", xml_dir / "_custom_ports_udp_nmap.xml"],
+        ]
+        for aggregate_xml in aggregate_groups:
+            for xml_path in aggregate_xml:
+                if (not xml_path.is_file() or not xml_path.stat().st_size
                         or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
                     continue
                 try:
                     ingest_xml(db, job, target, project,
                                xml_path.read_bytes(), xml_path.name)
+                    break
                 except (ValueError, ParseError):
                     continue
-        capture_scan_evidence(db, job)
-        for port_dir in sorted(scans_dir.glob("tcp*")):
-            if not port_dir.is_dir():
+        for xml_path in sorted(scans_dir.glob("*p*/xml/*.xml")):
+            if (not xml_path.stat().st_size
+                    or now - xml_path.stat().st_mtime < _QUIET_PERIOD_SECONDS):
                 continue
             try:
-                port = int(port_dir.name.removeprefix("tcp"))
+                ingest_xml(db, job, target, project,
+                           xml_path.read_bytes(), xml_path.name)
+            except (ValueError, ParseError):
+                continue
+        if run.status not in {"queued", "running"}:
+            _register_native_artifacts(db, job, target_dir)
+        capture_scan_evidence(db, job)
+        for port_dir in sorted(scans_dir.glob("*p*")):
+            protocol = port_dir.name[:3]
+            if not port_dir.is_dir() or protocol not in {"tcp", "udp"}:
+                continue
+            try:
+                port = int(port_dir.name[3:])
             except ValueError:
                 continue
             service = db.scalar(select(Service).where(
                 Service.target_id == target.id, Service.port == port,
-                Service.protocol == "tcp"))
+                Service.protocol == protocol))
             for result_file in sorted(port_dir.iterdir()):
                 if result_file.is_dir() or result_file.suffix not in (".txt", ".html"):
                     continue
                 if now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS:
                     continue
-                # AutoRecon names files tcp_<port>_<service>_<plugin>.txt --
+                # AutoRecon names files <protocol>_<port>_<service>_<plugin>.txt --
                 # strip both prefixes so the label reads as just the plugin.
-                slug = result_file.stem.removeprefix(f"tcp_{port}_")
+                slug = result_file.stem.removeprefix(f"{protocol}_{port}_")
                 if service and slug.startswith(f"{service.name}_"):
                     slug = slug[len(service.name) + 1:]
                 existing = db.scalar(select(Execution).where(

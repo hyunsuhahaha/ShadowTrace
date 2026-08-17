@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shlex
 import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,13 +43,18 @@ async def start_run(body: AutoReconRunIn, db: Session = Depends(get_db)):
     for target in targets:
         if target.project_id != project.id:
             raise HTTPException(400, "Target does not belong to project")
+    try:
+        extra_args = shlex.split(body.arguments)
+        render_autorecon_command(targets, Path("."), extra_args)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     row = AutoReconRun(project_id=project.id, target_ids=json.dumps(body.target_ids),
                        status="queued")
     db.add(row); db.commit(); db.refresh(row)
     output_dir = run_output_dir(project, row.id)
     output_dir.mkdir(parents=True, exist_ok=True)
-    argv = render_autorecon_command(targets, output_dir)
-    row.command = " ".join(argv)
+    argv = render_autorecon_command(targets, output_dir, extra_args)
+    row.command = shlex.join(argv)
     row.output_dir = str(output_dir)
     db.commit(); db.refresh(row)
     manager.enqueue(row.id, argv)

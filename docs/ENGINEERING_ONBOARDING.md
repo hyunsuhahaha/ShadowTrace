@@ -259,12 +259,12 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 (`backend/app/modules/system.py`의 TOOLS 안내 문구에도 명시).
 
 ```text
-POST /api/autorecon/run {project_id, target_ids}
+POST /api/autorecon/run {project_id, target_ids, arguments?}
   → AutoReconRun 행 생성(대상 여러 개를 하나의 실행으로 묶음 -- ScanJob과 달리
     항상 대상 1개=행 1개가 아니다)
   → render_autorecon_command()가 argv 구성:
     ["autorecon", *ip들, "--disable-keyboard-control", "--ignore-plugin-checks",
-     "--only-scans-dir", "-o", output_dir]
+     *사용자 고급 인자, "-o", output_dir]
     (각 플래그가 왜 필수인지는 코드 주석 참고 -- 특히 --disable-keyboard-control
     없으면 TTY 없는 서브프로세스 환경에서 termios.error로 바로 죽는다, 라이브로 확인함)
   → AutoReconManager._run()이 서브프로세스 실행, stdout/stderr를 기존 실행/스캔과
@@ -276,10 +276,11 @@ POST /api/autorecon/run {project_id, target_ids}
       대상마다 부기용 ScanJob(source="autorecon")을 하나 만들어 기존
       ingest_xml()/capture_scan_evidence()를 그대로 재사용(Service upsert,
       ServiceObservation, NSE 긍정 결과 자동 Finding까지 공짜로 얻음), 그다음
-      scans/tcp<port>/ 밑의 .txt/.html 파일마다(파일명에서 플러그인 slug만 뽑아
+      scans/tcp<port>/와 scans/udp<port>/ 밑의 .txt/.html 파일마다(파일명에서 플러그인 slug만 뽑아
       template_id="autorecon-<slug>") Execution을 직접 생성 -- 서브프로세스를 또
       띄우는 게 아니라 이미 끝난 결과 파일을 그대로 가져오는 것이므로
-      start_execution()을 거치지 않는다.
+      start_execution()을 거치지 않는다. AutoRecon의 exploit/loot/report 디렉터리도 원형대로
+      생성하며, 완료 후 운영 로그와 report 파일은 ScanArtifact/Evidence로 등록한다.
   → 이 Execution들은 다른 Execution과 똑같이 그래프 동기화가 자동으로 집어간다
 ```
 
