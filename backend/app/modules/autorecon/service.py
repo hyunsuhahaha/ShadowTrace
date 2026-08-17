@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
@@ -86,11 +87,22 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
             continue
         job = _bookkeeping_scan_job(db, project, target, run)
         xml_path = scans_dir / "xml" / "_full_tcp_nmap.xml"
-        if xml_path.is_file() and xml_path.stat().st_size:
+        if (xml_path.is_file() and xml_path.stat().st_size
+                and now - xml_path.stat().st_mtime >= _QUIET_PERIOD_SECONDS):
             try:
                 ingest_xml(db, job, target, project, xml_path.read_bytes(), xml_path.name)
-            except ValueError:
-                pass  # nmap -oX still mid-write; the next poll will retry
+            except (ValueError, ParseError):
+                # nmap -oX for a full 65535-port scan can still be mid-write
+                # even past the quiet-period check (a long scan can pause
+                # between flushes) -- the next poll retries. This used to be
+                # `except ValueError`, which never matched: ParseError is a
+                # SyntaxError subclass, not a ValueError, so a truncated XML
+                # file crashed this entire function and skipped the file
+                # import loop below on every single poll (confirmed live --
+                # a run sat at imported_count=0 for 4+ minutes with real
+                # per-service result files already sitting on disk,
+                # unimported, because this exception was never caught).
+                pass
         capture_scan_evidence(db, job)
         for port_dir in sorted(scans_dir.glob("tcp*")):
             if not port_dir.is_dir():

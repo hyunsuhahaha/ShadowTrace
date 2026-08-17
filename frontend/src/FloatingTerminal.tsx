@@ -221,9 +221,23 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
   };
   const dock = () => {
     if (!floating) return;
-    localStorage.setItem("oscp-scan-dock", JSON.stringify({
-      scanId: floating.session.scanId, targetId: floating.session.targetId,
-    }));
+    // "oscp-scan-dock" is ScanCenter's own single-target restore key (it
+    // re-selects this scanId once back on #scans) -- AutoRecon runs live in
+    // a separate id space (AutoReconRun.id, not ScanJob.id) and have no such
+    // restore path, so writing it here for one risks a numeric id collision
+    // re-selecting an unrelated single-target scan later.
+    if (floating.session.endpoint !== "autorecon") {
+      localStorage.setItem("oscp-scan-dock", JSON.stringify({
+        scanId: floating.session.scanId, targetId: floating.session.targetId,
+      }));
+    }
+    // Without this, closing ("[ 원위치 ]") only cleared the in-memory state
+    // -- the session persisted in localStorage was still there, so the next
+    // time anything remounts FloatingTerminalProvider (e.g. AppShell keys on
+    // projectRevision and remounts on an "oscp-project-change" event) its
+    // useState initializer read that stale entry straight back and the
+    // "closed" terminal popped right back up as floating. Confirmed live.
+    localStorage.removeItem(storageKey);
     setFloating(null);
     location.hash = floating.session.returnHash || "#scans";
   };

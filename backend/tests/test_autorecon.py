@@ -28,11 +28,12 @@ def _fake_results_tree(base: Path, ip: str) -> None:
     tcp80.mkdir()
     (tcp80 / "tcp_80_http_whatweb.txt").write_text("WhatWeb report for http://127.0.0.1:80\n")
     (tcp80 / "tcp_80_http_nikto.txt").write_text("- Nikto v2.5.0\n---------------------------\n")
-    # import_autorecon_run skips anything modified within the last
-    # _QUIET_PERIOD_SECONDS (still-being-written plugin output) -- backdate
-    # these so the fixture reads as "settled" the way a real completed
-    # plugin file would by the time a poll (or the final import) reaches it.
+    # import_autorecon_run skips anything (including the XML) modified
+    # within the last _QUIET_PERIOD_SECONDS (still-being-written) -- backdate
+    # these so the fixture reads as "settled" the way real completed AutoRecon
+    # output would by the time a poll (or the final import) reaches it.
     settled = time.time() - 60
+    os.utime(scans / "xml" / "_full_tcp_nmap.xml", (settled, settled))
     for result_file in tcp80.iterdir():
         os.utime(result_file, (settled, settled))
 
@@ -160,3 +161,46 @@ def test_import_autorecon_run_is_safe_to_call_repeatedly_without_duplicating(tmp
     assert second == 0
     assert db.query(Execution).count() == 2
     assert db.query(ScanJob).filter_by(source="autorecon").count() == 1
+
+
+def test_import_autorecon_run_still_imports_result_files_when_the_xml_is_truncated(tmp_path):
+    # Regression test: a full -p- nmap scan against a real target can take
+    # long enough that _full_tcp_nmap.xml is still mid-write (truncated,
+    # unclosed tags) well after per-service result files have already
+    # settled -- confirmed live, a run sat at imported_count=0 for 4+
+    # minutes with real tcp80/ files already on disk. The bug was
+    # `except ValueError` around ingest_xml, which never matches
+    # xml.etree.ElementTree.ParseError (a SyntaxError subclass) -- so the
+    # exception propagated out of this function entirely and the file-import
+    # loop below the XML step never ran, every single poll.
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    scans = tmp_path / "127.0.0.1" / "scans"
+    (scans / "xml").mkdir(parents=True)
+    # Deliberately unclosed -- exactly what a parser sees mid-write.
+    (scans / "xml" / "_full_tcp_nmap.xml").write_bytes(
+        b'<nmaprun><host><address addr="127.0.0.1"/><ports>\n'
+        b'<port protocol="tcp" portid="80"><state state="open"/>')
+    settled = time.time() - 60
+    os.utime(scans / "xml" / "_full_tcp_nmap.xml", (settled, settled))
+    tcp80 = scans / "tcp80"
+    tcp80.mkdir()
+    (tcp80 / "tcp_80_http_whatweb.txt").write_text("WhatWeb report for http://127.0.0.1:80\n")
+    os.utime(tcp80 / "tcp_80_http_whatweb.txt", (settled, settled))
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1", output_dir=str(tmp_path),
+                       status="running")
+    db.add(run); db.commit()
+
+    imported = import_autorecon_run(db, run)
+
+    assert imported == 1
+    execution = db.query(Execution).one()
+    # No Service exists yet (the truncated XML never got parsed), so the
+    # service-name-prefix strip doesn't fire and the Execution still lands
+    # with service_id=None rather than being dropped entirely.
+    assert execution.template_id == "autorecon-http_whatweb"
+    assert execution.service_id is None

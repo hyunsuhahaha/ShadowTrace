@@ -81,6 +81,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("원위치 후에는 Provider가 다시 마운트돼도 떠 있던 터미널이 되살아나지 않는다", () => {
+  // Regression: dock() used to only clear in-memory state, leaving the
+  // session in localStorage -- AppShell remounts FloatingTerminalProvider
+  // whenever projectRevision bumps (on "oscp-project-change"), and its
+  // useState initializer reads that same localStorage key, so a "closed"
+  // terminal popped right back up as floating on the very next remount.
+  vi.stubGlobal("EventSource", EventSourceStub);
+  const {unmount} = render(<FloatingTerminalProvider><DetachFromGraph /></FloatingTerminalProvider>);
+  fireEvent.click(screen.getByRole("button", {name: "분리"}));
+  expect(screen.getByLabelText("플로팅 스캔 터미널 #31")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", {name: "[ 원위치 ]"}));
+  unmount();
+  render(<FloatingTerminalProvider><DetachFromGraph /></FloatingTerminalProvider>);
+
+  expect(screen.queryByLabelText("플로팅 스캔 터미널 #31")).toBeNull();
+});
+
 test("원위치는 터미널을 분리한 그래프 화면으로 돌아간다", () => {
   vi.stubGlobal("EventSource", EventSourceStub);
   location.hash = "#graph";

@@ -15,6 +15,38 @@ from .service import import_autorecon_run
 # run just because nothing's imported until the process exits.
 POLL_INTERVAL_SECONDS = 15.0
 
+
+def _poll_import_once(run_id: int) -> int | None:
+    """Synchronous body of one incremental-import pass -- module-level (not
+    a method) so it can run via asyncio.to_thread without dragging `self`
+    across the thread boundary. Returns the new-Execution count, or None if
+    the run is gone or no longer active (the poll loop should stop)."""
+    with SessionLocal() as db:
+        run = db.get(AutoReconRun, run_id)
+        if not run or run.status not in ("queued", "running"):
+            return None
+        try:
+            new_count = import_autorecon_run(db, run)
+            run.imported_count += new_count
+            db.commit()
+            return new_count
+        except Exception:
+            db.rollback()
+            return 0
+
+
+def _final_import_once(run_id: int) -> int:
+    """Same reasoning as _poll_import_once -- run off-thread so the last,
+    usually-largest import pass (whatever the polling loop hadn't caught up
+    to yet) doesn't stall the event loop right as the run finishes."""
+    with SessionLocal() as db:
+        run = db.get(AutoReconRun, run_id)
+        if not run:
+            return 0
+        run.imported_count += import_autorecon_run(db, run)
+        db.commit()
+        return run.imported_count
+
 # Much simpler than ScanManager (scan_center/manager.py): no chaining, no
 # mid-flight XML/artifact registration -- one subprocess per run, and the
 # entire results tree gets imported in one pass (import_autorecon_run) once
@@ -52,23 +84,21 @@ class AutoReconManager:
         the output tree every POLL_INTERVAL_SECONDS so services/results show
         up in the graph well before the (often many-minute) run finishes.
         import_autorecon_run is dedup-safe against being re-called on a
-        still-growing tree -- see its docstring."""
+        still-growing tree -- see its docstring. The actual DB/file work runs
+        via asyncio.to_thread -- import_autorecon_run does several sequential
+        synchronous DB commits plus file reads, enough blocking work every
+        POLL_INTERVAL_SECONDS to stall the whole event loop (every other
+        request on this process) for the duration if run directly inline in
+        this coroutine -- confirmed live, the app was unresponsive to
+        unrelated requests for as long as this loop kept running inline."""
         while True:
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
-            with SessionLocal() as db:
-                run = db.get(AutoReconRun, run_id)
-                if not run or run.status not in ("queued", "running"):
-                    return
-                try:
-                    new_count = import_autorecon_run(db, run)
-                    run.imported_count += new_count
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                    continue
-            if new_count:
+            result = await asyncio.to_thread(_poll_import_once, run_id)
+            if result is None:
+                return
+            if result:
                 await self._publish(run_id, {
-                    "stream": "imported", "imported_count": new_count})
+                    "stream": "imported", "imported_count": result})
 
     async def _run(self, run_id: int, argv: list[str]) -> None:
         async with self.semaphore:
@@ -118,17 +148,17 @@ class AutoReconManager:
                     run = db.get(AutoReconRun, run_id)
                     run.exit_code = code; run.ended_at = utcnow()
                     run.status = "stopped" if run.stopped else ("completed" if code == 0 else "failed")
-                    # Import whatever's on disk regardless of exit code --
-                    # AutoRecon can exit non-zero from a single flaky plugin
-                    # while still producing plenty of useful output for the
-                    # rest, and a stopped run may have partial results too.
-                    # Dedup-safe against the incremental polls above, so this
-                    # only picks up whatever the last poll hadn't gotten to
-                    # yet (including anything still inside the quiet-period
-                    # window at that point).
-                    run.imported_count += import_autorecon_run(db, run)
                     db.commit()
-                    status, imported_count = run.status, run.imported_count
+                    status = run.status
+                # Import whatever's on disk regardless of exit code --
+                # AutoRecon can exit non-zero from a single flaky plugin
+                # while still producing plenty of useful output for the
+                # rest, and a stopped run may have partial results too.
+                # Dedup-safe against the incremental polls above, so this
+                # only picks up whatever the last poll hadn't gotten to yet
+                # (including anything still inside the quiet-period window
+                # at that point).
+                imported_count = await asyncio.to_thread(_final_import_once, run_id)
                 await self._publish(run_id, {
                     "stream": "status", "status": status, "exit_code": code,
                     "imported_count": imported_count})
