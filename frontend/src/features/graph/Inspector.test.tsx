@@ -46,6 +46,7 @@ it("browses AutoRecon's native result directories from the completed result node
 
   const panel = screen.getByLabelText("AutoRecon 결과물 관리");
   await screen.findByText("2개 파일");
+  expect(panel.querySelector(".autoReconFileBrowser")).toBeTruthy();
   expect(panel.textContent).toContain("2개 파일");
   expect(screen.getByText("scans")).toBeTruthy();
   expect(screen.getByText("report")).toBeTruthy();

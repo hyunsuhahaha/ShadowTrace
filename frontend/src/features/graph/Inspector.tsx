@@ -1357,7 +1357,9 @@ export function Inspector(props: {
           </div>
           {autoReconResults.isLoading ? <div style={S.resultMessage}>결과 디렉터리 불러오는 중…</div>
             : autoReconResults.isError ? <div style={S.resultError}>결과 디렉터리를 읽지 못했습니다.</div>
-            : <div style={S.terminalOutput}>
+            : <div className="autoReconFileBrowser" style={S.terminalOutput}
+                role="region" aria-label="크기 조절 가능한 AutoRecon 결과 폴더"
+                title="오른쪽 아래 모서리를 드래그해 높이 조절">
               <div style={{ color: "#71868c", fontSize: 9, marginBottom: 6 }}>
                 {autoReconResults.data?.root}
               </div>
