@@ -20,6 +20,15 @@ function runTargets(run: AutoReconRun, targets: Target[]): Target[] {
   }
 }
 
+export function formatAutoReconElapsed(run: AutoReconRun, clock = Date.now()): string {
+  const start = new Date(run.started_at || run.created_at).getTime();
+  const end = run.ended_at ? new Date(run.ended_at).getTime() : clock;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "0초";
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return minutes ? `${minutes}분 ${seconds % 60}초` : `${seconds}초`;
+}
+
 export default function AutoReconPanel({ projectId, targets, selectedIds, onToggle,
   onSelectAll, onClear, onStart, starting, startError, activeRunId, onSelectRun }: {
   projectId?: number;
@@ -39,6 +48,8 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   const [streamState, setStreamState] = useState<
     "idle" | "connecting" | "connected" | "disconnected"
   >("idle");
+  const [clock, setClock] = useState(Date.now());
+  const [lastEventAt, setLastEventAt] = useState<number>();
   const transcript = useRef<HTMLPreElement>(null);
   const transcriptPanel = useRef<HTMLDivElement>(null);
   const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
@@ -55,6 +66,12 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   const activeRunTargets = activeRun ? runTargets(activeRun, targets) : [];
   const isFloated = floatingEndpoint === "autorecon" && floatingScanId === activeRunId;
 
+  useEffect(() => {
+    if (!activeRun || terminal.includes(activeRun.status)) return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [activeRun?.id, activeRun?.status]);
+
   // Mirrors ScanCenter's own single-scan SSE useEffect (same event shape:
   // {stream: "stdout"|"stderr"|"status"|"snapshot"|"imported", ...}) -- a
   // real `autorecon` invocation is one process for however many targets
@@ -65,10 +82,12 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
   useEffect(() => {
     if (!activeRunId || isFloated) return;
     setStreamState("connecting");
+    setLastEventAt(undefined);
     setOutput("");
     const events = new EventSource(`/api/autorecon/${activeRunId}/events`);
     events.onopen = () => setStreamState("connected");
     events.onmessage = async (e) => {
+      setLastEventAt(Date.now());
       const item = JSON.parse(e.data);
       // The backend replays everything captured so far as one "snapshot"
       // event on every new connection -- without it, switching to another
@@ -82,12 +101,14 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
         dispatchEvent(new CustomEvent("oscp-graph-refresh"));
       }
       if (item.stream === "status") {
-        setStreamState("idle");
         setOutput((v) => v + (item.error ? `\n[${item.status}] ${item.error}\n`
           : `\n[${item.status}${item.exit_code == null ? "" : ` · exit ${item.exit_code}`}]\n`));
-        events.close();
         await qc.invalidateQueries({ queryKey: ["autoReconRuns", projectId] });
-        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+        if (terminal.includes(item.status)) {
+          setStreamState("idle");
+          events.close();
+          dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+        }
       }
     };
     events.onerror = () => { setStreamState("disconnected"); events.close(); };
@@ -203,9 +224,10 @@ export default function AutoReconPanel({ projectId, targets, selectedIds, onTogg
             <i className="termDot" /><i className="termDot termDot--yellow" />
             <i className="termDot termDot--green" />
           </span>
-          <span>실행 #{activeRun.id} · {activeRun.status}</span>
+          <span>실행 #{activeRun.id} · {activeRun.status} · 경과 {formatAutoReconElapsed(activeRun, clock)}</span>
           <small role="status" aria-live="polite">
-            {streamState === "connected" ? "RX LIVE"
+            {lastEventAt ? `마지막 응답 ${Math.max(0, Math.floor((clock - lastEventAt) / 1000))}초 전`
+              : streamState === "connected" ? "RX LIVE"
               : streamState === "connecting" ? "ATTACHING"
               : streamState === "disconnected" ? "LINK LOST"
               : terminal.includes(activeRun.status) ? "STREAM CLOSED" : "IDLE"}

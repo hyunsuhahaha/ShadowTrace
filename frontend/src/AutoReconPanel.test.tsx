@@ -2,11 +2,18 @@
 import {cleanup, fireEvent, render, screen} from "@testing-library/react";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {afterEach, expect, it, vi} from "vitest";
-import AutoReconPanel from "./AutoReconPanel";
+import AutoReconPanel, {formatAutoReconElapsed} from "./AutoReconPanel";
 import {FloatingTerminalProvider} from "./FloatingTerminal";
 import type {Target} from "./scanCenterModel";
 
 afterEach(cleanup);
+
+it("formats AutoRecon elapsed time in minutes and seconds", () => {
+  expect(formatAutoReconElapsed({started_at: "2026-08-16T00:00:00Z", created_at: "",
+    id: 1, project_id: 10, target_ids: "[]", command: "autorecon", output_dir: "",
+    status: "running", stopped: false, error: "", imported_count: 0},
+  new Date("2026-08-16T00:03:07Z").getTime())).toBe("3분 7초");
+});
 
 const targets: Target[] = [
   {id: 1, project_id: 10, name: "DC01", ip: "10.10.10.10"},
@@ -104,10 +111,11 @@ it("streams the active run's live output over SSE and shows the imported-count s
   vi.stubGlobal("fetch", fetcher);
   renderPanel({activeRunId: 5});
 
-  await screen.findByText("실행 #5 · running");
+  await screen.findByText(/실행 #5 · running · 경과/);
   const source = FakeEventSource.instances.at(-1)!;
   source.onmessage?.({data: JSON.stringify({stream: "stdout", data: "[*] Scanning 10.10.10.10\n"})});
   expect(await screen.findByText(/Scanning 10.10.10.10/)).toBeTruthy();
+  expect(screen.getByText(/마지막 응답 0초 전/)).toBeTruthy();
 });
 
 it("replays the backend's snapshot as the full transcript instead of appending it", async () => {
@@ -128,7 +136,7 @@ it("replays the backend's snapshot as the full transcript instead of appending i
     ]), {headers: {"Content-Type": "application/json"}}))));
   renderPanel({activeRunId: 5});
 
-  await screen.findByText("실행 #5 · running");
+  await screen.findByText(/실행 #5 · running · 경과/);
   const source = FakeEventSource.instances.at(-1)!;
   // Re-subscribing (e.g. after switching workspaces and back, which
   // unmounts and remounts this component) starts with an empty local
@@ -165,7 +173,7 @@ it("refreshes the run list and the graph when an incremental import lands mid-ru
   addEventListener("oscp-graph-refresh", graphRefresh);
   renderPanel({activeRunId: 5});
 
-  await screen.findByText("실행 #5 · running");
+  await screen.findByText(/실행 #5 · running · 경과/);
   const callsBeforeImport = calls.length;
   const source = FakeEventSource.instances.at(-1)!;
   await source.onmessage?.({data: JSON.stringify({stream: "imported", imported_count: 3})});
@@ -199,7 +207,7 @@ it("floats the transcript when the header is dragged, same as the single-target 
        imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
     ]), {headers: {"Content-Type": "application/json"}}))));
   renderPanel({activeRunId: 5});
-  const header = await screen.findByText("실행 #5 · running");
+  const header = await screen.findByText(/실행 #5 · running · 경과/);
 
   fireEvent.pointerDown(header, {button: 0, pointerId: 1, clientX: 50, clientY: 60});
   fireEvent.pointerMove(header, {pointerId: 1, clientX: 90, clientY: 100});
