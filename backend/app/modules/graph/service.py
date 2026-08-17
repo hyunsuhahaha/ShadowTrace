@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from ...models import (Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
-                       Project, RemoteExecution, ScanJob, Service, Target)
+                       Project, RemoteExecution, ScanArtifact, ScanJob, Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
 
@@ -460,7 +460,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # Manually-created nodes (no source_ref) are never pruned.
     kind_models = {"target": Target, "service": Service, "finding": Finding,
                    "credential": Credential, "execution": Execution,
-                   "session": InteractiveSession}
+                   "session": InteractiveSession, "scan_artifact": ScanArtifact}
     for key, node in list(index.items()):
         kind, ident = key
         model = kind_models.get(kind)
@@ -471,6 +471,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         elif isinstance(row, (Service, Execution, InteractiveSession)):
             target = db.get(Target, row.target_id)
             owner_id = target.project_id if target else None
+        elif isinstance(row, ScanArtifact):
+            job = db.get(ScanJob, row.scan_job_id)
+            owner_id = job.project_id if job else None
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         if model is not None and (row is None or owner_id != project_id or stale_hidden):
             db.query(GraphEdge).filter(
@@ -779,6 +782,37 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             create_edge(db, project_id, parent.id, node.id, "attempted",
                         status=node.status)
             index[("execution", ex.id)] = node
+            created["techniques"] += 1
+
+        # Native AutoRecon files that are not already represented by a
+        # service-owned Execution remain first-class graph objects rather
+        # than disappearing into an evidence counter.
+        artifact_rows = db.execute(
+            select(ScanArtifact, ScanJob).join(
+                ScanJob, ScanJob.id == ScanArtifact.scan_job_id).where(
+                ScanJob.source == "autorecon", ScanJob.target_id.in_(target_ids)))
+        for artifact, job in artifact_rows:
+            if ("scan_artifact", artifact.id) in dismissed:
+                continue
+            parent = host_for(job.target_id)
+            if parent is None:
+                continue
+            meta = json.dumps({"tool": "autorecon-artifact", "kind": artifact.kind,
+                               "path": artifact.path, "size": artifact.size,
+                               "scanJobId": job.id, "evidenceCount": 1})
+            existing = index.get(("scan_artifact", artifact.id))
+            if existing is not None:
+                existing.meta = meta
+                continue
+            label = f"AutoRecon · {artifact.original_name or Path(artifact.path).name}"
+            node = create_node(
+                db, project_id, "technique", label=label, status="in-progress",
+                source_ref=_source_ref("scan_center", "scan_artifact", artifact.id),
+                meta=meta, provenance=json.dumps({"path": artifact.path,
+                                                  "source": "autorecon"}))
+            create_edge(db, project_id, parent.id, node.id, "attempted",
+                        status=node.status)
+            index[("scan_artifact", artifact.id)] = node
             created["techniques"] += 1
 
         # interactive sessions (Responder, reverse shells) -> technique nodes.

@@ -62,13 +62,14 @@ def _bookkeeping_scan_job(db: Session, project: Project, target: Target,
 
 
 def _register_native_artifacts(db: Session, job: ScanJob, target_dir: Path) -> None:
-    paths = [target_dir / "scans" / name for name in
-             ("_commands.log", "_manual_commands.txt", "_patterns.log")]
-    report_dir = target_dir / "report"
-    if report_dir.is_dir():
-        paths.extend(path for path in report_dir.rglob("*") if path.is_file())
-    for path in paths:
-        if not path.is_file():
+    for path in (path for path in target_dir.rglob("*") if path.is_file()):
+        relative = path.relative_to(target_dir)
+        # Port plugin outputs already become service-owned Execution nodes;
+        # their XML is already registered by ingest_xml. Everything else is
+        # a target-level native AutoRecon artifact.
+        if (len(relative.parts) > 1 and relative.parts[0] == "scans"
+                and (relative.parts[1] == "xml"
+                     or relative.parts[1].startswith(("tcp", "udp")))):
             continue
         content = path.read_bytes()
         digest = hashlib.sha256(content).hexdigest()

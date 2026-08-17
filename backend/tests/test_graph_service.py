@@ -482,6 +482,29 @@ def test_sync_projects_executions_as_technique_nodes():
     assert tech.status == "in-progress"
 
 
+def test_sync_projects_autorecon_artifacts_as_host_techniques():
+    from app.models import ScanArtifact, ScanJob, Target
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.70")
+    db.add(target); db.flush()
+    job = ScanJob(project_id=p.id, target_id=target.id, source="autorecon",
+                  status="completed", command="autorecon 10.0.0.70")
+    db.add(job); db.flush()
+    artifact = ScanArtifact(scan_job_id=job.id, kind="command_output",
+                            path="/tmp/_manual_commands.txt", sha256="a" * 64,
+                            size=42, original_name="_manual_commands.txt")
+    db.add(artifact); db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    node = db.query(GraphNode).filter_by(type="technique").one()
+    assert node.label == "AutoRecon · _manual_commands.txt"
+    assert json.loads(node.meta)["path"] == "/tmp/_manual_commands.txt"
+    edge = db.query(GraphEdge).filter_by(target=node.id).one()
+    assert db.get(GraphNode, edge.source).type == "host"
+
+
 def test_execution_parents_under_the_finding_it_was_run_to_follow_up_on():
     # docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- an execution
     # triggered from a specific finding (e.g. re-running a directory brute

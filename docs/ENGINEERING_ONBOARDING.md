@@ -280,8 +280,10 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       template_id="autorecon-<slug>") Execution을 직접 생성 -- 서브프로세스를 또
       띄우는 게 아니라 이미 끝난 결과 파일을 그대로 가져오는 것이므로
       start_execution()을 거치지 않는다. AutoRecon의 exploit/loot/report 디렉터리도 원형대로
-      생성하며, 완료 후 운영 로그와 report 파일은 ScanArtifact/Evidence로 등록한다.
-  → 이 Execution들은 다른 Execution과 똑같이 그래프 동기화가 자동으로 집어간다
+      생성하며, 완료 후 전역 스캔 출력·운영 로그·report/exploit/loot 실제 파일은
+      ScanArtifact/Evidence로 등록한다.
+  → 서비스별 Execution은 Service 하위 technique으로, 나머지 AutoRecon ScanArtifact는
+    Target 하위 `AutoRecon · <파일명>` technique으로 그래프 동기화가 자동 투영한다.
 ```
 
 새 모듈은 `backend/app/modules/autorecon/`(scan_center의 router/service/manager 3분할을
