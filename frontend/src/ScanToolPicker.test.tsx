@@ -23,3 +23,10 @@ it("allows selecting masscan when not blocked", () => {
   fireEvent.click(screen.getByText("masscan").closest("button")!);
   expect(onSelect).toHaveBeenCalledWith("masscan");
 });
+
+it("selects AutoRecon from the tool list", () => {
+  const onSelect = vi.fn();
+  render(<ScanToolPicker tool="nmap" masscanBlockedByVpn={false} onSelect={onSelect} />);
+  fireEvent.click(screen.getByText("autorecon").closest("button")!);
+  expect(onSelect).toHaveBeenCalledWith("autorecon");
+});

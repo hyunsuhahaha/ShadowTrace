@@ -115,11 +115,7 @@
   .tableHead span:last-child,.tableRow em{display:none}
 }
 
-.scanModeToggle{display:flex;gap:4px;margin-left:12px}
-.scanModeToggle button{background:var(--surface-raised);color:var(--muted);border:1px solid var(--line-strong);border-radius:var(--radius);padding:6px 9px;font-size:10px;cursor:pointer}
-.scanModeToggle button.active{color:var(--green);border-color:#355342;background:#142019}
-
-.autoReconPanel{margin-top:14px;border:1px solid var(--term-border);background:var(--term-bg);padding:14px}
+.autoReconPanel{border:1px solid var(--term-border);background:var(--term-bg);padding:14px}
 .autoReconPanel__hint{margin:10px 0 14px;color:#7d948a;font-size:11px;line-height:1.6}
 .autoReconTargetPicker{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);background:#0a0f11;padding:8px}
 .autoReconTargetPicker__actions{display:flex;gap:6px;margin-bottom:4px}

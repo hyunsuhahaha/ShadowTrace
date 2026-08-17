@@ -1,6 +1,8 @@
+export type ScanTool = "nmap" | "masscan" | "autorecon";
+
 export default function ScanToolPicker({tool, masscanBlockedByVpn, onSelect}: {
-  tool: "nmap" | "masscan"; masscanBlockedByVpn: boolean;
-  onSelect: (tool: "nmap" | "masscan") => void;
+  tool: ScanTool; masscanBlockedByVpn: boolean;
+  onSelect: (tool: ScanTool) => void;
 }) {
   return <aside className="scanProfiles">
     <div className="panelTitle">
@@ -42,6 +44,16 @@ export default function ScanToolPicker({tool, masscanBlockedByVpn, onSelect}: {
             ? "tun0(VPN)에서는 사용할 수 없음"
             : "초고속 포트 탐색 · 자동 Nmap 상세 스캔 연계"}
         </small>
+      </span>
+    </button>
+    <button type="button"
+      className={`toolRow ${tool === "autorecon" ? "active" : ""}`}
+      onClick={() => onSelect("autorecon")}
+    >
+      <em aria-hidden="true">{tool === "autorecon" ? ">" : " "}</em>
+      <span>
+        <b>autorecon</b>
+        <small>여러 대상 동시 정찰 및 서비스별 자동 열거</small>
       </span>
     </button>
   </aside>;

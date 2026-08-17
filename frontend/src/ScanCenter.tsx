@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState,
   type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import VpnControl from "./VpnControl";
-import ScanToolPicker from "./ScanToolPicker";
+import ScanToolPicker, {type ScanTool} from "./ScanToolPicker";
 import ScanProfileComposer from "./ScanProfileComposer";
 import ScanJobStatus from "./ScanJobStatus";
 import ScanHistoryPanel from "./ScanHistoryPanel";
@@ -35,7 +35,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     }),
     [scanId, setScanId] = useState<number>(),
     [baseId, setBaseId] = useState<number>(),
-    [tool, setTool] = useState<"nmap" | "masscan">("nmap"),
+    [tool, setTool] = useState<ScanTool>("nmap"),
     [profileId, setProfileId] = useState<number>(),
     [ports, setPorts] = useState("80,443"),
     [topPorts, setTopPorts] = useState("100"),
@@ -64,7 +64,6 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     [streamState, setStreamState] = useState<
       "idle" | "connecting" | "connected" | "disconnected"
     >("idle"),
-    [autoReconMode, setAutoReconMode] = useState(false),
     [autoReconSelected, setAutoReconSelected] = useState<Set<number>>(new Set()),
     [autoReconStarting, setAutoReconStarting] = useState(false),
     [autoReconError, setAutoReconError] = useState(""),
@@ -160,6 +159,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   }, [tool, masscanBlockedByVpn]);
   useEffect(() => {
     if (!profiles.data?.length) return;
+    if (tool === "autorecon") return;
     const kinds = toolProfileGroups[tool].flatMap((group) => group.kinds);
     const current = profiles.data.find((p) => p.id === profileId);
     if (current && kinds.includes(current.kind)) return;
@@ -592,21 +592,23 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             ))}
         </select>
         <span className="tools">스캔 기록 {scans.data?.length || 0}개</span>
-        <span className="scanModeToggle" role="group" aria-label="스캔 모드">
-          <button type="button" className={!autoReconMode ? "active" : ""}
-            aria-pressed={!autoReconMode} onClick={() => setAutoReconMode(false)}>
-            단일 대상
-          </button>
-          <button type="button" className={autoReconMode ? "active" : ""}
-            aria-pressed={autoReconMode} onClick={() => setAutoReconMode(true)}>
-            AutoRecon (여러 대상)
-          </button>
-        </span>
       </nav>
       <main className="scanLayout">
         <ScanToolPicker tool={tool} masscanBlockedByVpn={masscanBlockedByVpn}
           onSelect={setTool} />
         <section className="scanCenter">
+          {tool === "autorecon" ? <AutoReconPanel
+            projectId={effectiveProjectId}
+            targets={(targets.data || []).filter((t) => t.project_id === effectiveProjectId)}
+            selectedIds={autoReconSelected}
+            onToggle={toggleAutoReconTarget}
+            onSelectAll={selectAllAutoReconTargets}
+            onClear={clearAutoReconTargets}
+            onStart={() => void startAutoRecon()}
+            starting={autoReconStarting}
+            startError={autoReconError}
+            activeRunId={autoReconRunId}
+            onSelectRun={setAutoReconRunId} /> : <>
           <ScanProfileComposer tool={tool}
             targetIp={targetIp} targetError={targetError}
             onTargetIpChange={changeTargetIp}
@@ -628,19 +630,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
               (Number(topPorts) >= 1 && Number(topPorts) <= 65535)
             )}
             onReviewScan={beginReview} />
-          {autoReconMode && <AutoReconPanel
-            projectId={effectiveProjectId}
-            targets={(targets.data || []).filter((t) => t.project_id === effectiveProjectId)}
-            selectedIds={autoReconSelected}
-            onToggle={toggleAutoReconTarget}
-            onSelectAll={selectAllAutoReconTargets}
-            onClear={clearAutoReconTargets}
-            onStart={() => void startAutoRecon()}
-            starting={autoReconStarting}
-            startError={autoReconError}
-            activeRunId={autoReconRunId}
-            onSelectRun={setAutoReconRunId} />}
-          {!floatingScanId && (selected || !autoReconMode) && <div key={selected?.id || "idle"} ref={transcriptPanel}
+          {!floatingScanId && <div key={selected?.id || "idle"} ref={transcriptPanel}
             className={`terminal scanTerminal scanTranscript${selected ? " scanTranscript--attached" : ""}`}>
             <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : "terminalStatus"}
               onPointerDown={beginDetach} onPointerMove={moveDetach}
@@ -807,6 +797,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
               ))}
             </div>
           )}
+          </>}
         </section>
         <ScanHistoryPanel
           visibleScans={visibleScans} allScans={scans.data} scanId={scanId}

@@ -293,8 +293,8 @@ POST /api/autorecon/run {project_id, target_ids}
 active-run 가드에도 `scan_jobs`/`hash_crack_jobs`와 나란히 들어가 있다 — 새 project-scoped
 테이블을 추가할 때 그 두 곳(가드 체크 + 삭제 목록)을 빼먹기 쉬우니 참고.
 
-프런트는 새 워크스페이스가 아니라 기존 `ScanCenter.tsx`에 모드 토글("단일 대상"/"AutoRecon")만
-추가했다 — 켜면 IP 입력 대신 이미 등록된 대상 체크박스 목록이 뜨고, "AutoRecon 시작"은 선택한
+프런트는 새 워크스페이스가 아니라 기존 `ScanCenter.tsx`의 도구 선택 목록에 `autorecon`을
+추가했다 — 선택하면 단일 스캔 설정 대신 이미 등록된 대상 체크박스 목록이 뜨고, "AutoRecon 시작"은 선택한
 대상 전체를 담아 `POST /api/autorecon/run`을 **한 번만** 호출한다(대상마다 반복 호출하는 게
 아님 -- 실제 도구가 이미 여러 대상을 한 프로세스로 처리하므로). 새 컴포넌트는
 [`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 이 프로젝트의
@@ -492,7 +492,7 @@ run, import), `/vpn/status`.
 | `ScanProfileComposer.tsx` | 대상 IP/이름 입력, 프로필 드롭다운, 포트 입력, XML 가져오기, 명령 미리보기, "스캔 검토" 버튼 |
 | `ScanJobStatus.tsx` | 선택 스캔의 실시간 상태 카드 + 완료 후 자동화 배너(증적/finding 수, 자동 연계 상세 스캔) |
 | `ScanHistoryPanel.tsx` | 스캔 큐/이력 목록(검색·상태 필터), 중지/재실행/삭제, base 비교 |
-| `AutoReconPanel.tsx` | AutoRecon 모드(nav의 "단일 대상"/"AutoRecon" 토글)에서만 렌더 — 대상 다중 선택 체크박스, SCOPE 확인, `POST /api/autorecon/run`(대상 배열 한 번에) 호출, 이 프로젝트의 실행 목록(`GET /api/autorecon?project_id=`)과 선택한 실행의 라이브 SSE 트랜스크립트(`/api/autorecon/{id}/events`) |
+| `AutoReconPanel.tsx` | Scan Center 도구 목록에서 `autorecon`을 선택했을 때 렌더 — 대상 다중 선택 체크박스, SCOPE 확인, `POST /api/autorecon/run`(대상 배열 한 번에) 호출, 이 프로젝트의 실행 목록(`GET /api/autorecon?project_id=`)과 선택한 실행의 라이브 SSE 트랜스크립트(`/api/autorecon/{id}/events`) |
 | `scanCenterModel.ts` | 공용 타입(`Project`/`Target`/`Scan`/`Profile`/`Obs`/`Artifact`/`Automation`), 프로필 라벨/그룹 표, `elapsed()`/`bytes()`, `syncSelectedProject()` |
 | `VpnControl.tsx` | VPN 전역 위젯(`.ovpn` 업로드, 검토+연결, 해제, DNS 지정) — `AppShell.tsx`/`EnumerationScope.tsx`도 사용 |
 
