@@ -11,7 +11,7 @@ from app.main import (
     update_service,
 )
 from app.models import (
-    Base, HashCrackJob, Project, RunbookInstance, ScanJob, Service, Target,
+    AutoReconRun, Base, HashCrackJob, Project, RunbookInstance, ScanJob, Service, Target,
 )
 from app.modules import hosts
 from app.modules.core import router as core_router
@@ -162,6 +162,11 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
         project_id=project.id, target_id=target.id, hash_mode_id="1000",
         hash_mode="-m 1000", status="completed",
     ))
+    db.add(AutoReconRun(
+        project_id=project.id, target_ids=f"[{target.id}]",
+        command="autorecon 198.51.100.20", output_dir="/tmp/whatever",
+        status="completed",
+    ))
     db.commit()
     template = create_template(TemplateIn(
         name="Disposable FTP", service_names=["telnet"]), db)
@@ -182,6 +187,8 @@ def test_delete_project_removes_connected_workspace_records(tmp_path):
         ScanJob.project_id == project_id)).all() == []
     assert db.scalars(select(HashCrackJob).where(
         HashCrackJob.project_id == project_id)).all() == []
+    assert db.scalars(select(AutoReconRun).where(
+        AutoReconRun.project_id == project_id)).all() == []
 
     replacement = Project(name="Replacement", description="")
     db.add(replacement); db.flush()
@@ -222,6 +229,25 @@ def test_delete_project_refuses_while_a_hash_crack_job_is_running(tmp_path):
     db.add(HashCrackJob(
         project_id=project.id, target_id=target.id, hash_mode_id="1000",
         hash_mode="-m 1000", status="running",
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        delete_project(project.id, db)
+    assert exc.value.status_code == 409
+    assert db.get(Project, project.id) is not None
+
+
+def test_delete_project_refuses_while_an_autorecon_run_is_active(tmp_path):
+    db = database(tmp_path)
+    project = Project(name="Disposable", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Host", ip="198.51.100.23")
+    db.add(target); db.flush()
+    db.add(AutoReconRun(
+        project_id=project.id, target_ids=f"[{target.id}]",
+        command="autorecon 198.51.100.23", output_dir="/tmp/whatever",
+        status="running",
     ))
     db.commit()
 

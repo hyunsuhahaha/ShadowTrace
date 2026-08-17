@@ -65,13 +65,6 @@ class ExecutionIn(BaseModel):
     variables: dict[str, str] = {}
     run_as_root: bool = True
     output_filename: str = Field(default="", max_length=120, pattern=r"^[\w .-]*$")
-    # Nests this run's output under outputs/<output_subdir>/ instead of the
-    # flat outputs/ folder -- AutoRecon's fan-out uses this to group results
-    # by service (e.g. "tcp80-http") the way AutoRecon's own scans/tcp80/
-    # layout does. Server-computed only (never derived from arbitrary user
-    # text), so a plain single-path-component pattern is enough.
-    output_subdir: str | None = Field(default=None, max_length=60,
-                                       pattern=r"^[a-z0-9][a-z0-9.-]*$")
     command_override: str | None = Field(default=None, max_length=4096)
     # See docs/SPEC_GRAPH_TRACKER.md §6.1 "노드 연결 원칙" -- the finding/
     # technique node this command was run to follow up on, so
@@ -118,20 +111,11 @@ class ScanPreviewIn(BaseModel):
     top_ports: int = Field(default=100, ge=1, le=65535)
     extra_arguments: list[str] = []
     command_override: str | None = Field(default=None, max_length=4096)
-    # Set by the AutoRecon multi-target launcher (ScanCenter.tsx) so
-    # fan_out_service_executions() can recognize this job's chain once the
-    # detail scan completes -- empty for every ordinary single-target scan.
-    tags: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator("target_ip")
     @classmethod
     def valid_target_ip(cls, value: str) -> str:
         return str(IPvAnyAddress(value)) if value else ""
-
-    @field_validator("tags")
-    @classmethod
-    def valid_tags(cls, values: list[str]) -> list[str]:
-        return _clean_scan_tags(values)
 
 class ScanJobOut(ORM):
     id: int; project_id: int; target_id: int; profile_id: int | None
@@ -161,6 +145,16 @@ class ObservationOut(ORM):
     id: int; scan_job_id: int; target_id: int; port: int; protocol: str
     state: str; name: str; product: str; version: str; extra_info: str
     scripts: str; cpe: str; tls: bool; detection_evidence: str; observed_at: datetime
+
+class AutoReconRunIn(BaseModel):
+    project_id: int
+    target_ids: list[int] = Field(min_length=1, max_length=50)
+
+class AutoReconRunOut(ORM):
+    id: int; project_id: int; target_ids: str; command: str; output_dir: str
+    status: str; exit_code: int | None; stopped: bool; error: str
+    imported_count: int
+    started_at: datetime | None; ended_at: datetime | None; created_at: datetime
 
 class InteractiveSessionIn(BaseModel):
     target_id: int

@@ -130,8 +130,12 @@
 .autoReconPanel__scope input{margin-top:2px}
 .autoReconPanel__scope span{color:#889c94;line-height:1.55;font-size:11px}
 .autoReconPanel__scope b{display:block;color:var(--term-cursor);font-size:8px;letter-spacing:.1em}
-.autoReconJobs{display:grid;gap:1px;margin-top:14px;border:1px solid var(--term-border)}
-.autoReconJobRow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;background:var(--term-bg)}
-.autoReconJobRow em{font-style:normal;color:var(--muted);font-size:10px;margin-left:8px}
-.autoReconJobRow small{color:#7d948a;font-size:10px}
-.autoReconJobRow--idle{cursor:default}
+.autoReconRuns{display:grid;gap:1px;margin-top:14px;border:1px solid var(--term-border)}
+.autoReconRunRow{display:grid;gap:4px;padding:10px 12px;background:var(--term-bg);cursor:pointer}
+.autoReconRunRow:hover{background:#0c1416}
+.autoReconRunRow.active{background:#0c1416;box-shadow:inset 3px 0 var(--term-cursor)}
+.autoReconRunRow span{display:flex;align-items:center;gap:8px}
+.autoReconRunRow small{color:#7d948a;font-size:10px}
+.autoReconTranscript{margin-top:14px}
+.autoReconTranscript>.terminalStatus{gap:8px}
+.autoReconTranscript pre{height:220px;overflow:auto;padding:12px;margin:0;color:var(--term-fg);font:11px/1.65 ui-monospace,monospace;white-space:pre-wrap}

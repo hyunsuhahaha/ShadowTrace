@@ -72,24 +72,15 @@ def target_output_dir(project: Project, target: Target) -> Path:
             "targets" / safe_part(target.ip) / "outputs")
 
 
-async def _run_bounded(semaphore: asyncio.Semaphore, execution_id: int,
-                        argv: list[str], cwd: Path, output: Path) -> None:
-    async with semaphore:
-        await run_execution(execution_id, argv, cwd, output)
-
-
 def start_execution(
     db: Session, target: Target, project: Project, service: Service | None,
     template_id: str, variables: dict[str, str], run_as_root: bool = True,
-    output_filename: str = "", output_subdir: str | None = None,
-    command_override: str | None = None, graph_node_id: str | None = None,
-    scan_job_id: int | None = None, semaphore: asyncio.Semaphore | None = None,
+    output_filename: str = "", command_override: str | None = None,
+    graph_node_id: str | None = None,
 ) -> Execution:
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
     output_dir = target_dir / "outputs"
-    if output_subdir:
-        output_dir = output_dir / safe_part(output_subdir)
     output_dir.mkdir(parents=True, exist_ok=True)
     # Sites that route by vhost (nearly all named HTTP hosts) refuse or
     # redirect requests addressed by bare IP, so HTTP-family commands need
@@ -129,15 +120,11 @@ def start_execution(
         target_id=target.id, service_id=service.id if service else None,
         template_id=item["id"], command=command, cwd=str(target_dir),
         status="queued", graph_parent_node_id=graph_node_id,
-        scan_job_id=scan_job_id,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
     output = output_path_for(output_dir, output_filename, item["id"])
     queues[row.id] = asyncio.Queue()
-    if semaphore is None:
-        asyncio.create_task(run_execution(row.id, argv, target_dir, output))
-    else:
-        asyncio.create_task(_run_bounded(semaphore, row.id, argv, target_dir, output))
+    asyncio.create_task(run_execution(row.id, argv, target_dir, output))
     return row

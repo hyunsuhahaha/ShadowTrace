@@ -8,8 +8,7 @@ import shlex
 from pathlib import Path
 from ...database import SessionLocal
 from ...models import Project, ScanArtifact, ScanJob, Target
-from .service import (capture_scan_evidence, create_chain_job,
-                      fan_out_service_executions, ingest_xml, scan_directory)
+from .service import capture_scan_evidence, create_chain_job, ingest_xml, scan_directory
 from ...time import utcnow
 
 def _engine_name(argv: list[str]) -> str:
@@ -113,12 +112,6 @@ class ScanManager:
                         if path.exists(): self._artifact(db, job.id, path, kind)
                     capture_scan_evidence(db, job)
                     chain = create_chain_job(db, job) if job.status == "completed" else None
-                    # A job that still has a follow-up scan queued isn't the
-                    # end of the chain yet (it doesn't have real service
-                    # names/products -- that's what the chained -sC -sV scan
-                    # is for), so only fan out once nothing more will chain.
-                    if job.status == "completed" and not chain:
-                        fan_out_service_executions(db, job)
                     db.commit()
                     status = job.status
                 await self._publish(scan_id, {

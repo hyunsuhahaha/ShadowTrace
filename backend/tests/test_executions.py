@@ -204,36 +204,6 @@ def test_execute_stores_the_graph_node_it_was_run_to_follow_up_on(tmp_path, monk
     assert row.graph_parent_node_id == "01ABCXYZFINDINGNODE0000001"
 
 
-def test_execute_nests_output_under_output_subdir_when_given(tmp_path, monkeypatch):
-    # AutoRecon's fan-out passes this so a service's results land under
-    # outputs/tcp445-smb/ instead of the flat outputs/ folder every manual
-    # run still uses (output_subdir omitted -- unaffected by this).
-    monkeypatch.setattr(executions_router.execution_service, "WORKSPACE_DIR", tmp_path)
-    monkeypatch.setattr(executions_router.execution_service.shutil, "which", lambda _: "/usr/bin/true")
-    captured_output_paths = []
-    async def noop(execution_id, argv, cwd, output):
-        captured_output_paths.append(output)
-    monkeypatch.setattr(executions_router.execution_service, "run_execution", noop)
-    db = database()
-    project = Project(name="Lab", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
-    db.add(target); db.flush()
-    service = Service(
-        target_id=target.id, port=445, protocol="tcp", state="open", name="microsoft-ds",
-        product="", version="", extra_info="", scripts="{}", notes="", tags="[]")
-    db.add(service); db.commit()
-
-    asyncio.run(execute(ExecutionIn(
-        target_id=target.id, service_id=service.id, template_id="smb-enum",
-        variables={}, run_as_root=False, output_subdir="tcp445-microsoft-ds"), db=db))
-
-    expected_dir = (tmp_path / "projects" / "Lab" / "targets" / "10.10.10.12" /
-                    "outputs" / "tcp445-microsoft-ds")
-    assert expected_dir.is_dir()
-    assert captured_output_paths[0].parent == expected_dir
-
-
 def test_execute_prefers_the_confirmed_hostname_for_http_templates_only(
         tmp_path, monkeypatch):
     # Vhost-routed sites often refuse or redirect bare-IP requests, so HTTP

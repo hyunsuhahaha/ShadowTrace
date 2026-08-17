@@ -1,73 +1,27 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, ErrorState } from "./ui";
-import { get, terminal, type Scan, type Target } from "./scanCenterModel";
+import { get, terminal, type Target } from "./scanCenterModel";
 
-type ServiceExecution = { id: number; status: string; template_id: string };
+type AutoReconRun = {
+  id: number; project_id: number; target_ids: string; command: string;
+  output_dir: string; status: string; exit_code?: number | null; stopped: boolean;
+  error: string; imported_count: number;
+  started_at?: string; ended_at?: string; created_at: string;
+};
 
-function autoReconTags(scan: Scan): string[] {
+function runTargets(run: AutoReconRun, targets: Target[]): Target[] {
   try {
-    return JSON.parse(scan.tags || "[]");
+    const ids: number[] = JSON.parse(run.target_ids || "[]");
+    return ids.map((id) => targets.find((t) => t.id === id)).filter((t): t is Target => !!t);
   } catch {
     return [];
   }
 }
 
-// One row = one target's most recent AutoRecon-tagged scan chain. Polls the
-// same /scans and /scans/{id}/service-executions endpoints the single-target
-// flow already uses -- this is just a second, lighter-weight consumer of
-// them, not a new backend concept.
-function AutoReconJobRow({ target, active, onOpen }: {
-  target: Target; active: boolean;
-  onOpen: (targetId: number, scanId: number) => void;
-}) {
-  const jobs = useQuery({
-    queryKey: ["autoReconScans", target.id],
-    queryFn: () => get<Scan[]>(`/scans?target_id=${target.id}`),
-    refetchInterval: 4000,
-  });
-  const job = (jobs.data || [])
-    .filter((scan) => autoReconTags(scan).includes("autorecon"))
-    .sort((a, b) => b.id - a.id)[0];
-  const executions = useQuery({
-    queryKey: ["autoReconExecutions", job?.id],
-    queryFn: () => get<ServiceExecution[]>(`/scans/${job!.id}/service-executions`),
-    enabled: !!job,
-    refetchInterval: 4000,
-  });
-  const counts = (executions.data || []).reduce((acc, execution) => {
-    const bucket = terminal.includes(execution.status)
-      ? (execution.status === "completed" ? "completed" : "failed")
-      : "running";
-    acc[bucket] = (acc[bucket] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  return (
-    <div role="button" tabIndex={job ? 0 : -1}
-      className={`scanRow autoReconJobRow${active ? " active" : ""}${!job ? " autoReconJobRow--idle" : ""}`}
-      onClick={() => job && onOpen(target.id, job.id)}
-      onKeyDown={(e) => {
-        if (!job) return;
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(target.id, job.id); }
-      }}>
-      <span>
-        <b>{target.name || target.ip}</b>
-        {target.name && <em>{target.ip}</em>}
-      </span>
-      {job ? <>
-        <Badge status={job.status} />
-        {!!executions.data?.length && <small>
-          서비스 명령 {executions.data.length}개 ·
-          완료 {counts.completed || 0} · 진행중 {counts.running || 0} · 실패 {counts.failed || 0}
-        </small>}
-      </> : <small>대기 · 아직 시작되지 않음</small>}
-    </div>
-  );
-}
-
-export default function AutoReconPanel({ targets, selectedIds, onToggle, onSelectAll,
-  onClear, onStart, starting, startError, activeTargetId, onOpenJob }: {
+export default function AutoReconPanel({ projectId, targets, selectedIds, onToggle,
+  onSelectAll, onClear, onStart, starting, startError, activeRunId, onSelectRun }: {
+  projectId?: number;
   targets: Target[];
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
@@ -76,10 +30,62 @@ export default function AutoReconPanel({ targets, selectedIds, onToggle, onSelec
   onStart: () => void;
   starting: boolean;
   startError?: string;
-  activeTargetId?: number;
-  onOpenJob: (targetId: number, scanId: number) => void;
+  activeRunId?: number;
+  onSelectRun: (id: number) => void;
 }) {
   const [scopeConfirmed, setScopeConfirmed] = useState(false);
+  const [output, setOutput] = useState("");
+  const [streamState, setStreamState] = useState<
+    "idle" | "connecting" | "connected" | "disconnected"
+  >("idle");
+  const transcript = useRef<HTMLPreElement>(null);
+  const qc = useQueryClient();
+
+  const runs = useQuery({
+    queryKey: ["autoReconRuns", projectId],
+    queryFn: () => get<AutoReconRun[]>(`/autorecon?project_id=${projectId}`),
+    enabled: !!projectId,
+    refetchInterval: 4000,
+  });
+  const activeRun = runs.data?.find((r) => r.id === activeRunId);
+
+  // Mirrors ScanCenter's own single-scan SSE useEffect (same event shape:
+  // {stream: "stdout"|"stderr"|"status", ...}) -- a real `autorecon`
+  // invocation is one process for however many targets were selected, so
+  // there's exactly one transcript to show, not one per target.
+  useEffect(() => {
+    if (!activeRunId) return;
+    setStreamState("connecting");
+    setOutput("");
+    const events = new EventSource(`/api/autorecon/${activeRunId}/events`);
+    events.onopen = () => setStreamState("connected");
+    events.onmessage = async (e) => {
+      const item = JSON.parse(e.data);
+      if (item.stream === "stdout") setOutput((v) => v + item.data);
+      if (item.stream === "stderr") setOutput((v) => v + `[stderr] ${item.data}`);
+      if (item.stream === "status") {
+        setStreamState("idle");
+        setOutput((v) => v + (item.error ? `\n[${item.status}] ${item.error}\n`
+          : `\n[${item.status}${item.exit_code == null ? "" : ` · exit ${item.exit_code}`}]\n`));
+        events.close();
+        await qc.invalidateQueries({ queryKey: ["autoReconRuns", projectId] });
+        dispatchEvent(new CustomEvent("oscp-graph-refresh"));
+      }
+    };
+    events.onerror = () => { setStreamState("disconnected"); events.close(); };
+    return () => events.close();
+  }, [activeRunId, projectId, qc]);
+
+  useEffect(() => {
+    const panel = transcript.current;
+    if (panel) panel.scrollTop = panel.scrollHeight;
+  }, [output]);
+
+  const stopRun = async (id: number) => {
+    await fetch(`/api/autorecon/${id}/stop`, { method: "POST" });
+    await qc.invalidateQueries({ queryKey: ["autoReconRuns", projectId] });
+  };
+
   return (
     <section className="autoReconPanel">
       <div className="panelTitle">
@@ -93,9 +99,10 @@ export default function AutoReconPanel({ targets, selectedIds, onToggle, onSelec
         <em>{selectedIds.size}개 선택됨</em>
       </div>
       <p className="autoReconPanel__hint">
-        위에서 고른 도구·프로파일·포트로 각 대상을 전체 포트 스캔합니다. 스캔이 끝나면
-        발견된 서비스마다 매칭되는 열거 명령(nikto, enum4linux, whatweb 등)이 자동으로
-        병렬 실행되고, 결과는 대상별 outputs/tcp&lt;포트&gt;-&lt;서비스&gt;/ 폴더에 정리됩니다.
+        선택한 대상 전체를 실제 AutoRecon(Tib3rius) 한 번의 실행으로 넘깁니다 — 전체 포트
+        스캔 후 발견된 서비스마다 맞는 열거 도구를 자동으로 병렬 실행하고, 결과를 대상별
+        폴더(scans/tcp&lt;포트&gt;/)에 정리합니다. 완료되면 서비스와 각 명령 결과가 그래프에
+        자동으로 반영됩니다.
       </p>
       <div className="autoReconTargetPicker">
         <div className="autoReconTargetPicker__actions">
@@ -121,11 +128,46 @@ export default function AutoReconPanel({ targets, selectedIds, onToggle, onSelec
         onClick={onStart}>
         {starting ? "시작하는 중…" : `AutoRecon 시작 (${selectedIds.size}개 대상)`}
       </Button>
-      {!!selectedIds.size && <div className="autoReconJobs">
-        {targets.filter((t) => selectedIds.has(t.id)).map((t) => (
-          <AutoReconJobRow key={t.id} target={t}
-            active={t.id === activeTargetId} onOpen={onOpenJob} />
+      <div className="autoReconRuns">
+        {(runs.data || []).map((run) => (
+          <div key={run.id} role="button" tabIndex={0}
+            className={`scanRow autoReconRunRow${run.id === activeRunId ? " active" : ""}`}
+            onClick={() => onSelectRun(run.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectRun(run.id); }
+            }}>
+            <span>
+              <b>실행 #{run.id}</b>
+              <Badge status={run.status} />
+            </span>
+            <small>{runTargets(run, targets).map((t) => t.ip).join(", ") || "대상 정보 없음"}</small>
+            {run.imported_count > 0 && <small>{run.imported_count}개 명령 결과 임포트됨</small>}
+          </div>
         ))}
+        {!runs.isLoading && !runs.data?.length &&
+          <p className="empty">아직 실행한 AutoRecon이 없습니다.</p>}
+      </div>
+      {activeRun && <div className="terminal autoReconTranscript">
+        <div className="terminalStatus">
+          <span className="termDots" aria-hidden="true">
+            <i className="termDot" /><i className="termDot termDot--yellow" />
+            <i className="termDot termDot--green" />
+          </span>
+          <span>실행 #{activeRun.id} · {activeRun.status}</span>
+          <small role="status" aria-live="polite">
+            {streamState === "connected" ? "RX LIVE"
+              : streamState === "connecting" ? "ATTACHING"
+              : streamState === "disconnected" ? "LINK LOST"
+              : terminal.includes(activeRun.status) ? "STREAM CLOSED" : "IDLE"}
+          </small>
+          {["queued", "running"].includes(activeRun.status) &&
+            <Button type="button" variant="quiet" onClick={() => void stopRun(activeRun.id)}>
+              중지
+            </Button>}
+        </div>
+        <pre ref={transcript} tabIndex={0} aria-label="AutoRecon 실행 출력">
+          {output || "..."}
+        </pre>
       </div>}
     </section>
   );

@@ -1,18 +1,16 @@
-import json
 from pathlib import Path
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Evidence, Execution, Finding, FindingEvidence, Project, ScanArtifact, ScanProfile, Target
+from app.models import Evidence, Finding, FindingEvidence, Project, ScanArtifact, ScanProfile, Target
 from app.models import ScanJob, Service, ServiceObservation
 from app.modules.scan_center.router import (
-    delete_scan, download_artifact, export_observations, preview, run_scan, update_job,
+    delete_scan, download_artifact, export_observations, preview, update_job,
 )
 from app.modules.scan_center.service import (
-    BUILTIN_PROFILES, compare_jobs, create_chain_job, fan_out_service_executions,
-    import_xml, render_scan, seed_profiles,
+    BUILTIN_PROFILES, compare_jobs, create_chain_job, import_xml, render_scan, seed_profiles,
 )
 from app.schemas import ScanJobUpdate, ScanPreviewIn
 
@@ -508,148 +506,3 @@ def test_negative_nse_result_does_not_create_candidate(tmp_path, monkeypatch):
     </ports></host></nmaprun>"""
     import_xml(db, target, project, xml, "negative.xml")
     assert db.query(Finding).count() == 0
-
-
-def test_run_scan_persists_the_autorecon_tag_at_creation_so_theres_no_race(monkeypatch):
-    # tags has to land in the same INSERT as the job -- fan_out_service_executions
-    # only reads job.tags once the (possibly very fast) scan chain finishes, so a
-    # follow-up PATCH from the frontend could lose the race entirely.
-    import app.modules.scan_center.router as router
-    monkeypatch.setattr(router.manager, "enqueue", lambda *a, **k: None)
-    db = database()
-    seed_profiles(db)
-    profile = db.query(ScanProfile).filter_by(kind="quick").one()
-    project = Project(name="Tag Lab", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.70")
-    db.add(target); db.commit()
-
-    import asyncio
-    async def exercise():
-        return await run_scan(ScanPreviewIn(
-            target_id=target.id, profile_id=profile.id, tags=["autorecon"]), db=db)
-    job = asyncio.run(exercise())
-
-    assert json.loads(job.tags) == ["autorecon"]
-    assert json.loads(db.get(ScanJob, job.id).tags) == ["autorecon"]
-
-
-def test_fan_out_skips_a_job_without_the_autorecon_tag(monkeypatch):
-    import app.modules.scan_center.service as service
-    calls = []
-    monkeypatch.setattr(service.execution_service, "start_execution",
-                        lambda *a, **k: calls.append((a, k)))
-    db = database()
-    project = Project(name="Fan-out Lab", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.60")
-    db.add(target); db.flush()
-    db.add(Service(target_id=target.id, port=80, protocol="tcp", name="http",
-                   state="open"))
-    job = ScanJob(project_id=project.id, target_id=target.id, source="executed",
-                 status="completed", command="fake", tags="[]")
-    db.add(job); db.commit()
-
-    assert fan_out_service_executions(db, job) == []
-    assert calls == []
-
-
-def test_fan_out_launches_only_autorecon_tagged_matches_grouped_by_service_folder(monkeypatch):
-    import app.modules.scan_center.service as service
-    launched_calls = []
-
-    def fake_start_execution(db, target, project, svc, template_id, variables,
-                             **kwargs):
-        launched_calls.append((template_id, kwargs.get("output_subdir")))
-        return Execution(target_id=target.id, service_id=svc.id if svc else None,
-                         template_id=template_id, command="x", cwd=".",
-                         status="queued")
-    monkeypatch.setattr(service.execution_service, "start_execution", fake_start_execution)
-    db = database()
-    project = Project(name="Fan-out Lab 2", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.61")
-    db.add(target); db.flush()
-    db.add(Service(target_id=target.id, port=80, protocol="tcp", name="http",
-                   state="open"))
-    # ssh has zero autorecon-tagged catalog commands today -- nothing should
-    # launch for it, proving the tag (not just "any match") gates firing.
-    db.add(Service(target_id=target.id, port=22, protocol="tcp", name="ssh",
-                   state="open"))
-    db.flush()
-    job = ScanJob(project_id=project.id, target_id=target.id, source="executed",
-                 status="completed", command="fake",
-                 tags=json.dumps(["autorecon"]))
-    db.add(job); db.commit()
-
-    result = fan_out_service_executions(db, job)
-
-    assert len(result) == len(launched_calls)
-    assert launched_calls, "expected at least http-headers/http-whatweb to fire"
-    assert all(subdir == "tcp80-http" for _, subdir in launched_calls)
-    ids = {template_id for template_id, _ in launched_calls}
-    assert {"http-headers", "http-whatweb"} <= ids
-    # http-directory-fuzz has an empty match{} on purpose (needs a wordlist
-    # a human normally supplies) so it never comes back from commands_for()
-    # -- the fan-out has to add it back explicitly.
-    assert "http-directory-fuzz" in ids
-    assert not any(template_id.startswith("ssh-") for template_id, _ in launched_calls)
-
-
-def test_fan_out_skips_an_item_whose_variables_cannot_be_resolved_but_keeps_going(monkeypatch):
-    import app.modules.scan_center.service as service
-
-    def fake_start_execution(db, target, project, svc, template_id, variables,
-                             **kwargs):
-        if template_id == "dns-dnsrecon-std":
-            raise ValueError("Missing or invalid template variables")
-        return Execution(target_id=target.id, service_id=svc.id if svc else None,
-                         template_id=template_id, command="x", cwd=".",
-                         status="queued")
-    monkeypatch.setattr(service.execution_service, "start_execution", fake_start_execution)
-    db = database()
-    project = Project(name="Fan-out Lab 3", description="")
-    db.add(project); db.flush()
-    # No hostname confirmed, so {domain} genuinely can't be filled in --
-    # dns-dnsrecon-std should be attempted and skipped, not abort the batch.
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.62")
-    db.add(target); db.flush()
-    db.add(Service(target_id=target.id, port=53, protocol="tcp", name="domain",
-                   state="open"))
-    db.flush()
-    job = ScanJob(project_id=project.id, target_id=target.id, source="executed",
-                 status="completed", command="fake",
-                 tags=json.dumps(["autorecon"]))
-    db.add(job); db.commit()
-
-    result = fan_out_service_executions(db, job)
-
-    launched_ids = {execution.template_id for execution in result}
-    assert "dns-info" in launched_ids
-    assert "dns-dnsrecon-std" not in launched_ids
-
-
-def test_fan_out_fires_wpscan_only_when_the_service_product_looks_like_wordpress(monkeypatch):
-    import app.modules.scan_center.service as service
-    launched_ids = []
-    monkeypatch.setattr(service.execution_service, "start_execution",
-        lambda db, target, project, svc, template_id, variables, **kwargs:
-            (launched_ids.append(template_id) or Execution(
-                target_id=target.id, service_id=svc.id, template_id=template_id,
-                command="x", cwd=".", status="queued")))
-    db = database()
-    project = Project(name="Fan-out Lab 4", description="")
-    db.add(project); db.flush()
-    target = Target(project_id=project.id, name="Box", ip="10.10.10.63")
-    db.add(target); db.flush()
-    db.add(Service(target_id=target.id, port=80, protocol="tcp", name="http",
-                   product="WordPress 6.4", state="open"))
-    db.flush()
-    job = ScanJob(project_id=project.id, target_id=target.id, source="executed",
-                 status="completed", command="fake",
-                 tags=json.dumps(["autorecon"]))
-    db.add(job); db.commit()
-
-    fan_out_service_executions(db, job)
-
-    assert "http-wpscan" in launched_ids

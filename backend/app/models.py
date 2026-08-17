@@ -79,11 +79,6 @@ class Execution(Base):
     # sync_from_project() doesn't also give it a redundant graph node of
     # its own sitting right next to the node that already shows it.
     graph_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Set when AutoRecon's fan-out (scan_center.service.fan_out_service_executions)
-    # launched this execution, so its progress can be queried precisely via
-    # GET /api/scans/{scan_job_id}/service-executions instead of guessing
-    # from timestamps.
-    scan_job_id: Mapped[int | None] = mapped_column(ForeignKey("scan_jobs.id"), nullable=True)
 
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"
@@ -114,6 +109,26 @@ class ScanJob(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     alias: Mapped[str] = mapped_column(String(120), default="")
     tags: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class AutoReconRun(Base):
+    """One real `autorecon` (Tib3rius) subprocess invocation against one or
+    more targets at once -- distinct from ScanJob, which is always exactly
+    one target per row, because AutoRecon batches multiple targets inside a
+    single process/output tree."""
+    __tablename__ = "autorecon_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    target_ids: Mapped[str] = mapped_column(Text, default="[]")
+    command: Mapped[str] = mapped_column(Text, default="")
+    output_dir: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stopped: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str] = mapped_column(Text, default="")
+    imported_count: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class ScanArtifact(Base):

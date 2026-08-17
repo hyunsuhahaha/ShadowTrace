@@ -153,6 +153,12 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     ))
     if active_crack:
         raise HTTPException(409, "실행 중인 해시 크랙 작업을 중단한 뒤 프로젝트를 삭제하세요.")
+    active_autorecon = db.scalar(select(tables["autorecon_runs"].c.id).where(
+        tables["autorecon_runs"].c.project_id == ident,
+        tables["autorecon_runs"].c.status.in_(["queued", "running"]),
+    ))
+    if active_autorecon:
+        raise HTTPException(409, "실행 중인 AutoRecon을 중단한 뒤 프로젝트를 삭제하세요.")
 
     def remove(table_name: str, column: str, values: list[int]):
         if values:
@@ -186,6 +192,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     for table_name in [
         "evidence", "exploit_research", "http_requests", "directory_objects",
         "tunnels", "reports", "scan_jobs", "remote_executions", "hash_crack_jobs",
+        "autorecon_runs",
         # graph tables were added after this cascade; without them a deleted
         # project's nodes orphan and resurface when SQLite reuses the id.
         "graph_events", "graph_edges", "graph_nodes", "graph_project_meta",

@@ -67,7 +67,8 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     [autoReconMode, setAutoReconMode] = useState(false),
     [autoReconSelected, setAutoReconSelected] = useState<Set<number>>(new Set()),
     [autoReconStarting, setAutoReconStarting] = useState(false),
-    [autoReconError, setAutoReconError] = useState("");
+    [autoReconError, setAutoReconError] = useState(""),
+    [autoReconRunId, setAutoReconRunId] = useState<number>();
   const transcript = useRef<HTMLPreElement>(null);
   const transcriptPanel = useRef<HTMLDivElement>(null);
   const detachDrag = useRef<{x: number; y: number; pointerId: number}>();
@@ -486,35 +487,28 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
   const selectAllAutoReconTargets = () => setAutoReconSelected(new Set(
     (targets.data || []).filter((t) => t.project_id === effectiveProjectId).map((t) => t.id)));
   const clearAutoReconTargets = () => setAutoReconSelected(new Set());
-  const openAutoReconJob = (id: number, job: number) => {
-    setTargetId(id);
-    setScanId(job);
-  };
-  // Reuses the same tool/profile/ports/top_ports state ScanProfileComposer
-  // already manages for the single-target flow -- one POST /scans/run per
-  // selected target, tagged "autorecon" so fan_out_service_executions()
-  // recognizes the chain once each target's detail scan completes.
+  // The real `autorecon` binary batches every target into one process/output
+  // tree, so this is a single POST -- not a loop like the single-target
+  // "review scan" flow above.
   const startAutoRecon = async () => {
-    if (!profileId || !autoReconSelected.size) return;
+    if (!effectiveProjectId || !autoReconSelected.size) return;
     setAutoReconStarting(true);
     setAutoReconError("");
     try {
-      for (const id of autoReconSelected) {
-        const r = await fetch("/api/scans/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            target_id: id, profile_id: profileId,
-            ports: profile?.arguments.includes("{ports}") ? ports : "",
-            top_ports: Number(topPorts), extra_arguments: [], tags: ["autorecon"],
-          }),
-        });
-        if (!r.ok) {
-          const targetLabel = targets.data?.find((t) => t.id === id)?.ip || `#${id}`;
-          setAutoReconError(`${targetLabel}: ${(await r.json()).detail}`);
-        }
+      const r = await fetch("/api/autorecon/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: effectiveProjectId, target_ids: Array.from(autoReconSelected),
+        }),
+      });
+      if (!r.ok) {
+        setAutoReconError((await r.json()).detail);
+        return;
       }
-      await qc.invalidateQueries({ queryKey: ["autoReconScans"] });
+      const run = await r.json();
+      setAutoReconRunId(run.id);
+      await qc.invalidateQueries({ queryKey: ["autoReconRuns", effectiveProjectId] });
     } finally {
       setAutoReconStarting(false);
     }
@@ -635,6 +629,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             )}
             onReviewScan={beginReview} />
           {autoReconMode && <AutoReconPanel
+            projectId={effectiveProjectId}
             targets={(targets.data || []).filter((t) => t.project_id === effectiveProjectId)}
             selectedIds={autoReconSelected}
             onToggle={toggleAutoReconTarget}
@@ -643,8 +638,8 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             onStart={() => void startAutoRecon()}
             starting={autoReconStarting}
             startError={autoReconError}
-            activeTargetId={targetId}
-            onOpenJob={openAutoReconJob} />}
+            activeRunId={autoReconRunId}
+            onSelectRun={setAutoReconRunId} />}
           {!floatingScanId && <div key={selected?.id || "idle"} ref={transcriptPanel}
             className={`terminal scanTerminal scanTranscript${selected ? " scanTranscript--attached" : ""}`}>
             <div className={selected ? `terminalStatus terminalStatus--${selected.status}` : "terminalStatus"}

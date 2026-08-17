@@ -46,8 +46,7 @@ async def execute(body: ExecutionIn, db: Session = Depends(get_db)):
     return execution_service.start_execution(
         db, target, project, service, body.template_id, body.variables,
         run_as_root=body.run_as_root, output_filename=body.output_filename,
-        output_subdir=body.output_subdir, command_override=body.command_override,
-        graph_node_id=body.graph_node_id,
+        command_override=body.command_override, graph_node_id=body.graph_node_id,
     )
 
 

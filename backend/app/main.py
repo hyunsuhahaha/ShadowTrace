@@ -12,6 +12,7 @@ from .models import (
 )
 from .nmap_parser import parse_nmap
 from .modules.scan_center.router import router as scan_router
+from .modules.autorecon.router import router as autorecon_router
 from .modules.web_testing.router import router as web_router
 from .modules.evidence.router import router as evidence_router
 from .modules.directory.router import router as directory_router
@@ -41,6 +42,7 @@ from .modules.runbooks.workflow_router import router as runbook_workflow_router
 from .modules.service_intelligence.router import router as service_intelligence_router
 from .modules.runbooks.builtins import ensure_builtin_runbooks
 from .modules.scan_center.manager import manager as scan_manager, recover_interrupted_jobs
+from .modules.autorecon.manager import manager as autorecon_manager, recover_interrupted_runs
 from .modules.web_proxy.router import router as web_proxy_router
 from .modules.web_proxy.manager import manager as web_proxy_manager
 from .modules.post_exploitation.router import router as post_exploitation_router
@@ -79,6 +81,7 @@ async def lifespan(_: FastAPI):
         if setting:
             scan_manager.set_concurrency(int(setting.value))
     recover_interrupted_jobs()
+    recover_interrupted_runs()
     kill_orphaned_server()
     kill_orphaned_jndi_server()
     with SessionLocal() as db:
@@ -101,6 +104,7 @@ async def lifespan(_: FastAPI):
         reconcile_completed_observations(db)
     yield
     await scan_manager.shutdown()
+    await autorecon_manager.shutdown()
     await shutdown_executions()
     await pty_manager.shutdown()
     await tunnel_manager.shutdown()
@@ -113,6 +117,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="OSCP Workspace", version="0.1.0", lifespan=lifespan)
 app.include_router(scan_router)
+app.include_router(autorecon_router)
 app.include_router(web_router)
 app.include_router(web_proxy_router)
 app.include_router(evidence_router)

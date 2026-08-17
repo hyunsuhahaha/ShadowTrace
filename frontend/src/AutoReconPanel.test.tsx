@@ -15,8 +15,9 @@ const targets: Target[] = [
 function renderPanel(overrides: Partial<Parameters<typeof AutoReconPanel>[0]> = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   const props = {
-    targets, selectedIds: new Set<number>(), onToggle: vi.fn(), onSelectAll: vi.fn(),
-    onClear: vi.fn(), onStart: vi.fn(), starting: false, onOpenJob: vi.fn(),
+    projectId: 10, targets, selectedIds: new Set<number>(), onToggle: vi.fn(),
+    onSelectAll: vi.fn(), onClear: vi.fn(), onStart: vi.fn(), starting: false,
+    onSelectRun: vi.fn(),
     ...overrides,
   };
   render(<QueryClientProvider client={client}><AutoReconPanel {...props} /></QueryClientProvider>);
@@ -48,35 +49,60 @@ it("keeps the start button disabled until scope is acknowledged and a target is 
   expect(props.onStart).toHaveBeenCalled();
 });
 
-it("shows a target as idle when it has no autorecon-tagged scan yet", async () => {
+it("shows an empty state when the project has no AutoRecon runs yet", async () => {
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
     new Response(JSON.stringify([]), {headers: {"Content-Type": "application/json"}}))));
-  renderPanel({selectedIds: new Set([1])});
-  expect(await screen.findByText("대기 · 아직 시작되지 않음")).toBeTruthy();
+  renderPanel();
+  expect(await screen.findByText("아직 실행한 AutoRecon이 없습니다.")).toBeTruthy();
 });
 
-it("shows the running scan's status and per-service execution counts, and opens it on click", async () => {
+it("lists runs with their status and target IPs, and selects one on click", async () => {
   const fetcher = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/api/scans?target_id=1")) return Promise.resolve(
+    if (url.endsWith("/api/autorecon?project_id=10")) return Promise.resolve(
       new Response(JSON.stringify([
-        {id: 71, source: "executed", status: "running", command: "nmap -p- 10.10.10.10",
-         created_at: "2026-08-16T00:00:00Z", error: "", alias: "", tags: "[\"autorecon\"]"},
-      ]), {headers: {"Content-Type": "application/json"}}));
-    if (url.endsWith("/api/scans/71/service-executions")) return Promise.resolve(
-      new Response(JSON.stringify([
-        {id: 1, status: "completed", template_id: "http-whatweb"},
-        {id: 2, status: "running", template_id: "http-nikto"},
-        {id: 3, status: "failed", template_id: "smb-enum4linux"},
+        {id: 5, project_id: 10, target_ids: "[1,2]", command: "autorecon 10.10.10.10 10.10.10.11",
+         output_dir: "/tmp/out", status: "running", stopped: false, error: "",
+         imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
       ]), {headers: {"Content-Type": "application/json"}}));
     throw new Error(`Unhandled request: ${url}`);
   });
   vi.stubGlobal("fetch", fetcher);
-  const props = renderPanel({selectedIds: new Set([1])});
+  const props = renderPanel();
 
-  expect(await screen.findByText(/서비스 명령 3개/)).toBeTruthy();
-  expect(screen.getByText(/완료 1 · 진행중 1 · 실패 1/)).toBeTruthy();
+  expect(await screen.findByText("실행 #5")).toBeTruthy();
+  expect(screen.getByText("10.10.10.10, 10.10.10.11")).toBeTruthy();
 
-  fireEvent.click(document.querySelector(".autoReconJobRow")!);
-  expect(props.onOpenJob).toHaveBeenCalledWith(1, 71);
+  fireEvent.click(screen.getByText("실행 #5").closest(".autoReconRunRow")!);
+  expect(props.onSelectRun).toHaveBeenCalledWith(5);
+});
+
+it("streams the active run's live output over SSE and shows the imported-count summary once it lands", async () => {
+  class FakeEventSource {
+    static instances: FakeEventSource[] = [];
+    onopen: (() => void) | null = null;
+    onmessage: ((e: {data: string}) => void) | null = null;
+    onerror: (() => void) | null = null;
+    closed = false;
+    constructor(public url: string) { FakeEventSource.instances.push(this); }
+    close() { this.closed = true; }
+  }
+  vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/autorecon?project_id=10")) return Promise.resolve(
+      new Response(JSON.stringify([
+        {id: 5, project_id: 10, target_ids: "[1]", command: "autorecon 10.10.10.10",
+         output_dir: "/tmp/out", status: "running", stopped: false, error: "",
+         imported_count: 0, created_at: "2026-08-16T00:00:00Z"},
+      ]), {headers: {"Content-Type": "application/json"}}));
+    throw new Error(`Unhandled request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  renderPanel({activeRunId: 5});
+
+  await screen.findByText("실행 #5 · running");
+  const source = FakeEventSource.instances.at(-1)!;
+  source.onmessage?.({data: JSON.stringify({stream: "stdout", data: "[*] Scanning 10.10.10.10\n"})});
+  expect(await screen.findByText(/Scanning 10.10.10.10/)).toBeTruthy();
 });

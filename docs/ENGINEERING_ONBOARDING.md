@@ -245,49 +245,63 @@ endpoint는 [`backend/app/modules/executions/router.py`](../backend/app/modules/
 process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있다. 실행 시작 로직
 자체(target_dir/output_dir 계산, `catalog.render()`, `Execution` 행 생성, task 기동)는
 `router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
-`start_execution()`에 있다 — 아래 AutoRecon 팬아웃처럼 HTTP 요청 없이 서버 쪽에서 실행을
-시작해야 하는 다른 호출자도 재사용할 수 있게 라우터에서 분리한 것.
+`start_execution()`에 분리돼 있다.
 
 ### AutoRecon (여러 대상 동시 정찰)
 
-Scan Center의 전체 포트 스캔 → 자동 상세 스캔 체이닝(`chain_kind`, 위 다이어그램)에 한 단계가
-더 붙는다: 체인의 **마지막** job이 완료되면(더 체이닝할 게 없을 때만 — 중간 단계는 아직
-서비스 이름이 확정되지 않았으므로), 그 대상의 열린 서비스마다 `services.yaml`에
-`autorecon: true`가 붙은 명령을 자동으로 병렬 실행한다.
+카탈로그 태그 기반으로 이 앱이 직접 팬아웃하는 방식을 먼저 만들어 라이브까지 검증했었지만,
+실제 `autorecon`(Tib3rius) 바이너리를 pipx로 설치해 라이브 테스트해본 결과 막히는 기술적
+블로커가 없다는 게 확인돼 **실제 도구를 서브프로세스로 감싸는 방식**으로 교체했다 — 서비스별
+매칭 로직을 우리가 다시 짤 필요가 없고(AutoRecon 자체 플러그인이 담당), 여러 대상 동시
+처리도 AutoRecon 자체 옵션(`-m`/`-mp`)이 처리한다. **중요**: PyPI의 `autorecon` 패키지는
+완전히 무관한 다른 도구(Paul Schubert의 OSINT 툴)다 — 반드시
+`pipx install git+https://github.com/Tib3rius/AutoRecon`로 GitHub에서 받아야 한다
+(`backend/app/modules/system.py`의 TOOLS 안내 문구에도 명시).
 
 ```text
-POST /api/scans/run (tags=["autorecon"])
-  → ScanJob 생성 (tags가 이 최초 job부터 붙어 있어야 함 -- 나중에 PATCH로
-    붙이면 완료가 더 빠른 스캔과 경쟁 상태가 생김)
-  → create_chain_job이 상세 스캔을 큐잉할 때 부모의 tags를 그대로 물려줌
-  → 체인의 마지막 job 완료 (job.status=="completed" and 더 chain 없음)
-  → fan_out_service_executions(db, job)
-      대상의 open Service마다 catalog.commands_for()로 매칭 명령을 구하고
-      item.get("autorecon")인 것만 골라 start_execution() 호출
-      (전용 세마포어 _autorecon_semaphore로 동시 실행 수 제한,
-      output_subdir=f"{protocol}{port}-{service}"로 outputs/tcp80-http/ 같은
-      서비스별 폴더에 결과 저장)
-  → 이후는 일반 Execution과 완전히 동일 (그래프 동기화도 그대로 재사용)
+POST /api/autorecon/run {project_id, target_ids}
+  → AutoReconRun 행 생성(대상 여러 개를 하나의 실행으로 묶음 -- ScanJob과 달리
+    항상 대상 1개=행 1개가 아니다)
+  → render_autorecon_command()가 argv 구성:
+    ["autorecon", *ip들, "--disable-keyboard-control", "--ignore-plugin-checks",
+     "--only-scans-dir", "-o", output_dir]
+    (각 플래그가 왜 필수인지는 코드 주석 참고 -- 특히 --disable-keyboard-control
+    없으면 TTY 없는 서브프로세스 환경에서 termios.error로 바로 죽는다, 라이브로 확인함)
+  → AutoReconManager._run()이 서브프로세스 실행, stdout/stderr를 기존 실행/스캔과
+    같은 SSE 이벤트 셰이프({"stream":"stdout"/"stderr"/"status", ...})로 스트리밍
+    (stdin은 반드시 DEVNULL)
+  → 프로세스 종료 시 import_autorecon_run(db, run) 호출
+      never --single-target으로 실행하므로(대상 1개든 여러 개든) 결과는 항상
+      <output_dir>/<대상 IP>/scans/... 형태 -- 라이브로 확인한 실제 레이아웃.
+      대상마다 부기용 ScanJob(source="autorecon")을 하나 만들어 기존
+      ingest_xml()/capture_scan_evidence()를 그대로 재사용(Service upsert,
+      ServiceObservation, NSE 긍정 결과 자동 Finding까지 공짜로 얻음), 그다음
+      scans/tcp<port>/ 밑의 .txt/.html 파일마다(파일명에서 플러그인 slug만 뽑아
+      template_id="autorecon-<slug>") Execution을 직접 생성 -- 서브프로세스를 또
+      띄우는 게 아니라 이미 끝난 결과 파일을 그대로 가져오는 것이므로
+      start_execution()을 거치지 않는다.
+  → 이 Execution들은 다른 Execution과 똑같이 그래프 동기화가 자동으로 집어간다
 ```
 
-`fan_out_service_executions`는
-[`backend/app/modules/scan_center/service.py`](../backend/app/modules/scan_center/service.py)에
-있고, 호출 지점은 `ScanManager._run`
-([`backend/app/modules/scan_center/manager.py`](../backend/app/modules/scan_center/manager.py))의
-`create_chain_job` 바로 다음이다. `http-directory-fuzz`/`http-wpscan`처럼 `match: {services:
-[], ports: []}`로 일부러 서비스별 명령 목록에서 빠져 있는 항목(wordlist·워드프레스 감지처럼
-평소엔 사람이 값을 골라야 함)은 `commands_for()`가 못 찾으므로, 팬아웃이 http/https 서비스나
-product에 "wordpress"가 보이는 서비스에 한해 기본값(`AUTORECON_DEFAULT_WORDLIST`)을 채워
-직접 추가한다.
+새 모듈은 `backend/app/modules/autorecon/`(scan_center의 router/service/manager 3분할을
+그대로 따름) — 특히 `import_autorecon_run`
+([`backend/app/modules/autorecon/service.py`](../backend/app/modules/autorecon/service.py))이
+핵심이고, `AutoReconManager`
+([`backend/app/modules/autorecon/manager.py`](../backend/app/modules/autorecon/manager.py))는
+체이닝이 없어 `ScanManager`보다 훨씬 단순하다(세마포어 하나, 프로세스 하나, 끝나면 임포터
+한 번 호출). `AutoReconRun`은 프로젝트 삭제 캐스케이드(`core/router.py`의 `delete_project`)와
+active-run 가드에도 `scan_jobs`/`hash_crack_jobs`와 나란히 들어가 있다 — 새 project-scoped
+테이블을 추가할 때 그 두 곳(가드 체크 + 삭제 목록)을 빼먹기 쉬우니 참고.
 
 프런트는 새 워크스페이스가 아니라 기존 `ScanCenter.tsx`에 모드 토글("단일 대상"/"AutoRecon")만
-추가했다 — 켜면 IP 입력 대신 이미 등록된 대상 체크박스 목록이 뜨고, 도구/프로파일/포트는
-`ScanProfileComposer`가 관리하는 기존 state를 그대로 공유한다. 새 컴포넌트는
-[`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 그 안의
-`AutoReconJobRow`가 대상별로 `/scans?target_id=`와 `/scans/{id}/service-executions`를
-폴링해 진행 상황(포트 스캔 상태 + 서비스 명령 완료/진행/실패 개수)을 보여준다. 행을 클릭하면
-그 대상/스캔을 `ScanCenter`의 기존 `targetId`/`scanId` state로 전환해, 이미 있는 SSE 트랜스크립트
-패널을 그대로 재사용한다 — 여러 터미널을 동시에 띄우는 새 UI는 만들지 않았다.
+추가했다 — 켜면 IP 입력 대신 이미 등록된 대상 체크박스 목록이 뜨고, "AutoRecon 시작"은 선택한
+대상 전체를 담아 `POST /api/autorecon/run`을 **한 번만** 호출한다(대상마다 반복 호출하는 게
+아님 -- 실제 도구가 이미 여러 대상을 한 프로세스로 처리하므로). 새 컴포넌트는
+[`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 이 프로젝트의
+실행 목록(`GET /api/autorecon?project_id=`)을 보여주다가 하나를 선택하면 자체
+`EventSource('/api/autorecon/{id}/events')`로 라이브 트랜스크립트를 인라인 표시한다 —
+`ScanCenter`의 단일 스캔 SSE `useEffect`와 이벤트 셰이프가 같아서 그 파싱 로직을 거의 그대로
+가져다 썼다. 실행이 하나(프로세스 하나)뿐이라 여러 터미널을 동시에 띄우는 UI는 필요 없다.
 
 ### Runbook
 
@@ -478,7 +492,7 @@ run, import), `/vpn/status`.
 | `ScanProfileComposer.tsx` | 대상 IP/이름 입력, 프로필 드롭다운, 포트 입력, XML 가져오기, 명령 미리보기, "스캔 검토" 버튼 |
 | `ScanJobStatus.tsx` | 선택 스캔의 실시간 상태 카드 + 완료 후 자동화 배너(증적/finding 수, 자동 연계 상세 스캔) |
 | `ScanHistoryPanel.tsx` | 스캔 큐/이력 목록(검색·상태 필터), 중지/재실행/삭제, base 비교 |
-| `AutoReconPanel.tsx` | AutoRecon 모드(nav의 "단일 대상"/"AutoRecon" 토글)에서만 렌더 — 대상 다중 선택 체크박스, SCOPE 확인, `POST /scans/run`(tags=["autorecon"]) 반복 호출, 대상별 진행 상황(`AutoReconJobRow`가 `/scans?target_id=`·`/scans/{id}/service-executions` 폴링) |
+| `AutoReconPanel.tsx` | AutoRecon 모드(nav의 "단일 대상"/"AutoRecon" 토글)에서만 렌더 — 대상 다중 선택 체크박스, SCOPE 확인, `POST /api/autorecon/run`(대상 배열 한 번에) 호출, 이 프로젝트의 실행 목록(`GET /api/autorecon?project_id=`)과 선택한 실행의 라이브 SSE 트랜스크립트(`/api/autorecon/{id}/events`) |
 | `scanCenterModel.ts` | 공용 타입(`Project`/`Target`/`Scan`/`Profile`/`Obs`/`Artifact`/`Automation`), 프로필 라벨/그룹 표, `elapsed()`/`bytes()`, `syncSelectedProject()` |
 | `VpnControl.tsx` | VPN 전역 위젯(`.ovpn` 업로드, 검토+연결, 해제, DNS 지정) — `AppShell.tsx`/`EnumerationScope.tsx`도 사용 |
 
