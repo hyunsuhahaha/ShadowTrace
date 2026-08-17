@@ -259,6 +259,9 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 (`backend/app/modules/system.py`의 TOOLS 안내 문구에도 명시).
 
 ```text
+GET /api/autorecon/capabilities
+  → 설치된 바이너리의 --version/--help/--list를 캐시해 모든 실행 옵션과
+    PortScan/ServiceScan/Report 플러그인을 프런트 옵션 카탈로그에 제공
 POST /api/autorecon/run {project_id, target_ids, arguments?}
   → AutoReconRun 행 생성(대상 여러 개를 하나의 실행으로 묶음 -- ScanJob과 달리
     항상 대상 1개=행 1개가 아니다)
@@ -276,7 +279,8 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       대상마다 부기용 ScanJob(source="autorecon")을 하나 만들어 기존
       ingest_xml()/capture_scan_evidence()를 그대로 재사용(Service upsert,
       ServiceObservation, NSE 긍정 결과 자동 Finding까지 공짜로 얻음), 그다음
-      scans/tcp<port>/와 scans/udp<port>/ 밑의 .txt/.html 파일마다(파일명에서 플러그인 slug만 뽑아
+      scans/tcp<port>/와 scans/udp<port>/ 밑의 .txt/.html 파일마다(또는
+      --no-port-dirs 사용 시 scans/ 바로 아래 파일마다, 파일명에서 플러그인 slug만 뽑아
       template_id="autorecon-<slug>") Execution을 직접 생성 -- 서브프로세스를 또
       띄우는 게 아니라 이미 끝난 결과 파일을 그대로 가져오는 것이므로
       start_execution()을 거치지 않는다. AutoRecon의 exploit/loot/report 디렉터리도 원형대로
@@ -302,7 +306,8 @@ active-run 가드에도 `scan_jobs`/`hash_crack_jobs`와 나란히 들어가 있
 추가했다 — 선택하면 단일 스캔 설정 대신 이미 등록된 대상 체크박스 목록이 뜨고, "AutoRecon 시작"은 선택한
 대상 전체를 담아 `POST /api/autorecon/run`을 **한 번만** 호출한다(대상마다 반복 호출하는 게
 아님 -- 실제 도구가 이미 여러 대상을 한 프로세스로 처리하므로). 새 컴포넌트는
-[`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 이 프로젝트의
+[`frontend/src/AutoReconPanel.tsx`](../frontend/src/AutoReconPanel.tsx) 하나뿐이고, 실제 설치본에서
+발견한 전체 옵션/플러그인을 검색·선택할 수 있는 실행 구성 UI와 이 프로젝트의
 실행 목록(`GET /api/autorecon?project_id=`)을 보여주다가 하나를 선택하면 자체
 `EventSource('/api/autorecon/{id}/events')`로 라이브 트랜스크립트를 인라인 표시한다 —
 `ScanCenter`의 단일 스캔 SSE `useEffect`와 이벤트 셰이프가 같아서 그 파싱 로직을 거의 그대로

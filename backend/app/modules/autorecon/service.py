@@ -1,6 +1,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -141,6 +142,36 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
         if run.status not in {"queued", "running"}:
             _register_native_artifacts(db, job, target_dir)
         capture_scan_evidence(db, job)
+        def import_result(result_file: Path, protocol: str, port: int) -> int:
+            if (result_file.is_dir() or result_file.suffix not in (".txt", ".html")
+                    or now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS):
+                return 0
+            service = db.scalar(select(Service).where(
+                Service.target_id == target.id, Service.port == port,
+                Service.protocol == protocol))
+            slug = result_file.stem.removeprefix(f"{protocol}_{port}_")
+            if service and slug.startswith(f"{service.name}_"):
+                slug = slug[len(service.name) + 1:]
+            existing = db.scalar(select(Execution).where(
+                Execution.output_path == str(result_file)))
+            if existing:
+                if service and existing.service_id is None:
+                    existing.service_id = service.id
+                    existing.template_id = f"autorecon-{slug}"[:100]
+                    existing.command = f"(AutoRecon) {slug}"
+                return 0
+            try:
+                content = result_file.read_text(errors="replace")[:2_000_000]
+            except OSError:
+                return 0
+            db.add(Execution(
+                target_id=target.id, service_id=service.id if service else None,
+                template_id=f"autorecon-{slug}"[:100],
+                command=f"(AutoRecon) {slug}", stdout=content,
+                cwd=str(result_file.parent), status="completed", exit_code=0,
+                output_path=str(result_file)))
+            return 1
+
         for port_dir in sorted(scans_dir.glob("*p*")):
             protocol = port_dir.name[:3]
             if not port_dir.is_dir() or protocol not in {"tcp", "udp"}:
@@ -149,36 +180,11 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
                 port = int(port_dir.name[3:])
             except ValueError:
                 continue
-            service = db.scalar(select(Service).where(
-                Service.target_id == target.id, Service.port == port,
-                Service.protocol == protocol))
             for result_file in sorted(port_dir.iterdir()):
-                if result_file.is_dir() or result_file.suffix not in (".txt", ".html"):
-                    continue
-                if now - result_file.stat().st_mtime < _QUIET_PERIOD_SECONDS:
-                    continue
-                # AutoRecon names files <protocol>_<port>_<service>_<plugin>.txt --
-                # strip both prefixes so the label reads as just the plugin.
-                slug = result_file.stem.removeprefix(f"{protocol}_{port}_")
-                if service and slug.startswith(f"{service.name}_"):
-                    slug = slug[len(service.name) + 1:]
-                existing = db.scalar(select(Execution).where(
-                    Execution.output_path == str(result_file)))
-                if existing:
-                    if service and existing.service_id is None:
-                        existing.service_id = service.id
-                        existing.template_id = f"autorecon-{slug}"[:100]
-                        existing.command = f"(AutoRecon) {slug}"
-                    continue
-                try:
-                    content = result_file.read_text(errors="replace")[:2_000_000]
-                except OSError:
-                    continue
-                db.add(Execution(
-                    target_id=target.id, service_id=service.id if service else None,
-                    template_id=f"autorecon-{slug}"[:100],
-                    command=f"(AutoRecon) {slug}", stdout=content, cwd=str(port_dir),
-                    status="completed", exit_code=0, output_path=str(result_file)))
-                imported += 1
+                imported += import_result(result_file, protocol, port)
+        for result_file in sorted(scans_dir.iterdir()):
+            match = re.match(r"^(tcp|udp)_(\d+)_", result_file.name)
+            if match:
+                imported += import_result(result_file, match.group(1), int(match.group(2)))
         db.commit()
     return imported

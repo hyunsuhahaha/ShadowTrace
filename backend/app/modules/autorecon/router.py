@@ -1,7 +1,10 @@
 import asyncio
+from functools import lru_cache
 import json
+import re
 import shlex
 import shutil
+import subprocess
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,6 +20,69 @@ from .service import render_autorecon_command, run_output_dir
 TERMINAL_STATUSES = {"completed", "failed", "stopped", "interrupted"}
 
 router = APIRouter(prefix="/api/autorecon", tags=["AutoRecon"])
+
+
+def _parse_help_options(help_text: str) -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    seen: set[str] = set()
+    current: dict[str, str] | None = None
+    enabled = False
+    for line in help_text.splitlines():
+        if line.strip() in {"options:", "plugin arguments:", "global plugin arguments:"}:
+            enabled = True
+            current = None
+            continue
+        if not enabled:
+            continue
+        match = re.match(r"^\s{2,}(-{1,2}\S.*)$", line)
+        if match:
+            parts = re.split(r"\s{2,}", match.group(1).strip(), maxsplit=1)
+            signature = parts[0]
+            description = parts[1] if len(parts) > 1 else ""
+            flags = re.findall(r"(?<!\S)-{1,2}[\w.-]+", signature)
+            if not flags:
+                current = None
+                continue
+            if flags[-1] in seen:
+                current = None
+                continue
+            current = {"flag": flags[-1], "signature": signature.strip(),
+                       "description": description.strip()}
+            options.append(current)
+            seen.add(flags[-1])
+        elif current and line.startswith(" " * 20) and line.strip():
+            current["description"] = f"{current['description']} {line.strip()}".strip()
+        else:
+            current = None
+    return options
+
+
+@lru_cache(maxsize=1)
+def _installed_capabilities() -> dict:
+    binary = shutil.which("autorecon")
+    if not binary:
+        return {"installed": False, "version": "", "help": "", "plugins": [],
+                "options": []}
+    def output(*args: str) -> str:
+        result = subprocess.run([binary, *args], capture_output=True, text=True,
+                                timeout=15, check=False)
+        return (result.stdout + result.stderr).strip()
+    help_text = output("--help")
+    plugins = []
+    pattern = re.compile(r"^(PortScan|ServiceScan|Report): (.+) \(([^)]+)\)(?: - (.*))?$")
+    for line in output("--list").splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            plugins.append({"type": match.group(1), "name": match.group(2),
+                            "slug": match.group(3), "description": match.group(4) or ""})
+    return {"installed": True, "version": output("--version"),
+            "help": help_text, "plugins": plugins,
+            "options": _parse_help_options(help_text)}
+
+
+@router.get("/capabilities")
+def capabilities():
+    return _installed_capabilities()
 
 
 @router.get("", response_model=list[AutoReconRunOut])

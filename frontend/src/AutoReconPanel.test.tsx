@@ -47,7 +47,7 @@ it("lists every target in the project as a checkbox and toggles selection on cli
   const props = renderPanel();
   expect(screen.getByText("DC01")).toBeTruthy();
   expect(screen.getByText("10.10.10.11")).toBeTruthy();
-  fireEvent.click(screen.getAllByRole("checkbox")[0]);
+  fireEvent.click(screen.getByText("10.10.10.10").closest("label")!.querySelector("input")!);
   expect(props.onToggle).toHaveBeenCalledWith(1);
 });
 
@@ -70,14 +70,15 @@ it("passes native AutoRecon options with the start request", () => {
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(
     new Response(JSON.stringify([]), {headers: {"Content-Type": "application/json"}}))));
   const props = renderPanel({selectedIds: new Set([1])});
-  fireEvent.click(screen.getByText("AutoRecon 고급 옵션"));
-  fireEvent.change(screen.getByPlaceholderText(/--tags safe/), {
-    target: {value: "--tags safe --heartbeat 30"},
-  });
+  fireEvent.click(screen.getByText(/실행 범위 및 프로필/));
+  fireEvent.change(screen.getByText("실행 모드").closest("label")!.querySelector("select")!,
+    {target: {value: "quick"}});
+  fireEvent.change(screen.getByText("Heartbeat(초)").closest("label")!.querySelector("input")!,
+    {target: {value: "30"}});
   fireEvent.click(screen.getByText(/SCOPE ACKNOWLEDGEMENT/).closest("label")!
     .querySelector("input")!);
   fireEvent.click(screen.getByText(/AutoRecon 시작/));
-  expect(props.onStart).toHaveBeenCalledWith("--tags safe --heartbeat 30");
+  expect(props.onStart).toHaveBeenCalledWith("--port-scans top-tcp-ports --heartbeat '30'");
 });
 
 it("shows an empty state when the project has no AutoRecon runs yet", async () => {
