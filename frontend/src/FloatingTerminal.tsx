@@ -229,6 +229,7 @@ export function FloatingTerminalProvider({children}: {children: ReactNode}) {
     if (floating.session.endpoint !== "autorecon") {
       localStorage.setItem("oscp-scan-dock", JSON.stringify({
         scanId: floating.session.scanId, targetId: floating.session.targetId,
+        projectId: floating.session.projectId,
       }));
     }
     // Without this, closing ("[ 원위치 ]") only cleared the in-memory state

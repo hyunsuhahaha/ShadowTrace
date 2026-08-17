@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { selectVisibleScan, serverTime, syncSelectedProject, type Scan } from "./scanCenterModel";
+import { selectInitialScanTarget, selectVisibleScan, serverTime, syncSelectedProject,
+  type Scan } from "./scanCenterModel";
 
 describe("scan timestamps", () => {
   it("treats SQLite timestamps without an offset as UTC", () => {
@@ -22,6 +23,17 @@ describe("scan selection", () => {
 
   it("selects the newest visible scan only when nothing is selected", () => {
     expect(selectVisibleScan(undefined, [scan(25), scan(24)])).toBe(25);
+  });
+});
+
+describe("scan target restoration", () => {
+  it("keeps the graph host instead of restoring a docked target from another project", () => {
+    expect(selectInitialScanTarget(18, 19, {targetId: 17, projectId: 18})).toBe(18);
+  });
+
+  it("restores a docked target only inside its own project", () => {
+    expect(selectInitialScanTarget(undefined, 19, {targetId: 18, projectId: 19})).toBe(18);
+    expect(selectInitialScanTarget(undefined, 19, {targetId: 17, projectId: 18})).toBeUndefined();
   });
 });
 

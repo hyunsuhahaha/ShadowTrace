@@ -1099,7 +1099,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-sidebar-width` | 사이드바 px(184–420 clamp) | `AppShell.tsx` 사이드바 리사이즈 유지 |
 | `oscp-sidebar-collapsed` | `"true"`/`"false"` | `AppShell.tsx` 사이드바 접힘 상태 |
 | `oscp-floating-scan-terminal` / `oscp-floating-terminal-frame` | JSON Scan 세션 메타 / `{x,y,width,height}` | Scan 세션 reload 복원과 모든 전역 플로팅 터미널의 마지막 배치·크기 복원(일반 출력 내용은 민감정보·용량 때문에 localStorage에 저장하지 않음) |
-| `oscp-scan-dock` | JSON `{scanId,targetId}` | 플로팅 터미널 원위치 복귀 시 Scan Center 1회성 선택 핸드오프 |
+| `oscp-scan-dock` | JSON `{scanId,targetId,projectId}` | 플로팅 터미널 원위치 복귀 시 같은 프로젝트의 Scan Center에만 적용되는 1회성 선택 핸드오프 |
 | `oscp-graph-pane` | Progress Graph 우측 패널 px(최소 320) | `GraphWorkspace.tsx` 리사이즈 유지 |
 | `oscp-graph-view` / `oscp-graph-activity-panel` | 보기 모드 / JSON `{x,y,width,height,collapsed}` | Graph/Tree/Outline 선택과 Activity Stream 배치·크기·접힘 유지 |
 | `oscp-graph-selected` / `oscp-graph-camera:<root>:<mode>` | node id / JSON `{panX,panY,zoom,positions}` | 선택 노드와 프로젝트·레이아웃별 Canvas 작업 위치 복원 |

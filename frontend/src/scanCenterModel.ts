@@ -179,6 +179,12 @@ export const bytes = (n: number) =>
 export const selectVisibleScan = (currentId: number | undefined, scans: Scan[]) =>
   currentId ?? scans[0]?.id;
 
+export const selectInitialScanTarget = (
+  graphTargetId: number | undefined,
+  projectId: number | undefined,
+  pendingDock: {targetId?: number; projectId?: number} | null,
+) => graphTargetId ?? (pendingDock?.projectId === projectId ? pendingDock?.targetId : undefined);
+
 export function syncSelectedProject(projectId: number) {
   const value = String(projectId);
   if (localStorage.getItem("oscp-workspace-project") === value) return false;

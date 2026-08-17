@@ -11,7 +11,8 @@ import {useFloatingTerminal} from "./FloatingTerminal";
 import SmartTerminalOutput from "./SmartTerminalOutput";
 import { Button, ErrorState, LoadingState, statusCopy as statusLabel } from "./ui";
 import {
-  bytes, elapsed, get, selectVisibleScan, syncSelectedProject, terminal, toolProfileGroups,
+  bytes, elapsed, get, selectInitialScanTarget, selectVisibleScan, syncSelectedProject, terminal,
+  toolProfileGroups,
   type Artifact, type Automation, type Obs, type Profile, type Project,
   type Scan, type Target, type VpnStatus,
 } from "./scanCenterModel";
@@ -25,13 +26,13 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
     try { return JSON.parse(localStorage.getItem("oscp-scan-dock") || "null"); }
     catch { return null; }
   })();
+  const savedProjectId = Number(localStorage.getItem("oscp-workspace-project")) || undefined;
   const [targetId, setTargetId] = useState<number | undefined>(
-    pendingDock?.targetId || initialTargetId),
+    selectInitialScanTarget(initialTargetId, savedProjectId, pendingDock)),
     [targetIp, setTargetIp] = useState(""),
     [targetError, setTargetError] = useState(""),
     [activeProjectId, setActiveProjectId] = useState<number | undefined>(() => {
-      const saved = Number(localStorage.getItem("oscp-workspace-project"));
-      return saved > 0 ? saved : undefined;
+      return savedProjectId;
     }),
     [scanId, setScanId] = useState<number>(),
     [baseId, setBaseId] = useState<number>(),
