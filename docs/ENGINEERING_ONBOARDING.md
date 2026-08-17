@@ -283,7 +283,9 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       생성하며, 완료 후 전역 스캔 출력·운영 로그·report/exploit/loot 실제 파일은
       ScanArtifact/Evidence로 등록한다.
   → 서비스별 Execution은 Service 하위 technique으로, 나머지 AutoRecon ScanArtifact는
-    Target 하위 `AutoRecon · <파일명>` technique으로 그래프 동기화가 자동 투영한다.
+    Target 하위 기능명 technique으로 그래프 동기화가 자동 투영한다. 별도의
+    `AutoRecon Run #<id>` technique은 Operator 아래 생성되고 `scans` 참조 엣지로 실행에
+    포함된 모든 Target과 연결되며, 원본 CLI·대상·상태·시간·임포트 수를 meta에 유지한다.
 ```
 
 새 모듈은 `backend/app/modules/autorecon/`(scan_center의 router/service/manager 3분할을

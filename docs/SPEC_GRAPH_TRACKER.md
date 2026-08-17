@@ -139,6 +139,7 @@
 | `operates` | project-root → operator | ✔ | 프로젝트의 로컬 Kali/Operator 작업점 |
 | `runs` | operator → technique | ✔ | 로컬 Operator에서 리스너·도구 실행 |
 | `captures-from` | technique → host | ✘ | 로컬 리스너가 대상에서 인증 시도를 수신 |
+| `scans` | technique → host | ✘ | AutoRecon 실행이 포함한 대상 참조 |
 | `discovered` | host → service | ✔ | 스캔이 서비스를 발견 |
 | `enumerated` | (service\|host) → (finding\|credential) | ✔ | 열거로 finding/크리덴셜 도출(host-level 관찰·설정파일 크리덴셜 포함) |
 | `attempted` | (finding\|service\|host) → technique | ✔ | 기법 시도(finding 대상 익스플로잇, 또는 서비스/호스트에 직접 실행) |
@@ -179,8 +180,8 @@
 
 ### 1.6 파생 규칙 (`structural`)
 
-- `structural = (relation ∈ {discovered, enumerated, attempted, yielded, pivoted-to})`
-- `reused-credential`, `blocked-by`는 항상 비구조적(cross-cutting) → 트리 골격에 쓰지 않고
+- `structural = (relation ∈ {operates, runs, discovered, enumerated, attempted, yielded, pivoted-to})`
+- `scans`, `captures-from`, `reused-credential`, `blocked-by`는 항상 비구조적(cross-cutting) → 트리 골격에 쓰지 않고
   항상 `↗ 참조`로만 표현. 이것이 "크리덴셜 재사용을 복제 없이 참조로" 요구사항을 만족시킨다.
 
 ### 1.7 무결성 규칙 (백엔드 검증)

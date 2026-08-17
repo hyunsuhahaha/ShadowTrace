@@ -15,7 +15,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
+from ...models import (AutoReconRun, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
                        Project, RemoteExecution, ScanArtifact, ScanJob, Service, Target)
 from ...templates import catalog
@@ -29,6 +29,22 @@ def _catalog_label(template_id: str | None, fallback: str) -> str:
     who wrote the YAML."""
     item = catalog.items.get(template_id or "")
     return (item or {}).get("name") or template_id or fallback
+
+
+_AUTORECON_ARTIFACT_LABELS = {
+    "_quick_tcp_nmap.xml": "Quick TCP Scan",
+    "_full_tcp_nmap.xml": "Full TCP Scan",
+    "_top_100_udp_nmap.xml": "Top 100 UDP Scan",
+    "_custom_ports_udp_nmap.xml": "Custom UDP Scan",
+    "_commands.log": "Executed Commands",
+    "_manual_commands.txt": "Manual Follow-up Commands",
+    "_patterns.log": "Matched Patterns",
+}
+
+
+def _autorecon_artifact_label(artifact: ScanArtifact) -> str:
+    name = artifact.original_name or Path(artifact.path).name
+    return f"AutoRecon · {_AUTORECON_ARTIFACT_LABELS.get(name, name)}"
 
 # Every manually-opened session (a reverse shell listener, an SSH quick-connect,
 # a redis-cli/mongo/mysql probe shell, ...) shares the one synthetic
@@ -210,6 +226,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "operates": ({"project-root"}, {"operator"}),
     "runs": ({"operator"}, {"technique"}),
     "captures-from": ({"technique"}, {"host"}),
+    "scans": ({"technique"}, {"host"}),
     "discovered": ({"project-root", "host"}, {"host", "service"}),
     "enumerated": ({"service", "host"}, {"finding", "credential"}),
     "attempted": ({"finding", "service", "host"}, {"technique"}),
@@ -460,7 +477,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # Manually-created nodes (no source_ref) are never pruned.
     kind_models = {"target": Target, "service": Service, "finding": Finding,
                    "credential": Credential, "execution": Execution,
-                   "session": InteractiveSession, "scan_artifact": ScanArtifact}
+                   "session": InteractiveSession, "scan_artifact": ScanArtifact,
+                   "autorecon_run": AutoReconRun}
     for key, node in list(index.items()):
         kind, ident = key
         model = kind_models.get(kind)
@@ -474,6 +492,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         elif isinstance(row, ScanArtifact):
             job = db.get(ScanJob, row.scan_job_id)
             owner_id = job.project_id if job else None
+        elif isinstance(row, AutoReconRun):
+            owner_id = row.project_id
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         if model is not None and (row is None or owner_id != project_id or stale_hidden):
             db.query(GraphEdge).filter(
@@ -668,6 +688,51 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         index[("credential", cred.id)] = node
         created["credentials"] += 1
 
+    # One node represents the real AutoRecon process and its native options;
+    # non-structural `scans` edges point to every target it owns while each
+    # target keeps its canonical place under the project root.
+    autorecon_runs = list(db.scalars(select(AutoReconRun).where(
+        AutoReconRun.project_id == project_id)))
+    operator = operator_for() if autorecon_runs else None
+    if operator is not None:
+        for run in autorecon_runs:
+            if ("autorecon_run", run.id) in dismissed:
+                continue
+            try:
+                run_target_ids = json.loads(run.target_ids or "[]")
+            except ValueError:
+                run_target_ids = []
+            runtime = {"tool": "autorecon", "command": run.command,
+                       "runId": run.id, "targetIds": run_target_ids,
+                       "outputDir": run.output_dir, "importedCount": run.imported_count,
+                       "executionStatus": run.status,
+                       "startedAt": run.started_at.isoformat() if run.started_at else None,
+                       "endedAt": run.ended_at.isoformat() if run.ended_at else None}
+            meta = _activity_meta(json.dumps(runtime), _runtime_activity(
+                "scan", run.status, "AUTORECON", run.started_at))
+            existing = index.get(("autorecon_run", run.id))
+            if existing is not None:
+                existing.meta = meta
+                if run.status in {"failed", "interrupted"}:
+                    existing.status = "attempt-failed"
+                node = existing
+            else:
+                node = create_node(
+                    db, project_id, "technique", label=f"AutoRecon Run #{run.id}",
+                    status=("attempt-failed" if run.status in {"failed", "interrupted"}
+                            else "in-progress"),
+                    source_ref=_source_ref("autorecon", "autorecon_run", run.id),
+                    meta=meta, provenance=json.dumps({"source": "autorecon",
+                                                      "command": run.command}))
+                ensure_edge(operator, node, "runs", status=node.status)
+                index[("autorecon_run", run.id)] = node
+                created["techniques"] += 1
+            for target_id in run_target_ids:
+                host = host_for(target_id)
+                if host is not None:
+                    ensure_edge(node, host, "scans", label="AUTORECON TARGET",
+                                status=node.status)
+
     # A completed remote command with exit 0 is direct evidence that the
     # credential authenticated to the destination. Project two complementary
     # references: credential -> destination (what unlocked it), and source
@@ -804,7 +869,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if existing is not None:
                 existing.meta = meta
                 continue
-            label = f"AutoRecon · {artifact.original_name or Path(artifact.path).name}"
+            label = _autorecon_artifact_label(artifact)
             node = create_node(
                 db, project_id, "technique", label=label, status="in-progress",
                 source_ref=_source_ref("scan_center", "scan_artifact", artifact.id),

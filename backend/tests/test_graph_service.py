@@ -499,10 +499,38 @@ def test_sync_projects_autorecon_artifacts_as_host_techniques():
     service.sync_from_project(db, p.id)
 
     node = db.query(GraphNode).filter_by(type="technique").one()
-    assert node.label == "AutoRecon · _manual_commands.txt"
+    assert node.label == "AutoRecon · Manual Follow-up Commands"
     assert json.loads(node.meta)["path"] == "/tmp/_manual_commands.txt"
     edge = db.query(GraphEdge).filter_by(target=node.id).one()
     assert db.get(GraphNode, edge.source).type == "host"
+
+
+def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
+    from app.models import AutoReconRun, ScanArtifact, ScanJob, Target
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.71")
+    db.add(target); db.flush()
+    run = AutoReconRun(project_id=p.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 10.0.0.71 --tags safe", output_dir="/tmp/ar",
+                       status="running", imported_count=3)
+    db.add(run)
+    job = ScanJob(project_id=p.id, target_id=target.id, source="autorecon",
+                  status="completed", command=run.command)
+    db.add(job); db.flush()
+    db.add(ScanArtifact(scan_job_id=job.id, kind="xml", path="/tmp/nmap.xml",
+                        sha256="b" * 64, size=100,
+                        original_name="_quick_tcp_nmap.xml"))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    labels = {node.label: node for node in db.query(GraphNode).all()}
+    assert "AutoRecon Run #1" in labels
+    assert "AutoRecon · Quick TCP Scan" in labels
+    relations = {(edge.relation, edge.source, edge.target)
+                 for edge in db.query(GraphEdge).all()}
+    assert ("scans", labels["AutoRecon Run #1"].id, labels["10.0.0.71"].id) in relations
 
 
 def test_execution_parents_under_the_finding_it_was_run_to_follow_up_on():
