@@ -122,6 +122,14 @@ export function Inspector(props: {
   const credentialId = source?.kind === "credential" ? source.id : null;
   const findingId = source?.kind === "finding" ? source.id : null;
   const hashCrackJobId = source?.kind === "hash_crack_job" ? source.id : null;
+  const autoReconResultJobId = source?.kind === "autorecon_results" ? source.id : null;
+  const autoReconResults = useQuery({
+    queryKey: ["autoReconResults", autoReconResultJobId],
+    enabled: autoReconResultJobId !== null,
+    queryFn: () => api<{job_id: number; run_id: number; root: string;
+      entries: Array<{path: string; is_dir: boolean; size: number}>}>(
+      `/autorecon/results/${autoReconResultJobId}`),
+  });
   const findingQuery = useQuery({
     queryKey: ["graphFinding", findingId],
     enabled: findingId !== null,
@@ -1337,6 +1345,29 @@ export function Inspector(props: {
               </div>
             )}
           </div>
+        </section>
+      )}
+      {autoReconResultJobId !== null && (
+        <section style={S.executionResults} aria-label="AutoRecon 결과물 관리">
+          <div style={S.executionResultsHead}>
+            <div><strong>AutoRecon 결과물</strong>{" "}
+              <span>{autoReconResults.data?.entries.filter((entry) => !entry.is_dir).length || 0}개 파일</span>
+            </div>
+          </div>
+          {autoReconResults.isLoading ? <div style={S.resultMessage}>결과 디렉터리 불러오는 중…</div>
+            : autoReconResults.isError ? <div style={S.resultError}>결과 디렉터리를 읽지 못했습니다.</div>
+            : <div style={S.terminalOutput}>
+              <div style={{ color: "#71868c", fontSize: 9, marginBottom: 6 }}>
+                {autoReconResults.data?.root}
+              </div>
+              <FileTreeView searchable
+                node={buildFileTree((autoReconResults.data?.entries || []).map((entry) => ({
+                  path: entry.path, isDir: entry.is_dir,
+                })), "/")}
+                onOpenFile={(path) => window.open(
+                  `/api/autorecon/results/${autoReconResultJobId}/download?path=${encodeURIComponent(path)}`,
+                  "_blank", "noopener,noreferrer")} />
+            </div>}
         </section>
       )}
       <section style={S.nodeNotes}>

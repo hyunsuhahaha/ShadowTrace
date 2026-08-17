@@ -31,33 +31,6 @@ def _catalog_label(template_id: str | None, fallback: str) -> str:
     return (item or {}).get("name") or template_id or fallback
 
 
-_AUTORECON_ARTIFACT_LABELS = {
-    "_quick_tcp_nmap.xml": "Quick TCP Scan",
-    "_full_tcp_nmap.xml": "Full TCP Scan",
-    "_top_100_udp_nmap.xml": "Top 100 UDP Scan",
-    "_custom_ports_udp_nmap.xml": "Custom UDP Scan",
-    "_commands.log": "Executed Commands",
-    "_manual_commands.txt": "Manual Follow-up Commands",
-    "_patterns.log": "Matched Patterns",
-}
-
-
-def _autorecon_artifact_label(artifact: ScanArtifact) -> str:
-    name = artifact.original_name or Path(artifact.path).name
-    return f"AutoRecon · {_AUTORECON_ARTIFACT_LABELS.get(name, name)}"
-
-
-def _autorecon_artifact_is_graph_feature(artifact: ScanArtifact) -> bool:
-    """Keep machine-readable scan inputs as evidence, not duplicate nodes.
-
-    Services and per-tool Executions already project the useful information
-    parsed from these files. Human-facing follow-up commands, reports, loot,
-    and exploit material remain graph features.
-    """
-    name = (artifact.original_name or Path(artifact.path).name).lower()
-    return artifact.kind != "xml" and not name.endswith(
-        (".xml", ".nmap", ".gnmap", ".log"))
-
 # Every manually-opened session (a reverse shell listener, an SSH quick-connect,
 # a redis-cli/mongo/mysql probe shell, ...) shares the one synthetic
 # template_id "manual-shell" -- it was never a real catalog entry, so
@@ -490,7 +463,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     kind_models = {"target": Target, "service": Service, "finding": Finding,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
-                   "autorecon_run": AutoReconRun}
+                   "autorecon_run": AutoReconRun, "autorecon_results": ScanJob}
     for key, node in list(index.items()):
         kind, ident = key
         model = kind_models.get(kind)
@@ -504,10 +477,14 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         elif isinstance(row, ScanArtifact):
             job = db.get(ScanJob, row.scan_job_id)
             owner_id = job.project_id if job else None
+        elif kind == "autorecon_results" and isinstance(row, ScanJob):
+            owner_id = row.project_id if row.source == "autorecon" else None
         elif isinstance(row, AutoReconRun):
             owner_id = row.project_id
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
-        if model is not None and (row is None or owner_id != project_id or stale_hidden):
+        deprecated = kind == "autorecon_run"
+        if model is not None and (row is None or owner_id != project_id
+                                  or stale_hidden or deprecated):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
             ).delete(synchronize_session=False)
@@ -565,6 +542,18 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             ).order_by(ScanJob.id)
         )
     }
+    autorecon_runs = list(db.scalars(select(AutoReconRun).where(
+        AutoReconRun.project_id == project_id)))
+    active_autorecon: dict[int, AutoReconRun] = {}
+    for run in autorecon_runs:
+        if run.status not in _ACTIVE_STATUSES:
+            continue
+        try:
+            run_target_ids = json.loads(run.target_ids or "[]")
+        except ValueError:
+            continue
+        for target_id in run_target_ids:
+            active_autorecon[target_id] = run
 
     for target in db.scalars(
             select(Target).where(Target.project_id == project_id)):
@@ -588,6 +577,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             created["hosts"] += 1
         if host is not None:
             scan = active_scans.get(target.id)
+            autorecon = active_autorecon.get(target.id)
             # Host-level evidence only (service_id is None) -- evidence attached to
             # one of the target's services is counted on that service node instead,
             # so the two counts don't double up on the same underlying row.
@@ -595,9 +585,10 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 Evidence.target_id == target.id, Evidence.service_id.is_(None))) or 0
             host.meta = _activity_meta(
                 _merge_meta(host.meta, {"evidenceCount": host_evidence_count}),
-                _runtime_activity(
-                    "scan", scan.status, scan.alias or "NMAP SCAN", scan.started_at,
-                ) if scan else None)
+                _runtime_activity("scan", autorecon.status, "AUTORECON",
+                                  autorecon.started_at) if autorecon else
+                (_runtime_activity("scan", scan.status, scan.alias or "NMAP SCAN",
+                                   scan.started_at) if scan else None))
 
         for service in db.scalars(
                 select(Service).where(Service.target_id == target.id)):
@@ -700,50 +691,45 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         index[("credential", cred.id)] = node
         created["credentials"] += 1
 
-    # One node represents the real AutoRecon process and its native options;
-    # non-structural `scans` edges point to every target it owns while each
-    # target keeps its canonical place under the project root.
-    autorecon_runs = list(db.scalars(select(AutoReconRun).where(
-        AutoReconRun.project_id == project_id)))
-    operator = operator_for() if autorecon_runs else None
-    if operator is not None:
-        for run in autorecon_runs:
-            if ("autorecon_run", run.id) in dismissed:
+    # The host is the running scan's visual center. Once the process reaches a
+    # terminal state, one result-browser node per target exposes AutoRecon's
+    # native scans/exploit/loot/report tree without inventing a process node.
+    for run in autorecon_runs:
+        if run.status not in {"completed", "failed", "stopped", "interrupted"}:
+            continue
+        try:
+            run_target_ids = json.loads(run.target_ids or "[]")
+        except ValueError:
+            continue
+        for target_id in run_target_ids:
+            host = host_for(target_id)
+            if host is None:
                 continue
-            try:
-                run_target_ids = json.loads(run.target_ids or "[]")
-            except ValueError:
-                run_target_ids = []
-            runtime = {"tool": "autorecon", "command": run.command,
-                       "runId": run.id, "targetIds": run_target_ids,
-                       "outputDir": run.output_dir, "importedCount": run.imported_count,
+            job = db.scalar(select(ScanJob).where(
+                ScanJob.project_id == project_id, ScanJob.target_id == target_id,
+                ScanJob.source == "autorecon", ScanJob.command == run.command))
+            if job is None or ("autorecon_results", job.id) in dismissed:
+                continue
+            runtime = {"tool": "autorecon-results", "runId": run.id,
+                       "scanJobId": job.id, "outputDir": run.output_dir,
+                       "importedCount": run.imported_count,
                        "executionStatus": run.status,
-                       "startedAt": run.started_at.isoformat() if run.started_at else None,
-                       "endedAt": run.ended_at.isoformat() if run.ended_at else None}
-            meta = _activity_meta(json.dumps(runtime), _runtime_activity(
-                "scan", run.status, "AUTORECON", run.started_at))
-            existing = index.get(("autorecon_run", run.id))
+                       "directories": ["scans", "exploit", "loot", "report"]}
+            meta = json.dumps(runtime)
+            existing = index.get(("autorecon_results", job.id))
             if existing is not None:
                 existing.meta = meta
-                if run.status in {"failed", "interrupted"}:
-                    existing.status = "attempt-failed"
-                node = existing
-            else:
-                node = create_node(
-                    db, project_id, "technique", label=f"AutoRecon Run #{run.id}",
-                    status=("attempt-failed" if run.status in {"failed", "interrupted"}
-                            else "in-progress"),
-                    source_ref=_source_ref("autorecon", "autorecon_run", run.id),
-                    meta=meta, provenance=json.dumps({"source": "autorecon",
-                                                      "command": run.command}))
-                ensure_edge(operator, node, "runs", status=node.status)
-                index[("autorecon_run", run.id)] = node
-                created["techniques"] += 1
-            for target_id in run_target_ids:
-                host = host_for(target_id)
-                if host is not None:
-                    ensure_edge(node, host, "scans", label="AUTORECON TARGET",
-                                status=node.status)
+                continue
+            node = create_node(
+                db, project_id, "technique", label="AutoRecon 결과물",
+                status="succeeded" if run.status == "completed" else "attempt-failed",
+                source_ref=_source_ref("autorecon", "autorecon_results", job.id),
+                meta=meta, provenance=json.dumps({"source": "autorecon",
+                                                  "outputDir": run.output_dir}))
+            ensure_edge(host, node, "attempted", label="AUTORECON RESULTS",
+                        status=node.status)
+            index[("autorecon_results", job.id)] = node
+            created["techniques"] += 1
 
     # A completed remote command with exit 0 is direct evidence that the
     # credential authenticated to the destination. Project two complementary
@@ -861,45 +847,21 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             index[("execution", ex.id)] = node
             created["techniques"] += 1
 
-        # Native AutoRecon files that are not already represented by a
-        # service-owned Execution remain first-class graph objects rather
-        # than disappearing into an evidence counter.
+        # Native files live in the completed AutoRecon result-browser node.
+        # Remove legacy per-file nodes while retaining every ScanArtifact row.
         artifact_rows = db.execute(
             select(ScanArtifact, ScanJob).join(
                 ScanJob, ScanJob.id == ScanArtifact.scan_job_id).where(
                 ScanJob.source == "autorecon", ScanJob.target_id.in_(target_ids)))
         for artifact, job in artifact_rows:
-            if ("scan_artifact", artifact.id) in dismissed:
-                continue
             existing = index.get(("scan_artifact", artifact.id))
-            if not _autorecon_artifact_is_graph_feature(artifact):
-                if existing is not None:
-                    db.query(GraphEdge).filter(
-                        (GraphEdge.source == existing.id)
-                        | (GraphEdge.target == existing.id)
-                    ).delete(synchronize_session=False)
-                    db.delete(existing)
-                    del index[("scan_artifact", artifact.id)]
-                continue
-            parent = host_for(job.target_id)
-            if parent is None:
-                continue
-            meta = json.dumps({"tool": "autorecon-artifact", "kind": artifact.kind,
-                               "path": artifact.path, "size": artifact.size,
-                               "scanJobId": job.id, "evidenceCount": 1})
             if existing is not None:
-                existing.meta = meta
-                continue
-            label = _autorecon_artifact_label(artifact)
-            node = create_node(
-                db, project_id, "technique", label=label, status="in-progress",
-                source_ref=_source_ref("scan_center", "scan_artifact", artifact.id),
-                meta=meta, provenance=json.dumps({"path": artifact.path,
-                                                  "source": "autorecon"}))
-            create_edge(db, project_id, parent.id, node.id, "attempted",
-                        status=node.status)
-            index[("scan_artifact", artifact.id)] = node
-            created["techniques"] += 1
+                db.query(GraphEdge).filter(
+                    (GraphEdge.source == existing.id)
+                    | (GraphEdge.target == existing.id)
+                ).delete(synchronize_session=False)
+                db.delete(existing)
+                del index[("scan_artifact", artifact.id)]
 
         # interactive sessions (Responder, reverse shells) -> technique nodes.
         # Low-volume and high-signal; counted under techniques.

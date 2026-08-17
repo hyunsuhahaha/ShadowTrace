@@ -482,7 +482,7 @@ def test_sync_projects_executions_as_technique_nodes():
     assert tech.status == "in-progress"
 
 
-def test_sync_projects_autorecon_artifacts_as_host_techniques():
+def test_sync_projects_keeps_autorecon_artifacts_out_of_the_graph():
     from app.models import ScanArtifact, ScanJob, Target
     db = database()
     p = project(db)
@@ -498,11 +498,8 @@ def test_sync_projects_autorecon_artifacts_as_host_techniques():
 
     service.sync_from_project(db, p.id)
 
-    node = db.query(GraphNode).filter_by(type="technique").one()
-    assert node.label == "AutoRecon · Manual Follow-up Commands"
-    assert json.loads(node.meta)["path"] == "/tmp/_manual_commands.txt"
-    edge = db.query(GraphEdge).filter_by(target=node.id).one()
-    assert db.get(GraphNode, edge.source).type == "host"
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+    assert db.get(ScanArtifact, artifact.id) is not None
 
 
 def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
@@ -526,11 +523,20 @@ def test_sync_projects_autorecon_run_and_pipeline_as_graph_structure():
     service.sync_from_project(db, p.id)
 
     labels = {node.label: node for node in db.query(GraphNode).all()}
-    assert "AutoRecon Run #1" in labels
+    assert "AutoRecon Run #1" not in labels
+    assert "AutoRecon 결과물" not in labels
     assert "AutoRecon · Quick TCP Scan" not in labels
-    relations = {(edge.relation, edge.source, edge.target)
-                 for edge in db.query(GraphEdge).all()}
-    assert ("scans", labels["AutoRecon Run #1"].id, labels["10.0.0.71"].id) in relations
+    assert json.loads(labels["10.0.0.71"].meta)["activity"]["label"] == "AUTORECON"
+
+    run.status = "completed"
+    service.sync_from_project(db, p.id)
+
+    labels = {node.label: node for node in db.query(GraphNode).all()}
+    result = labels["AutoRecon 결과물"]
+    assert "activity" not in json.loads(labels["10.0.0.71"].meta)
+    assert json.loads(result.source_ref)["kind"] == "autorecon_results"
+    edge = db.query(GraphEdge).filter_by(target=result.id).one()
+    assert edge.source == labels["10.0.0.71"].id
 
 
 def test_sync_projects_removes_existing_autorecon_machine_artifact_nodes():

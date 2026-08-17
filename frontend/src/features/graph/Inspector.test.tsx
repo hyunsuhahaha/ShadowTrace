@@ -20,6 +20,43 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("browses AutoRecon's native result directories from the completed result node", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    if (String(input).endsWith("/api/autorecon/results/17")) return Promise.resolve(
+      new Response(JSON.stringify({job_id: 17, run_id: 4, root: "/workspace/ar/4/10.0.0.8",
+        entries: [
+          {path: "scans", is_dir: true, size: 0},
+          {path: "scans/tcp80", is_dir: true, size: 0},
+          {path: "scans/tcp80/whatweb.txt", is_dir: false, size: 42},
+          {path: "report", is_dir: true, size: 0},
+          {path: "report/report.md", is_dir: false, size: 120},
+        ]}), {headers: {"Content-Type": "application/json"}}));
+    throw new Error(`Unhandled request: ${String(input)}`);
+  }));
+  const open = vi.fn();
+  vi.stubGlobal("open", open);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "results-17", type: "technique", status: "succeeded",
+      label: "AutoRecon 결과물", objective: false, hidden: false,
+      meta: JSON.stringify({tool: "autorecon-results"}),
+      source_ref: JSON.stringify({module: "autorecon", kind: "autorecon_results", id: 17}),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()} onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const panel = screen.getByLabelText("AutoRecon 결과물 관리");
+  await screen.findByText("2개 파일");
+  expect(panel.textContent).toContain("2개 파일");
+  expect(screen.getByText("scans")).toBeTruthy();
+  expect(screen.getByText("report")).toBeTruthy();
+  fireEvent.click(screen.getByText("report.md"));
+  expect(open).toHaveBeenCalledWith(
+    "/api/autorecon/results/17/download?path=report%2Freport.md",
+    "_blank", "noopener,noreferrer");
+});
+
 it("shows a memo node as a freeform note instead of a domain finding/technique", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     throw new Error(`Unhandled request: ${String(input)}`);

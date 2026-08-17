@@ -150,6 +150,22 @@ def import_autorecon_run(db: Session, run: AutoReconRun) -> int:
                 Service.target_id == target.id, Service.port == port,
                 Service.protocol == protocol))
             slug = result_file.stem.removeprefix(f"{protocol}_{port}_")
+            # --force-services intentionally bypasses port discovery. Its
+            # per-tool filenames still carry the authoritative service slug
+            # (tcp_80_http_whatweb.txt), so preserve the same host -> service
+            # -> tool hierarchy even when no Nmap XML declares an open port.
+            service_hint, separator, plugin_slug = slug.partition("_")
+            if service is None and separator and service_hint:
+                service = Service(
+                    target_id=target.id, port=port, protocol=protocol,
+                    state="open", name=service_hint,
+                    tls=service_hint in {"https", "ssl", "tls"},
+                    detection_evidence=json.dumps({
+                        "source": "autorecon-result-filename",
+                        "file": result_file.name,
+                    }))
+                db.add(service)
+                db.flush()
             if service and slug.startswith(f"{service.name}_"):
                 slug = slug[len(service.name) + 1:]
             existing = db.scalar(select(Execution).where(

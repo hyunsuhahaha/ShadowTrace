@@ -283,14 +283,16 @@ POST /api/autorecon/run {project_id, target_ids, arguments?}
       --no-port-dirs 사용 시 scans/ 바로 아래 파일마다, 파일명에서 플러그인 slug만 뽑아
       template_id="autorecon-<slug>") Execution을 직접 생성 -- 서브프로세스를 또
       띄우는 게 아니라 이미 끝난 결과 파일을 그대로 가져오는 것이므로
-      start_execution()을 거치지 않는다. AutoRecon의 exploit/loot/report 디렉터리도 원형대로
+      start_execution()을 거치지 않는다. --force-services로 XML 포트 발견이 생략된 경우에는
+      `tcp_80_http_<plugin>` 파일명의 서비스 slug를 보조 근거로 Service를 생성한다.
+      AutoRecon의 exploit/loot/report 디렉터리도 원형대로
       생성하며, 완료 후 전역 스캔 출력·운영 로그·report/exploit/loot 실제 파일은
       ScanArtifact/Evidence로 등록한다.
-  → 서비스별 Execution은 Service 하위 technique으로 투영한다. XML/Nmap 원본/운영 로그는
-    중복 노드를 만들지 않고 증거로만 보존하며, 사람이 쓰는 후속 명령과 report/loot/exploit
-    산출물만 Target 하위 기능명 technique으로 투영한다. 별도의
-    `AutoRecon Run #<id>` technique은 Operator 아래 생성되고 `scans` 참조 엣지로 실행에
-    포함된 모든 Target과 연결되며, 원본 CLI·대상·상태·시간·임포트 수를 meta에 유지한다.
+  → 실행 중 activity는 별도 Run 노드가 아니라 대상 Host 메타에 기록돼 Host 중심 스캔
+    이펙트를 구동한다. 종료 후에는 대상별 `AutoRecon 결과물` technique을 Host 아래 만들고
+    `/api/autorecon/results/{scan_job_id}`에서 scans/exploit/loot/report 트리를 탐색·다운로드한다.
+    서비스별 Execution은 Service 하위 technique으로 투영한다. 모든 원본 산출물은
+    개별 중복 노드 대신 결과물 노드의 파일 트리와 Evidence에서 관리한다.
 ```
 
 새 모듈은 `backend/app/modules/autorecon/`(scan_center의 router/service/manager 3분할을

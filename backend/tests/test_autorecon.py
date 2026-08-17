@@ -2,11 +2,13 @@ import json
 import os
 import time
 from pathlib import Path
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import AutoReconRun, Execution, Project, ScanArtifact, ScanJob, Service, Target
-from app.modules.autorecon.router import _parse_help_options
+from fastapi import HTTPException
+from app.modules.autorecon.router import _parse_help_options, download_result, result_tree
 from app.modules.autorecon.service import (
     import_autorecon_run, render_autorecon_command, run_output_dir,
 )
@@ -88,6 +90,34 @@ def test_run_output_dir_is_scoped_by_project_and_run_id():
     assert "Lab" in str(path)
 
 
+def test_result_tree_and_download_are_scoped_to_the_target_directory(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.0.0.8")
+    db.add(target); db.flush()
+    command = f"autorecon 10.0.0.8 -o {tmp_path}"
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command=command, output_dir=str(tmp_path), status="completed")
+    job = ScanJob(project_id=project.id, target_id=target.id, source="autorecon",
+                  status="completed", command=command)
+    db.add_all([run, job]); db.commit()
+    report = tmp_path / target.ip / "report" / "notes.txt"
+    report.parent.mkdir(parents=True)
+    report.write_text("done")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("nope")
+
+    tree = result_tree(job.id, db)
+    assert {entry["path"] for entry in tree["entries"]} == {
+        "report", "report/notes.txt"}
+    response = download_result(job.id, "report/notes.txt", db)
+    assert Path(response.path) == report
+    with pytest.raises(HTTPException) as error:
+        download_result(job.id, "../secret.txt", db)
+    assert error.value.status_code == 404
+
+
 def test_import_autorecon_run_creates_service_and_per_plugin_executions(tmp_path):
     db = database()
     project = Project(name="Lab", description="")
@@ -132,6 +162,30 @@ def test_import_autorecon_run_skips_a_target_with_no_results_tree(tmp_path):
 
     assert imported == 0
     assert db.query(Execution).count() == 0
+
+
+def test_import_autorecon_run_infers_forced_service_without_nmap_discovery(tmp_path):
+    db = database()
+    project = Project(name="Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="127.0.0.1")
+    db.add(target); db.flush()
+    result = tmp_path / target.ip / "scans" / "tcp65534" / "tcp_65534_http_whatweb.txt"
+    result.parent.mkdir(parents=True)
+    result.write_text("forced service output")
+    settled = time.time() - 60
+    os.utime(result, (settled, settled))
+    run = AutoReconRun(project_id=project.id, target_ids=json.dumps([target.id]),
+                       command="autorecon 127.0.0.1 --force-services tcp/65534/http",
+                       output_dir=str(tmp_path), status="completed")
+    db.add(run); db.commit()
+
+    assert import_autorecon_run(db, run) == 1
+    service = db.query(Service).one()
+    execution = db.query(Execution).one()
+    assert (service.port, service.protocol, service.name) == (65534, "tcp", "http")
+    assert execution.service_id == service.id
+    assert execution.template_id == "autorecon-whatweb"
 
 
 def test_import_autorecon_run_skips_a_result_file_thats_still_being_written(tmp_path):
@@ -237,7 +291,7 @@ def test_import_autorecon_run_uses_quick_xml_while_full_xml_is_truncated(tmp_pat
     assert execution.service_id == service.id
 
 
-def test_import_autorecon_run_relinks_an_execution_imported_before_service(tmp_path):
+def test_import_autorecon_run_keeps_filename_inferred_service_when_xml_arrives(tmp_path):
     db = database()
     project = Project(name="Lab", description="")
     db.add(project); db.flush()
@@ -257,7 +311,8 @@ def test_import_autorecon_run_relinks_an_execution_imported_before_service(tmp_p
 
     assert import_autorecon_run(db, run) == 1
     execution = db.query(Execution).one()
-    assert execution.service_id is None
+    inferred = db.query(Service).one()
+    assert execution.service_id == inferred.id
 
     xml_dir = scans / "xml"
     xml_dir.mkdir()
@@ -270,7 +325,8 @@ def test_import_autorecon_run_relinks_an_execution_imported_before_service(tmp_p
 
     assert import_autorecon_run(db, run) == 0
     db.refresh(execution)
-    assert execution.service_id == db.query(Service).one().id
+    assert db.query(Service).count() == 1
+    assert execution.service_id == inferred.id
     assert execution.template_id == "autorecon-whatweb"
 
 

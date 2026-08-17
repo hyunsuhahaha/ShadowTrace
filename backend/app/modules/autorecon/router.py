@@ -7,11 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
-from ...models import AutoReconRun, Project, Target
+from ...models import AutoReconRun, Project, ScanJob, Target
 from ...schemas import AutoReconRunIn, AutoReconRunOut
 from ..core.support import need
 from .manager import manager
@@ -83,6 +83,47 @@ def _installed_capabilities() -> dict:
 @router.get("/capabilities")
 def capabilities():
     return _installed_capabilities()
+
+
+def _result_context(db: Session, job_id: int) -> tuple[ScanJob, AutoReconRun, Path]:
+    job = need(db, ScanJob, job_id)
+    if job.source != "autorecon":
+        raise HTTPException(404, "AutoRecon result not found")
+    run = db.scalar(select(AutoReconRun).where(
+        AutoReconRun.project_id == job.project_id,
+        AutoReconRun.command == job.command))
+    target = db.get(Target, job.target_id)
+    if run is None or target is None:
+        raise HTTPException(404, "AutoRecon result not found")
+    return job, run, Path(run.output_dir) / target.ip
+
+
+@router.get("/results/{job_id}")
+def result_tree(job_id: int, db: Session = Depends(get_db)):
+    job, run, root = _result_context(db, job_id)
+    entries = []
+    if root.is_dir():
+        for path in sorted(root.rglob("*")):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append({"path": path.relative_to(root).as_posix(),
+                            "is_dir": path.is_dir(),
+                            "size": 0 if path.is_dir() else stat.st_size})
+    return {"job_id": job.id, "run_id": run.id, "root": str(root),
+            "entries": entries}
+
+
+@router.get("/results/{job_id}/download")
+def download_result(job_id: int, path: str, db: Session = Depends(get_db)):
+    _, _, root = _result_context(db, job_id)
+    root = root.resolve()
+    candidate = (root / path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        raise HTTPException(404, "Result file not found")
+    return FileResponse(candidate, filename=candidate.name,
+                        media_type="application/octet-stream")
 
 
 @router.get("", response_model=list[AutoReconRunOut])
