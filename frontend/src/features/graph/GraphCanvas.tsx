@@ -248,7 +248,7 @@ export function GraphCanvas(props: {
         const cyan = "#37aeff", violet = "#8b35f0";
         ctx.save(); ctx.translate(host.x, host.y);
         ctx.shadowBlur = 20 + pulse * 18; ctx.shadowColor = violet;
-        [82, 136, 196].forEach((radius, ring) => {
+        [340, 590, 840].forEach((radius, ring) => {
           const direction = ring === 1 ? -1 : 1, angle = phase * direction + ring * .7;
           ctx.lineWidth = ring === 2 ? 2.4 : 1.6;
           ctx.beginPath(); ctx.arc(0, 0, radius, angle, angle + Math.PI * .92);
@@ -265,23 +265,23 @@ export function GraphCanvas(props: {
         ctx.rotate(phase * .65);
         for (let i = 0; i < 4; i++) {
           const angle = Math.PI / 4 + i * Math.PI / 2;
-          const x = Math.cos(angle) * 196, y = Math.sin(angle) * 196;
-          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 42, Math.sin(angle) * 42); ctx.lineTo(x, y);
+          const x = Math.cos(angle) * 840, y = Math.sin(angle) * 840;
+          ctx.beginPath(); ctx.moveTo(Math.cos(angle) * 84, Math.sin(angle) * 84); ctx.lineTo(x, y);
           ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.58)" : "rgba(139,53,240,.58)";
           ctx.lineWidth = 3; ctx.stroke();
           const travel = reduceMotion ? .7 : (now / 900 + i * .23) % 1;
-          ctx.beginPath(); ctx.arc(Math.cos(angle) * (42 + 154 * travel),
-            Math.sin(angle) * (42 + 154 * travel), 4, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(Math.cos(angle) * (84 + 756 * travel),
+            Math.sin(angle) * (84 + 756 * travel), 7, 0, Math.PI * 2);
           ctx.fillStyle = "#d5efff"; ctx.fill();
-          ctx.beginPath(); ctx.arc(x, y, 13 + pulse * 5, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(x, y, 34 + pulse * 12, 0, Math.PI * 2);
           ctx.fillStyle = "rgba(7,9,10,.86)"; ctx.fill();
           ctx.strokeStyle = i % 2 ? cyan : violet; ctx.lineWidth = 3; ctx.stroke();
-          ctx.beginPath(); ctx.arc(x, y, 20 + pulse * 10, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(x, y, 56 + pulse * 24, 0, Math.PI * 2);
           ctx.strokeStyle = i % 2 ? "rgba(55,174,255,.22)" : "rgba(139,53,240,.22)";
           ctx.lineWidth = 1; ctx.stroke();
         }
         ctx.rotate(-phase * 1.4);
-        const core = 62 + pulse * 8;
+        const core = 140 + pulse * 18;
         ctx.shadowColor = violet; ctx.shadowBlur = 30 + pulse * 22;
         ctx.strokeStyle = "rgba(139,53,240,.92)"; ctx.lineWidth = 5;
         ctx.strokeRect(-core / 2, -core / 2, core, core);
@@ -289,7 +289,7 @@ export function GraphCanvas(props: {
         ctx.strokeRect(-core * .37, -core * .37, core * .74, core * .74);
         ctx.shadowBlur = 0; ctx.fillStyle = "rgba(139,255,190,.8)";
         ctx.font = "600 9px ui-monospace,monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-        ctx.fillText("AUTORECON // CORE LOCK", 0, -220);
+        ctx.fillText("AUTORECON // CORE LOCK", 0, -900);
         ctx.restore();
       }
       const activePath = pathRef.current;
