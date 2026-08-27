@@ -53,11 +53,11 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-if /usr/bin/python3 -c 'import bcc' >/dev/null 2>&1; then
+if scripts/passive-preflight.sh; then
   /usr/bin/python3 scripts/passive-observer.py &
   observer=$!
 else
-  echo "Passive observer disabled: install python3-bpfcc." >&2
+  echo "Passive observer disabled: preflight failed." >&2
 fi
 setsid /usr/bin/setpriv --regid "$OSCP_WORKSPACE_OWNER_GID" --clear-groups \
   .venv/bin/uvicorn app.main:app --app-dir backend \

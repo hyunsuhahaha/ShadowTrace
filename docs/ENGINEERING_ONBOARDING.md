@@ -42,6 +42,7 @@ FastAPI · 127.0.0.1:8000
 
 Kali kernel tracepoints → `scripts/passive-observer.py` → raw event inbox
 → `RawActivityEvent` (semantic graph와 분리)
+→ ProcessInstance → TerminalSession → CommandActivity / RemoteSessionCandidate
 → Nmap activity ingest → Observation → Target/Service → Progress Graph
 ```
 
@@ -156,6 +157,8 @@ Finding
  └─ FindingRetest
 
 RawActivityEvent ── no semantic/domain FK
+TerminalSession ── N ProcessInstance ── N CommandActivity
+                              └── RemoteSessionCandidate (local SSH/PTY evidence)
 PassiveActivity ── optional → Project / Target / ScanJob
 ```
 
@@ -262,7 +265,9 @@ socket connect/bind/listen/accept4/first-sendto,
   → eBPF observer가 state/passive-event-inbox에 versioned batch 보존
   → POST /api/passive/sync
   → RawActivityEvent 멱등 저장 (loss/capture_state/confidence/provenance 포함)
-  → 의미 Graph에는 자동 투영하지 않음
+  → reconstruction.py가 ProcessInstance / TerminalSession / CommandActivity 구성
+  → local ssh process에는 RemoteSessionCandidate 구성
+  → derived record도 의미 Graph에는 자동 투영하지 않음
 
 같은 observer의 local nmap exec/write/exit
   → state/passive-inbox에 output + metadata 보존
@@ -275,9 +280,13 @@ socket connect/bind/listen/accept4/first-sendto,
 
 collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), raw batch 검증과
 저장은 [`backend/app/modules/passive_activity/raw_events.py`](../backend/app/modules/passive_activity/raw_events.py),
+session correlation은 [`backend/app/modules/passive_activity/reconstruction.py`](../backend/app/modules/passive_activity/reconstruction.py),
 Nmap text parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
-있다. schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py)가
-관리한다. `GET /api/passive/events`는 kind/PID/limit으로 원시 이벤트를 조회한다. 원시
+있다. raw schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py),
+derived schema는 [`0045_passive_session_reconstruction.py`](../backend/alembic/versions/0045_passive_session_reconstruction.py)가
+관리한다. `POST /api/passive/sync`는 기존 응답 필드를 유지하면서 raw ingest 뒤 reconstruction
+summary를 추가한다. `/events`, `/processes`, `/terminal-sessions`, `/commands`,
+`/remote-sessions`가 각 계층을 조회한다. 원시
 payload에는 terminal output 등 민감정보가 포함될 수 있으므로 localhost 데이터로 취급한다.
 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project 해결이 모호하면
 `unresolved`로만 보존한다.
@@ -1068,7 +1077,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `hash_cracking` | hashcat job lifecycle, 모드 자동 감지, 크랙 결과 → Credential 승격 | `/api/hash-cracking` | `router.py`(276) |
 | `notes` | project/target/service/credential에 선택적으로 붙는 독립 Note CRUD(id/author/timestamp 보유) | `/api/notes` | `router.py`(72) |
 | `operations` | 전역 검색, DB/프로젝트 export/backup | `/api/operations` | `router.py`(169) |
-| `passive_activity` | raw event batch ingest/query, Nmap activity parsing, Target/Service 해결 | `/api/passive` | `raw_events.py`, `service.py` |
+| `passive_activity` | raw ingest, process/terminal/command reconstruction, Nmap semantic projection | `/api/passive` | `reconstruction.py`, `raw_events.py`, `service.py` |
 | `post_exploitation` | 자격증명 기반 원격 명령 실행(impacket/nxc/evil-winrm류) | `/api/post-exploitation` | `manager.py`(180) |
 | `privesc_analysis` | LinPEAS 파싱/하이라이트, SUID→GTFOBins 매칭 | (inline) | `router.py`(113) |
 | `reports` | DOCX(`python-docx`)/PDF(`weasyprint`) 보고서 생성 | `/api/reports` | `router.py`(471) |
@@ -1229,6 +1238,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 ```bash
 ./scripts/install.sh
 sudo apt install python3-bpfcc  # passive observer
+./scripts/passive-preflight.sh
 ./scripts/dev.sh
 ./scripts/build.sh
 ./scripts/start.sh
@@ -1250,6 +1260,9 @@ sudo apt install python3-bpfcc  # passive observer
 - backend launcher는 `*.yaml` 변경도 reload 대상으로 지정한다.
 - backend launcher는 `python3-bpfcc`가 있으면 passive observer를 함께 시작·종료하고,
 일반 사용자 단계의 UID를 `OSCP_WORKSPACE_OWNER_UID`로 넘겨 해당 process 계보를 추적한다.
+- `start.sh`는 observer 시작 전에 `passive-preflight.sh`를 실행하며 matching headers나
+  tracepoint 조건이 없으면 backend만 시작하고 observer를 명시적으로 비활성화한다.
+- 실제 collector→DB smoke는 server 실행 뒤 `scripts/passive-live-smoke.py`로 수행한다.
 PTY ECHO 확인은 syscall 뒤 userspace에서 일어나므로 terminal 상태 변경 race가 있다. raw
 event 저장소는 비밀 관리소가 아니며 0700/0600 권한 외 암호화·retention 정책은 아직 없다.
 - frontend 개발 서버는 Vite를 사용한다.

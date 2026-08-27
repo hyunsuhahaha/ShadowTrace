@@ -358,3 +358,24 @@ executable, namespace와 cgroup context를 best-effort로 덧붙인다.
   venv site-packages로 별도 실행), Alembic `0044` fresh/contaminated migration, Python
   compile과 shell syntax 통과. Live BPF compile/load는 실행 kernel headers가 설치돼
   있지 않아 source compilation 전에 중단됐다.
+
+### ShadowTrace Phase 3 — Passive Session Reconstruction
+
+tool parser를 추가하지 않고 raw evidence와 semantic Observation 사이의 derived 계층을
+구현했다. `reconstruct(db)` 한 interface가 전체 raw corpus를 멱등 upsert한다.
+
+- `ProcessInstance`: boot/PID/start ticks, PPID/SID/PGID/TGID, controlling TTY,
+  namespace/cgroup, cwd/argv/executable과 stdio FD topology.
+- `TerminalSession`: observer ID 대신 boot/PID namespace/SID/TTY identity를 사용해
+  observer restart에도 유지하며 tmux pane은 PTY별 분리.
+- `CommandActivity`: PGID+shared pipe FD pipeline, foreground PGID mismatch background,
+  FD target redirect와 PTY input correlation. builtin/exec 없는 입력은 confidence 55 candidate.
+- `RemoteSessionCandidate`: local ssh process와 PTY evidence만 연결. remote input은
+  confidence 50이며 실행 성공이나 transport plaintext 해석을 주장하지 않음.
+- Alembic `0045_session_reconstruction`, derived 조회 route 5개, raw sync의 기존 응답
+  호환성 유지. Graph import/변경 없음.
+- `passive-preflight.sh`와 `passive-live-smoke.py`: headers/tracepoint 조건 안내 및 실제
+  PTY/process/socket/filesystem/truncation→DB smoke 경로.
+- 전체 backend `604 passed`, targeted passive `24 passed`, migration `4 passed`. 현재
+  host는 matching kernel headers가 없어 live BPF compile/load 미검증; sudo prompt는
+  우회하지 않음.

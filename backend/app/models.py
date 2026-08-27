@@ -160,6 +160,106 @@ class RawActivityEvent(Base):
     sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+class TerminalSession(Base):
+    """Best-effort terminal boundary; never a semantic Graph entity."""
+    __tablename__ = "terminal_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_key: Mapped[str] = mapped_column(String(240), unique=True)
+    boot_id: Mapped[str] = mapped_column(String(64), index=True)
+    sid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tty_nr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tty: Mapped[str] = mapped_column(String(200), default="")
+    pid_namespace: Mapped[str] = mapped_column(String(120), default="")
+    kind: Mapped[str] = mapped_column(String(30), default="local")
+    topology: Mapped[str] = mapped_column(Text, default="{}")
+    observer_ids: Mapped[str] = mapped_column(Text, default="[]")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    loss_state: Mapped[str] = mapped_column(String(120), default="complete")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class ProcessInstance(Base):
+    """One PID incarnation, keyed with boot and kernel process start ticks."""
+    __tablename__ = "process_instances"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    process_key: Mapped[str] = mapped_column(String(200), unique=True)
+    terminal_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("terminal_sessions.id"), nullable=True, index=True)
+    boot_id: Mapped[str] = mapped_column(String(64), index=True)
+    pid: Mapped[int] = mapped_column(Integer, index=True)
+    tgid: Mapped[int] = mapped_column(Integer)
+    start_ticks: Mapped[str] = mapped_column(String(40), default="")
+    ppid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pgid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tty_nr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tpgid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tty: Mapped[str] = mapped_column(String(200), default="")
+    pid_namespace: Mapped[str] = mapped_column(String(120), default="")
+    mount_namespace: Mapped[str] = mapped_column(String(120), default="")
+    network_namespace: Mapped[str] = mapped_column(String(120), default="")
+    user_namespace: Mapped[str] = mapped_column(String(120), default="")
+    cgroup: Mapped[str] = mapped_column(Text, default="[]")
+    executable: Mapped[str] = mapped_column(Text, default="")
+    argv: Mapped[str] = mapped_column(Text, default="[]")
+    cwd: Mapped[str] = mapped_column(Text, default="")
+    fd_topology: Mapped[str] = mapped_column(Text, default="{}")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    loss_state: Mapped[str] = mapped_column(String(120), default="complete")
+    evidence_event_ids: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class CommandActivity(Base):
+    """A correlated terminal job or unconfirmed PTY input candidate."""
+    __tablename__ = "command_activities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    activity_key: Mapped[str] = mapped_column(String(240), unique=True)
+    terminal_session_id: Mapped[int] = mapped_column(
+        ForeignKey("terminal_sessions.id"), index=True)
+    primary_process_id: Mapped[int | None] = mapped_column(
+        ForeignKey("process_instances.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30), default="command")
+    command: Mapped[str] = mapped_column(Text, default="")
+    cwd: Mapped[str] = mapped_column(Text, default="")
+    pgid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_pipeline: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_background: Mapped[bool] = mapped_column(Boolean, default=False)
+    stdin_target: Mapped[str] = mapped_column(Text, default="")
+    stdout_target: Mapped[str] = mapped_column(Text, default="")
+    stderr_target: Mapped[str] = mapped_column(Text, default="")
+    process_instance_ids: Mapped[str] = mapped_column(Text, default="[]")
+    evidence_event_ids: Mapped[str] = mapped_column(Text, default="[]")
+    evidence_streams: Mapped[str] = mapped_column(Text, default="{}")
+    inference: Mapped[str] = mapped_column(Text, default="{}")
+    sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    loss_state: Mapped[str] = mapped_column(String(120), default="complete")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class RemoteSessionCandidate(Base):
+    """Local SSH/PTY evidence suggesting, but not proving, a remote session."""
+    __tablename__ = "remote_session_candidates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    candidate_key: Mapped[str] = mapped_column(String(240), unique=True)
+    terminal_session_id: Mapped[int] = mapped_column(ForeignKey("terminal_sessions.id"))
+    process_instance_id: Mapped[int] = mapped_column(ForeignKey("process_instances.id"))
+    client_activity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("command_activities.id"), nullable=True)
+    destination: Mapped[str] = mapped_column(String(300), default="")
+    username: Mapped[str] = mapped_column(String(160), default="")
+    evidence_event_ids: Mapped[str] = mapped_column(Text, default="[]")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    loss_state: Mapped[str] = mapped_column(String(120), default="complete")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 class AutoReconRun(Base):
     """One real `autorecon` (Tib3rius) subprocess invocation against one or
     more targets at once -- distinct from ScanJob, which is always exactly

@@ -527,7 +527,8 @@ class Observer:
             except (FileNotFoundError, OSError, StopIteration, ValueError):
                 continue
 
-    def _context(self, pid: int, fd: int | None = None) -> dict:
+    def _context(self, pid: int, fd: int | None = None,
+                 include_stdio: bool = False) -> dict:
         context: dict = {}
         try:
             tail = self._proc(pid, "stat").read_text().rpartition(") ")[2].split()
@@ -546,6 +547,16 @@ class Observer:
                 context["fd_target"] = os.readlink(self._proc(pid, f"fd/{fd}"))
             except OSError:
                 pass
+        if include_stdio:
+            targets = {}
+            for number in (0, 1, 2):
+                try:
+                    targets[str(number)] = os.readlink(
+                        self._proc(pid, f"fd/{number}"))
+                except OSError:
+                    pass
+            if targets:
+                context["fd_targets"] = targets
         namespaces = {}
         for name in ("pid", "mnt", "net", "user"):
             try:
@@ -576,7 +587,7 @@ class Observer:
                 self._proc(pid, "cmdline").read_bytes().split(b"\0") if part]
 
     def _generic_process(self, event: Event, kind: str) -> None:
-        context = self._context(event.pid)
+        context = self._context(event.pid, include_stdio=True)
         payload = {"gid": event.gid, **context}
         if kind == "process_exec":
             try:

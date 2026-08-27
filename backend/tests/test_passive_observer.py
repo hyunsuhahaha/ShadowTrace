@@ -82,3 +82,18 @@ def test_output_truncation_is_explicit(monkeypatch):
     assert values["capture_state"] == "partial"
     assert values["payload"]["truncated"] is True
     assert values["payload"]["original_size"] == 5000
+
+
+def test_process_context_preserves_stdio_fd_topology(tmp_path, monkeypatch):
+    process = tmp_path / "proc"
+    (process / "fd").mkdir(parents=True)
+    (process / "fd" / "0").symlink_to("/dev/pts/4")
+    (process / "fd" / "1").symlink_to("pipe:[77]")
+    (process / "fd" / "2").symlink_to("/tmp/error.log")
+    instance = observer.Observer.__new__(observer.Observer)
+    monkeypatch.setattr(instance, "_proc", lambda _pid, name: process / name)
+
+    context = instance._context(42, include_stdio=True)
+
+    assert context["fd_targets"] == {
+        "0": "/dev/pts/4", "1": "pipe:[77]", "2": "/tmp/error.log"}

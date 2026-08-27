@@ -26,6 +26,26 @@ Observer가 endpoint에서 포착한 하나의 process, stdio, socket, filesyste
 원본 payload를 보존하지만 사용자의 의도나 보안 의미를 단정하지 않습니다.
 _Avoid_: Observation, Finding, Execution
 
+**Process Instance**:
+하나의 boot 안에서 PID와 kernel process start time으로 구분되는 process incarnation입니다.
+PPID, SID, PGID, TTY, namespace/cgroup과 raw evidence 범위를 보존합니다.
+_Avoid_: Command, Session, Tool Result
+
+**Terminal Session**:
+boot, PID namespace, SID와 controlling TTY/PTY를 이용해 분리한 local terminal 흐름입니다.
+tmux pane은 PTY가 다를 때 별도 Session이며 사용자 의도나 pane 이름을 의미하지 않습니다.
+_Avoid_: InteractiveSession, Engagement
+
+**Command Activity**:
+Process Instance, PGID, stdio FD topology와 PTY evidence를 시간축으로 correlation한 작업
+후보입니다. shell input만 있는 경우 실행 사실이 아니라 낮은 confidence의 candidate입니다.
+_Avoid_: Execution, Observation, Finding
+
+**Remote Session Candidate**:
+로컬 SSH client process와 그 PTY I/O가 원격 대화형 흐름일 가능성을 나타내는 후보입니다.
+SSH ciphertext를 해석하거나 원격 명령 실행 성공을 단정하지 않습니다.
+_Avoid_: RemoteExecution, Proven Session
+
 **Passive Activity**:
 Workspace 밖에서 사용자가 실행한 도구 활동을 여러 Raw Activity Event로부터 묶은
 기록입니다. 현재는 Nmap projection에만 사용하며 Workspace가 실행한 것이 아니고

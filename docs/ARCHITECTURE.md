@@ -44,8 +44,11 @@ XDG 규칙을 우선하며 `OSCP_WORKSPACE_*` 환경 변수로 위치를 바꿀 
 
 기본 관계는 Project 1—N Target 1—N Scan/Service/Execution/Evidence다. Observer의
 `RawActivityEvent`는 손실·신뢰도·provenance를 포함한 원자적 endpoint 신호이며 의미
-Graph와 분리해 보존한다. 여러 신호로 재구성한 Passive Activity만 parser/resolver를
-통과해 Observation과 Entity/Relation으로 승격할 수 있다. 현재 승격 경로는 Nmap뿐이다.
+Graph와 분리해 보존한다. `passive_activity.reconstruction`은 raw corpus를
+`ProcessInstance → TerminalSession → CommandActivity`로 멱등 재구성하고 로컬 SSH/PTY에는
+별도 `RemoteSessionCandidate`를 만든다. 이 derived 계층도 의미 Graph와 분리한다. parser와
+resolver를 통과한 Observation만 Entity/Relation으로 승격할 수 있으며 현재 승격 경로는
+Nmap뿐이다.
 원본 스캔 파일은 불변으로 보존하고 파싱 결과에 원본 ID를 기록한다. HTTP 요청과 응답은
 자격증명 필드와 분리하며, 증적은 SHA-256과 취득 시각을 기록한다.
 
@@ -63,8 +66,10 @@ Graph와 분리해 보존한다. 여러 신호로 재구성한 Passive Activity�
 - `/api/runbooks/target-recommendations/{target_id}`: Target 범위 Runbook 추천
 - `/api/runbooks/instances`: 발행 Version 적용과 수행 Instance 조회
 - `/api/system/status`: 설치 도구, `tun0`, route 상태
-- `/api/passive/activities`, `/api/passive/events`, `/api/passive/sync`: 재구성된 activity,
+- `/api/passive/activities`, `/api/passive/events`, `/api/passive/sync`: Nmap activity,
   raw event 조회와 두 inbox의 멱등 ingest
+- `/api/passive/reconstruct`, `/api/passive/processes`, `/api/passive/terminal-sessions`,
+  `/api/passive/commands`, `/api/passive/remote-sessions`: derived passive flow 재구성과 조회
 - `/api/product/capabilities`: UI가 표시할 허용·금지 기능 정책
 
 ## 실행 및 보안 경계

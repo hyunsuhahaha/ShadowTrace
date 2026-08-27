@@ -27,6 +27,28 @@ capture state와 confidence가 붙습니다. PTY 입력은 userspace 처리 시�
 다른 원시 이벤트를 곧바로 Observation이나 Finding으로 승격하지 않습니다. 모든 Kali
 활동 또는 행동별 Graph node를 보장하지 않습니다.
 
+Raw event ingest 뒤에는 다음 best-effort reconstruction이 실행됩니다.
+
+```text
+RawActivityEvent → ProcessInstance → TerminalSession → CommandActivity
+                                      └→ RemoteSessionCandidate
+```
+
+PGID, SID, controlling TTY, stdio FD target과 시간 근접성으로 pipeline, redirect,
+background job과 PTY input을 묶습니다. shell builtin 및 SSH 내부 입력은 실행이 확인된
+명령이 아니라 confidence가 낮은 candidate입니다. 이 계층은 Graph를 변경하지 않습니다.
+
+커널 준비 상태와 live smoke는 다음처럼 확인합니다.
+
+```bash
+./scripts/passive-preflight.sh
+./scripts/start.sh
+./scripts/passive-live-smoke.py
+```
+
+두 번째 명령은 sudo가 필요합니다. preflight가 새 kernel image 설치를 안내한 경우에는
+설치 후 재부팅하고 `uname -r`과 matching headers를 다시 확인해야 합니다.
+
 ```bash
 sudo apt install python3-bpfcc
 ./scripts/start.sh
