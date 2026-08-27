@@ -32,7 +32,8 @@ SECRET = re.compile(
     r"(?i)(?P<key>(?:password|passwd|pass|token|secret))=(?P<value>[^,]+)")
 
 
-def parse_nmap_text(output: str, target_ip: str, activity_id: int) -> list[dict]:
+def parse_nmap_text(output: str, target_ip: str, activity_id: int,
+                    confidence: int = 85) -> list[dict]:
     """Parse stable fields from Nmap's human-readable port table."""
     hostname = ""
     services = []
@@ -65,7 +66,7 @@ def parse_nmap_text(output: str, target_ip: str, activity_id: int) -> list[dict]
                 "source": "passive-terminal",
                 "activity_id": activity_id,
                 "parser": "nmap-text-v1",
-                "confidence": 85,
+                "confidence": confidence,
                 "raw_line": line,
             },
         })
@@ -133,6 +134,9 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
         raise ValueError("activity is not an nmap execution")
     argv = [str(value) for value in argv]
     redacted_argv = _redact_argv(argv)
+    capture_partial = bool(metadata.get("capture_truncated")) or bool(
+        int(metadata.get("loss_count", 0)))
+    confidence = 60 if capture_partial else 85
     activity = PassiveActivity(
         process_key=process_key,
         tool="nmap",
@@ -149,6 +153,8 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
         output_path=str(output_path),
         sha256=hashlib.sha256(output).hexdigest(),
         parser="nmap-text-v1",
+        confidence=confidence,
+        error="collector reported truncation or event loss" if capture_partial else "",
     )
     db.add(activity)
     db.flush()
@@ -161,7 +167,7 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
     try:
         project, target = _resolve_target(db, targets[0])
         hosts = parse_nmap_text(output.decode("utf-8", errors="replace"), target.ip,
-                                activity.id)
+                                activity.id, confidence)
         if not hosts[0]["services"]:
             raise ValueError("no Nmap port-table observations found")
         job = ScanJob(
@@ -185,11 +191,15 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
         activity.scan_job_id = job.id
         activity.output_path = str(destination)
         activity.status = "observed"
-        activity.confidence = 85
+        activity.confidence = confidence
         capture_scan_evidence(db, job)
         graph_service.sync_from_project(db, project.id)
         graph_service.record_snapshot(db, project.id)
         db.commit()
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return activity
     except ValueError as exc:
         db.rollback()

@@ -334,3 +334,27 @@ collector/ingest 소스 감사에서 단일 write 4 KiB 절단, write 진입 시
 archive/output 중복 보존을 확인했다. 상세 근거·coverage matrix·regression corpus는
 `docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`. targeted passive tests는 `3 passed`;
 system `bcc` import는 성공했지만 localhost live attach는 sudo 암호 단계에서 중단됐다.
+
+### ShadowTrace Phase 2 — Generic raw sensor foundation
+
+도구별 parser를 늘리기 전에 passive collector/backend 사이에 versioned raw event seam을
+추가했다. owner UID process 계보의 fork/exec/exit, fd 0 read·fd 1/2 write 결과,
+connect/bind/listen/accept4와 process-fd별 첫 sendto, 변경 의도가 있는 openat 및
+unlinkat/mkdirat/renameat2를 수집한다. `/proc`의 PID/PPID/process group/session/TTY/cwd,
+executable, namespace와 cgroup context를 best-effort로 덧붙인다.
+
+- `RawActivityEvent` + Alembic `0044`: event key/sequence, 두 clock, provenance,
+  capture state, confidence, loss와 sensitive marker를 멱등 저장.
+- `raw_events.py`: 10 MiB/1,000 event/64 KiB payload 제한을 적용한 atomic inbox ingest와
+  archive. `/api/passive/sync`의 기존 `processed/failed` 응답은 유지하고 raw 결과를 추가.
+- PTY input은 terminal fd이고 ECHO가 켜졌다고 확인된 경우만 byte를 저장하며, 비밀번호
+  입력처럼 echo-off/불명 상태는 byte count만 남김. argv의 일반 secret flag, header,
+  assignment와 URL userinfo를 collector에서 redaction.
+- Nmap의 기존 semantic projection은 유지하되 실제 write return byte를 사용하고,
+  truncation/perf loss를 partial confidence로 전파하며 성공 후 중복 inbox output을 제거.
+- generic event를 Observation/Finding/Graph node로 자동 승격하지 않는다. 현재 parser는
+  여전히 단일 literal-IP Nmap human port table뿐이다.
+- 전체 backend `589 passed`(system Python에 없는 `pymongo`를 쓰는 5개는 repository
+  venv site-packages로 별도 실행), Alembic `0044` fresh/contaminated migration, Python
+  compile과 shell syntax 통과. Live BPF compile/load는 실행 kernel headers가 설치돼
+  있지 않아 source compilation 전에 중단됐다.

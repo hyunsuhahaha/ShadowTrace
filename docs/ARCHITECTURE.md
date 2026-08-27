@@ -42,10 +42,12 @@ XDG 규칙을 우선하며 `OSCP_WORKSPACE_*` 환경 변수로 위치를 바꿀 
 - logs: `~/.local/state/oscp-workspace`
 - artifacts: `~/OSCP-Workspace/projects/<safe-name>/targets/<safe-ip>/`
 
-기본 관계는 Project 1—N Target 1—N Scan/Service/Execution/Evidence다. Passive
-Activity는 관찰된 외부 process를 보존하고 파싱 성공 시 Scan에 연결된다. 원본 스캔
-파일은 불변으로 보존하고 파싱 결과에 원본 ID를 기록한다. HTTP 요청과 응답은 자격증명
-필드와 분리하며, 증적은 SHA-256과 취득 시각을 기록한다.
+기본 관계는 Project 1—N Target 1—N Scan/Service/Execution/Evidence다. Observer의
+`RawActivityEvent`는 손실·신뢰도·provenance를 포함한 원자적 endpoint 신호이며 의미
+Graph와 분리해 보존한다. 여러 신호로 재구성한 Passive Activity만 parser/resolver를
+통과해 Observation과 Entity/Relation으로 승격할 수 있다. 현재 승격 경로는 Nmap뿐이다.
+원본 스캔 파일은 불변으로 보존하고 파싱 결과에 원본 ID를 기록한다. HTTP 요청과 응답은
+자격증명 필드와 분리하며, 증적은 SHA-256과 취득 시각을 기록한다.
 
 ## 현재 API
 
@@ -61,7 +63,8 @@ Activity는 관찰된 외부 process를 보존하고 파싱 성공 시 Scan에 �
 - `/api/runbooks/target-recommendations/{target_id}`: Target 범위 Runbook 추천
 - `/api/runbooks/instances`: 발행 Version 적용과 수행 Instance 조회
 - `/api/system/status`: 설치 도구, `tun0`, route 상태
-- `/api/passive/activities`, `/api/passive/sync`: passive activity 조회와 inbox ingest
+- `/api/passive/activities`, `/api/passive/events`, `/api/passive/sync`: 재구성된 activity,
+  raw event 조회와 두 inbox의 멱등 ingest
 - `/api/product/capabilities`: UI가 표시할 허용·금지 기능 정책
 
 ## 실행 및 보안 경계

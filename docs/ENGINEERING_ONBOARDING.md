@@ -40,8 +40,9 @@ FastAPI · 127.0.0.1:8000
   ├─ NetworkManager / tun0
   └─ workspace artifact files
 
-Kali kernel tracepoints → `scripts/passive-observer.py` → state inbox
-→ Passive Activity ingest → Target/Service → Progress Graph
+Kali kernel tracepoints → `scripts/passive-observer.py` → raw event inbox
+→ `RawActivityEvent` (semantic graph와 분리)
+→ Nmap activity ingest → Observation → Target/Service → Progress Graph
 ```
 
 ### 개발 실행
@@ -154,6 +155,7 @@ Finding
  ├─ FindingAsset
  └─ FindingRetest
 
+RawActivityEvent ── no semantic/domain FK
 PassiveActivity ── optional → Project / Target / ScanJob
 ```
 
@@ -251,12 +253,19 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 `router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
 `start_execution()`에 분리돼 있다.
 
-### Passive Nmap Activity
+### Passive endpoint events와 Nmap projection
 
 ```text
-Kali terminal의 nmap exec/write/exit
-  → eBPF observer가 state/passive-inbox에 output + metadata 보존
+사용자 process 계보의 fork/exec/exit, stdio read/write,
+socket connect/bind/listen/accept4/first-sendto,
+변경형 openat/unlinkat/mkdirat/renameat2
+  → eBPF observer가 state/passive-event-inbox에 versioned batch 보존
   → POST /api/passive/sync
+  → RawActivityEvent 멱등 저장 (loss/capture_state/confidence/provenance 포함)
+  → 의미 Graph에는 자동 투영하지 않음
+
+같은 observer의 local nmap exec/write/exit
+  → state/passive-inbox에 output + metadata 보존
   → PassiveActivity 생성
   → 단일 literal IP와 Project 해결
   → ScanJob(source=passive) / HostObservation / ServiceObservation
@@ -264,16 +273,22 @@ Kali terminal의 nmap exec/write/exit
   → 기존 Graph projection + snapshot
 ```
 
-collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), ingest·Nmap text
-parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
-있다. 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project
-해결이 모호하면 `unresolved`로만 보존한다.
+collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), raw batch 검증과
+저장은 [`backend/app/modules/passive_activity/raw_events.py`](../backend/app/modules/passive_activity/raw_events.py),
+Nmap text parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
+있다. schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py)가
+관리한다. `GET /api/passive/events`는 kind/PID/limit으로 원시 이벤트를 조회한다. 원시
+payload에는 terminal output 등 민감정보가 포함될 수 있으므로 localhost 데이터로 취급한다.
+자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project 해결이 모호하면
+`unresolved`로만 보존한다.
 
 실제 pentester workflow·terminal 습관 42개 활동군과 collector별 관찰 한계, 현재 MVP의
 포착/부분 포착/미포착 감사 결과는
 [`docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`](RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md)에
-정리돼 있다. 현재 보장 가능한 범위는 단일 literal IP의 Nmap human port table에 대한
-best-effort 관찰뿐이며, 모든 Kali 활동이나 행동별 Graph node를 보장하지 않는다.
+정리돼 있다. generic sensor는 넓은 raw signal 기반을 제공하지만 syscall subset과
+echo-confirmed PTY 입력만 포착하며 live eBPF load는 아직 검증되지 않았다. 의미 승격은
+단일 literal IP의 Nmap human port table만 지원하고 모든 Kali 활동이나 행동별 Graph
+node를 보장하지 않는다.
 
 ### AutoRecon (여러 대상 동시 정찰)
 
@@ -1053,7 +1068,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `hash_cracking` | hashcat job lifecycle, 모드 자동 감지, 크랙 결과 → Credential 승격 | `/api/hash-cracking` | `router.py`(276) |
 | `notes` | project/target/service/credential에 선택적으로 붙는 독립 Note CRUD(id/author/timestamp 보유) | `/api/notes` | `router.py`(72) |
 | `operations` | 전역 검색, DB/프로젝트 export/backup | `/api/operations` | `router.py`(169) |
-| `passive_activity` | eBPF inbox activity ingest, Nmap text parsing, Target/Service 해결 | `/api/passive` | `service.py` |
+| `passive_activity` | raw event batch ingest/query, Nmap activity parsing, Target/Service 해결 | `/api/passive` | `raw_events.py`, `service.py` |
 | `post_exploitation` | 자격증명 기반 원격 명령 실행(impacket/nxc/evil-winrm류) | `/api/post-exploitation` | `manager.py`(180) |
 | `privesc_analysis` | LinPEAS 파싱/하이라이트, SUID→GTFOBins 매칭 | (inline) | `router.py`(113) |
 | `reports` | DOCX(`python-docx`)/PDF(`weasyprint`) 보고서 생성 | `/api/reports` | `router.py`(471) |
@@ -1233,7 +1248,10 @@ sudo apt install python3-bpfcc  # passive observer
 - production backend code 변경은 실행 중인 uvicorn에 자동 반영되지 않는다.
 - `dev.sh`는 uvicorn에 reload 옵션을 전달한다.
 - backend launcher는 `*.yaml` 변경도 reload 대상으로 지정한다.
-- backend launcher는 `python3-bpfcc`가 있으면 passive observer를 함께 시작·종료한다.
+- backend launcher는 `python3-bpfcc`가 있으면 passive observer를 함께 시작·종료하고,
+일반 사용자 단계의 UID를 `OSCP_WORKSPACE_OWNER_UID`로 넘겨 해당 process 계보를 추적한다.
+PTY ECHO 확인은 syscall 뒤 userspace에서 일어나므로 terminal 상태 변경 race가 있다. raw
+event 저장소는 비밀 관리소가 아니며 0700/0600 권한 외 암호화·retention 정책은 아직 없다.
 - frontend 개발 서버는 Vite를 사용한다.
 - production frontend는 `frontend/dist`에서 제공되므로 build 결과가 사용된다.
 - 환경 변수와 저장 경로는 module import 시 읽힌다.

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 from .time import utcnow
@@ -135,6 +135,29 @@ class PassiveActivity(Base):
     parser: Mapped[str] = mapped_column(String(80), default="")
     confidence: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class RawActivityEvent(Base):
+    """Loss-aware endpoint evidence; semantic graph projection happens later."""
+    __tablename__ = "raw_activity_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(200), unique=True)
+    observer_id: Mapped[str] = mapped_column(String(64), index=True)
+    boot_id: Mapped[str] = mapped_column(String(64))
+    sequence: Mapped[int] = mapped_column(BigInteger)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    source: Mapped[str] = mapped_column(String(40), default="ebpf")
+    monotonic_ns: Mapped[int] = mapped_column(BigInteger)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    tid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ppid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    capture_state: Mapped[str] = mapped_column(String(20), default="captured")
+    confidence: Mapped[int] = mapped_column(Integer, default=100)
+    loss_before: Mapped[int] = mapped_column(Integer, default=0)
+    sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class AutoReconRun(Base):

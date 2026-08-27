@@ -8,14 +8,18 @@
 ## 현재 상태
 
 - 브랜치: `main` (`ShadowTrace` fork)
-- Passive Nmap MVP: `scripts/passive-observer.py`가 eBPF로 로컬 nmap의
-  exec/stdout/exit를 관찰해 state inbox에 보존하고, `passive_activity` 모듈이
+- Generic passive sensor foundation: `scripts/passive-observer.py`가 owner UID process
+  계보의 fork/exec/exit, fd 0/1/2 I/O, socket lifecycle 일부와 변경형 filesystem
+  syscall을 수집한다. versioned raw batch에는 sequence, monotonic/wall time, PID/TTY/cwd,
+  namespace/cgroup, capture state, confidence와 loss가 포함되며 `RawActivityEvent`로 멱등
+  저장된다. echo-off/불명 input은 내용 없이 redaction marker만 남긴다.
+- Raw event는 의미 Graph와 분리돼 있다. 현재 자동 의미 승격은 Nmap MVP만 지원하며
   `PassiveActivity → ScanJob(source=passive) → Observation → Target/Service → Graph`로
-  멱등 투영한다. 단일 literal IP만 자동 해결하고 Finding은 만들지 않는다.
-- passive coverage 감사 결과, 현재 구현은 모든 Kali/terminal 활동이 아니라 위 Nmap
-  한 경로만 best-effort로 지원한다. shell builtin, 다른 CLI, SSH 원격 명령, Burp/browser,
-  socket/filesystem, container/VM은 미포착 또는 관찰 불가능하며 4 KiB 단일 write 절단,
-  loss 미영속화, 좁은 redaction과 raw 중복 보존 위험이 있다. 전체 매트릭스와 출처는
+  투영한다. 단일 literal IP만 자동 해결하고 Finding은 만들지 않는다. collector가 알린
+  truncation/loss는 confidence 60과 partial error로 전파한다.
+- 모든 Kali/terminal 활동이나 행동별 Graph node는 보장하지 않는다. `writev`, 임의 FD,
+  전체 file write/mmap, raw packet, tmux pane 의미, SSH 원격 background 작업, Burp/browser
+  내부 상태와 VM guest는 미포착 또는 불완전하다. 전체 매트릭스와 출처는
   `docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`에 있다.
 - server launcher는 `scripts/start.sh` 하나로 통합됐다. non-root 환경·migration·sudo
   전환과 root observer/uvicorn lifecycle을 같은 파일이 담당하고, `dev.sh`는
@@ -72,12 +76,13 @@
 
 ## 검증
 
-- 전체 backend suite: `583 passed`; frontend Vitest `104 files / 584 tests`;
-  TypeScript/Vite production build, Alembic `0043` 전체·contaminated schema 복구,
-  Python compileall과 shell syntax 통과.
-- eBPF live load는 미검증. 2026-08-27 재확인에서는 system Python의 `bcc` import는
-  성공했지만 localhost live smoke test가 sudo 암호 단계에서 중단돼 attach/capture는
-  검증하지 못했다.
+- 전체 backend suite `589 passed`: system Python에 없는 `pymongo`는 repository venv
+  site-packages를 사용해 MongoDB 5개를 별도 실행했고, 나머지 584개는 loopback 통합
+  테스트를 포함해 통과했다. Alembic `0044` fresh upgrade와 contaminated schema test,
+  Python compile, shell syntax와 diff check도 통과했다.
+- eBPF live load는 미검증. 2026-08-27 system Python의 `bcc` import는 성공했지만 실행
+  kernel `6.19.14+kali-amd64`의 build headers와 `kheaders` module이 없어 BPF source
+  compilation 전에 중단됐다. sudo가 필요한 live attach/capture도 수행하지 못했다.
 - 이전 원본 기준 backend suite: `542 passed` (golden-path 통합 테스트 포함)
 - 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과

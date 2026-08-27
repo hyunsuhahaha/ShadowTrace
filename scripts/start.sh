@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "$(id -u)" -ne 0 ]; then
+  owner_uid="$(id -u)"
   owner_gid="$(id -g)"
   owner_home="$HOME"
   export OSCP_WORKSPACE_CONFIG="${OSCP_WORKSPACE_CONFIG:-$owner_home/.config/oscp-workspace}"
@@ -9,17 +10,19 @@ if [ "$(id -u)" -ne 0 ]; then
   export OSCP_WORKSPACE_STATE="${OSCP_WORKSPACE_STATE:-$owner_home/.local/state/oscp-workspace}"
   export OSCP_WORKSPACE_ROOT="${OSCP_WORKSPACE_ROOT:-$owner_home/OSCP-Workspace}"
   export OSCP_WORKSPACE_DB="${OSCP_WORKSPACE_DB:-$OSCP_WORKSPACE_DATA/workspace.db}"
+  export OSCP_WORKSPACE_OWNER_UID="$owner_uid"
   export OSCP_WORKSPACE_OWNER_GID="$owner_gid"
   export OSCP_WORKSPACE_OWNER_HOME="$owner_home"
   mkdir -p "$OSCP_WORKSPACE_CONFIG" "$OSCP_WORKSPACE_DATA" \
     "$OSCP_WORKSPACE_STATE" "$OSCP_WORKSPACE_ROOT"
   .venv/bin/python -m app.migrations
   sudo -v
-  exec sudo --preserve-env=OSCP_WORKSPACE_CONFIG,OSCP_WORKSPACE_DATA,OSCP_WORKSPACE_STATE,OSCP_WORKSPACE_ROOT,OSCP_WORKSPACE_DB,OSCP_WORKSPACE_OWNER_GID,OSCP_WORKSPACE_OWNER_HOME \
+  exec sudo --preserve-env=OSCP_WORKSPACE_CONFIG,OSCP_WORKSPACE_DATA,OSCP_WORKSPACE_STATE,OSCP_WORKSPACE_ROOT,OSCP_WORKSPACE_DB,OSCP_WORKSPACE_OWNER_UID,OSCP_WORKSPACE_OWNER_GID,OSCP_WORKSPACE_OWNER_HOME \
     "$0" "$@"
 fi
 
 : "${OSCP_WORKSPACE_OWNER_GID:?missing owner gid}"
+: "${OSCP_WORKSPACE_OWNER_UID:?missing owner uid}"
 : "${OSCP_WORKSPACE_CONFIG:?missing config path}"
 : "${OSCP_WORKSPACE_DATA:?missing data path}"
 : "${OSCP_WORKSPACE_STATE:?missing state path}"

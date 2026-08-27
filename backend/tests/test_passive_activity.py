@@ -68,13 +68,15 @@ Nmap done
         "ended_at": "2026-08-27T12:00:05+00:00",
         "exit_code": 0,
         "output_file": "capture.out",
+        "capture_truncated": True,
     }
     (inbox / "capture.json").write_text(json.dumps(metadata))
 
     assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
     activity = db.query(PassiveActivity).one()
     assert activity.status == "observed"
-    assert activity.confidence == 85
+    assert activity.confidence == 60
+    assert "truncation or event loss" in activity.error
     assert db.query(Target).filter_by(ip="10.10.11.23").one()
     assert {(row.port, row.name) for row in db.query(Service)} == {(22, "ssh"), (80, "http")}
     assert db.query(ServiceObservation).count() == 2
@@ -83,6 +85,7 @@ Nmap done
     assert db.query(Finding).count() == 0
     assert {row.type for row in db.query(GraphNode)} >= {"project-root", "host", "service"}
     assert Path(activity.output_path).read_bytes() == output
+    assert not (inbox / "capture.out").exists()
 
     (inbox / "capture.json").write_text(json.dumps(metadata))
     assert service.sync_inbox(db) == {"processed": 1, "failed": 0}

@@ -20,9 +20,15 @@ _Avoid_: Endpoint, Vulnerability
 
 ## Facts and Decisions
 
+**Raw Activity Event**:
+Observer가 endpoint에서 포착한 하나의 process, stdio, socket, filesystem 또는 loss
+신호입니다. source, sequence, timestamp, process context, capture state, confidence와
+원본 payload를 보존하지만 사용자의 의도나 보안 의미를 단정하지 않습니다.
+_Avoid_: Observation, Finding, Execution
+
 **Passive Activity**:
-Workspace 밖에서 사용자가 실행한 로컬 프로세스를 Observer가 command, output,
-시간과 terminal context로 포착한 기록입니다. Workspace가 실행한 것이 아니며
+Workspace 밖에서 사용자가 실행한 도구 활동을 여러 Raw Activity Event로부터 묶은
+기록입니다. 현재는 Nmap projection에만 사용하며 Workspace가 실행한 것이 아니고
 파싱된 사실이나 보안 판정을 의미하지 않습니다.
 _Avoid_: Execution, Observation, Audit Event
 

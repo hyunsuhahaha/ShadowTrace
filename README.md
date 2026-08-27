@@ -15,10 +15,17 @@ React UI, FastAPI API, SQLite 저장소로 구성되며 모든 명령은 사용�
 
 ## Passive capture MVP
 
-ShadowTrace를 실행한 동안 기존 Kali terminal에서 `nmap` 명령을 그대로 사용하면
-eBPF observer가 process 실행·stdout·종료를 관찰합니다. 단일 literal IP의 표준
-port table은 원본 출력과 SHA-256을 Evidence로 보존하고 Target/Service와
-Progress Graph에 자동 반영됩니다. Finding은 자동 생성하지 않습니다.
+ShadowTrace를 실행한 동안 기존 Kali terminal에서 평소처럼 작업하면 eBPF observer가
+사용자 process 계보, fd 0/1/2 I/O, socket lifecycle 일부와 변경형 filesystem syscall을
+원시 이벤트로 기록합니다. 이벤트에는 PID/TTY/cwd/namespace context, sequence, loss,
+capture state와 confidence가 붙습니다. PTY 입력은 userspace 처리 시점에 terminal ECHO가
+켜졌다고 확인된 경우만 저장하며, 나머지는 byte count만 남깁니다. syscall과 확인 사이
+상태 변경 race가 있으므로 비밀값 비수집을 절대 보장하는 보안 경계로 보지는 않습니다.
+
+현재 의미 해석과 Graph 자동 반영은 여전히 `nmap` MVP만 지원합니다. 단일 literal IP의
+표준 port table을 원본 출력과 SHA-256 Evidence로 보존하고 Target/Service에 반영하며,
+다른 원시 이벤트를 곧바로 Observation이나 Finding으로 승격하지 않습니다. 모든 Kali
+활동 또는 행동별 Graph node를 보장하지 않습니다.
 
 ```bash
 sudo apt install python3-bpfcc
