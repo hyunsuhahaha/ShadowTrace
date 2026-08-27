@@ -364,7 +364,7 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>Web 테스트</small>
           </div>
         </div>

@@ -39,7 +39,7 @@ export default function EnumerationScope({
       <div className="brand">
         <span className="mark">OW</span>
         <div>
-          <b>OSCP Workspace</b>
+          <b>ShadowTrace</b>
           <small>로컬 Enumeration 작업 공간</small>
         </div>
       </div>

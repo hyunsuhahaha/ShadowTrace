@@ -1,7 +1,9 @@
-# OSCP Workspace
+# ShadowTrace
 
-Kali Linux에서 승인된 단일 대상 침투 테스트의 발견, 수동 열거, 증적 정리와
-보고서 작성을 한곳에서 관리하는 로컬 전용 워크스페이스입니다.
+*Passive pentest activity recorder.*
+
+Kali Linux에서 승인된 단일 대상 침투 테스트의 활동, 발견, 수동 열거,
+증적과 보고서를 한곳에 기록하는 로컬 전용 워크스페이스입니다.
 
 React UI, FastAPI API, SQLite 저장소로 구성되며 모든 명령은 사용자가 대상과 최종
 명령을 검토하고 명시적으로 승인한 뒤 실행됩니다. 자동 취약점 판정이나 자율 공격

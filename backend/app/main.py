@@ -115,7 +115,7 @@ async def lifespan(_: FastAPI):
     stop_privesc_server()
     stop_jndi_listener()
 
-app = FastAPI(title="OSCP Workspace", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ShadowTrace", version="0.1.0", lifespan=lifespan)
 app.include_router(scan_router)
 app.include_router(autorecon_router)
 app.include_router(web_router)

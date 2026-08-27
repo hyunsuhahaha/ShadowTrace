@@ -157,7 +157,7 @@ export default function EvidenceWorkspace() {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>증적</small>
           </div>
         </div>

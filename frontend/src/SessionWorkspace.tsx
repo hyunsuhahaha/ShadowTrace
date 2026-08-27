@@ -104,7 +104,7 @@ export default function SessionWorkspace() {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>Tunnel 및 세션</small>
           </div>
         </div>

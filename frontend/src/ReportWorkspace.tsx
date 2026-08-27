@@ -169,7 +169,7 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>보고서</small>
           </div>
         </div>

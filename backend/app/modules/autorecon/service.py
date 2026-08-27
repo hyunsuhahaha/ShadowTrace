@@ -39,7 +39,7 @@ def render_autorecon_command(targets: list[Target], output_dir: Path,
     extra_args = extra_args or []
     managed = {"-o", "--output", "-t", "--target-file", "--single-target"}
     if any(arg in managed or arg.startswith("--output=") for arg in extra_args):
-        raise ValueError("Target and output layout are managed by OSCP Workspace")
+        raise ValueError("Target and output layout are managed by ShadowTrace")
     return ["autorecon", *(target.ip for target in targets),
             "--disable-keyboard-control", "--ignore-plugin-checks",
             *extra_args, "-o", str(output_dir)]

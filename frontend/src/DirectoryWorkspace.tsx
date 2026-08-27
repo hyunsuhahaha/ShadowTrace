@@ -130,7 +130,7 @@ export default function DirectoryWorkspace() {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>AD 정보</small>
           </div>
         </div>

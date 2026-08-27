@@ -289,9 +289,9 @@ export default function AppShell({
       <a className="skipLink" href="#workspace-content">본문으로 건너뛰기</a>
       <aside className="appSidebar">
         <div className="appSidebar__head">
-          <a className="appBrand" href="#scans" aria-label="OSCP Workspace 홈">
-            <span>OW</span>
-            <strong>OSCP Workspace</strong>
+          <a className="appBrand" href="#scans" aria-label="ShadowTrace 홈">
+            <span>ST</span>
+            <strong>ShadowTrace</strong>
           </a>
           <button
             className="panelCollapseButton"

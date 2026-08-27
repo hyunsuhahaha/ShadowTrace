@@ -563,7 +563,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>Scan Center</small>
           </div>
         </div>

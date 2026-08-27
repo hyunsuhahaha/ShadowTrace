@@ -78,7 +78,7 @@ export default function OperationsWorkspace() {
         <div className="brand">
           <span className="mark">OW</span>
           <div>
-            <b>OSCP Workspace</b>
+            <b>ShadowTrace</b>
             <small>검색 · 감사 · 백업</small>
           </div>
         </div>
