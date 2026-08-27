@@ -12,6 +12,11 @@
   exec/stdout/exit를 관찰해 state inbox에 보존하고, `passive_activity` 모듈이
   `PassiveActivity → ScanJob(source=passive) → Observation → Target/Service → Graph`로
   멱등 투영한다. 단일 literal IP만 자동 해결하고 Finding은 만들지 않는다.
+- passive coverage 감사 결과, 현재 구현은 모든 Kali/terminal 활동이 아니라 위 Nmap
+  한 경로만 best-effort로 지원한다. shell builtin, 다른 CLI, SSH 원격 명령, Burp/browser,
+  socket/filesystem, container/VM은 미포착 또는 관찰 불가능하며 4 KiB 단일 write 절단,
+  loss 미영속화, 좁은 redaction과 raw 중복 보존 위험이 있다. 전체 매트릭스와 출처는
+  `docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`에 있다.
 - server launcher는 `scripts/start.sh` 하나로 통합됐다. non-root 환경·migration·sudo
   전환과 root observer/uvicorn lifecycle을 같은 파일이 담당하고, `dev.sh`는
   `start.sh --reload`를 재사용한다.
@@ -70,8 +75,9 @@
 - 전체 backend suite: `583 passed`; frontend Vitest `104 files / 584 tests`;
   TypeScript/Vite production build, Alembic `0043` 전체·contaminated schema 복구,
   Python compileall과 shell syntax 통과.
-- eBPF live load는 `python3-bpfcc`가 아직 시스템에 없어 미검증. 설치 명령은
-  `sudo apt install python3-bpfcc`.
+- eBPF live load는 미검증. 2026-08-27 재확인에서는 system Python의 `bcc` import는
+  성공했지만 localhost live smoke test가 sudo 암호 단계에서 중단돼 attach/capture는
+  검증하지 못했다.
 - 이전 원본 기준 backend suite: `542 passed` (golden-path 통합 테스트 포함)
 - 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과

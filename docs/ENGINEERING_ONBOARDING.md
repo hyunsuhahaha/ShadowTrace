@@ -269,6 +269,12 @@ parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backe
 있다. 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project
 해결이 모호하면 `unresolved`로만 보존한다.
 
+실제 pentester workflow·terminal 습관 42개 활동군과 collector별 관찰 한계, 현재 MVP의
+포착/부분 포착/미포착 감사 결과는
+[`docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`](RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md)에
+정리돼 있다. 현재 보장 가능한 범위는 단일 literal IP의 Nmap human port table에 대한
+best-effort 관찰뿐이며, 모든 Kali 활동이나 행동별 Graph node를 보장하지 않는다.
+
 ### AutoRecon (여러 대상 동시 정찰)
 
 카탈로그 태그 기반으로 이 앱이 직접 팬아웃하는 방식을 먼저 만들어 라이브까지 검증했었지만,

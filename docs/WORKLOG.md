@@ -324,3 +324,13 @@ Nmap을 wrapper·output option 없이 관찰하는 최소 경로를 추가했다
 Server lifecycle follow-up: `start.sh` → `run-root-backend.sh`로 나뉘어 있던
 non-root/root 단계를 `start.sh` 하나로 통합했다. `dev.sh`도 같은 launcher에
 `--reload`만 넘기며, observer·uvicorn·PID cleanup semantics는 유지했다.
+
+Passive coverage research/audit: NIST, OWASP, Bash, Linux man-pages, OpenSSH, tmux,
+Nmap, ffuf, curl, Burp, BCC 등 공식·1차 자료를 기준으로 실제 pentest workflow와
+terminal 습관 42개 활동군을 조사했다. 현재 구현은 단일 literal IP의 Nmap human port
+table만 best-effort로 투영하며 모든 Kali 활동이나 행동별 Graph node를 보장하지 못한다.
+collector/ingest 소스 감사에서 단일 write 4 KiB 절단, write 진입 시점 기록, perf loss
+미영속화, stdout/stderr 합성, 종료 race, 자체 Nmap 중복 가능성, 좁은 redaction과 raw
+archive/output 중복 보존을 확인했다. 상세 근거·coverage matrix·regression corpus는
+`docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`. targeted passive tests는 `3 passed`;
+system `bcc` import는 성공했지만 localhost live attach는 sudo 암호 단계에서 중단됐다.
