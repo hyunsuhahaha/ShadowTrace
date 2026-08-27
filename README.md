@@ -25,6 +25,9 @@ sudo apt install python3-bpfcc
 ./scripts/start.sh
 ```
 
+서버 실행 진입점은 `scripts/start.sh` 하나이며 migration, sudo 전환,
+passive observer와 FastAPI lifecycle을 함께 관리합니다.
+
 여러 Project가 같은 IP를 갖거나 새 Target을 어느 Project에 넣을지 모호하면
 activity를 `unresolved`로 보존하고 도메인과 Graph는 변경하지 않습니다.
 

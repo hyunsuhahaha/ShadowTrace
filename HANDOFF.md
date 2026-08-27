@@ -12,6 +12,9 @@
   exec/stdout/exit를 관찰해 state inbox에 보존하고, `passive_activity` 모듈이
   `PassiveActivity → ScanJob(source=passive) → Observation → Target/Service → Graph`로
   멱등 투영한다. 단일 literal IP만 자동 해결하고 Finding은 만들지 않는다.
+- server launcher는 `scripts/start.sh` 하나로 통합됐다. non-root 환경·migration·sudo
+  전환과 root observer/uvicorn lifecycle을 같은 파일이 담당하고, `dev.sh`는
+  `start.sh --reload`를 재사용한다.
 - 최근 커밋:
   - `b00850a` — 전수 감사로 찾은 버그 6건 수정(각각 pre-fix 코드에서 실패하는
     회귀 테스트 포함): tunnels `create_tunnel`이 sync 라우트라

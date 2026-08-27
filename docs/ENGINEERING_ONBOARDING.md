@@ -46,22 +46,21 @@ Kali kernel tracepoints → `scripts/passive-observer.py` → state inbox
 
 ### 개발 실행
 
-`scripts/dev.sh`는 root 사용자로 실행되면 종료한다. 스크립트는 XDG 기반 환경 변수를
-설정하고 migration을 적용한 뒤, backend launcher를 `sudo`로 시작하고 Vite를 현재
+`scripts/dev.sh`는 root 사용자로 실행되면 종료한다. backend package를 editable로
+설치한 뒤 단일 server launcher인 `scripts/start.sh --reload`를 시작하고 Vite를 현재
 사용자로 실행한다. Vite는 `/api` 요청과 WebSocket을 기본
 `http://127.0.0.1:8000`으로 전달한다
 ([`scripts/dev.sh`](../scripts/dev.sh),
 [`frontend/vite.config.ts`](../frontend/vite.config.ts)).
 
-`scripts/run-root-backend.sh`는 `OSCP_ALLOW_ROOT=1`과
-`OSCP_BACKEND_BIND=127.0.0.1`을 설정하고 uvicorn을 시작한다. `setpriv` 호출은 GID와
-supplementary group을 변경하며 UID 변경 옵션은 사용하지 않는다
-([`scripts/run-root-backend.sh`](../scripts/run-root-backend.sh)).
+`scripts/start.sh`는 일반 사용자 단계에서 XDG 환경·migration·sudo 전환을 처리하고,
+root 단계에서 passive observer와 uvicorn을 함께 시작·종료한다. `setpriv` 호출은
+GID와 supplementary group을 변경하며 UID 변경 옵션은 사용하지 않는다.
 
 ### 프로덕션 실행
 
-`scripts/start.sh`는 migration을 적용한 뒤 같은 backend launcher를 foreground로
-실행한다. `frontend/dist`가 있으면 FastAPI가 `/assets`와 SPA fallback을 제공한다
+`scripts/start.sh`를 일반 사용자로 실행하면 migration, observer, backend가 한 lifecycle로
+실행된다. `frontend/dist`가 있으면 FastAPI가 `/assets`와 SPA fallback을 제공한다
 ([`scripts/start.sh`](../scripts/start.sh),
 [`backend/app/main.py`](../backend/app/main.py)).
 
@@ -1237,6 +1236,6 @@ sudo apt install python3-bpfcc  # passive observer
 - backend 재시작 시 lifespan과 scan recovery가 미완료 작업 상태를 앞의 표와 같이
   변경한다.
 
-관련 구현은 [`scripts/run-root-backend.sh`](../scripts/run-root-backend.sh),
+관련 구현은 [`scripts/start.sh`](../scripts/start.sh),
 [`backend/app/main.py`](../backend/app/main.py),
 [`backend/app/modules/scan_center/router.py`](../backend/app/modules/scan_center/router.py)에 있다.

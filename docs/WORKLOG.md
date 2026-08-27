@@ -320,3 +320,7 @@ Nmap을 wrapper·output option 없이 관찰하는 최소 경로를 추가했다
 - 검증: backend `583 passed`, frontend `104 files / 584 tests`, production build,
   Alembic 0043 전체·contaminated schema 복구, compileall, shell syntax.
   `python3-bpfcc`가 로컬에 없고 sudo 암호 입력이 필요해 live BPF load는 보류.
+
+Server lifecycle follow-up: `start.sh` → `run-root-backend.sh`로 나뉘어 있던
+non-root/root 단계를 `start.sh` 하나로 통합했다. `dev.sh`도 같은 launcher에
+`--reload`만 넘기며, observer·uvicorn·PID cleanup semantics는 유지했다.
