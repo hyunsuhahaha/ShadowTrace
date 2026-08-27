@@ -304,3 +304,19 @@ running dev instance. A pre-existing (not introduced by this session) layout
 bug was found and filed separately rather than fixed inline: the Activity
 Stream panel renders squished when a project has no graph data yet,
 reproduced identically on pre-refactor code via `git stash`.
+
+### ShadowTrace Phase 1 — Passive Nmap MVP
+
+Fork identity를 ShadowTrace로 분리한 뒤, Workspace 밖 Kali terminal에서 실행한
+Nmap을 wrapper·output option 없이 관찰하는 최소 경로를 추가했다.
+
+- `scripts/passive-observer.py`: BCC/eBPF tracepoint로 nmap exec, stdout/stderr write,
+  exit를 수집해 0600 state inbox 파일로 보존.
+- `modules/passive_activity`: 단일 literal IP의 표준 Nmap port table만 파싱,
+  Project 해결이 유일할 때만 `PassiveActivity → ScanJob → Observation →
+  Target/Service → Graph` 투영. 모호하면 `unresolved` 보존.
+- `scan_center.apply_scan_hosts()` seam을 추출해 XML과 passive text parser가 같은
+  Service upsert 규칙을 공유. Passive 경로는 Finding을 생성하지 않음.
+- 검증: backend `583 passed`, frontend `104 files / 584 tests`, production build,
+  Alembic 0043 전체·contaminated schema 복구, compileall, shell syntax.
+  `python3-bpfcc`가 로컬에 없고 sudo 암호 입력이 필요해 live BPF load는 보류.

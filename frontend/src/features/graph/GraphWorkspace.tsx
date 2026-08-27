@@ -254,7 +254,7 @@ export default function GraphWorkspace() {
       return api<GraphOut>(`/projects/${projectId}/graph`);
     },
     refetchInterval: (query) =>
-      query.state.data?.nodes.some((node) => getNodeActivity(node)) ? 2000 : false,
+      query.state.data?.nodes.some((node) => getNodeActivity(node)) ? 2000 : 4000,
   });
   const tree = useQuery({
     queryKey: ["graphTree", projectId, graph.dataUpdatedAt],

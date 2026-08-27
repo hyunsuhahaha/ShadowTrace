@@ -1,4 +1,4 @@
-# OSCP Workspace Source Reference
+# ShadowTrace Source Reference
 
 > 이 문서는 2026-08-08의 working tree를 대상으로 작성한 코드 탐색 자료다(§10–13은
 > 2026-08-09에 프런트엔드 화면별 구성·백엔드 모듈 파일 구성·이벤트버스/localStorage·
@@ -39,6 +39,9 @@ FastAPI · 127.0.0.1:8000
   ├─ PTY / SSH tunnel / local proxy
   ├─ NetworkManager / tun0
   └─ workspace artifact files
+
+Kali kernel tracepoints → `scripts/passive-observer.py` → state inbox
+→ Passive Activity ingest → Target/Service → Progress Graph
 ```
 
 ### 개발 실행
@@ -151,6 +154,8 @@ Finding
  ├─ FindingEvidence
  ├─ FindingAsset
  └─ FindingRetest
+
+PassiveActivity ── optional → Project / Target / ScanJob
 ```
 
 ### Scan state와 현재 Service
@@ -246,6 +251,24 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 자체(target_dir/output_dir 계산, `catalog.render()`, `Execution` 행 생성, task 기동)는
 `router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
 `start_execution()`에 분리돼 있다.
+
+### Passive Nmap Activity
+
+```text
+Kali terminal의 nmap exec/write/exit
+  → eBPF observer가 state/passive-inbox에 output + metadata 보존
+  → POST /api/passive/sync
+  → PassiveActivity 생성
+  → 단일 literal IP와 Project 해결
+  → ScanJob(source=passive) / HostObservation / ServiceObservation
+  → Target / open Service / ScanArtifact / Evidence
+  → 기존 Graph projection + snapshot
+```
+
+collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), ingest·Nmap text
+parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
+있다. 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project
+해결이 모호하면 `unresolved`로만 보존한다.
 
 ### AutoRecon (여러 대상 동시 정찰)
 
@@ -1009,7 +1032,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 `*_tree.py`/`*_probe.py`/`svn_dump.py`/`nmap_parser.py`는 라이브러리로 import되지 않고
 템플릿 카탈로그가 subprocess로 직접 실행하는 독립 CLI 스크립트다.
 
-`backend/app/modules/`에는 21개 디렉터리와 4개의 독립 라우터 파일이 있다(`ls`로 확인,
+`backend/app/modules/`에는 22개 디렉터리와 4개의 독립 라우터 파일이 있다(`ls`로 확인,
 `docs/ARCHITECTURE.md`의 모듈 표와 이름이 다른 경우가 있음 — 아래 11.x 참고).
 
 | 모듈 | 책임 | 라우트 prefix | 최대 파일(줄수) |
@@ -1025,6 +1048,7 @@ legacy 컴포넌트이며 현재 production workspace에서는 렌더링하지 �
 | `hash_cracking` | hashcat job lifecycle, 모드 자동 감지, 크랙 결과 → Credential 승격 | `/api/hash-cracking` | `router.py`(276) |
 | `notes` | project/target/service/credential에 선택적으로 붙는 독립 Note CRUD(id/author/timestamp 보유) | `/api/notes` | `router.py`(72) |
 | `operations` | 전역 검색, DB/프로젝트 export/backup | `/api/operations` | `router.py`(169) |
+| `passive_activity` | eBPF inbox activity ingest, Nmap text parsing, Target/Service 해결 | `/api/passive` | `service.py` |
 | `post_exploitation` | 자격증명 기반 원격 명령 실행(impacket/nxc/evil-winrm류) | `/api/post-exploitation` | `manager.py`(180) |
 | `privesc_analysis` | LinPEAS 파싱/하이라이트, SUID→GTFOBins 매칭 | (inline) | `router.py`(113) |
 | `reports` | DOCX(`python-docx`)/PDF(`weasyprint`) 보고서 생성 | `/api/reports` | `router.py`(471) |
@@ -1184,6 +1208,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 
 ```bash
 ./scripts/install.sh
+sudo apt install python3-bpfcc  # passive observer
 ./scripts/dev.sh
 ./scripts/build.sh
 ./scripts/start.sh
@@ -1203,6 +1228,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 - production backend code 변경은 실행 중인 uvicorn에 자동 반영되지 않는다.
 - `dev.sh`는 uvicorn에 reload 옵션을 전달한다.
 - backend launcher는 `*.yaml` 변경도 reload 대상으로 지정한다.
+- backend launcher는 `python3-bpfcc`가 있으면 passive observer를 함께 시작·종료한다.
 - frontend 개발 서버는 Vite를 사용한다.
 - production frontend는 `frontend/dist`에서 제공되므로 build 결과가 사용된다.
 - 환경 변수와 저장 경로는 module import 시 읽힌다.

@@ -2,9 +2,10 @@
 
 ## 제품 원칙
 
-OSCP Workspace는 사용자의 판단을 보조하는 기록·실행 도구다. 시스템은 관찰된 사실,
+ShadowTrace는 사용자의 판단을 보조하는 기록·실행 도구다. 시스템은 관찰된 사실,
 원본 출력과 사용자가 작성한 메모를 저장하지만 취약 여부나 공격 경로를 판단하지 않는다.
-모든 명령 실행은 사용자 선택과 최종 명령 확인을 요구한다.
+Workspace가 시작하는 명령은 사용자 선택과 최종 명령 확인을 요구한다. 사용자가 기존
+Kali terminal에서 직접 실행한 명령은 Passive Activity로만 관찰하며 대신 실행하지 않는다.
 
 FastAPI는 비동기 프로세스 실행과 스트리밍 API를 담당하고, React/Vite는 로컬 UI를
 제공한다. SQLite는 단일 사용자 데이터를 보존한다. 명령 카탈로그는 YAML로 분리해
@@ -41,7 +42,8 @@ XDG 규칙을 우선하며 `OSCP_WORKSPACE_*` 환경 변수로 위치를 바꿀 
 - logs: `~/.local/state/oscp-workspace`
 - artifacts: `~/OSCP-Workspace/projects/<safe-name>/targets/<safe-ip>/`
 
-기본 관계는 Project 1—N Target 1—N Scan/Service/Execution/Evidence다. 원본 스캔
+기본 관계는 Project 1—N Target 1—N Scan/Service/Execution/Evidence다. Passive
+Activity는 관찰된 외부 process를 보존하고 파싱 성공 시 Scan에 연결된다. 원본 스캔
 파일은 불변으로 보존하고 파싱 결과에 원본 ID를 기록한다. HTTP 요청과 응답은 자격증명
 필드와 분리하며, 증적은 SHA-256과 취득 시각을 기록한다.
 
@@ -59,6 +61,7 @@ XDG 규칙을 우선하며 `OSCP_WORKSPACE_*` 환경 변수로 위치를 바꿀 
 - `/api/runbooks/target-recommendations/{target_id}`: Target 범위 Runbook 추천
 - `/api/runbooks/instances`: 발행 Version 적용과 수행 Instance 조회
 - `/api/system/status`: 설치 도구, `tun0`, route 상태
+- `/api/passive/activities`, `/api/passive/sync`: passive activity 조회와 inbox ingest
 - `/api/product/capabilities`: UI가 표시할 허용·금지 기능 정책
 
 ## 실행 및 보안 경계

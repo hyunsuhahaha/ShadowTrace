@@ -19,6 +19,7 @@ export OSCP_ALLOW_ROOT=1 OSCP_BACKEND_BIND=127.0.0.1 PYTHONDONTWRITEBYTECODE=1
 # installed tool as missing even though it runs fine from a normal shell.
 export PATH="${OSCP_WORKSPACE_OWNER_HOME:+$OSCP_WORKSPACE_OWNER_HOME/.local/bin:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 child=""
+observer=""
 pid_file="$OSCP_WORKSPACE_STATE/root-backend.pid"
 cleanup() {
   trap - EXIT HUP INT TERM
@@ -30,10 +31,20 @@ cleanup() {
     done
     kill -KILL -- "-$child" 2>/dev/null || true
   fi
+  if [ -n "$observer" ] && kill -0 "$observer" 2>/dev/null; then
+    kill -TERM "$observer" 2>/dev/null || true
+  fi
+  wait "$observer" 2>/dev/null || true
   wait "$child" 2>/dev/null || true
   rm -f "$pid_file"
 }
 trap cleanup EXIT HUP INT TERM
+if /usr/bin/python3 -c 'import bcc' >/dev/null 2>&1; then
+  /usr/bin/python3 scripts/passive-observer.py &
+  observer=$!
+else
+  echo "Passive observer disabled: install python3-bpfcc." >&2
+fi
 setsid /usr/bin/setpriv --regid "$OSCP_WORKSPACE_OWNER_GID" --clear-groups \
   .venv/bin/uvicorn app.main:app --app-dir backend \
   --host 127.0.0.1 --port 8000 --reload-include '*.yaml' "$@" &

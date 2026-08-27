@@ -9,6 +9,7 @@ PRIORITY = [
 
 ALLOWED_CAPABILITIES = [
     "information_collection_and_organization",
+    "passive_local_activity_observation",
     "static_command_templates",
     "user_selected_enumeration_execution",
     "result_parsing_and_visualization",

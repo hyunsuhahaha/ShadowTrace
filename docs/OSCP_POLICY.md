@@ -20,7 +20,9 @@ OSCP Workspace therefore:
 - never determines vulnerabilities, risk, attack paths, exploit choices, or
   whether an attack succeeded;
 - requires the user to select and confirm scans, commands, PTY sessions, HTTP
-  requests, tunnels, evidence, and report content;
+  requests, tunnels, evidence, and report content that the Workspace starts;
+- may passively record a local command the user already chose to run, but never
+  alters, selects, repeats, or extends that command;
 - does not provide spoofing, automatic exploitation, automatic shells,
   automatic privilege escalation, attack chains, or mass vulnerability scans;
 - treats parsed output as factual observations and preserves original data;

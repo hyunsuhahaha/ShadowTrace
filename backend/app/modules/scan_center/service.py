@@ -145,29 +145,13 @@ def scan_directory(project: Project, target: Target, scan_id: int) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
 
-def ingest_xml(db: Session, job: ScanJob, target: Target, project: Project,
-               content: bytes, original_name: str) -> None:
-    hosts = parse_nmap(content)
+def apply_scan_hosts(db: Session, job: ScanJob, target: Target,
+                     hosts: list[dict]) -> None:
+    """Persist a normalized scan result, regardless of its parser."""
     host = next((item for item in hosts if item["ip"] == target.ip),
                 hosts[0] if hosts else None)
     if not host:
-        raise ValueError("No host found in Nmap XML")
-    folder = scan_directory(project, target, job.id)
-    xml_path = folder / "nmap.xml"
-    xml_path.write_bytes(content)
-    content_sha256 = hashlib.sha256(content).hexdigest()
-    # ingest_xml can be called more than once against the same job (e.g.
-    # AutoRecon's incremental import polls a still-growing nmap XML) --
-    # skip re-registering an artifact whose content hasn't actually changed
-    # since the last call, rather than piling up identical rows.
-    if not db.scalar(select(ScanArtifact.id).where(
-            ScanArtifact.scan_job_id == job.id, ScanArtifact.kind == "xml",
-            ScanArtifact.sha256 == content_sha256)):
-        db.add(ScanArtifact(
-            scan_job_id=job.id, kind="xml", path=str(xml_path),
-            sha256=content_sha256, size=len(content),
-            original_name=Path(original_name).name[:255],
-        ))
+        raise ValueError("No host found in scan output")
     db.add(HostObservation(scan_job_id=job.id, target_id=target.id,
                            ip=host["ip"], hostname=host["hostname"],
                            os_guess=host["os_guess"]))
@@ -193,18 +177,35 @@ def ingest_xml(db: Session, job: ScanJob, target: Target, project: Project,
                     continue
                 setattr(current, key, value)
         elif item["state"] == "open":
-            # Nmap emits a <port> element for every scanned port, not just
-            # ones that answered — a targeted scan (-p 80,443) against a
-            # port nothing is listening on still shows up here as
-            # state="closed"/"filtered". ServiceObservation keeps every
-            # state for scan-history/diffing, but Service drives the
-            # Service Enumeration list, so a never-open port has no
-            # business creating a row a user would read as "found this".
+            # Closed and filtered observations belong in scan history, not in
+            # the current Service inventory.
             db.add(Service(target_id=target.id, **values))
     target.hostname = host["hostname"] or target.hostname
     target.os_guess = host["os_guess"] or target.os_guess
     target.updated_at = utcnow()
     db.flush()
+
+
+def ingest_xml(db: Session, job: ScanJob, target: Target, project: Project,
+               content: bytes, original_name: str) -> None:
+    hosts = parse_nmap(content)
+    folder = scan_directory(project, target, job.id)
+    xml_path = folder / "nmap.xml"
+    xml_path.write_bytes(content)
+    content_sha256 = hashlib.sha256(content).hexdigest()
+    # ingest_xml can be called more than once against the same job (e.g.
+    # AutoRecon's incremental import polls a still-growing nmap XML) --
+    # skip re-registering an artifact whose content hasn't actually changed
+    # since the last call, rather than piling up identical rows.
+    if not db.scalar(select(ScanArtifact.id).where(
+            ScanArtifact.scan_job_id == job.id, ScanArtifact.kind == "xml",
+            ScanArtifact.sha256 == content_sha256)):
+        db.add(ScanArtifact(
+            scan_job_id=job.id, kind="xml", path=str(xml_path),
+            sha256=content_sha256, size=len(content),
+            original_name=Path(original_name).name[:255],
+        ))
+    apply_scan_hosts(db, job, target, hosts)
 
 
 def _security_signal(script_id: str, output: str) -> bool:

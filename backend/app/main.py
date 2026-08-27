@@ -64,6 +64,7 @@ from .modules.sessions.router import (
     anonymous_ftp_command,
     router as session_router,
 )
+from .modules.passive_activity.router import router as passive_activity_router
 from .time import utcnow
 from .pty_manager import pty_manager
 
@@ -145,6 +146,7 @@ app.include_router(core_router)
 app.include_router(execution_router)
 app.include_router(session_router)
 app.include_router(system_router)
+app.include_router(passive_activity_router)
 
 @app.middleware("http")
 async def mutation_audit(request:Request, call_next):

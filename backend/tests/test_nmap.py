@@ -662,6 +662,7 @@ def test_product_policy_keeps_automatic_attack_out_of_scope():
     assert policy["priority"][0] == "scan_center"
     assert "automatic_exploit_selection_or_execution" in policy["prohibited"]
     assert "user_selected_enumeration_execution" in policy["allowed"]
+    assert "passive_local_activity_observation" in policy["allowed"]
 
 
 def test_successful_nmap_identity_output_updates_the_selected_service():

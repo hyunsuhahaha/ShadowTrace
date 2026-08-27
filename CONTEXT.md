@@ -1,4 +1,4 @@
-# OSCP Workspace
+# ShadowTrace
 
 승인된 단일 사용자 침투 테스트에서 범위, 관찰, 실행, 증적과 수동 판단을 일관되게
 기록하기 위한 제품 언어입니다.
@@ -20,6 +20,12 @@ _Avoid_: Endpoint, Vulnerability
 
 ## Facts and Decisions
 
+**Passive Activity**:
+Workspace 밖에서 사용자가 실행한 로컬 프로세스를 Observer가 command, output,
+시간과 terminal context로 포착한 기록입니다. Workspace가 실행한 것이 아니며
+파싱된 사실이나 보안 판정을 의미하지 않습니다.
+_Avoid_: Execution, Observation, Audit Event
+
 **Observation**:
 스캔이나 수동 조사에서 확인한 사실 또는 추가 검토가 필요한 단서입니다. 그 자체로
 취약성 판정은 아닙니다.
@@ -34,7 +40,8 @@ _Avoid_: Observation, Alert
 _Avoid_: Artifact
 
 **Execution**:
-사용자가 대상과 최종 명령을 확인하고 승인한 한 번의 명령 수행 기록입니다.
+사용자가 Workspace 안에서 대상과 최종 명령을 확인하고 승인한 한 번의
+명령 수행 기록입니다.
 _Avoid_: Automation, Job
 
 ## Access Lineage

@@ -111,6 +111,32 @@ class ScanJob(Base):
     tags: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+class PassiveActivity(Base):
+    __tablename__ = "passive_activities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    process_key: Mapped[str] = mapped_column(String(160), unique=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    scan_job_id: Mapped[int | None] = mapped_column(ForeignKey("scan_jobs.id"), nullable=True)
+    tool: Mapped[str] = mapped_column(String(80), default="")
+    command: Mapped[str] = mapped_column(Text, default="")
+    argv: Mapped[str] = mapped_column(Text, default="[]")
+    cwd: Mapped[str] = mapped_column(Text, default="")
+    tty: Mapped[str] = mapped_column(String(160), default="")
+    pid: Mapped[int] = mapped_column(Integer)
+    ppid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uid: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="captured")
+    output_path: Mapped[str] = mapped_column(Text, default="")
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    parser: Mapped[str] = mapped_column(String(80), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 class AutoReconRun(Base):
     """One real `autorecon` (Tib3rius) subprocess invocation against one or
     more targets at once -- distinct from ScanJob, which is always exactly

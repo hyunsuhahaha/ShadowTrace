@@ -7,7 +7,11 @@
 
 ## 현재 상태
 
-- 브랜치: `phase-8/stabilization`
+- 브랜치: `main` (`ShadowTrace` fork)
+- Passive Nmap MVP: `scripts/passive-observer.py`가 eBPF로 로컬 nmap의
+  exec/stdout/exit를 관찰해 state inbox에 보존하고, `passive_activity` 모듈이
+  `PassiveActivity → ScanJob(source=passive) → Observation → Target/Service → Graph`로
+  멱등 투영한다. 단일 literal IP만 자동 해결하고 Finding은 만들지 않는다.
 - 최근 커밋:
   - `b00850a` — 전수 감사로 찾은 버그 6건 수정(각각 pre-fix 코드에서 실패하는
     회귀 테스트 포함): tunnels `create_tunnel`이 sync 라우트라
@@ -60,7 +64,12 @@
 
 ## 검증
 
-- 전체 backend suite: `542 passed` (golden-path 통합 테스트 포함)
+- 전체 backend suite: `583 passed`; frontend Vitest `104 files / 584 tests`;
+  TypeScript/Vite production build, Alembic `0043` 전체·contaminated schema 복구,
+  Python compileall과 shell syntax 통과.
+- eBPF live load는 `python3-bpfcc`가 아직 시스템에 없어 미검증. 설치 명령은
+  `sudo apt install python3-bpfcc`.
+- 이전 원본 기준 backend suite: `542 passed` (golden-path 통합 테스트 포함)
 - 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과
 - `npm run test:e2e` (Playwright golden-path): `1 passed`; 래퍼 스크립트는 브라우저

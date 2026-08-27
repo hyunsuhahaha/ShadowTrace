@@ -13,6 +13,21 @@ React UI, FastAPI API, SQLite 저장소로 구성되며 모든 명령은 사용�
 > 당시 적용되는 공식 시험 규정을 우선 확인해야 합니다. 저장소의
 > [정책 메모](docs/OSCP_POLICY.md)는 참고 자료이며 최신 규정을 대신하지 않습니다.
 
+## Passive capture MVP
+
+ShadowTrace를 실행한 동안 기존 Kali terminal에서 `nmap` 명령을 그대로 사용하면
+eBPF observer가 process 실행·stdout·종료를 관찰합니다. 단일 literal IP의 표준
+port table은 원본 출력과 SHA-256을 Evidence로 보존하고 Target/Service와
+Progress Graph에 자동 반영됩니다. Finding은 자동 생성하지 않습니다.
+
+```bash
+sudo apt install python3-bpfcc
+./scripts/start.sh
+```
+
+여러 Project가 같은 IP를 갖거나 새 Target을 어느 Project에 넣을지 모호하면
+activity를 `unresolved`로 보존하고 도메인과 Graph는 변경하지 않습니다.
+
 ## 현재 구현된 기능
 
 ### Scan Center
