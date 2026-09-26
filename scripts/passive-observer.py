@@ -709,7 +709,7 @@ class Observer:
     def _handle_activity_exec(self, pid: int, uid: int) -> None:
         try:
             argv = redact_argv(self._argv(pid))
-            if not argv or Path(argv[0]).name not in {"nmap", "ffuf"}:
+            if not argv or Path(argv[0]).name not in {"nmap", "ffuf", "curl"}:
                 return
             process_key = f"{self.boot_id}:{pid}:{self._start_ticks(pid)}"
             stem = hashlib.sha256(process_key.encode()).hexdigest()

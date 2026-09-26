@@ -307,3 +307,75 @@ def test_passive_ffuf_rejects_cross_target_json(tmp_path, monkeypatch):
     assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
     assert db.query(PassiveActivity).one().status == "unresolved"
     assert db.query(Evidence).count() == 0
+
+
+def test_passive_curl_declared_output_is_sensitive_evidence(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path / "workspace")
+    db = database()
+    project = Project(name="Lab")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Loopback", ip="127.0.0.1")
+    db.add(target); db.commit()
+    content = b"<html>local test</html>"
+    (tmp_path / "body.html").write_bytes(content)
+    (inbox / "capture.out").write_bytes(b"")
+    metadata = {
+        "process_key": "boot:curl:1", "pid": 79, "uid": os.getuid(),
+        "argv": ["curl", "-sS", "--output", "body.html",
+                 "http://127.0.0.1:8000/docs"],
+        "cwd": str(tmp_path),
+        "started_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "output_file": "capture.out", "exit_code": 0,
+    }
+    (inbox / "capture.json").write_text(json.dumps(metadata))
+
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    activity = db.query(PassiveActivity).one()
+    evidence = db.query(Evidence).one()
+    assert (activity.status, activity.parser, activity.target_id) == (
+        "observed", "curl-output-v1", target.id)
+    assert activity.confidence == 60
+    assert evidence.sensitivity == "sensitive"
+    assert evidence.source_type == "passive_activity"
+    assert evidence.source_id == activity.id
+    assert evidence.original_name == "body.html"
+    assert Path(evidence.file_path).read_bytes() == content
+    assert db.query(Finding).count() == 0
+    assert db.query(ServiceObservation).count() == 0
+    (inbox / "capture.json").write_text(json.dumps(metadata))
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    assert db.query(Evidence).count() == 1
+
+
+def test_passive_curl_rejects_redirect_or_multiple_urls(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    db = database()
+    project = Project(name="Lab")
+    db.add(project); db.flush()
+    db.add(Target(project_id=project.id, name="Loopback", ip="127.0.0.1"))
+    db.commit()
+    (tmp_path / "body.html").write_bytes(b"response")
+    (inbox / "capture.out").write_bytes(b"")
+    for index, extra in enumerate((["-L"], ["http://10.10.11.23/"]), 1):
+        (inbox / f"capture-{index}.out").write_bytes(b"")
+        (inbox / f"capture-{index}.json").write_text(json.dumps({
+            "process_key": f"boot:curl:reject:{index}", "pid": 80 + index,
+            "uid": os.getuid(),
+            "argv": ["curl", "-s", "-o", "body.html",
+                     "http://127.0.0.1:8000/docs", *extra],
+            "cwd": str(tmp_path),
+            "started_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "output_file": f"capture-{index}.out", "exit_code": 0,
+        }))
+    assert service.sync_inbox(db) == {"processed": 2, "failed": 0}
+    assert {row.status for row in db.query(PassiveActivity)} == {"unresolved"}
+    assert db.query(Evidence).count() == 0

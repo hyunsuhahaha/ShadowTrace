@@ -182,6 +182,119 @@ def _literal_http_ip(url: str) -> str | None:
         return None
 
 
+def _curl_saved_response(argv: list[str], cwd: str) -> tuple[str, Path] | None:
+    """Recognize one direct HTTP transfer with an explicit body output path."""
+    simple = {"-s", "-S", "-sS", "-f", "-k", "--silent", "--show-error",
+              "--fail", "--insecure", "--no-progress-meter"}
+    takes_value = {"-H", "--header", "-A", "--user-agent", "-X", "--request",
+                   "--max-time", "--connect-timeout", "--limit-rate"}
+    url = output = ""
+    index = 1
+    while index < len(argv):
+        value = argv[index]
+        if value in simple:
+            index += 1
+        elif value in takes_value | {"-o", "--output"}:
+            if index + 1 >= len(argv):
+                return None
+            if value in {"-o", "--output"}:
+                if output:
+                    return None
+                output = argv[index + 1]
+            index += 2
+        elif value.startswith("--output="):
+            if output:
+                return None
+            output = value.partition("=")[2]
+            index += 1
+        elif value.startswith("-o") and value != "-o":
+            if output:
+                return None
+            output = value[2:]
+            index += 1
+        elif value.startswith("--limit-rate=") or value.startswith("--max-time="):
+            index += 1
+        elif _literal_http_ip(value) is not None:
+            if url:
+                return None
+            url = value
+            index += 1
+        else:
+            return None
+    if not url or not output or output == "-":
+        return None
+    path = Path(output)
+    if not path.is_absolute() and not Path(cwd).is_absolute():
+        return None
+    return url, path if path.is_absolute() else Path(cwd) / path
+
+
+def _ingest_curl(db: Session, metadata: dict, argv: list[str],
+                 output_path: Path) -> PassiveActivity:
+    partial = bool(metadata.get("capture_truncated")) or bool(
+        int(metadata.get("loss_count", 0)))
+    redacted = _redact_argv(argv)
+    activity = PassiveActivity(
+        process_key=str(metadata["process_key"])[:160], tool="curl",
+        command=shlex.join(redacted), argv=json.dumps(redacted),
+        cwd=str(metadata.get("cwd", "")), tty=str(metadata.get("tty", ""))[:160],
+        pid=int(metadata["pid"]),
+        ppid=int(metadata["ppid"]) if metadata.get("ppid") is not None else None,
+        uid=int(metadata["uid"]), started_at=_timestamp(metadata.get("started_at")),
+        ended_at=_timestamp(metadata.get("ended_at")),
+        exit_code=int(metadata["exit_code"]) if metadata.get("exit_code") is not None else None,
+        output_path=str(output_path), parser="curl-output-v1",
+        confidence=60,
+    )
+    db.add(activity)
+    db.flush()
+    try:
+        transfer = _curl_saved_response(argv, activity.cwd)
+        if transfer is None:
+            raise ValueError("curl requires one direct HTTP URL and an explicit output file")
+        url, path = transfer
+        target_ip = _literal_http_ip(url)
+        targets = list(db.scalars(select(Target).where(Target.ip == target_ip)))
+        if len(targets) != 1:
+            raise ValueError("curl target must match exactly one existing target")
+        content = _fresh_declared_file(path, metadata)
+        if content is None:
+            raise ValueError("fresh curl output is unavailable")
+        target = targets[0]
+        project = db.get(Project, target.project_id)
+        folder = WORKSPACE_DIR / "passive" / str(project.id) / str(target.id) / str(activity.id)
+        folder.mkdir(parents=True, exist_ok=True)
+        os.chmod(folder, 0o700)
+        destination = folder / "curl-output.bin"
+        destination.write_bytes(content)
+        os.chmod(destination, 0o600)
+        digest = hashlib.sha256(content).hexdigest()
+        db.add(Evidence(
+            project_id=project.id, target_id=target.id,
+            title="curl output file",
+            description="Passive copy of curl's declared output; transfer outcome and final source are unverified.",
+            kind="command_output", source_type="passive_activity", source_id=activity.id,
+            file_path=str(destination), original_name=path.name, sha256=digest,
+            size=len(content), sensitivity="sensitive", include_report=False,
+        ))
+        activity.project_id, activity.target_id = project.id, target.id
+        activity.output_path, activity.sha256 = str(destination), digest
+        activity.status = "observed"
+        if partial:
+            activity.error = "collector reported truncation or event loss"
+        db.commit()
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return activity
+    except (TypeError, ValueError) as exc:
+        activity.status = "unresolved"
+        activity.error = str(exc)
+        db.commit()
+        return activity
+
+
 def _ingest_ffuf(db: Session, metadata: dict, argv: list[str],
                  output_path: Path) -> PassiveActivity:
     partial = bool(metadata.get("capture_truncated")) or bool(
@@ -302,6 +415,8 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
     tool = Path(argv[0]).name
     if tool == "ffuf":
         return _ingest_ffuf(db, metadata, argv, output_path)
+    if tool == "curl":
+        return _ingest_curl(db, metadata, argv, output_path)
     if tool != "nmap":
         raise ValueError("activity is not a supported execution")
     redacted_argv = _redact_argv(argv)

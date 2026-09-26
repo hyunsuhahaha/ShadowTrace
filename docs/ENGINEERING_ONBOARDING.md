@@ -256,7 +256,7 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 `router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
 `start_execution()`에 분리돼 있다.
 
-### Passive endpoint events와 Nmap/ffuf projection
+### Passive endpoint events와 Nmap/ffuf/curl projection
 
 ```text
 사용자 process 계보의 fork/exec/exit, stdio read/write,
@@ -284,6 +284,12 @@ socket connect/bind/listen/accept4/first-sendto,
   → 명시한 JSON 출력 파일의 소유자·크기·실행 시각 확인
   → URL의 literal IP가 기존 Target 하나와 일치할 때 PassiveActivity / 민감 Evidence 저장
   → 결과 URL이 다른 IP를 가리키면 unresolved (자동 Finding/ServiceObservation 없음)
+
+같은 observer의 local curl exec/write/exit
+  → 단일 literal HTTP IP URL과 명시적 `-o`/`--output` 파일만 보수적으로 처리
+  → redirect·proxy·다중 URL 등 해석 불가능한 옵션은 unresolved
+  → 파일 소유자·크기·실행 시각과 기존 Target 단일 일치를 확인해 민감 Evidence 저장
+  → 실제 응답 상태·최종 출처는 판정하지 않고 자동 Finding/ServiceObservation 없음
 ```
 
 Graph 투영은 [`backend/app/modules/graph/service.py`](../backend/app/modules/graph/service.py)의
@@ -295,7 +301,7 @@ PassiveActivity는 process key로 중복을 제거한다. 민감 입력은 노�
 collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), raw batch 검증과
 저장은 [`backend/app/modules/passive_activity/raw_events.py`](../backend/app/modules/passive_activity/raw_events.py),
 session correlation은 [`backend/app/modules/passive_activity/reconstruction.py`](../backend/app/modules/passive_activity/reconstruction.py),
-Nmap text parser·resolver와 ffuf JSON 증거 수집은 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
+Nmap text parser·resolver와 ffuf/curl 출력 증거 수집은 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
 있다. raw schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py),
 derived schema는 [`0045_passive_session_reconstruction.py`](../backend/alembic/versions/0045_passive_session_reconstruction.py)가
 관리한다. `POST /api/passive/sync`는 기존 응답 필드를 유지하면서 raw ingest 뒤 reconstruction

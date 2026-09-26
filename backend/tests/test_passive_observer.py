@@ -49,6 +49,27 @@ def test_ffuf_exec_is_tracked_for_declared_output(tmp_path, monkeypatch):
     os.close(instance.activities[77]["output_fd"])
 
 
+def test_curl_exec_is_tracked_for_declared_output(tmp_path, monkeypatch):
+    instance = observer.Observer.__new__(observer.Observer)
+    instance.inbox = tmp_path
+    instance.boot_id = "boot"
+    instance.owner_uid = os.getuid()
+    instance.owner_gid = os.getgid()
+    instance.activities = {}
+    monkeypatch.setattr(instance, "_argv", lambda _pid: [
+        "/usr/bin/curl", "-s", "-o", "body.html",
+        "http://127.0.0.1:8000/docs"])
+    monkeypatch.setattr(instance, "_start_ticks", lambda _pid: "124")
+    monkeypatch.setattr(instance, "_context", lambda *_args: {
+        "ppid": 1, "cwd": str(tmp_path), "fd_target": "/dev/pts/1"})
+
+    instance._handle_activity_exec(78, instance.owner_uid)
+
+    assert instance.activities[78]["argv"][0] == "/usr/bin/curl"
+    assert instance.activities[78]["process_key"] == "boot:78:124"
+    os.close(instance.activities[78]["output_fd"])
+
+
 def test_event_spool_persists_sequence_and_loss(tmp_path):
     spool = observer.EventSpool(tmp_path, "boot")
     spool.mark_loss(7)
