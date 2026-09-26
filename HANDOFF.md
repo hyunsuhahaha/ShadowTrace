@@ -7,6 +7,14 @@
 
 ## 현재 상태
 
+- ffuf JSON 후속 작업(2026-09-26, `b5d4763`): observer가 ffuf의 exec/stdout/exit를
+  passive inbox에 기록하도록 확장했고, backend는 명시한 JSON 출력 파일의 소유자·크기·
+  실행 시각을 확인한다. URL의 literal IP가 기존 Target 하나와 일치하고 JSON의 URL도
+  동일 대상일 때만 PassiveActivity와 민감 Evidence를 생성한다. Finding과 서비스 관찰은
+  자동 생성하지 않는다. Kali 관련 테스트 107개 통과; 실제 ffuf 루프백 JSON을 분리된
+  DB에 가져와 결과 1건·Evidence 1건·Finding 0건을 확인했다. backend는
+  `ShadowTrace-live-release-5`에서 재시작해 API 200을 확인했다. root observer는 기존
+  프로세스가 계속 실행 중이라 새 코드로 재시작해야 자동 수집 실측을 할 수 있다.
 - Passive reconstruction 후속 작업(2026-09-26, `512225e`, `26f9fd3`): 변경 이벤트의 프로세스 계보와 기존
   터미널 세션 구성원만 다시 읽는 증분 경로를 추가했다. 명시적 `ssh host command`의 원격
   명령 인자는 `remote-argv` 미확인 후보로 남기며 Graph 실행 사실로 승격하지 않는다.
