@@ -268,7 +268,7 @@ socket connect/bind/listen/accept4/first-sendto,
   → reconstruction.py가 ProcessInstance / TerminalSession / CommandActivity 구성
   → local ssh process에는 RemoteSessionCandidate 구성
   → Progress Graph sync가 CommandActivity를 technique 노드로 투영
-    (literal Target IP가 한 프로젝트에만 매칭되거나 프로젝트가 하나일 때만)
+    (literal Target IP 또는 관찰된 연결이 한 프로젝트의 Target에 명확히 매칭될 때만)
 
 같은 observer의 local nmap exec/write/exit
   → state/passive-inbox에 output + metadata 보존
@@ -304,8 +304,8 @@ payload에는 terminal output 등 민감정보가 포함될 수 있으므로 loc
 재구성). observer는 서버 PID를 제외하되 서버가 실행한 자식 명령은 계속 수집한다.
 배치가 있을 때만 최대 30초마다 sync하며, 수동 `/reconstruct`는 항상 전체 재구성한다.
 `OSCP_WORKSPACE_PASSIVE_SYNC_URL`은 별도 검증 포트로 보낼 때만 지정한다.
-loopback/localhost 명령은 단일 프로젝트·loopback Target이 있더라도 Graph 소유권을
-추측하지 않는다.
+loopback/localhost나 대상 근거 없는 명령은 단일 프로젝트·loopback Target이 있더라도
+Graph 소유권을 추측하지 않는다.
 
 실제 pentester workflow·terminal 습관 42개 활동군과 collector별 관찰 한계, 현재 MVP의
 포착/부분 포착/미포착 감사 결과는

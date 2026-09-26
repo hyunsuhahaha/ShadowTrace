@@ -169,6 +169,13 @@ as separate exact-argv CommandActivity rows. The fixture's `127.0.0.1` is not
 evidence of a project host: Graph attribution now leaves loopback/localhost
 commands unresolved even in a single-project workspace. No ffuf/curl semantic
 parser or HTTP-result claim was added.
+An actual Graph sync exposed 66 unrelated command nodes created by the old
+single-project fallback. That fallback is removed: commands without a unique
+non-loopback Target IP or observed endpoint remain in the raw command layer,
+and a subsequent sync prunes previously inferred Graph nodes.
+In the live smoke DB, the corrected Graph sync reduced 71 nodes to 5 and
+removed all 66 `command_activity` nodes; the explicit legacy Nmap capture
+remained.
 During the sustained observer run, BCC reported perf-buffer loss and exposed
 a callback signature mismatch. The callback now records dropped-event counts
 in the loss stream instead of throwing; coverage claims must still be reduced

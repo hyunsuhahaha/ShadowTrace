@@ -446,8 +446,7 @@ def _dismissed_sources(db: Session, project_id: int) -> set[tuple[str, int]]:
     return dismissed
 
 
-def _command_owner(activity: CommandActivity, targets: list[Target],
-                   project_ids: list[int]) -> tuple[int | None, int | None]:
+def _command_owner(activity: CommandActivity, targets: list[Target]) -> tuple[int | None, int | None]:
     """Attribute an external command only when its workspace is unambiguous."""
     command = activity.command or ""
     try:
@@ -457,14 +456,6 @@ def _command_owner(activity: CommandActivity, targets: list[Target],
     endpoint_values = inference.get("network_endpoints", []) if isinstance(inference, dict) else []
     endpoints = ({value for value in endpoint_values if isinstance(value, str)}
                  if isinstance(endpoint_values, list) else set())
-    local_endpoint = bool(re.search(
-        r"(?i)(?<![\w.])localhost(?![\w.])|(?<![\d.])127(?:\.\d{1,3}){3}(?![\d.])|\[::1\]",
-        command))
-    for value in endpoints:
-        try:
-            local_endpoint |= ipaddress.ip_address(value).is_loopback
-        except ValueError:
-            continue
     matches = []
     for target in targets:
         try:
@@ -481,9 +472,7 @@ def _command_owner(activity: CommandActivity, targets: list[Target],
         if len(projects) == 1:
             return projects.pop(), matches[0].id if len(matches) == 1 else None
         return None, None
-    if local_endpoint:
-        return None, None
-    return (project_ids[0], None) if len(project_ids) == 1 else (None, None)
+    return None, None
 
 
 def sync_from_project(db: Session, project_id: int) -> dict:
@@ -500,8 +489,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     dismissed = _dismissed_sources(db, project_id)
     commands = list(db.scalars(select(CommandActivity).order_by(CommandActivity.id)))
     targets = list(db.scalars(select(Target))) if commands else []
-    project_ids = list(db.scalars(select(Project.id))) if commands else []
-    command_owners = {command.id: _command_owner(command, targets, project_ids)
+    command_owners = {command.id: _command_owner(command, targets)
                       for command in commands}
     legacy_process_keys = set(db.scalars(select(PassiveActivity.process_key).where(
         PassiveActivity.project_id == project_id)))
@@ -1100,8 +1088,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                     ensure_edge(node, cred_node, "yielded")
 
     # External terminal observations live in the same graph as in-app runs.
-    # A target association is made only when its literal IP identifies one
-    # project; otherwise only a single-project workspace can own the command.
+    # A target association requires a unique literal IP or observed connection;
+    # the mere existence of one project is not ownership evidence.
     for activity in commands:
         owner_id, target_id = command_owners[activity.id]
         if (owner_id != project_id or activity.id in duplicate_commands

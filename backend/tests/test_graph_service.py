@@ -173,6 +173,13 @@ def test_passive_command_does_not_leak_sensitive_text_or_guess_a_project():
     db.delete(p2)
     db.flush()
     service.sync_from_project(db, p1.id)
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+    target = Target(project_id=p1.id, name="box", ip="10.0.0.7")
+    db.add(target)
+    command.command = "curl http://10.0.0.7/ password"
+    db.flush()
+    service.sync_from_project(db, p1.id)
     node = db.query(GraphNode).filter_by(type="technique").one()
     assert node.label == "[민감 입력]"
     assert "password" not in node.meta

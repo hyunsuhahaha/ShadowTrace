@@ -128,6 +128,9 @@ Passive reconstruction의 다음 필수 단계:
    실측 중 BCC perf loss callback 서명 오류를 발견해 손실 카운트가 기록되도록 고쳤다.
 2. ffuf/curl/Burp semantic parser 추가 전 응답 artifact와 실제 대상 귀속 품질을
    각각 검증한다. 원시 명령을 의미 있는 finding으로 자동 승격하지 않는다.
+   실측 Graph sync에서 단일 프로젝트만 있다는 이유로 생성된 command_activity 노드
+   66개를 발견해 fallback을 제거했고, 재동기화로 71→5개 노드가 되어 명시적 Nmap
+   capture만 남았다.
 
 그 이후 선택 후보:
 
