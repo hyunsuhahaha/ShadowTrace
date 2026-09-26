@@ -1,3 +1,5 @@
+from threading import Lock
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,19 +14,24 @@ from .reconstruction import reconstruct
 from .service import sync_inbox
 
 router = APIRouter(prefix="/api/passive", tags=["Passive Activity"])
+_SYNC_LOCK = Lock()
 
 
 @router.post("/sync")
 def sync(db: Session = Depends(get_db)):
-    activities = sync_inbox(db)
-    raw_events = sync_event_inbox(db)
-    return {**activities, "raw_events": raw_events,
-            "reconstruction": reconstruct(db)}
+    # The observer and a manual caller can hit this route together. Both must
+    # not select and insert the same inbox batch before either moves it away.
+    with _SYNC_LOCK:
+        activities = sync_inbox(db)
+        raw_events = sync_event_inbox(db)
+        return {**activities, "raw_events": raw_events,
+                "reconstruction": reconstruct(db)}
 
 
 @router.post("/reconstruct")
 def reconstruct_sessions(db: Session = Depends(get_db)):
-    return reconstruct(db)
+    with _SYNC_LOCK:
+        return reconstruct(db)
 
 
 @router.get("/activities")

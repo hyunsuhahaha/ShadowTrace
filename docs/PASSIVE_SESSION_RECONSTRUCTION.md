@@ -52,46 +52,37 @@ are preserved in `loss_state`. Reconstruction is an idempotent full-corpus
 upsert. This is intentionally simple; an incremental cursor should be added only
 after real corpus size makes the rebuild measurably slow.
 
-## Live capture preflight result — 2026-08-27
+## Live capture result — 2026-09-26
 
-The repository preflight was executed on the current Kali host:
+The Kali VM still ran `6.19.14+kali-amd64`, but matching headers were now
+present at `/lib/modules/6.19.14+kali-amd64/build`, and BCC Python bindings
+were ready. No package installation or reboot was needed. Preflight passed;
+the root observer compiled and loaded BPF on this kernel.
 
-```text
-kernel: 6.19.14+kali-amd64
-BCC Python bindings: ready
-matching headers: /lib/modules/6.19.14+kali-amd64/build — missing
-exact header package in current APT metadata — missing
-linux-headers-amd64 candidate: 7.0.12-2kali1
-```
+`passive-live-smoke.py` passed against the temporary local server. It opened a
+real PTY, ran a Bash flow, changed files, made a loopback TCP connection and
+wrote 5,000 bytes in one syscall. The API returned 264 events in that process
+lineage with fork, exec, exit, PTY read/write, socket and filesystem kinds;
+the truncated write was marked partial, and `missing` was empty.
 
-The required host change is therefore:
+Two simultaneous SSH terminal PTYs were `/dev/pts/2` and `/dev/pts/3`; each
+produced a separate TerminalSession with its own `sleep 2` CommandActivity.
+Two live tmux panes had separate PTYs and separate sessions (IDs 7 and 8);
+each retained its own `sleep 4` command. An interactive SSH connection from
+the VM to its own localhost created a separate local SSH session and one
+RemoteSessionCandidate. These observations establish session separation for
+this small authorized corpus, not universal activity coverage.
 
-```bash
-sudo apt update
-sudo apt install linux-image-amd64 linux-headers-amd64
-sudo reboot
-```
-
-After reboot:
-
-```bash
-uname -r
-test -d /lib/modules/$(uname -r)/build
-./scripts/passive-preflight.sh
-./scripts/start.sh
-./scripts/passive-live-smoke.py
-```
-
-No installation was performed. `sudo apt update` was attempted through the
-approved command path but stopped at the interactive password prompt; the
-password was not requested, captured or bypassed. Consequently BPF source
-compile, attach and real event capture remain unverified on this host.
-
-The live smoke script is ready for the post-reboot run. It opens a real PTY,
-runs a normal Bash flow, creates and renames filesystem entries, makes a
-loopback TCP connection, writes 5,000 bytes in one syscall, exits, calls
-`POST /api/passive/sync`, and verifies DB-backed raw event rows for fork, exec,
-exit, PTY read/write, connect, filesystem mutation and truncation.
+The corpus also exposed gaps: very short `true` commands in the tmux panes did
+not become CommandActivity rows, and some rapidly pasted PTY input became
+garbled shell-input candidates. While the observer's automatic sync ran,
+overlapping manual `POST /api/passive/sync` calls sometimes returned HTTP 500;
+the same endpoint completed after stopping the observer. A process-local lock
+now serializes sync and reconstruct requests. A concurrent regression test
+failed before the change and passed afterward; two concurrent requests to the
+updated server on a separate port both returned HTTP 200 for one replayed
+batch (one import with 48 skipped events, then an empty inbox). This lock
+covers the supported single-worker server, not multiple server processes.
 
 ## Tests performed
 
@@ -114,10 +105,11 @@ Synthetic raw-event integration tests cover:
 | event loss / sequence gap | loss state propagated and idempotent rebuild |
 | truncated output | partial-capture state propagated |
 
-The passive targeted suite passes (`24 passed`). Migration `0045_session_reconstruction`
-passes fresh, hybrid and contaminated-schema tests (`4 passed`). The full backend
-suite, including loopback integration and MongoDB-dependent tests, passes
-(`604 passed`).
+The earlier passive targeted suite passed (`24 passed`), migration
+`0045_session_reconstruction` passed fresh, hybrid and contaminated-schema
+tests (`4 passed`), and the full backend suite passed (`604 passed`). On
+2026-09-26 the updated passive, graph service and graph router subset passed
+(`89 passed`); the full suite was not rerun.
 
 ## Known ambiguous and failed cases
 
@@ -139,10 +131,7 @@ suite, including loopback integration and MongoDB-dependent tests, passes
 
 ## Semantic parser readiness
 
-**No-go for ffuf, curl or Burp semantic parsers yet.** The generic reconstruction
-interface and synthetic corpus are ready, but the required live BPF compile/load
-and post-reboot smoke have not passed. After that smoke succeeds, the next gate
-is a real-terminal corpus for two terminals, two tmux panes and an authorized
-interactive SSH lab session. Semantic parsers should start only after those
-flows remain separated and every loss/ambiguous case is visible without any
-false Graph claim.
+**No-go for ffuf, curl or Burp semantic parsers yet.** BPF load, live smoke and
+the small two-terminal, two-pane and SSH corpus passed. The next gate is to
+reproduce and fix missing short-lived commands and garbled PTY candidates,
+then verify that live Graph attribution makes no false project or host claim.

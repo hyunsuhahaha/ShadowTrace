@@ -85,11 +85,16 @@
   포함). reconstruction/passive targeted `24 passed`, migration `4 passed`. Alembic
   `0045_session_reconstruction` fresh/contaminated upgrade, Python compile, shell syntax와
   diff check 통과.
-- eBPF live load는 미검증. preflight 결과 실행 kernel `6.19.14+kali-amd64`의 matching
-  headers가 없고 current APT metadata에는 exact package도 없다. `linux-image-amd64`와
-  `linux-headers-amd64` 설치 후 reboot가 필요하다. `sudo apt update`는 password prompt에서
-  중단했고 우회하지 않았다. 상세 결과와 post-reboot smoke 절차는
-  `docs/PASSIVE_SESSION_RECONSTRUCTION.md`에 있다.
+- 2026-09-26 Kali VM에서 현재 커널 `6.19.14+kali-amd64`의 matching headers와 BCC를
+  확인했고 root BPF observer를 실제 load했다. `passive-live-smoke.py`는 해당 프로세스
+  이벤트 264개, 모든 필수 kind와 truncation을 확인해 통과했다. 터미널 2개·tmux pane
+  2개는 각기 다른 session에 `sleep` 명령이 붙었고 local interactive SSH는
+  `RemoteSessionCandidate` 1건이 됐다. 관련 backend targeted `89 passed`.
+- 자동 observer sync와 수동 sync가 겹칠 때 관찰된 HTTP 500에 대해 router의 sync/reconstruct
+  직렬화를 추가했다. 회귀 테스트는 수정 전 실패, 수정 후 통과. 최신 코드로 별도 포트에서
+  같은 batch의 동시 요청을 보내 모두 HTTP 200을 확인했다. 라이브 검증 중 짧은 `true`
+  명령 누락과 깨진 shell-input 후보도 발견돼 상세 내용은
+  `docs/PASSIVE_SESSION_RECONSTRUCTION.md`에 남겼다.
 - 이전 원본 기준 backend suite: `542 passed` (golden-path 통합 테스트 포함)
 - 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과
@@ -114,10 +119,9 @@
 
 Passive reconstruction의 다음 필수 단계:
 
-1. current Kali kernel image/headers 설치 후 reboot.
-2. `passive-preflight.sh`와 `passive-live-smoke.py` 통과.
-3. 실제 두 terminal, tmux 두 pane, authorized interactive SSH corpus에서 session 분리 확인.
-4. 위 gate 전에는 ffuf/curl/Burp semantic parser를 추가하지 않는다.
+1. live corpus에서 짧은 명령 누락과 깨진 PTY shell-input 후보의 원인을 재현·수정한다.
+2. Graph에 투영된 live 활동이 대상/프로젝트를 잘못 주장하지 않는지 확인한다.
+3. 위 품질 gate 전에는 ffuf/curl/Burp semantic parser를 추가하지 않는다.
 
 그 이후 선택 후보:
 

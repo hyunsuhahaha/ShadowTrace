@@ -1,4 +1,7 @@
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -98,3 +101,39 @@ def test_sync_keeps_legacy_shape_and_runs_reconstruction(tmp_path, monkeypatch):
     assert result["raw_events"]["events"] == 1
     assert result["reconstruction"] == {
         "processes": 1, "sessions": 1, "commands": 1, "remote_candidates": 0}
+
+
+def test_sync_serializes_overlapping_requests(monkeypatch):
+    first_entered = Event()
+    release_first = Event()
+    second_started = Event()
+    entries = []
+
+    def sync_inbox(_db):
+        entries.append(1)
+        if len(entries) == 1:
+            first_entered.set()
+            assert release_first.wait(5)
+        return {"processed": 0, "failed": 0}
+
+    monkeypatch.setattr(router, "sync_inbox", sync_inbox)
+    monkeypatch.setattr(router, "sync_event_inbox", lambda _db: {"events": 0})
+    monkeypatch.setattr(router, "reconstruct", lambda _db: {"processes": 0})
+
+    def second_request():
+        second_started.set()
+        return router.sync(object())
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(router.sync, object())
+        assert first_entered.wait(5)
+        second = pool.submit(second_request)
+        try:
+            assert second_started.wait(5)
+            time.sleep(0.05)
+            assert len(entries) == 1
+        finally:
+            release_first.set()
+        assert first.result(timeout=5)["processed"] == 0
+        assert second.result(timeout=5)["processed"] == 0
+    assert len(entries) == 2

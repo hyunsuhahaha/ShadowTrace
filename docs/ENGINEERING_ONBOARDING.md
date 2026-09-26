@@ -293,7 +293,8 @@ Nmap text parser·resolver는 [`backend/app/modules/passive_activity/service.py`
 있다. raw schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py),
 derived schema는 [`0045_passive_session_reconstruction.py`](../backend/alembic/versions/0045_passive_session_reconstruction.py)가
 관리한다. `POST /api/passive/sync`는 기존 응답 필드를 유지하면서 raw ingest 뒤 reconstruction
-summary를 추가한다. `/events`, `/processes`, `/terminal-sessions`, `/commands`,
+summary를 추가한다. `router.py`는 sync와 reconstruct 요청을 프로세스 안에서 직렬화해
+같은 inbox batch를 두 요청이 동시에 가져오는 일을 막는다. `/events`, `/processes`, `/terminal-sessions`, `/commands`,
 `/remote-sessions`가 각 계층을 조회한다. 원시
 payload에는 terminal output 등 민감정보가 포함될 수 있으므로 localhost 데이터로 취급한다.
 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project 해결이 모호하면
@@ -302,10 +303,12 @@ payload에는 terminal output 등 민감정보가 포함될 수 있으므로 loc
 실제 pentester workflow·terminal 습관 42개 활동군과 collector별 관찰 한계, 현재 MVP의
 포착/부분 포착/미포착 감사 결과는
 [`docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`](RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md)에
-정리돼 있다. generic sensor는 넓은 raw signal 기반을 제공하지만 syscall subset과
-echo-confirmed PTY 입력만 포착하며 live eBPF load는 아직 검증되지 않았다. 의미 승격은
-단일 literal IP의 Nmap human port table만 지원하고 모든 Kali 활동이나 행동별 Graph
-node를 보장하지 않는다.
+정리돼 있다. 2026-09-26 Kali VM에서 BPF compile/load와 PTY·socket·filesystem live
+smoke, 터미널 2개·tmux pane 2개·로컬 interactive SSH의 세션 분리를 확인했다. generic
+sensor는 syscall subset과 echo-confirmed PTY 입력만 포착한다. 짧은 명령 일부는 live
+corpus에서 CommandActivity가 되지 않았고 PTY 입력 후보가 깨진 사례가 있어,
+모든 Kali 활동이나 행동별 Graph node를 보장하지 않는다. 현재 의미 승격은 Nmap 결과와
+근거가 명확한 CommandActivity만 대상으로 한다.
 
 ### AutoRecon (여러 대상 동시 정찰)
 
