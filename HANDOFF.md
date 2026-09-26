@@ -7,6 +7,17 @@
 
 ## 현재 상태
 
+- Passive reconstruction 후속 작업(2026-09-26, `512225e`, `26f9fd3`): 변경 이벤트의 프로세스 계보와 기존
+  터미널 세션 구성원만 다시 읽는 증분 경로를 추가했다. 명시적 `ssh host command`의 원격
+  명령 인자는 `remote-argv` 미확인 후보로 남기며 Graph 실행 사실로 승격하지 않는다.
+  이미 기록된 손실 표시가 새 배치에 반복돼도 전체 이벤트를 다시 재구성하지 않는다.
+  Kali 복사 DB의 raw 이벤트 495,398건에서 변경된 실행 이벤트 1건 처리에 0.51초가
+  걸렸고 기존 세션·명령 개수는 유지됐다. 손실 표시가 섞인 최근 5,000건의 범위
+  선정은 6.9초였다. Kali 관련 테스트 89개 통과, 백엔드 전체 검사에서 624개 통과·2개
+  실패했다(timeout 테스트는 단독 재실행 통과, FTP 트리 테스트는 변경 전 커밋에서도
+  동일하게 실패). Kali 실행 서버는 `ShadowTrace-live-release-4`의 `26f9fd3`으로 교체했고
+  관찰기는 계속 실행 중이다. 실제 `/api/passive/sync`는 24개 배치·1,399개 이벤트를
+  약 9.9초에 처리하고 HTTP 200을 반환했다.
 - 브랜치: `main` (`ShadowTrace` fork)
 - Generic passive sensor foundation: `scripts/passive-observer.py`가 owner UID process
   계보의 fork/exec/exit, fd 0/1/2 I/O, socket lifecycle 일부와 변경형 filesystem
