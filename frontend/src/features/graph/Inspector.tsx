@@ -1017,7 +1017,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
