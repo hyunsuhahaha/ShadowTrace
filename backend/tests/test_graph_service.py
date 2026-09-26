@@ -163,6 +163,9 @@ def test_runbook_workflow_projects_steps_and_branch_edges():
     assert db.query(GraphEdge).filter_by(source=host.id,
                                          target=nodes[steps[0].id].id,
                                          relation="attempted").count() == 1
+    assert service.get_attack_paths(db, p.id) == []
+    tree = service.get_tree(db, p.id)
+    assert "다음 확인" in str(tree)
     steps[1].status = "blocked"
     db.flush()
     service.sync_from_project(db, p.id)

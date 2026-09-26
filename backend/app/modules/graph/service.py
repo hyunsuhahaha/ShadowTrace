@@ -758,7 +758,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                         if source and destination:
                             ensure_edge(source, destination, "precedes",
                                         label=str(transition.get("label") or ""),
-                                        status=runbook_status(target_step))
+                                        status="untried")
             roots = [step for step in steps if step.id not in incoming]
         else:
             roots = steps[:1]
@@ -766,13 +766,12 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 source = index.get(("runbook_step", first.id))
                 destination = index.get(("runbook_step", second.id))
                 if source and destination:
-                    ensure_edge(source, destination, "precedes",
-                                status=runbook_status(second))
+                    ensure_edge(source, destination, "precedes", status="untried")
         for step in roots:
             node = index.get(("runbook_step", step.id))
             if node:
                 ensure_edge(parent, node, "attempted", label=instance.template_name,
-                            status=runbook_status(step))
+                            status="untried")
 
     for finding in db.scalars(
             select(Finding).where(Finding.project_id == project_id)):
