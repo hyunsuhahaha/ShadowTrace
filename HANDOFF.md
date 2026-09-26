@@ -7,6 +7,17 @@
 
 ## 현재 상태
 
+- 비 IP 평가 자산과 RoE 구현 진행(2026-09-26, `47449a6`, `cab78da`):
+  `AssessmentAsset` 8유형과 모바일·클라우드·Kubernetes·소스·무선·ICS 수동
+  Runbook 6종(총 30종)을 추가했다. `#assessment`에서 자산·범위·Runbook 단계·Evidence·
+  Observation/Finding을 관리하고 Graph의 asset→step→Evidence/Finding 계보로 탐색한다.
+  `ProjectRoe`는 초안·승인·철회·이력, 기간·대상·허용 행위 검사와 Graph scope 노드를
+  제공한다. API 생성/마이그레이션 프로젝트는 RoE 승인 전 스캔·명령·웹 요청·세션·
+  터널·AutoRecon·접근 후 실행·능동 Runbook 단계가 거부된다. 직접 ORM 생성 Project의
+  RoE 행 부재 예외는 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에 기록했다.
+  Kali 격리 DB에서 mobile 자산→6단계→증거 첨부→Graph의 익명 Evidence 노드와
+  비성공 경로를 확인했다. Chrome 데스크톱·모바일에서 자산 화면을 확인하고 CSS
+  배치 문제를 수정했다. 전체 테스트와 Kali live 전환은 이 기록 시점에 진행 중이다.
 - 현업 흐름 추가 검증(2026-09-26): 앞선 3개 Runbook 추가만으로 전체 coverage를 주장한
   것은 성급했다. OWASP API Top 10 2023을 별도 12단계 절차로 추가하고, 평가 유형별
   절차/실행 기록/자산 모델을 나눠 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에

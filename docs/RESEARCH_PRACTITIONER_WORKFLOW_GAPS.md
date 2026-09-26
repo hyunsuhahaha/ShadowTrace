@@ -104,3 +104,31 @@
 인상을 줄 수 있다. 다음 기능 작업은 Project RoE와 비-IP 자산 모델을 먼저 정의하고,
 실제 결과가 단계·자산·증거에 붙는지 시나리오로 검증해야 한다. 절차 목록만 늘리는
 것은 coverage 완료 기준이 아니다.
+
+### 2026-09-26 구현 후 재점검
+
+위 표는 구현 전 조사 기록이다. 현재는 Project RoE 초안·승인·철회·이력과 승인된
+기간/행위/대상을 검사하는 실행 가드를 추가했다. 승인 범위는 Graph의 `scope` 노드로
+보인다. `web`, `api`, `mobile`, `cloud`, `kubernetes`, `source`, `wireless`, `ics`
+AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Step, 연결한 Evidence,
+승격 Finding까지 탐색할 수 있다. 모바일·클라우드·Kubernetes·소스·무선·ICS에
+수동 판단용 절차도 추가했다. 이는 해당 환경에서 명령 실행기나 수집기가 제공된다는
+뜻은 아니다. 실제 환경의 원본은 해당 자산에 Evidence로 첨부해 기록한다.
+
+아직 남은 구현 공백은 다음과 같다.
+
+1. 웹 URL/기능/역할/객체 및 API 버전/스키마/호출자별 coverage 항목의 구조화.
+2. HTTP Exchange, RemoteExecution, InteractiveSession의 Runbook Step 직접 참조와
+   확인된 다중 Target 작업의 절차 계보. 현재 Graph의 access lineage는 실제 완료된
+   원격 실행을 표현하지만, 별도 Runbook instance들의 단계를 자동으로 이어주지 않는다.
+3. 모바일 빌드, 클라우드 계정·역할·리소스, Kubernetes namespace·workload,
+   저장소 commit, 무선 BSSID·물리 위치, ICS 장비·운영자 승인 같은 유형별 자산 필드와
+   수집 어댑터. 현재 AssessmentAsset의 `details`는 범용 JSON 메타다.
+4. 고객 의사결정 기록과 보고서에서 선택한 Graph 공격 경로의 증거 포함 스냅샷.
+5. API를 통하지 않고 직접 ORM으로 삽입한 Project에는 RoE 행이 없어 실행 가드가
+   건너뛰는 예외. 실제 API 생성 프로젝트와 0048 migration을 거친 기존 프로젝트에는
+   초안 행이 존재한다.
+
+따라서 30개 내장 절차가 현업 평가의 모든 경우를 검증한다는 주장은 하지 않는다.
+완료 기준은 각 평가 유형에서 실제 작업·부정 결과·증거·Finding이 자산과 Graph
+계보에 남고, 승인 범위 밖의 실행이 거부되는지 시나리오로 확인하는 것이다.
