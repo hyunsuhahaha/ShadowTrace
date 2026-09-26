@@ -494,20 +494,16 @@ export default function GraphWorkspace() {
   };
 
   const noProject = !projectId;
-  if (!noProject && graph.isLoading) return <Empty text="그래프 동기화 중…" />;
-  if (!noProject && graph.isError)
+  if (noProject) return <div className="graphWorkspace" style={S.wrap}>
+    <OnboardingPane creating={createProject.isPending}
+      onCreate={() => createProject.mutate()} />
+  </div>;
+  if (graph.isLoading) return <Empty text="그래프 동기화 중…" />;
+  if (graph.isError)
     return <Empty text={`불러오기 실패: ${(graph.error as Error).message}`} />;
 
-  // Graph-first onboarding: even with no project (or before any scan), show a
-  // graph with a single root node the user can click to start scanning.
-  const SYNTHETIC: GraphOut = {
-    root_node_id: "start",
-    nodes: [{ id: "start", type: "project-root", status: "in-progress",
-      label: "여기서 시작 · 프로젝트 만들기", objective: false, source_ref: "", hidden: false }],
-    edges: [],
-  };
-  const data = noProject ? SYNTHETIC : graph.data!;
-  const replayData = graphAt(data, noProject ? null : replayAt, timeline.data);
+  const data = graph.data!;
+  const replayData = graphAt(data, replayAt, timeline.data);
   const replayNodeById = new Map(replayData.nodes.map((node) => [node.id, node]));
   const visibleData = filterGraph(replayData, filter, selected);
   const hostCount = replayData.nodes.filter((n) => n.type === "host" && !n.hidden).length;
@@ -655,7 +651,7 @@ export default function GraphWorkspace() {
             <div style={S.inspector}>
               <div className="graphReplayLock"><b>TIME-MACHINE · READ ONLY</b>
                 <span>{new Date(replayAt).toLocaleString("ko-KR")}</span>
-                <p>노드를 선택해 당시 상세를 확인할 수 있습니다. 명령 실행과 편집은 LIVE에서만 가능합니다.</p>
+                <p>읽기 전용</p>
                 {selectedNode ? <section className="graphReplayNode" aria-label="선택한 과거 노드">
                   <div><i>{GLYPH[selectedNode.type]}</i><span>
                     <small>{selectedNode.type}</small><strong>{selectedNode.label}</strong>

@@ -1,5 +1,21 @@
 # Implementation Worklog
 
+## 2026-09-27 — Graph README 화면과 간결한 빈 상태
+
+- Graph의 도구·절차·HTTP·원격 실행·자산 카드 폭을 넓히고 유형, 상태, 이름을 카드 안에서
+  읽히도록 다시 배치했다. Credential도 더 큰 금색 카드로 맞췄다. 카드 크기에 맞춰
+  충돌 영역과 클릭 영역을 갱신했다.
+- 격리된 합성 프로젝트에서 대표 노드 10개를 배치해 실제 Chromium Canvas 화면을
+  `docs/assets/progress-graph.png`로 캡처하고 README 제목 바로 아래에 넣었다.
+- Graph의 빈 프로젝트를 `프로젝트 없음`과 생성 버튼만 표시하도록 줄였다.
+  공통 EmptyState의 설명 줄, 주요 화면의 중복 부제목과 Graph 하단 도움말도 제거했다.
+  실행 승인, 오류와 안전 관련 메시지는 유지했다.
+
+검증: 프런트엔드 전체 589개(`--maxWorkers=2`)와 변경 컴포넌트 관련 25개 통과,
+프런트엔드 빌드 통과. 격리 Chromium에서 README Graph 캡처와 프로젝트 없는 화면을
+확인했다. 기본 병렬 실행에서는 기존 Post-Exploitation 비동기 테스트 1건이 시간 초과했으나
+해당 파일 단독 및 제한 병렬 전체 실행에서 통과했다. 실제 외부 대상은 사용하지 않았다.
+
 ## 2026-09-27 — Progress Graph 노드 시각 식별
 
 - 격리 DB의 Runbook Step, 자산 세부 대상, Credential, HTTP Exchange, 원격 SSH 실행,

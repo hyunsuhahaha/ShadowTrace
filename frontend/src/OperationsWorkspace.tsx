@@ -98,7 +98,7 @@ export default function OperationsWorkspace() {
               <LoadingState label="검색 중" />}
             {results.error && <ErrorState message={String(results.error)} />}
             {query.trim().length > 1 && !results.isLoading && !results.data?.length &&
-              <EmptyState title="검색 결과가 없습니다" description="다른 키워드로 다시 검색하세요." />}
+              <EmptyState title="검색 결과가 없습니다" />}
             {results.data?.map((r, i) => (
               <a key={`${r.type}-${r.id}-${i}`} href={r.path}>
                 <span>{r.type}</span>
@@ -126,7 +126,7 @@ export default function OperationsWorkspace() {
             {audit.isLoading && <LoadingState label="감사 기록을 불러오는 중" />}
             {audit.error && <ErrorState message={String(audit.error)} />}
             {!audit.isLoading && !audit.data?.length &&
-              <EmptyState title="기록된 변경이 없습니다" description="로컬 변경 사항이 발생하면 여기에 기록됩니다." />}
+              <EmptyState title="기록된 변경이 없습니다" />}
             {audit.data?.map((x) => (
               <div key={x.id}>
                 <b>{x.method}</b>

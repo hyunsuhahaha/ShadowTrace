@@ -48,12 +48,10 @@ export function Card({ className = "", ...props }: HTMLAttributes<HTMLElement>) 
 export function PageHeader({
   eyebrow,
   title,
-  description,
   actions,
 }: {
   eyebrow?: string;
   title: string;
-  description?: string;
   actions?: ReactNode;
 }) {
   return (
@@ -61,7 +59,6 @@ export function PageHeader({
       <div>
         {eyebrow && <span># {eyebrow}</span>}
         <h1>{title}</h1>
-        {description && <p>{description}</p>}
       </div>
       {actions && <div className="uiPageHeader__actions">{actions}</div>}
     </div>
@@ -70,17 +67,14 @@ export function PageHeader({
 
 export function EmptyState({
   title,
-  description,
   action,
 }: {
   title: string;
-  description: string;
   action?: ReactNode;
 }) {
   return (
     <div className="uiState" role="status">
       <strong>{title}</strong>
-      <p>{description}</p>
       {action}
     </div>
   );

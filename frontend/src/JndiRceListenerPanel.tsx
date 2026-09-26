@@ -77,8 +77,6 @@ export default function JndiRceListenerPanel() {
     <section className="netexecCredCheck" aria-labelledby="jndi-rce-heading">
       <header>
         <h2 id="jndi-rce-heading">JNDI 실전 RCE 리스너 (rogue LDAP)</h2>
-        <small>marshalsec 없이 순수 Python으로 구현한 최소 LDAP 서버 -- 아무 bind/search에나
-          컴파일된 리버스쉘 class를 가리키는 referral로 응답합니다.</small>
       </header>
       <p className="netexecEvidenceMsg">
         위 카탈로그의 페이로드가 콜백을 받았다면(취약점 확인됨), 여기서 진짜 RCE 리스너를 켜고

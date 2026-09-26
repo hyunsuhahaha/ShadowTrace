@@ -24,7 +24,7 @@ it("shows service identity and selects the clicked service", () => {
   expect(onSelect).toHaveBeenCalledWith(7);
 });
 
-it("shows the scan guidance when no services exist", () => {
+it("shows a concise empty state when no services exist", () => {
   render(<ServiceList services={[]} onSelect={() => undefined} />);
-  expect(screen.getByText(/Nmap XML 스캔을 가져오세요/)).toBeTruthy();
+  expect(screen.getByText("서비스 없음")).toBeTruthy();
 });

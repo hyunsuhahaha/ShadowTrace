@@ -413,7 +413,7 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
           {requests.isLoading && <LoadingState label="요청 목록을 불러오는 중" />}
           {requests.error && <ErrorState message={String(requests.error)} />}
           {!requests.isLoading && !requests.data?.length &&
-            <EmptyState title="저장된 요청이 없습니다" description="새 요청을 만들어 저장하세요." />}
+            <EmptyState title="저장된 요청이 없습니다" />}
           {requests.data?.map((r) => (
             <div className="collectionRow" key={r.id}>
               <button
@@ -668,7 +668,7 @@ export default function WebWorkspace({ initialTab }: { initialTab?: string }) {
           {exchanges.isLoading && <LoadingState label="응답 이력을 불러오는 중" />}
           {exchanges.error && <ErrorState message={String(exchanges.error)} />}
           {!exchanges.isLoading && !exchanges.data?.length &&
-            <EmptyState title="응답 이력이 없습니다" description="요청을 전송하면 여기에 기록됩니다." />}
+            <EmptyState title="응답 이력이 없습니다" />}
           {exchanges.data?.map((x) => (
             <button
               className={x.id === exchangeId ? "active" : ""}

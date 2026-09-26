@@ -24,8 +24,6 @@ export const S: Record<string, CSSProperties> = {
   legend: { marginLeft: "auto", minWidth: 0, overflowX: "auto", display: "flex",
     flexWrap: "nowrap", gap: 10, color: "#829087", fontSize: 9 },
   stage: { flex: 1, display: "flex", minHeight: 0 },
-  hint: { position: "absolute", left: 16, bottom: 14, color: "#6b6b76", fontSize: 12,
-    pointerEvents: "none" },
   fileDropOverlay: { position: "absolute", inset: 8, zIndex: 4, display: "grid",
     placeItems: "center", border: "2px dashed #59f59a", borderRadius: 8,
     background: "rgba(15,26,21,.72)", color: "#59f59a", fontSize: 13, fontWeight: 600,

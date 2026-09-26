@@ -234,8 +234,7 @@ export default function IntruderPanel({ requestId, timeout, projectId, targetId,
   return (
     <section className="intruderPanel">
       <header>
-        <div><span>Request variation desk</span><h2>Intruder</h2>
-          <p>요청 위치, 후보, 실행 제한과 응답 차이를 한 화면에서 검토합니다.</p></div>
+        <div><h2>Intruder</h2></div>
         <div className="intruderEstimate"><small>예상 요청</small><strong>{count}</strong>
           <small>최대 약 {Math.ceil(count * (delayMs + timeout * 1000) / 1000)}초</small></div>
       </header>

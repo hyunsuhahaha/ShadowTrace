@@ -290,12 +290,12 @@ it("dropping a dragged tree file calls onDropFile with its runId and path", () =
     { kind: "post-exploitation", runId: 12, path: "/home/bob/flag.txt" });
 
   fireEvent.dragOver(stage, { dataTransfer });
-  expect(stage.textContent).toContain("Finding 노드로 추가됩니다");
+  expect(stage.textContent).toContain("Finding으로 추가");
 
   fireEvent.drop(stage, { dataTransfer });
   expect(onDropFile).toHaveBeenCalledWith(
     { kind: "post-exploitation", runId: 12, path: "/home/bob/flag.txt" });
-  expect(stage.textContent).not.toContain("Finding 노드로 추가됩니다");
+  expect(stage.textContent).not.toContain("Finding으로 추가");
 });
 
 it("ignores a drop that isn't a tree-file drag", () => {
@@ -307,7 +307,7 @@ it("ignores a drop that isn't a tree-file drag", () => {
   const dataTransfer = fileDragTransfer(null);
 
   fireEvent.dragOver(stage, { dataTransfer });
-  expect(stage.textContent).not.toContain("Finding 노드로 추가됩니다");
+  expect(stage.textContent).not.toContain("Finding으로 추가");
 
   fireEvent.drop(stage, { dataTransfer });
   expect(onDropFile).not.toHaveBeenCalled();

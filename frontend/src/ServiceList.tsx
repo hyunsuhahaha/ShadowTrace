@@ -32,9 +32,7 @@ export default function ServiceList({
       </button>
     ))}
     {!services?.length && (
-      <div className="empty">
-        서비스 목록을 채우려면 Nmap XML 스캔을 가져오세요.
-      </div>
+      <div className="empty">서비스 없음</div>
     )}
   </>;
 }

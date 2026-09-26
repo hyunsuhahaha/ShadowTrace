@@ -255,7 +255,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
     patch({ evidence: rows.map((link, position) => ({ ...link, display_order: position })) });
   };
 
-  if (!projectId) return <EmptyState title="프로젝트가 필요합니다" description="상단에서 프로젝트를 선택하거나 새 프로젝트를 만드세요." />;
+  if (!projectId) return <EmptyState title="프로젝트 없음" />;
   return <main className="findingWorkspace">
     <aside className="findingIndex" aria-label="Finding 목록">
       <div className="panelHeading">
@@ -275,7 +275,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
       <div className="findingList">
         {findings.isLoading && <LoadingState label="Finding을 불러오는 중" />}
         {findings.error && <ErrorState message={String(findings.error)} />}
-        {!findings.isLoading && !findings.data?.length && <EmptyState title="조건에 맞는 Finding이 없습니다" description="필터를 지우거나 첫 Finding을 작성하세요." />}
+        {!findings.isLoading && !findings.data?.length && <EmptyState title="조건에 맞는 Finding이 없습니다" />}
         {findings.data?.map((finding) => <button key={finding.id} className={selectedId === finding.id ? "active" : ""} onClick={() => choose(finding)}>
           <input aria-label={`${finding.title} 선택`} type="checkbox" checked={selectedIds.includes(finding.id!)} onClick={(event) => event.stopPropagation()} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, finding.id!] : current.filter((id) => id !== finding.id))} />
           <span className={riskClass(finding.final_risk)}>{finding.final_risk}</span>
@@ -299,7 +299,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
         <div>
           <span>{selectedId ? `FINDING #${selectedId}` : "NEW FINDING"}</span>
           <h1>{draft.title || "제목 없는 Finding"}</h1>
-          <p>{draft.target_id ? `${selectedTarget?.name || "대상"} · ${draft.final_risk}` : "영향 대상을 연결하고 위험도를 평가하세요."}</p>
+          {draft.target_id && <p>{selectedTarget?.name || "대상"} · {draft.final_risk}</p>}
         </div>
         <div className="saveState">
           <span className={dirty ? "dirty" : ""}>{dirty ? "저장되지 않은 변경" : "저장됨"}</span>
@@ -319,7 +319,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
       <div className="editorScroll">
         {message && <div className={`inlineNotice inlineNotice--${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</div>}
         <section id="finding-overview" className="formSection">
-          <div className="sectionTitle"><span>01</span><div><h2>범위와 분류</h2><p>Finding이 속한 자산과 보고서 공개 범위를 지정합니다.</p></div></div>
+          <div className="sectionTitle"><span>01</span><div><h2>범위와 분류</h2></div></div>
           <div className="fieldGrid">
             <label className="span2"><span>Finding 제목 <b>필수</b></span><input value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder="예: Anonymous FTP access permits data exposure" /></label>
             <label><span>카테고리</span><input value={draft.category} onChange={(event) => patch({ category: event.target.value })} placeholder="Access Control" /></label>
@@ -340,7 +340,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
           </div>
         </section>
         <section id="finding-risk" className="formSection">
-          <div className="sectionTitle"><span>02</span><div><h2>CVSS와 최종 위험도</h2><p>기술 점수와 사업 환경을 반영한 최종 위험도를 별도로 관리합니다.</p></div></div>
+          <div className="sectionTitle"><span>02</span><div><h2>CVSS와 최종 위험도</h2></div></div>
           <div className="metricGrid">{Object.entries(cvssMetrics).map(([key, metric]) => <label key={key}><span>{metric.label}<small>{key}</small></span><select value={parseVector(draft.cvss_vector)[key] || ""} onChange={(event) => setMetric(key, event.target.value)}><option value="">선택</option>{metric.values.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>)}</div>
           <div className="cvssPanel">
             <label><span>CVSS 3.1 Vector</span><div className="fieldAction"><input value={draft.cvss_vector} onChange={(event) => patch({ cvss_vector: event.target.value, cvss_score: undefined })} placeholder="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" /><Button onClick={checkCvss} disabled={cvssChecking}>{cvssChecking ? "계산 중" : "검증·계산"}</Button></div></label>
@@ -361,7 +361,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
           </div>
         </section>
         <section id="finding-remediation" className="formSection">
-          <div className="sectionTitle"><span>04</span><div><h2>재현과 개선</h2><p>검증 가능한 절차와 실행 가능한 개선안을 기록합니다.</p></div></div>
+          <div className="sectionTitle"><span>04</span><div><h2>재현과 개선</h2></div></div>
           <div className="writingGrid">
             <label><span>재현 절차</span><textarea className="codeField" value={draft.reproduction_steps} onChange={(event) => patch({ reproduction_steps: event.target.value })} placeholder={"1. 대상에 연결\n2. 명령 실행\n3. 결과 확인"} /></label>
             <label><span>권고사항</span><textarea value={draft.recommendation} onChange={(event) => patch({ recommendation: event.target.value })} placeholder="담당자가 바로 실행할 수 있도록 우선순위와 검증 방법을 포함" /></label>
@@ -369,9 +369,9 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
           </div>
         </section>
         <section id="finding-retest" className="formSection">
-          <div className="sectionTitle"><span>05</span><div><h2>재검증 이력</h2><p>기존 기록을 덮어쓰지 않고 개선 확인 결과를 시간순으로 누적합니다.</p></div></div>
+          <div className="sectionTitle"><span>05</span><div><h2>재검증 이력</h2></div></div>
           <div className="retestTimeline">
-            {!draft.retests?.length && <EmptyState title="재검증 기록이 없습니다" description="개선 후 Evidence를 연결한 뒤 첫 재검증 결과를 남기세요." />}
+            {!draft.retests?.length && <EmptyState title="재검증 기록이 없습니다" />}
             {draft.retests?.map((item) => <article key={item.id}>
               <header><Badge status={item.remediated ? "completed" : "pending"}>{item.result}</Badge><time>{new Date(item.tested_at).toLocaleString()}</time></header>
               <strong>{item.tester}</strong><p>{item.notes || "메모 없음"}</p>
@@ -393,7 +393,7 @@ export default function FindingWorkspace({ projectId }: { projectId?: number }) 
       <div className="panelHeading"><div><span>REPORT PROOF</span><h2>Evidence</h2></div><strong>{draft.evidence.length}</strong></div>
       <button className="closeEvidenceRail" aria-label="Evidence 패널 닫기" onClick={() => setEvidenceOpen(false)}>×</button>
       <div className="linkedEvidence">
-        {!linkedEvidence.length && <EmptyState title="연결된 Evidence가 없습니다" description="아래 목록에서 재현 결과나 스크린샷을 연결하세요." />}
+        {!linkedEvidence.length && <EmptyState title="연결된 Evidence가 없습니다" />}
         {linkedEvidence.map(({ link, item }, index) => <article key={link.evidence_id}>
           <header><span>{index + 1}</span><div><strong>{item!.title}</strong><small>{item!.kind} · {item!.sensitivity}</small></div><button aria-label="연결 해제" onClick={() => removeLink(link.evidence_id)}>×</button></header>
           <input aria-label={`${item!.title} 캡션`} value={link.caption} onChange={(event) => updateLink(link.evidence_id, { caption: event.target.value })} placeholder="보고서 캡션" />

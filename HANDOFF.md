@@ -7,6 +7,15 @@
 
 ## 현재 상태
 
+- README Graph 캡처 및 화면 문구 정리(2026-09-27): 대표 노드 10개를 격리 합성 DB에서
+  배치해 `docs/assets/progress-graph.png`를 Chromium 실제 Canvas에서 캡처하고 README
+  첫 화면에 배치했다. Graph 카드에는 유형·상태·이름이 함께 보이며 Credential 카드를
+  확대했다. 프로젝트가 없으면 Graph 대신 `프로젝트 없음`과 생성 버튼만 표시하며
+  공통 부제목과 주요 화면의
+  장황한 안내 문구를 제거했다. 실행 승인·오류·안전 정보는 유지한다. 프런트엔드
+  전체 589개(`--maxWorkers=2`)와 변경 컴포넌트 25개, 빌드 통과. 격리 Chromium에서
+  Graph 이미지와 프로젝트 없는 화면을 확인했다.
+
 - Progress Graph 시각 식별(2026-09-27): source_ref/meta에 따라 Runbook 단계,
   유형별 자산 세부 대상, HTTP Exchange, 원격 SSH 실행, Session, Nmap/FFUF/NetExec,
   Hash Crack 및 터미널 활동을 서로 다른 glyph·색·분류·형태로 그린다. 기존 Credential

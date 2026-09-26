@@ -157,11 +157,11 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
       qc.invalidateQueries({queryKey:["assessmentSubjects"]})]);
     if(projectId)await request(`/projects/${projectId}/graph/sync`,{method:"POST"});
   }catch(exc){setError(String(exc));}finally{setBusy(false);}}
-  if(!projectId)return <EmptyState title="프로젝트를 선택하세요" description="평가 자산은 프로젝트별로 관리됩니다."/>;
+  if(!projectId)return <EmptyState title="프로젝트 없음"/>;
   if(assets.isLoading)return <LoadingState label="평가 자산 불러오는 중"/>;
   if(assets.error)return <ErrorState message="평가 자산을 불러오지 못했습니다."/>;
   return <main className="assessmentWorkspace">
-    <PageHeader eyebrow="ASSESSMENT SCOPE" title="평가 자산" description="IP 호스트 밖의 대상과 실제 검사 결과를 한곳에서 연결합니다."
+    <PageHeader eyebrow="ASSESSMENT SCOPE" title="평가 자산"
       actions={<a className="assessmentGraphLink" href="#graph">Graph에서 보기 ↗</a>}/>
     <ProjectRoePanel projectId={projectId} assets={assets.data||[]}/>
     <div className="assessmentLayout">
@@ -178,14 +178,13 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
           <span>{KINDS.find(kind=>kind.id===item.kind)?.label}</span><strong>{item.name}</strong><small>{item.scope_status}</small>
         </button>)}</div>
       </aside>
-      <section className="assessmentMain">{!selected?<EmptyState title="등록된 자산이 없습니다" description="모바일 앱, 클라우드 계정, 저장소 등 실제 평가 단위를 등록하세요."/>:<>
+      <section className="assessmentMain">{!selected?<EmptyState title="등록된 자산이 없습니다"/>:<>
         <header className="assessmentAssetHeader"><div><small>{selected.kind.toUpperCase()} · ASSET #{selected.id}</small><h2>{selected.name}</h2><p>{selected.locator||"식별자 없음"}</p></div>
           <label>범위 상태<select value={selected.scope_status} disabled={busy} onChange={event=>mutate(()=>request(`/assessment-assets/${selected.id}`,json({project_id:projectId,kind:selected.kind,name:selected.name,locator:selected.locator,details:JSON.parse(selected.details||"{}"),scope_status:event.target.value},"PUT")))}>
             <option value="pending">승인 대기</option><option value="in_scope">범위 안</option><option value="out_of_scope">범위 밖</option>
           </select></label></header>
         <section className="assessmentSubjects" aria-label="유형별 세부 평가 대상">
           <h3>세부 평가 대상</h3>
-          <p>빌드·역할·리소스·workload·커밋·무선 AP·제어 장비를 각각 범위 노드로 기록합니다.</p>
           <form onSubmit={event=>{event.preventDefault();const fields=SUBJECT_FIELDS[selected.kind][subjectKind]||[];
             const attributes=Object.fromEntries(fields.map(field=>[field,subjectAttributes[field]||""]));
             mutate(async()=>{await request("/assessment-asset-subjects",json({asset_id:selected.id,

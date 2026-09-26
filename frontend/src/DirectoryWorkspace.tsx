@@ -228,7 +228,7 @@ export default function DirectoryWorkspace() {
             {objects.isLoading && <LoadingState label="관찰 객체를 불러오는 중" />}
             {objects.error && <ErrorState message={String(objects.error)} />}
             {!objects.isLoading && !objects.data?.length &&
-              <EmptyState title="관찰 객체가 없습니다" description="왼쪽에서 새 관찰 객체를 추가하세요." />}
+              <EmptyState title="관찰 객체가 없습니다" />}
             {objects.data?.map((o) => (
               <article key={o.id}>
                 <span>{o.kind}</span>
@@ -279,7 +279,7 @@ export default function DirectoryWorkspace() {
             {relations.isLoading && <LoadingState label="관계를 불러오는 중" />}
             {relations.error && <ErrorState message={String(relations.error)} />}
             {!relations.isLoading && !relations.data?.length &&
-              <EmptyState title="기록된 관계가 없습니다" description="위에서 출발·도착 객체를 선택하고 관계를 기록하세요." />}
+              <EmptyState title="기록된 관계가 없습니다" />}
             {relations.data?.map((r) => (
               <div key={r.id}>
                 <b>{names.get(r.source_id) || `#${r.source_id}`}</b>

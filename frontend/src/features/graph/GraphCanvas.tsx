@@ -90,8 +90,8 @@ export function GraphCanvas(props: {
     });
     const footprints = new Map(nodes.map((node) => {
       const identity = nodeIdentity(node);
-      return [node.id, { width: identity?.width || (node.type === "credential" ? 130 : 42),
-        height: identity ? 58 : node.type === "credential" ? 42 : 54 }];
+      return [node.id, { width: identity?.width || (node.type === "credential" ? 160 : 42),
+        height: identity ? 66 : node.type === "credential" ? 62 : 54 }];
     }));
     const stabilizationEnds = retained.size && retained.size < nodes.length
       ? performance.now() + 700 : 0;
@@ -553,11 +553,11 @@ export function GraphCanvas(props: {
         ctx.globalAlpha = current.hidden ? 0.3 : 1;   // dim user-hidden nodes
         const credential = credentialBadge(current);
         if (credential) {
-          ctx.font = "600 9px ui-monospace,monospace";
-          const width = Math.max(112, Math.min(190,
-            Math.max(ctx.measureText(credential.identity).width + 36,
-              ctx.measureText(credential.kind).width + 36)));
-          const height = 38, x = n.x - width / 2, y = n.y - height / 2;
+          ctx.font = "600 11px ui-monospace,monospace";
+          const width = Math.max(160, Math.min(210,
+            Math.max(ctx.measureText(credential.identity).width + 46,
+              ctx.measureText(credential.kind).width + 46)));
+          const height = 56, x = n.x - width / 2, y = n.y - height / 2;
           ctx.save();
           ctx.shadowColor = isSel ? "#fff" : "#e3b341";
           ctx.shadowBlur = isSel ? 18 : 8;
@@ -565,13 +565,16 @@ export function GraphCanvas(props: {
           ctx.restore();
           ctx.strokeStyle = isSel ? "#fff" : "#806b31";
           ctx.lineWidth = isSel ? 2 : 1; ctx.strokeRect(x, y, width, height);
-          ctx.fillStyle = "#e3b341"; ctx.font = "13px sans-serif";
-          ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🔑", x + 9, n.y);
-          ctx.fillStyle = "#e8dfc7"; ctx.font = "600 9px ui-monospace,monospace";
+          ctx.fillStyle = "#e3b341"; ctx.fillRect(x, y, 3, height);
+          ctx.font = "17px sans-serif";
+          ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🔑", x + 12, y + 27);
+          ctx.fillStyle = "#e8dfc7"; ctx.font = "700 11px ui-monospace,monospace";
           ctx.fillText(credential.identity.length > 24
-            ? `${credential.identity.slice(0, 23)}…` : credential.identity, x + 30, n.y - 6);
-          ctx.fillStyle = "#8f8157"; ctx.font = "7px ui-monospace,monospace";
-          ctx.fillText(`${credential.kind} · ${credential.state}`, x + 30, n.y + 8);
+            ? `${credential.identity.slice(0, 23)}…` : credential.identity, x + 42, y + 21,
+            width - 52);
+          ctx.fillStyle = "#bd9d4b"; ctx.font = "8px ui-monospace,monospace";
+          ctx.fillText(`${credential.kind} · ${credential.state}`, x + 42, y + 39,
+            width - 52);
           drawEvidenceBadge(evidenceCount(current), x + width - 8, y + 2);
           ctx.globalAlpha = 1;
           continue;
@@ -732,7 +735,7 @@ export function GraphCanvas(props: {
         }
         const identity = nodeIdentity(current);
         if (identity) {
-          const w = identity.width, h = 38, x = n.x - w / 2, y = n.y - h / 2;
+          const w = identity.width, h = 58, x = n.x - w / 2, y = n.y - h / 2;
           ctx.save();
           ctx.shadowColor = isSel ? "#fff" : identity.accent;
           ctx.shadowBlur = isSel ? 18 : 9;
@@ -753,33 +756,36 @@ export function GraphCanvas(props: {
           ctx.shadowBlur = 0;
           ctx.strokeStyle = isSel ? "#fff" : identity.accent;
           ctx.lineWidth = isSel ? 2 : 1.3; ctx.stroke();
+          ctx.fillStyle = identity.accent;
+          ctx.fillRect(x + (identity.shape === "subject" ? 7 : 1), y + 9, 2, h - 18);
           if (identity.shape === "exchange") {
             ctx.globalAlpha *= .36;
             ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
             ctx.globalAlpha = current.hidden ? .3 : 1;
           }
           ctx.fillStyle = identity.accent;
-          ctx.font = "700 15px ui-monospace,monospace";
+          ctx.font = "700 19px ui-monospace,monospace";
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillText(identity.glyph, x + 17, n.y);
+          ctx.fillText(identity.glyph, x + 21, y + 23);
           ctx.textAlign = "left"; ctx.fillStyle = "#ecf3f0";
-          ctx.font = "700 9px ui-monospace,monospace";
-          ctx.fillText(identity.tag, x + 33, y + 14, w - 38);
+          ctx.font = "700 10px ui-monospace,monospace";
+          ctx.fillText(identity.tag, x + 40, y + 17, w - 56);
           ctx.fillStyle = identity.accent;
-          ctx.font = "600 7px ui-monospace,monospace";
-          ctx.fillText(identity.detail, x + 33, y + 27, w - 38);
-          ctx.fillStyle = color(current.status);
-          ctx.fillRect(x + w - 5, y + h - 5, 4, 4);
-          ctx.restore();
-          drawEvidenceBadge(evidenceCount(current), x + w - 1, y);
-          ctx.fillStyle = isSel ? "#fff" : "#dce8e5";
-          ctx.textAlign = "center"; ctx.textBaseline = "top";
-          ctx.font = "11px sans-serif";
+          ctx.font = "600 8px ui-monospace,monospace";
+          ctx.fillText(identity.detail, x + 40, y + 30, w - 48);
+          ctx.strokeStyle = identity.accent; ctx.globalAlpha *= .25;
+          ctx.beginPath(); ctx.moveTo(x + 12, y + 38); ctx.lineTo(x + w - 12, y + 38);
+          ctx.stroke(); ctx.globalAlpha = current.hidden ? .3 : 1;
+          ctx.fillStyle = "#dce8e5"; ctx.font = "600 10px sans-serif";
           let label = current.label;
-          while (label.length > 1 && ctx.measureText(label).width > 126)
+          while (label.length > 1 && ctx.measureText(label).width > w - 27)
             label = label.slice(0, -1);
           if (label !== current.label) label = `${label.slice(0, -1)}…`;
-          ctx.fillText(label, n.x, y + h + 7);
+          ctx.fillText(label, x + 13, y + 49);
+          ctx.fillStyle = color(current.status);
+          ctx.fillRect(x + w - 12, y + 11, 5, 5);
+          ctx.restore();
+          drawEvidenceBadge(evidenceCount(current), x + w - 1, y);
           ctx.globalAlpha = 1;
           continue;
         }
@@ -867,10 +873,10 @@ export function GraphCanvas(props: {
     const nodeAt = (x: number, y: number) => {  // x,y are world coords
       for (const n of nodes) {
         if (n.type === "credential"
-            && Math.abs(n.x - x) <= 95 && Math.abs(n.y - y) <= 20) return n;
+            && Math.abs(n.x - x) <= 105 && Math.abs(n.y - y) <= 28) return n;
         const identity = nodeIdentity(n);
         if (identity && Math.abs(n.x - x) <= identity.width / 2
-            && Math.abs(n.y - y) <= 20) return n;
+            && Math.abs(n.y - y) <= 29) return n;
         if (n.type === "memo"
             && Math.abs(n.x - x) <= 26 && Math.abs(n.y - y) <= 22) return n;
         const rr = n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18;
@@ -984,17 +990,14 @@ export function GraphCanvas(props: {
       }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
       <ActivityStream items={activity} onSelect={props.onActivitySelect} />
-      <div style={S.hint}>
-        초록 신호 = 실행 중 · 파란 신호 = 연결됨 · 빨간 신호 = 리스너 대기 · 드래그 / 휠로 이동·확대
-      </div>
       {fileDragOver && (
         <div style={S.fileDropOverlay} aria-hidden="true">
-          여기에 놓으면 Finding 노드로 추가됩니다
+          Finding으로 추가
         </div>
       )}
       {props.dropFileBusy && (
         <div style={S.fileDropBusyOverlay} aria-hidden="true">
-          파일을 Finding으로 저장하는 중… (원격 세션에서 다시 읽는 중이라 몇 초 걸릴 수 있습니다)
+          Finding 저장 중…
         </div>
       )}
     </div>

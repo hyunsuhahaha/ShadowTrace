@@ -11,13 +11,9 @@ export function OnboardingPane(props: { creating: boolean; onCreate: () => void 
   return (
     <div style={S.embedPane}>
       <div style={{ padding: 40, maxWidth: 440 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>여기서 시작하세요</h2>
-        <p style={{ color: "#9a9aa6", fontSize: 13, lineHeight: 1.6 }}>
-          아직 프로젝트가 없습니다. 프로젝트를 만들면 루트 노드가 생기고, 그 노드를 클릭해
-          대상 추가 · nmap 스캔을 그래프에서 바로 진행할 수 있습니다.
-        </p>
+        <h2 style={{ margin: "0 0 18px", fontSize: 18 }}>프로젝트 없음</h2>
         <button onClick={props.onCreate} disabled={props.creating} style={S.openBtn}>
-          {props.creating ? "만드는 중…" : "＋ 새 프로젝트 만들기"}
+          {props.creating ? "만드는 중…" : "＋ 프로젝트 만들기"}
         </button>
       </div>
     </div>

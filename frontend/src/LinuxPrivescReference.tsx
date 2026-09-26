@@ -21,12 +21,7 @@ export default function LinuxPrivescReference({ onSendCommand }: {
   return (
     <div className="sqlPayloadReference" aria-labelledby="linux-privesc-heading">
       <div className="webSectionTitle">
-        <span>Linux PrivEsc 참고</span>
         <h2 id="linux-privesc-heading">권한 상승 체크리스트</h2>
-        <p>
-          LinPEAS 자동 스캔과 별개로, 어디부터 손으로 훑어야 할지 감이 안 잡힐 때 쓰는 참고
-          목록입니다. 배포판마다 다른 서비스 설정 파일 경로도 정리돼 있습니다.
-        </p>
       </div>
       {linuxPrivescCategories.map((category) => (
         <details key={category.id} id={`privesc-${category.id}`} className="sqlPayloadCategory">

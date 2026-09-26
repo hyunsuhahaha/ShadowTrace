@@ -210,7 +210,7 @@ export default function ToolsWorkspace() {
   return (
     <div className="lootPage">
       <header>
-        <div><h1>Tools</h1><p>Nmap이 놓치거나 잘못 분류한 서비스에서, 카탈로그 전체(111개)를 직접 찾아 실행합니다.</p></div>
+        <div><h1>Tools</h1></div>
         <div className="lootSelectors">
           <select aria-label="프로젝트 선택" value={projectId || ""}
             onChange={(e) => setProjectId(+e.target.value)}>

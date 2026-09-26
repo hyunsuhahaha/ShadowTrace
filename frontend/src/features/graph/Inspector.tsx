@@ -1833,7 +1833,7 @@ export function Inspector(props: {
                 </article>;
               })}
             </div> : <div style={S.resultMessage}>
-              아직 이 대상에서 캡처된 자격증명이 없습니다. 새 캡처는 자동으로 표시됩니다.
+              캡처된 자격증명 없음
             </div>}
         </section>
       )}
@@ -1844,7 +1844,7 @@ export function Inspector(props: {
           </div>
           {!sessionFtpTree ? (
             <div style={S.resultMessage}>
-              자동으로 조회하는 중… (익명 로그인이 안 되면 표시되지 않습니다)
+              조회 중…
             </div>
           ) : (
             <div style={S.terminalOutput}>

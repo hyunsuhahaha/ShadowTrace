@@ -774,7 +774,7 @@ export default function ScanCenter({ embedded = false, initialTargetId }: {
             ))}
             {!obs.isLoading && !visibleObs.length && (
               <div className="empty">
-                현재 필터와 일치하는 관찰 결과가 없습니다.
+                관찰 결과 없음
               </div>
             )}
           </div>

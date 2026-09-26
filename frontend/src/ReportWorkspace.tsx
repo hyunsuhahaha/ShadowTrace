@@ -265,7 +265,7 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
           {reports.isLoading && <LoadingState label="보고서 목록을 불러오는 중" />}
           {reports.error && <ErrorState message={String(reports.error)} />}
           {!reports.isLoading && !reports.data?.length &&
-            <EmptyState title="저장된 보고서가 없습니다" description="새 보고서를 저장하세요." />}
+            <EmptyState title="저장된 보고서가 없습니다" />}
           {reports.data?.map((r) => (
             <button
               className={r.id === reportId ? "active" : ""}

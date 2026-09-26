@@ -1,6 +1,6 @@
 # ShadowTrace
 
-*Passive pentest activity recorder.*
+![합성 데모 데이터로 촬영한 ShadowTrace Progress Graph](docs/assets/progress-graph.png)
 
 Kali Linux에서 승인된 단일 대상 침투 테스트의 활동, 발견, 수동 열거,
 증적과 보고서를 한곳에 기록하는 로컬 전용 워크스페이스입니다.

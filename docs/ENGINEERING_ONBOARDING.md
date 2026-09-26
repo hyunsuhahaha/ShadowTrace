@@ -19,6 +19,7 @@
 | `frontend/src` | React 화면, 상태 처리, API 호출과 Vitest 테스트 |
 | `scripts` | 설치, 개발, 빌드, 테스트와 프로덕션 실행 스크립트 |
 | `docs` | 정책, 아키텍처, 로드맵과 작업 기록 |
+| `docs/assets/progress-graph.png` | README 첫 화면의 격리 합성 데이터 Graph 캡처 |
 
 백엔드 패키지는 Python 3.11 이상을 요구하며 FastAPI, SQLAlchemy, Alembic, Pydantic,
 httpx 등을 사용한다. 프런트엔드는 React 18, TanStack Query, TypeScript, Vite와 Vitest를
@@ -772,7 +773,8 @@ technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stder
 자산 세부 대상, HTTP Exchange, SSH 원격 실행, Session, Nmap/FFUF/NetExec 등의 실행,
 해시 크래킹과 수동 CommandActivity에 각기 다른 glyph·분류·색·보조 텍스트를 부여한다.
 `GraphCanvas.tsx`는 이를 유형별 카드/육각형으로 그리고 카드 크기를 충돌 배치·클릭
-영역에도 반영한다. Outline/Inspector도 동일한 노드 식별자를 쓴다. 상세 패널은 노드
+영역에도 반영한다. 카드 내부에 유형·실행 상태·노드 이름을 표시하고 Credential은
+금색 키 카드로 구분한다. Outline/Inspector도 동일한 노드 식별자를 쓴다. 상세 패널은 노드
 선택 전에는 접고, 모바일에서는 캔버스 위에 닫을 수 있는 하단 패널로 연다.
 명령 시작으로 execution 노드가 추가될 때는 기존 Canvas 좌표를 700ms 유지하고 새 노드를
 부모 근처에서 먼저 안정화해, topology 갱신이 화면 전체를 밀어내는 들썩임을 방지한다.
@@ -955,8 +957,8 @@ technique 노드의 `meta.activity`에 투영되어 Canvas에서 녹색 레이�
 패킷으로 표시되며 종료 시 제거된다. 데스크톱 Responder는 PID가 살아 있는 동안 별도의
 빨간 `LISTENING` 레이더로 표시되고 2초 동기화로 창 종료를 반영한다. Responder는 대상
 Host의 자식이 아니라 `Kali Operator · <tun0 IP>` 아래 `runs`로 배치되고, 대상에는 방향성
-비구조 엣지 `captures-from`(`AUTH CAPTURE`)으로 연결된다. 프로젝트가 없으면 "start"
-합성 노드로 프로젝트 생성을 유도한다. 그래프 모드는 anchor 주위에
+비구조 엣지 `captures-from`(`AUTH CAPTURE`)으로 연결된다. 프로젝트가 없으면
+Graph 대신 `프로젝트 없음`과 생성 버튼만 표시한다. 그래프 모드는 anchor 주위에
 DISCOVERY→ENUMERATION→ACCESS→PRIVILEGE→EVIDENCE의
 옅은 단계 링을 그린다. service/execution/finding/credential 메타는 sync 때 최신 값으로
 갱신되어 노드 hover/선택 요약(제품·버전, 실행 시간·exit/error, 심각도·Evidence 수,

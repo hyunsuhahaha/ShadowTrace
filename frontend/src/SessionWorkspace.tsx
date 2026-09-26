@@ -191,7 +191,7 @@ export default function SessionWorkspace() {
             {tunnels.isLoading && <LoadingState label="터널 목록을 불러오는 중" />}
             {tunnels.error && <ErrorState message={String(tunnels.error)} />}
             {!tunnels.isLoading && !tunnels.data?.length &&
-              <EmptyState title="열린 터널이 없습니다" description="왼쪽에서 새 터널을 시작하세요." />}
+              <EmptyState title="열린 터널이 없습니다" />}
             {tunnels.data?.map((t) => (
               <article key={t.id}>
                 <div>
@@ -216,7 +216,7 @@ export default function SessionWorkspace() {
             {sessions.isLoading && <LoadingState label="세션 목록을 불러오는 중" />}
             {sessions.error && <ErrorState message={String(sessions.error)} />}
             {!sessions.isLoading && !sessions.data?.length &&
-              <EmptyState title="대화형 세션이 없습니다" description="Service Enumeration에서 대화형 명령을 실행하면 여기에 표시됩니다." />}
+              <EmptyState title="대화형 세션이 없습니다" />}
             {sessions.data?.map((s) => (
               <article key={s.id}>
                 <div>

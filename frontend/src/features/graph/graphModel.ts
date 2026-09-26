@@ -134,7 +134,7 @@ export function nodeIdentity(node: Pick<GraphNode, "type" | "source_ref" | "meta
   if (kind === "runbook_step") return {
     glyph: "☷", tag: `STEP ${String(meta.position || "?").padStart(2, "0")}`,
     detail: String(meta.stepStatus || "not_started").replaceAll("_", " ").toUpperCase(),
-    accent: "#75aaff", background: "#101c2e", width: 82, shape: "step",
+    accent: "#75aaff", background: "#101c2e", width: 148, shape: "step",
   };
   if (kind === "asset_subject") {
     const subject = String(meta.kind || "subject");
@@ -145,35 +145,35 @@ export function nodeIdentity(node: Pick<GraphNode, "type" | "source_ref" | "meta
     };
     const family = groups[subject.split("_")[0]] || ["⬡", "ASSET"];
     return { glyph: family[0], tag: family[1], detail: subject.replaceAll("_", " ").toUpperCase(),
-      accent: "#54d6cf", background: "#0e2728", width: 86, shape: "subject" };
+      accent: "#54d6cf", background: "#0e2728", width: 148, shape: "subject" };
   }
   if (kind === "http_exchange") return {
     glyph: "⇄", tag: `${String(meta.method || "HTTP").toUpperCase()} ${meta.statusCode || "—"}`,
-    detail: "HTTP RESPONSE", accent: "#64c9d4", background: "#102329", width: 86,
+    detail: "HTTP RESPONSE", accent: "#64c9d4", background: "#102329", width: 148,
     shape: "exchange",
   };
   if (kind === "remote_execution") return {
     glyph: "›_", tag: String(meta.connection || "REMOTE").toUpperCase(),
     detail: meta.exitCode == null ? String(meta.status || "").toUpperCase() : `EXIT ${meta.exitCode}`,
-    accent: "#a98bff", background: "#211a32", width: 90,
+    accent: "#a98bff", background: "#211a32", width: 148,
   };
   if (kind === "session") return {
     glyph: /responder/i.test(String(meta.tool || "")) ? "⌁" : "›_",
     tag: /responder/i.test(String(meta.tool || "")) ? "LISTENER" : "SHELL",
     detail: String(meta.activity?.status || meta.executionStatus || "SESSION").toUpperCase(),
-    accent: "#74c7ff", background: "#10263a", width: 88,
+    accent: "#74c7ff", background: "#10263a", width: 148,
   };
   if (kind === "autorecon_results") return {
     glyph: "⌖", tag: "AUTORECON", detail: "SAVED RESULTS",
-    accent: "#6be3a2", background: "#14281e", width: 94,
+    accent: "#6be3a2", background: "#14281e", width: 148,
   };
   if (kind === "hash_crack_job") return {
     glyph: "#", tag: "HASH CRACK", detail: String(meta.status || "SAVED JOB").toUpperCase(),
-    accent: "#c39aff", background: "#211a32", width: 94,
+    accent: "#c39aff", background: "#211a32", width: 148,
   };
   if (kind === "command_activity" || kind === "passive_activity") return {
     glyph: "›_", tag: "TERMINAL", detail: "OBSERVED",
-    accent: "#81b69b", background: "#14221c", width: 88,
+    accent: "#81b69b", background: "#14221c", width: 148,
   };
   if (kind === "execution") {
     const tool = String(meta.tool || "").toLowerCase();
@@ -188,7 +188,7 @@ export function nodeIdentity(node: Pick<GraphNode, "type" | "source_ref" | "meta
     const label = family?.[2] || tool.split(/[-_]/)[0]?.toUpperCase().slice(0, 10) || "COMMAND";
     return { glyph: family?.[1] || "›_", tag: label,
       detail: String(meta.executionStatus || "SAVED RUN").toUpperCase(),
-      accent: family?.[3] || "#8bc4a5", background: "#14221c", width: 88 };
+      accent: family?.[3] || "#8bc4a5", background: "#14221c", width: 148 };
   }
   return null;
 }

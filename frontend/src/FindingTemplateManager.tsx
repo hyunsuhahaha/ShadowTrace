@@ -67,13 +67,13 @@ export default function FindingTemplateManager() {
       </div>
       {templates.isLoading && <LoadingState label="템플릿 불러오는 중" />}
       {templates.error && <ErrorState message={String(templates.error)} />}
-      {!templates.isLoading && !templates.data?.length && <EmptyState title="저장된 템플릿이 없습니다" description="반복되는 Finding부터 라이브러리에 등록하세요." />}
+      {!templates.isLoading && !templates.data?.length && <EmptyState title="저장된 템플릿이 없습니다" />}
       {templates.data?.map((row) => <button key={row.id} className={selected === row.id ? "active" : ""} onClick={() => select(row)}>
         <strong>{row.title}</strong><small>{row.category || "분류 없음"} · {row.severity}</small><em>{row.use_count}회</em>
       </button>)}
     </aside>
     <section>
-      <header className="editorHeader"><div><span>{selected ? `TEMPLATE #${selected}` : "NEW TEMPLATE"}</span><h1>{draft.title || "새 Finding 템플릿"}</h1><p>적용 시점의 내용이 프로젝트 Finding에 스냅샷으로 저장됩니다.</p></div><div className="saveState"><Button variant="primary" disabled={saving} onClick={save}>{saving ? "저장 중…" : "템플릿 저장"}</Button></div></header>
+      <header className="editorHeader"><div><span>{selected ? `TEMPLATE #${selected}` : "NEW TEMPLATE"}</span><h1>{draft.title || "새 Finding 템플릿"}</h1></div><div className="saveState"><Button variant="primary" disabled={saving} onClick={save}>{saving ? "저장 중…" : "템플릿 저장"}</Button></div></header>
       <div className="templateForm">
         {message && <div className="inlineNotice" role="status">{message}</div>}
         <div className="fieldGrid">

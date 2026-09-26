@@ -367,10 +367,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
       <div className="runbookSectionTitle">
         <div><span>선택 범위에 맞춘 조사 절차</span><h2>{selectedService
           ?`${selectedService.port}/${selectedService.protocol} · ${selectedService.name} Runbooks`
-          :"Target 공통 Runbooks"}</h2>
-          <p>{libraryMode==="scoped"
-            ?"탐지된 서비스와 일치하는 절차만 표시합니다. 미식별 서비스는 포트 번호를 보조 근거로 사용합니다."
-            :"템플릿 관리용 전체 목록입니다. 현재 서비스 추천 목록이 아닙니다."}</p></div>
+          :"Target 공통 Runbooks"}</h2></div>
         <div className="libraryActions">
         <Button variant={libraryMode==="scoped"?"primary":"secondary"}
           onClick={()=>setLibraryMode("scoped")}>현재 범위 · {scopedTemplates.length}</Button>
@@ -462,8 +459,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
           </div>
         </Card>})}
         {libraryMode==="scoped"&&!visibleTemplates.length&&<EmptyState
-          title="이 범위에 맞는 Runbook이 없습니다"
-          description="서비스 식별 결과를 보강하거나 Generic TCP 식별 절차를 적용하세요. 전체 템플릿은 관리 보기에서만 확인할 수 있습니다."/>}
+          title="이 범위에 맞는 Runbook이 없습니다"/>}
       </div>
     </section>:<section className="runbookExecution">
       <aside>
@@ -478,8 +474,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
         </div>}
         {!scopedInstances.length?(availableRecommendations.length||apply.isPending
           ?<LoadingState label="서비스 Runbook 준비 중"/>
-          :<EmptyState title="일치하는 Runbook 없음"
-            description="서비스 식별 정보와 일치하는 조사 절차가 없습니다."/>):
+          :<EmptyState title="일치하는 Runbook 없음"/>):
           scopedInstances.map(item=><button className={selectedId===item.id?"active":""}
             key={item.id} onClick={()=>setSelectedId(item.id)}>
             <strong>{item.template_name}</strong>
@@ -489,8 +484,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
           </button>)}
       </aside>
       <main>
-        {!selectedId?<EmptyState title="Runbook을 선택하세요"
-          description="왼쪽 목록에서 실행할 Runbook을 선택하세요."/>:
+        {!selectedId?<EmptyState title="Runbook을 선택하세요"/>:
         detail.isLoading||detail.isFetching&&!activeDetail?<LoadingState label="Runbook 단계 불러오는 중"/>:
         detail.error?<section className="runbookDetailError"><ErrorState message="Runbook 단계를 불러오지 못했습니다."/>
           <Button onClick={()=>void detail.refetch()}>다시 불러오기</Button></section>:

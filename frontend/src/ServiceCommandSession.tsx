@@ -86,7 +86,7 @@ export default function ServiceCommandSession({commands, serviceKey, targetIp,
   }, [edited, renderedBase]);
 
   if (!selected) return <section className="serviceCommandSession is-empty">
-    <p>$ no command profile matched this service</p>
+    <p>$ no command profile</p>
   </section>;
 
   const required = [...new Set(Array.from(renderedBase.matchAll(tokenPattern), (match) => match[1]))];

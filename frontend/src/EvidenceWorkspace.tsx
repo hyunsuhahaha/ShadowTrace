@@ -228,7 +228,7 @@ export default function EvidenceWorkspace({ initialTargetId, initialEvidenceId }
           {evidence.isLoading && <LoadingState label="Evidence를 불러오는 중" />}
           {evidence.error && <ErrorState message={String(evidence.error)} />}
           {!evidence.isLoading && !evidence.data?.length &&
-            <EmptyState title="저장된 Evidence가 없습니다" description="파일을 드래그하거나 위에서 업로드하세요." />}
+            <EmptyState title="저장된 Evidence가 없습니다" />}
           {evidence.data?.map((item) => (
             <article
               key={item.id}
