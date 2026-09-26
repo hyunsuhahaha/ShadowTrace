@@ -13,7 +13,7 @@ from app.models import (
 from app.modules.graph import router as graph_api
 from app.modules.passive_activity import router as passive_api
 from app.modules.passive_activity import raw_events, service as passive_service
-from app.modules.passive_activity.reconstruction import reconstruct
+from app.modules.passive_activity.reconstruction import _losses, _processes, reconstruct
 
 
 BASE = datetime(2026, 8, 27, 12, tzinfo=timezone.utc)
@@ -393,6 +393,21 @@ def test_late_start_ticks_merge_the_same_pid_incarnation():
     assert rows[0].start_ticks == "6020"
     assert rows[0].confidence == 100
     assert_evidence_without_graph_claim(db)
+
+
+def test_many_late_start_ticks_preserve_earlier_event_attribution():
+    db = database(); events = Events(db)
+    for pid in range(1000, 1200):
+        events.add("process_fork", pid, payload={"sid": pid, "tty_nr": 1})
+        events.process(pid, ["/usr/bin/true"], ppid=1, sid=pid, pgid=pid,
+                       start=str(pid * 10), exit=False)
+    db.commit()
+
+    raw = db.query(RawActivityEvent).order_by(RawActivityEvent.id).all()
+    processes, event_process = _processes(raw, _losses(raw))
+    assert len(processes) == 200
+    for event in raw:
+        assert event_process[event.id] == f"boot-a:{event.pid}:{event.pid * 10}"
 
 
 def test_late_exec_replaces_stale_input_only_candidate():

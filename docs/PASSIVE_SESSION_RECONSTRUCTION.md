@@ -140,6 +140,11 @@ excluding two MongoDB test modules that could not collect without `pymongo`.
 - A local SSH process and PTY plaintext support a remote-session candidate only.
   Transport ciphertext is untouched; remote background work and detached remote
   tmux remain invisible.
+- A real interactive OpenSSH client on the Kali VM opened additional PTY FDs
+  (4–6) and switched the terminal out of ECHO mode. The current fd-0-only,
+  ECHO-gated input collector therefore recorded the SSH process and a
+  RemoteSessionCandidate, but no `remote-input` or remote command. This is an
+  intentional privacy boundary, not evidence that no remote command ran.
 - Raw output may contain secrets and is protected only by local filesystem
   permissions. Encryption and retention policy remain future work.
 
@@ -205,3 +210,26 @@ the production-session regression test now checks for both Evidence rows.
 The Kali backend run passed 621 tests with the two MongoDB modules excluded
 because `pymongo` is not installed there; the final Nmap-targeted rerun passed
 30 tests after tightening relative-path handling.
+
+## Interactive SSH and high-volume reconstruction follow-up
+
+In a real local-to-local interactive SSH session, `printf` returned the
+expected marker, but the passive database contained only the local SSH client
+command and RemoteSessionCandidate. The SSH client had no `stdio_read` event;
+its fd 0 and fds 4–6 pointed to `/dev/pts/0`. OpenSSH uses a terminal mode
+without local ECHO after login, so simply adding nonzero read FDs to the
+collector would risk capturing password/secret input. No remote-execution
+claim or plaintext collection was added. Actual remote command reconstruction
+requires a separate, explicitly consented remote-side observation mechanism.
+
+The same live run exposed a separate availability defect: at 183,442 raw
+events the automatic sync could take over 20 seconds and briefly starve the
+API. `_processes()` remapped every prior event whenever a short-lived PID
+first acquired `/proc` start ticks, causing repeated historical scans. It now
+records key aliases and resolves them once after the event pass. On the same
+read-only 183,442-event Kali corpus, `_processes()` fell from 14.366 to 8.681
+seconds (27,196 processes; same event attribution count). This removes the
+quadratic remap, but full-history loading and sorting still scale with corpus
+size; long-term incremental reconstruction remains necessary. The updated
+Kali backend suite passed 622 tests, excluding two MongoDB modules unavailable
+without `pymongo`.

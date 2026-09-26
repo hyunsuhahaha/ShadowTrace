@@ -122,6 +122,14 @@
 
 Passive reconstruction의 다음 필수 단계:
 
+- 실제 대화형 SSH self-loopback 입력은 OpenSSH의 별도 PTY fd/ECHO-off 때문에
+  `remote-input`으로 수집되지 않음을 확인했다. 로컬 SSH client와
+  RemoteSessionCandidate만 남는다. 원격 명령 성공을 추측하거나 ECHO-off 입력을
+  수집하지 않는다. 동시에 183,442 raw event corpus에서 sync가 20초 이상 걸리는
+  병목을 발견해 late start-tick remap의 과거 이벤트 반복 순회를 alias 일괄 해소로
+  바꿨다. `_processes()` 동일 corpus 14.366→8.681초, 19개 reconstruction 테스트와
+  Kali backend 622개 테스트 통과(MongoDB 2개 모듈 제외). 여전히 전체 raw corpus
+  로드/정렬은 남은 확장성 과제다.
 - 실제 펜테스팅 흐름 감사에서 Nmap `-oX -`의 XML stdout이 raw로만 남고 서비스로
   승격되지 않는 문제를 Kali loopback에서 재현했다. `-oN`은 stdout 포트 표가 있어
   같은 증상이 없었다. XML stdout과 안전하게 검증된 `-oA`/`-oX` XML 파일을 기존

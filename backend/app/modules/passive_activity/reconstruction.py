@@ -65,6 +65,7 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
     processes: dict[str, dict] = {}
     current: dict[tuple[str, int], str] = {}
     event_process: dict[int, str] = {}
+    key_aliases: dict[str, str] = {}
     for event in sorted(events, key=lambda item: (item.boot_id, item.monotonic_ns, item.id)):
         if event.pid is None:
             continue
@@ -80,9 +81,10 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
             process["process_key"] = key
             process["start_ticks"] = start_ticks
             processes[key] = process
-            for event_id, process_key in list(event_process.items()):
-                if process_key == old_key:
-                    event_process[event_id] = key
+            # Fork events often precede the first /proc start-tick sample.
+            # Rewriting every earlier event here makes a busy desktop's
+            # reconstruction quadratic in the number of short-lived jobs.
+            key_aliases[old_key] = key
         current[slot] = key
         event_process[event.id] = key
         process = processes.setdefault(key, {
@@ -158,6 +160,10 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
             process["ended_at"] = event.recorded_at
             process["exit_code"] = payload.get("exit_code")
     by_pid = {(item["boot_id"], item["pid"]): item for item in processes.values()}
+    for event_id, process_key in event_process.items():
+        while process_key in key_aliases:
+            process_key = key_aliases[process_key]
+        event_process[event_id] = process_key
     for process in processes.values():
         if _terminal_identity(process) is None and process.get("ppid") is not None:
             parent = by_pid.get((process["boot_id"], process["ppid"]))

@@ -308,6 +308,12 @@ payload에는 terminal output 등 민감정보가 포함될 수 있으므로 loc
 자동 sync는 새 raw event가 없으면 재구성을 건너뛰고, 있으면 영향받은 터미널 세션과
 프로세스의 파생 행만 다시 저장한다(terminal identity 변경 또는 loss 이벤트는 전체
 재구성). observer는 서버 PID를 제외하되 서버가 실행한 자식 명령은 계속 수집한다.
+짧은 프로세스의 start-tick이 늦게 확인될 때 원시 이벤트→프로세스 키는 alias를
+한 번에 해소한다. 이전처럼 매번 과거 이벤트 전체를 재탐색하지 않는다. 다만 현재
+sync는 여전히 전체 raw corpus를 읽고 정렬하므로 대용량에서는 지연될 수 있다.
+실제 OpenSSH 대화형 입력은 별도 PTY fd와 ECHO-off 상태 때문에 `remote-input`으로
+보장되지 않는다. SSH client와 RemoteSessionCandidate만 확인되며 원격 명령 실행은
+입증하지 않는다.
 배치가 있을 때만 최대 30초마다 sync하며, 수동 `/reconstruct`는 항상 전체 재구성한다.
 `OSCP_WORKSPACE_PASSIVE_SYNC_URL`은 별도 검증 포트로 보낼 때만 지정한다.
 loopback/localhost나 대상 근거 없는 명령은 단일 프로젝트·loopback Target이 있더라도
