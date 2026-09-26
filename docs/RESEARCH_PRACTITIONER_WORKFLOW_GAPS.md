@@ -32,3 +32,45 @@
 
 다음 우선순위는 A(범위·허용 조건)와 C(선택한 공격 경로의 보고서 고정)이다. 둘 다
 실제 평가의 맥락과 증거를 잘못 전달할 위험이 있어 별도 도메인 설계가 필요하다.
+
+## 2026-09-26 확장 조사: 실제 흐름의 분기와 제품 재현
+
+이전 점검은 보고서 출력에 치우쳤다. 이번에는 공개된 현업 평가 보고서와 방법론의
+**작업 순서, 갈림길, 실패·미발견 결과, 후속 조치**를 별도로 비교했다. 단일 문서가
+가능한 모든 평가를 열거하지는 않으므로 아래는 제품이 실제 지원하는 범위와 남은
+공백의 목록이다. 시험 데이터는 사용하지 않았다.
+
+### 조사 근거
+
+| 자료 | 확인한 흐름 |
+|---|---|
+| [PTES의 7단계](https://www.pentest-standard.org/index.php/Main_Page), [Pre-engagement](https://www.pentest-standard.org/index.php/Pre-engagement), [Vulnerability Analysis](https://www.pentest-standard.org/index.php/Vulnerability_Analysis) | 범위·허용 조건을 합의하고 정보 수집→위협 가설→검증→영향→보고를 진행한다. 발견한 자산은 범위 재확인이 필요하며 공격 트리를 수행 중 갱신한다. |
+| [NIST SP 800-115](https://csrc.nist.gov/pubs/sp/800/115/final) | 평가 계획, 기술 선택, 실행, 결과 분석과 완화 방안의 반복 가능한 기록이 중요하다. |
+| [OWASP WSTG v4.2](https://wstg.owasp.org/v4.2/4-Web_Application_Security_Testing/00-Introduction_and_Objectives/) | 기능·입력점 파악 뒤 정보·구성·계정·인증·권한·세션·입력·오류·암호화·업무 로직·클라이언트·API의 12개 범주를 검사한다. |
+| [Cure53 Project 11 웹·API 평가](https://cure53.de/pentest-report_project-11-web.pdf), [Cure53 ODK 모바일·서버 평가](https://docs.getodk.org/_downloads/f43f464fe506c2dfea9dad21fac5286b/ODK-Pentest-2024.pdf) | 같은 조직의 평가도 웹 UI·REST API·인프라 또는 모바일 앱·백엔드·위협 모델처럼 작업 패키지가 달라진다. 인증·권한·주입·서버 요청 경계를 실제 기능에 맞춰 검증한다. |
+| [CISA 공개 레드팀 평가](https://www.cisa.gov/sites/default/files/2024-11/aa24-326a-enhancing-cyber-resilience-insights-from-cisa-red-team-assessment_0.pdf) | 실패한 초기 접근도 시간축에 남기고, 확인된 접근 이후 권한·자격증명·측면 이동·방어 반응을 근거와 함께 연결한다. |
+| [MITRE ATT&CK Enterprise 전술](https://attack.mitre.org/tactics/) | 접근 후 조사·권한·자격증명·측면 이동·수집·영향은 서로 다른 목적이며 성공 추정과 실제 결과를 분리해야 한다. |
+
+### 흐름별 구현 대조
+
+| 작업 상황 / 갈림길 | 이번 제품 재현 | 남은 공백 |
+|---|---|---|
+| 범위 승인 전·후, 범위 밖 자산 발견, 영향 검증 허용 여부 | `assessment-lifecycle` Target Runbook 9단계. 승인, 검증 결과에 따른 영향 검증/보고 분기, 재검증·정리 노드 | 승인자의 신원·기간·대상 목록을 강제하는 Project 수준 RoE 구조 없음 |
+| 웹 기능·역할·입력점 → 병렬 검사 → 모든 범주 판정 | `web-application-review` HTTP Runbook 14단계. WSTG 12범주 병렬 분기와 `join: all` 근거 검토 | 범주마다 실제 URL·계정·객체를 구조화한 coverage table 없음. 모바일 앱 고유 검사는 미지원 |
+| 확인된 접근 → 권한·Credential·인접 시스템·업무 영향 → 경로 검토·정리 | `post-access-review` Target Runbook 7단계. 후속 검증 승인, 4가지 병렬 검토와 근거 검토 | 접근/자격증명/터널이 서로 다른 Target Runbook 단계로 자동 연결되는 교차 Target workflow edge 없음 |
+| 부정 결과·차단·보류·오류·승인 거부 | Runbook `outcome`/`status`/`activation`으로 기록. Graph에 단계 노드와 선언된 전이를 표시하고 `decision_trace`로 실제 선택된 전이를 청록색, 제외된 전이를 점선으로 구별 | 분기 판단 시각과 근거를 Graph 엣지에서 직접 열람하는 기능 없음 |
+| 작업 결과와 고객 보고 | Runbook 단계별 판정, Evidence·Execution 연결, 선택형 보고서 coverage | 고객과의 범위 변경·질의·중단 결정을 독립 기록으로 묶는 협업 로그 없음 |
+
+이 세 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,
+자동 익스플로잇·대규모 취약점 스캔·포이즈닝 기능을 추가하지 않는다. Runbook
+단계 완료는 작업 완료일 뿐 침해 성공의 증명이 아니므로 Graph의 공격 성공 경로로
+집계하지 않는다. 사용자별 실제 평가 환경에 맞춰 템플릿을 복제·수정할 수 있다.
+
+### 다음 구현 우선순위
+
+1. Project 수준 RoE: 승인 대상·제외 대상·기간·허용 행위·승인 이력의 구조화와 실행 전 확인.
+2. Graph에서 선언된 후보 전이와 실제 선택된 전이를 구별하고, 다른 Target의 단계와
+   확인된 접근 계보를 증거 기반으로 연결.
+3. 웹 기능·계정·객체별 coverage, 모바일·클라우드·무선·소스 리뷰 등의 별도 자산/절차
+   유형. IP 기반 Target 한 종류에 억지로 담지 않는다.
+4. 확인된 공격 경로의 특정 스냅샷과 연결 Evidence를 보고서에 고정.

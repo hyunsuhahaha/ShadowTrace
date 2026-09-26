@@ -705,6 +705,15 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             return "in-progress"
         return "untried"
 
+    def activated_sources(step: RunbookStepInstance) -> set[str]:
+        try:
+            trace = json.loads(step.decision_trace or "[]")
+        except (TypeError, ValueError):
+            return set()
+        return {source for item in trace if isinstance(item, dict)
+                and item.get("kind") == "activated_by"
+                for source in item.get("sources", [])}
+
     for instance in db.scalars(select(RunbookInstance).where(
             RunbookInstance.project_id == project_id).order_by(RunbookInstance.id)):
         parent = parent_of(instance.service_id, instance.target_id)
@@ -756,9 +765,14 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                         incoming.add(target_step.id)
                         destination = index.get(("runbook_step", target_step.id))
                         if source and destination:
+                            source_key = step.node_key or f"step-{step.position}"
                             ensure_edge(source, destination, "precedes",
                                         label=str(transition.get("label") or ""),
-                                        status="untried")
+                                        status="untried", meta=json.dumps({
+                                            "workflow": "runbook",
+                                            "selected": source_key in activated_sources(target_step),
+                                            "excluded": target_step.activation == "excluded",
+                                        }))
             roots = [step for step in steps if step.id not in incoming]
         else:
             roots = steps[:1]
@@ -766,7 +780,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 source = index.get(("runbook_step", first.id))
                 destination = index.get(("runbook_step", second.id))
                 if source and destination:
-                    ensure_edge(source, destination, "precedes", status="untried")
+                    ensure_edge(source, destination, "precedes", status="untried",
+                                meta=json.dumps({"workflow": "runbook",
+                                                 "selected": False, "excluded": False}))
         for step in roots:
             node = index.get(("runbook_step", step.id))
             if node:

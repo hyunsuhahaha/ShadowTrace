@@ -335,6 +335,10 @@ export function GraphCanvas(props: {
         const edgeSignal = edgeKind ? signalHex(edgeKind) : signal;
         const hot = !!hover && (e.source === hover.id || e.target === hover.id);
         const struct = structural.has(e.relation);
+        let workflow: {selected?: boolean; excluded?: boolean} = {};
+        if (e.relation === "precedes" && edge.meta) {
+          try { workflow = JSON.parse(edge.meta); } catch { /* older graph edge */ }
+        }
         const credentialUse = e.relation === "reused-credential";
         const lateral = e.relation === "pivoted-to" && edge.status === "succeeded";
         const lineageColor = credentialUse ? "#e3b341" : lateral ? "#55d6e8" : "";
@@ -343,7 +347,10 @@ export function GraphCanvas(props: {
         // fact, same weight as pivoted-to (already structural/solid) --
         // it shouldn't read as the same tentative dashed maybe-relation
         // every other non-structural edge gets.
-        if (struct || credentialUse) { ctx.lineTo(b.x, b.y); ctx.setLineDash([]); }
+        if (struct || credentialUse) {
+          ctx.lineTo(b.x, b.y);
+          ctx.setLineDash(workflow.excluded ? [3, 6] : []);
+        }
         else {
           ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 34, b.x, b.y);
           ctx.setLineDash([4, 5]);
@@ -358,12 +365,12 @@ export function GraphCanvas(props: {
           ctx.shadowColor = "#f5c518"; ctx.shadowBlur = 6;
           ctx.stroke(); ctx.restore();
         }
-        const strokeColor = lineageColor || (edgeKind
+        const strokeColor = workflow.selected ? "#55d6e8" : lineageColor || (edgeKind
           ? signalRgba(edgeKind, edgeKind === "scan" ? .42 : .47)
           : hot ? color(edge.status) : struct ? "#33333f" : "#3a2f45");
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = lineageColor ? 1.8 : active ? 1.35 : hot ? 2 : 1;
-        const edgeAlpha = hover && !hot ? 0.25 : 0.9;
+        const edgeAlpha = hover && !hot ? 0.25 : workflow.excluded ? 0.35 : 0.9;
         ctx.globalAlpha = edgeAlpha; ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
         // Structural edges (discovered/enumerated/attempted/...) previously had

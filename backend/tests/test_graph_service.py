@@ -145,7 +145,9 @@ def test_runbook_workflow_projects_steps_and_branch_edges():
                             transitions=json.dumps([{"target": "next", "label": "미발견"}])),
         RunbookStepInstance(instance_id=instance.id, source_step_id=2,
                             position=2, title="다음 확인", node_key="next",
-                            status="not_started", activation="ready"),
+                            status="not_started", activation="ready",
+                            decision_trace=json.dumps([{"kind": "activated_by",
+                                                        "sources": ["start"]}])),
     ]
     db.add_all(steps)
     db.flush()
@@ -159,6 +161,10 @@ def test_runbook_workflow_projects_steps_and_branch_edges():
     assert db.query(GraphEdge).filter_by(source=nodes[steps[0].id].id,
                                          target=nodes[steps[1].id].id,
                                          relation="precedes").count() == 1
+    edge = db.query(GraphEdge).filter_by(source=nodes[steps[0].id].id,
+                                         target=nodes[steps[1].id].id,
+                                         relation="precedes").one()
+    assert json.loads(edge.meta)["selected"] is True
     host = db.query(GraphNode).filter_by(type="host").one()
     assert db.query(GraphEdge).filter_by(source=host.id,
                                          target=nodes[steps[0].id].id,

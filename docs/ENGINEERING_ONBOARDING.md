@@ -425,6 +425,10 @@ transition 결과 계산은 `engine.recompute`가 수행한다
 ([`backend/app/modules/runbooks/workflow_router.py`](../backend/app/modules/runbooks/workflow_router.py),
 [`backend/app/modules/runbooks/execution_router.py`](../backend/app/modules/runbooks/execution_router.py),
 [`backend/app/modules/runbooks/engine.py`](../backend/app/modules/runbooks/engine.py)).
+내장 카탈로그(`backend/templates/runbooks.yaml`)에는 서비스 기본 절차와 함께
+`assessment-lifecycle`(PTES/NIST 평가 단계), `web-application-review`(WSTG 12개
+범주), `post-access-review`(접근 후 경로·영향)가 있다. 세 절차 모두 수동 판정이며
+승인 단계와 분기/병렬 join을 이용한다.
 
 ### Post-Exploitation
 
@@ -969,6 +973,9 @@ result/notes 원문은 넣지 않는다. Inspector는 선택 시 Runbook API에�
 `#runbooks/{projectId}/{targetId}/{serviceId 또는 0}/{instanceId}/{stepId}`로 이동한다.
 `Root.tsx`가 이 딥링크를 첫 브라우저 세션에도 유지하며 `RunbookWorkspace.tsx`가 해당
 instance와 단계를 선택·스크롤한다. 새 route page는 추가되지 않았다.
+`precedes` 엣지 메타의 `selected`/`excluded`는 Runbook `decision_trace`에서 계산한다.
+선택된 전이는 GraphCanvas에서 청록색, 제외된 전이는 흐린 점선으로 그린다. 엣지의
+`status`는 공격 성공 경로와 혼동되지 않도록 `untried`로 유지한다.
 완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
 host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
 `pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라

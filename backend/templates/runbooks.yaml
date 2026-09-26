@@ -537,3 +537,221 @@ runbooks:
         node_key: evidence
         node_type: evidence
         expected_observations: [원문 출력, UUID와 endpoint 표, 권한 판정, 취약점 후보 연결]
+
+  # PTES/NIST engagement flow. These are operator decisions, never automatic actions.
+  - key: assessment-lifecycle
+    revision: 1
+    name: 승인된 평가 흐름
+    description: PTES·NIST 800-115의 범위 합의부터 재검증까지 Target별 결정과 근거를 기록합니다.
+    tags: [target, methodology, engagement]
+    service_names: []
+    ports: []
+    steps:
+      - title: 범위와 허용 조건 확정
+        node_key: scope
+        node_type: approval
+        approval: {required: true, reason: "승인된 대상·기간·제외 범위·허용 강도 확인"}
+        transitions:
+          - {when: {approval_status: approved}, target: discovery, label: 범위 승인}
+          - {default: true, target: closure, label: 범위 미확정}
+        expected_observations: [승인된 대상, 제외 자산, 테스트 기간, 허용된 기법과 중단 연락처]
+        guidance: {stage_id: scope, phase: pre_engagement, question: "누가 어떤 대상과 행위를 언제 승인했는가?", purpose: "범위 밖 작업을 차단하고 판단 근거를 남깁니다.", manual_checks: ["승인자·기간·IP/도메인·제외 대상 기록", "작업 강도와 중단 조건 확인"], safety: approval}
+      - title: 정찰과 서비스 표면 정리
+        node_key: discovery
+        node_type: manual_check
+        transitions:
+          - {default: true, target: hypotheses, label: 관찰 정리}
+        expected_observations: [확인된 호스트와 서비스, 미확인 단서, 범위 밖 후보]
+        guidance: {stage_id: discovery, phase: intelligence, question: "실제로 확인한 표면과 아직 추정인 것은 무엇인가?", purpose: "관찰과 추정을 분리합니다.", manual_checks: ["수동 탐색과 스캔 결과를 출처별로 기록", "새로 발견된 자산은 승인 범위를 다시 확인"], safety: low}
+      - title: 위협 가설과 우선순위
+        node_key: hypotheses
+        node_type: manual_check
+        transitions:
+          - {default: true, target: validation, label: 검증 후보 선정}
+        expected_observations: [중요 자산, 예상 신뢰 경계, 후보별 근거와 우선순위]
+        guidance: {stage_id: hypotheses, phase: threat_modeling, question: "어떤 경로가 평가 목표에 영향을 줄 수 있는가?", purpose: "검증 순서를 명시적으로 결정합니다.", manual_checks: ["업무 영향과 접근 조건을 후보마다 기록"], safety: passive}
+      - title: 후보를 수동 검증
+        node_key: validation
+        node_type: manual_check
+        transitions:
+          - {when: {outcome: confirmed}, target: impact-approval, label: 영향 검증 후보 확인}
+          - {default: true, target: reporting, label: 미발견·보류·실패도 기록}
+        expected_observations: [재현 가능한 요청 또는 명령, 긍정·부정 결과, 오류와 불확실성]
+        guidance: {stage_id: validation, phase: vulnerability_analysis, question: "관찰된 현상이 실제 보안 경계를 넘는가?", purpose: "자동 결과를 그대로 취약점으로 단정하지 않습니다.", manual_checks: ["정상 동작과 오탐 비교", "재현 조건과 원문 증거 연결"], safety: low}
+      - title: 영향 검증 승인
+        node_key: impact-approval
+        node_type: approval
+        approval: {required: true, reason: "영향 검증·접근 확대 전 허용 범위를 다시 확인"}
+        transitions:
+          - {when: {approval_status: approved}, target: impact, label: 승인된 영향 검증}
+          - {default: true, target: reporting, label: 영향 검증 생략}
+        expected_observations: [최소 영향 검증 범위, 중단 조건, 승인 기록]
+      - title: 최소 영향과 경로 검증
+        node_key: impact
+        node_type: manual_check
+        transitions:
+          - {default: true, target: reporting, label: 영향 정리}
+        expected_observations: [접근 수준, 영향받는 자산, 연결된 Evidence와 경로]
+        guidance: {stage_id: impact, phase: exploitation, question: "승인 범위 안에서 확인된 영향은 무엇인가?", purpose: "가능성과 실제 달성한 영향을 분리합니다.", manual_checks: ["필요한 최소 작업만 수행", "원상 복구할 변경을 기록"], safety: approval}
+      - title: 보고와 개선 권고
+        node_key: reporting
+        node_type: evidence
+        transitions:
+          - {default: true, target: retest, label: 전달 후 재검증}
+        expected_observations: [검사 범위, 확인된 문제와 미발견 검사, 재현 근거, 권고]
+      - title: 수정 후 재검증
+        node_key: retest
+        node_type: manual_check
+        transitions:
+          - {default: true, target: closure, label: 종료 기록}
+        expected_observations: [수정 버전, 동일 조건 재시험, 잔여 위험]
+      - title: 종료와 정리
+        node_key: closure
+        node_type: evidence
+        expected_observations: [범위 변경·중단 사유, 임시 계정과 파일 정리, 인계 기록]
+
+  # OWASP WSTG v4.2 active testing categories, all reachable after mapping.
+  - key: web-application-review
+    revision: 1
+    name: 웹 애플리케이션 심층 점검
+    description: OWASP WSTG v4.2의 12개 검사 범주를 기능 지도에서 병렬 분기하고 모든 범주 판정 후 근거를 검토합니다.
+    tags: [http, web, wstg, manual]
+    service_names: [http, https, http-proxy, ssl/http]
+    ports: [80, 443, 8080, 8443]
+    steps:
+      - title: 기능·입력·계정 지도 작성
+        node_key: map
+        node_type: manual_check
+        transitions:
+          - {default: true, targets: [info, config, identity, authn, authz, session, input, error, crypto, logic, client, api], label: 범주별 검사}
+        expected_observations: [경로와 파라미터, 역할별 계정, API 목록, 테스트 제외 기능]
+        guidance: {stage_id: map, phase: information_gathering, question: "어떤 기능과 신뢰 경계를 검사할 것인가?", purpose: "범주별 검사의 실제 대상을 확정합니다.", manual_checks: ["역할별 기능 지도", "GET·POST·API 입력점", "로그인 전후 경계"], safety: low}
+      - title: 정보 수집
+        node_key: info
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [노출된 경로와 파일, 프레임워크 단서, 메타데이터]
+        guidance: {stage_id: info, phase: wstg_info, question: "공개 정보가 공격 표면을 어떻게 바꾸는가?", purpose: "WSTG Information Gathering", safety: low}
+      - title: 구성과 배포 관리
+        node_key: config
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [허용 메서드, 관리 인터페이스, 백업·디버그 노출, 보안 헤더]
+        guidance: {stage_id: config, phase: wstg_config, question: "배포 설정에서 의도치 않은 접근이 가능한가?", purpose: "WSTG Configuration and Deployment Management", safety: low}
+      - title: 사용자·역할 식별 관리
+        node_key: identity
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [가입·초대·계정 수명주기, 역할 할당과 변경]
+        guidance: {stage_id: identity, phase: wstg_identity, question: "계정 생성과 역할 변경의 경계는 무엇인가?", purpose: "WSTG Identity Management", safety: low}
+      - title: 인증 검증
+        node_key: authn
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [로그인·복구·MFA·잠금 정책, 계정별 결과]
+        guidance: {stage_id: authn, phase: wstg_authentication, question: "인증 상태와 복구 경로를 우회할 수 있는가?", purpose: "WSTG Authentication", safety: approval}
+      - title: 권한과 객체 접근
+        node_key: authz
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [수평·수직 권한 차이, 객체 소유권, 직접 URL 접근]
+        guidance: {stage_id: authz, phase: wstg_authorization, question: "역할과 객체 소유권을 서버가 강제하는가?", purpose: "WSTG Authorization", manual_checks: ["두 계정으로 같은 객체의 허용·거부 결과 비교"], safety: low}
+      - title: 세션 관리
+        node_key: session
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [쿠키 범위, 회전·만료·로그아웃, 동시 세션]
+        guidance: {stage_id: session, phase: wstg_session, question: "세션 상태가 전환과 종료 시 올바르게 바뀌는가?", purpose: "WSTG Session Management", safety: low}
+      - title: 입력 검증
+        node_key: input
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [입력점별 처리 차이, 업로드 경계, 서버 응답]
+        guidance: {stage_id: input, phase: wstg_input, question: "입력값이 예상치 못한 해석 경로로 전달되는가?", purpose: "WSTG Input Validation", safety: low}
+      - title: 오류 처리
+        node_key: error
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [오류 메시지, 예외 처리, 내부 정보 노출]
+        guidance: {stage_id: error, phase: wstg_error, question: "실패 시 내부 정보나 불일치가 노출되는가?", purpose: "WSTG Error Handling", safety: low}
+      - title: 암호화와 전송 보호
+        node_key: crypto
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [TLS 적용 범위, 민감 데이터 보호, 키·토큰 관리 단서]
+        guidance: {stage_id: crypto, phase: wstg_cryptography, question: "민감 데이터의 전송·저장 보호가 충분한가?", purpose: "WSTG Cryptography", safety: low}
+      - title: 업무 로직과 상태 전이
+        node_key: logic
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [가격·수량·승인 순서, 중복 요청, 한도와 상태 경계]
+        guidance: {stage_id: logic, phase: wstg_business_logic, question: "정상 기능을 비정상 순서로 사용할 때 통제가 유지되는가?", purpose: "WSTG Business Logic", safety: low}
+      - title: 클라이언트 측 검증
+        node_key: client
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [DOM 처리, 브라우저 저장소, 교차 출처 정책]
+        guidance: {stage_id: client, phase: wstg_client_side, question: "브라우저 코드와 서버의 신뢰 경계가 일치하는가?", purpose: "WSTG Client-side Testing", safety: low}
+      - title: API 검증
+        node_key: api
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [API 인벤토리, 객체·속성 권한, 속도 제한, 스키마 차이]
+        guidance: {stage_id: api, phase: wstg_api, question: "API가 UI와 같은 인증·권한·입력 경계를 지키는가?", purpose: "WSTG API Testing", safety: low}
+      - title: 범주별 결과와 증거 검토
+        node_key: review
+        node_type: evidence
+        guidance: {stage_id: review, phase: reporting, join: all, question: "각 범주에 검사 결과 또는 명시적 제외 사유가 있는가?", purpose: "미발견 검사도 근거와 함께 남깁니다."}
+        expected_observations: [12개 범주 판정, 확인된 Finding, 미검사 사유, 원문 요청·응답 Evidence]
+
+  # CISA's published red-team sequence is represented as a bounded manual review.
+  - key: post-access-review
+    revision: 1
+    name: 접근 후 경로·영향 검토
+    description: 확인된 접근에서 권한·자격증명·이동·업무 영향·정리까지 근거를 잇습니다. 실행은 자동화하지 않습니다.
+    tags: [target, post_access, lineage]
+    service_names: []
+    ports: []
+    steps:
+      - title: 접근 사실과 범위 확인
+        node_key: access
+        node_type: approval
+        approval: {required: true, reason: "획득한 접근과 후속 조사 허용 범위 확인"}
+        transitions:
+          - {when: {approval_status: approved}, targets: [privilege, credentials, discovery, impact], label: 승인된 후속 검증}
+          - {default: true, target: cleanup, label: 후속 검증 생략}
+        expected_observations: [진입점, 사용자·호스트 권한, 승인된 후속 대상]
+      - title: 로컬 권한 경계
+        node_key: privilege
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [현재 권한, 상승 가능성의 근거, 실제 확인 여부]
+        guidance: {stage_id: privilege, phase: privilege_escalation, question: "현재 권한과 더 높은 권한 사이의 검증된 경로는 무엇인가?", purpose: "가능성과 성공을 구분합니다.", safety: approval}
+      - title: 자격증명 출처와 사용 범위
+        node_key: credentials
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [비밀값을 제외한 출처, 계정 권한, 검증된 재사용 대상]
+        guidance: {stage_id: credentials, phase: credential_access, question: "어떤 자격증명이 어디서 왔고 어디에 실제 사용됐는가?", purpose: "추정 재사용과 성공한 인증을 구분합니다.", safety: approval}
+      - title: 인접 시스템과 신뢰 관계
+        node_key: discovery
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [인접 호스트, 공유, 도메인·신뢰 관계, 범위 재확인]
+        guidance: {stage_id: discovery, phase: lateral_movement, question: "다음 경로가 실제 범위 안에 있으며 어떤 근거가 있는가?", purpose: "발견과 이동 성공을 분리합니다.", safety: approval}
+      - title: 업무 영향과 방어 관찰
+        node_key: impact
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [접근 가능한 중요 데이터의 최소 증명, 탐지·대응 시각, 중단 조건]
+        guidance: {stage_id: impact, phase: business_impact, question: "고객에게 실제로 중요한 영향과 방어 반응은 무엇인가?", purpose: "과도한 데이터 수집 없이 영향을 증명합니다.", safety: approval}
+      - title: 경로와 근거 대조
+        node_key: review
+        node_type: evidence
+        transitions: [{default: true, target: cleanup}]
+        guidance: {stage_id: review, phase: reporting, join: all, question: "각 경로의 출처·실행·결과를 증거로 연결했는가?", purpose: "공격 경로와 추정 경로를 구별합니다."}
+        expected_observations: [접근 계보, 실패·차단된 경로, 최소 영향 증거]
+      - title: 변경·계정·임시 파일 정리
+        node_key: cleanup
+        node_type: evidence
+        expected_observations: [변경 내역, 원상 복구, 남은 접근 수단, 고객 인계]

@@ -10,9 +10,12 @@ from app.models import (
 from app.modules.runbooks.builtins import ensure_builtin_runbooks
 from app.modules.runbooks.support import CloneIn, TemplateIn
 from app.modules.runbooks.workflow_router import (
-    archive_template, clone_template, recommendations,
+    apply, archive_template, clone_template, recommendations,
     target_recommendations, update_template,
 )
+from app.modules.runbooks.support import ApplyIn
+from app.modules.graph import service as graph_service
+import json
 
 
 def database() -> Session:
@@ -69,6 +72,33 @@ def test_builtin_catalog_installs_idempotently_and_recommends():
                       if step.node_key == "authenticated")
     assert credential.node_type == "approval"
     assert '"required": true' in credential.approval
+
+
+def test_practitioner_workflows_project_all_review_branches_into_graph():
+    db = database()
+    target, service = scope(db)
+    assert ensure_builtin_runbooks(db) == 23
+    for key, expected in (("assessment-lifecycle", 9),
+                          ("web-application-review", 14),
+                          ("post-access-review", 7)):
+        template = db.scalar(select(RunbookTemplate).where(
+            RunbookTemplate.builtin_key == key))
+        version = db.scalar(select(RunbookTemplateVersion).where(
+            RunbookTemplateVersion.template_id == template.id))
+        detail = apply(ApplyIn(version_id=version.id, target_id=target.id,
+                               service_id=service.id if key == "web-application-review"
+                               else None), db)
+        assert len(detail["steps"]) == expected
+        assert len({step["node_key"] for step in detail["steps"]}) == expected
+    graph_service.sync_from_project(db, target.project_id)
+    nodes = db.query(graph_service.GraphNode).filter_by(
+        project_id=target.project_id).all()
+    steps = [node for node in nodes if node.source_ref and
+             json.loads(node.source_ref).get("kind") == "runbook_step"]
+    assert len(steps) == 30
+    edges = db.query(graph_service.GraphEdge).filter_by(relation="precedes").all()
+    assert len(edges) >= 30
+    assert graph_service.get_attack_paths(db, target.project_id) == []
 
 
 def test_builtin_is_read_only_but_clone_is_user_owned():
