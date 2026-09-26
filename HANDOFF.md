@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-- 비 IP 평가 자산과 RoE 구현(2026-09-26, `47449a6`–`395b0ad`):
+- 비 IP 평가 자산·RoE·HTTP 실행 계보(2026-09-26, `47449a6`–`675af0f`):
   `AssessmentAsset` 8유형과 모바일·클라우드·Kubernetes·소스·무선·ICS 수동
   Runbook 6종(총 30종)을 추가했다. `#assessment`에서 자산·범위·Runbook 단계·Evidence·
   Observation/Finding을 관리하고 Graph의 asset→step→Evidence/Finding 계보로 탐색한다.
@@ -17,15 +17,19 @@
   RoE 행 부재 예외는 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에 기록했다.
   Kali 격리 DB에서 mobile 자산→6단계→증거 첨부→Graph의 익명 Evidence 노드와
   비성공 경로를 확인했다. Chrome 데스크톱·모바일에서 자산 화면을 확인하고 CSS
-  배치 문제를 수정했다. 전체 backend 651 passed, 프런트 빌드 통과. 프런트 전체
+  배치 문제를 수정했다. 최종 전체 backend 652 passed, 프런트 빌드 통과. 프런트 전체
   587 passed/기존 PostExploitation 비동기 테스트 1건 시간 초과였으며 해당 파일
   단독 재실행 8 passed. 기존 live DB를
   `/home/kali/shadowtrace-db-backups/live-pre-release14.db`에 백업하고 0047·0048로
-  올렸다. Kali live는 `/home/kali/projects/ShadowTrace-live-release-14`의 `a534795`
-  기반, 최종 코드 `395b0ad`·PID 377769·port 8000. SPA/Runbook/RoE API 200,
+  올렸다. Kali live는 `/home/kali/projects/ShadowTrace-live-release-14`의 `675af0f`
+  기반, PID 383330·port 8000. SPA/Runbook/RoE/HTTP Exchange API 200,
   30종 템플릿, 기존 프로젝트 RoE `draft`와 Graph sync 후 `scope=blocked`를 확인했다.
   추가로 웹 프록시 시작과 로컬 PoC 실행도 RoE 검사에 연결했고 관련 테스트 30개가
-  통과했다. 격리 API port 8002는 종료했다.
+  통과했다. 0049에서는 동일 Target의 HTTP Exchange를 Runbook Step에 연결하고
+  Graph에 실제 기록 노드로 표시한다. Kali 격리 DB에서 Target→Runbook→Exchange
+  연결과 Graph 투영을 API로 재현했고, 관련 백엔드 81개·Runbook 화면 41개 테스트를
+  통과했다. live DB의 0049 적용 전 백업은
+  `/home/kali/shadowtrace-db-backups/live-pre-release14-http.db`다.
 - 현업 흐름 추가 검증(2026-09-26): 앞선 3개 Runbook 추가만으로 전체 coverage를 주장한
   것은 성급했다. OWASP API Top 10 2023을 별도 12단계 절차로 추가하고, 평가 유형별
   절차/실행 기록/자산 모델을 나눠 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에
