@@ -7,6 +7,14 @@
 
 ## 현재 상태
 
+- curl 출력 증거 후속 작업(2026-09-26, `32014aa`): observer가 curl exec/write/exit를
+  passive inbox에 기록한다. 단일 literal HTTP IP URL, 명시적 `-o`/`--output` 파일,
+  기존 Target 단일 일치, 파일 소유자·크기·실행 시각이 확인된 경우에만 민감 Evidence를
+  만든다. redirect·proxy·다중 URL 등은 unresolved로 남기고 응답 상태·최종 출처나
+  Finding은 자동 판정하지 않는다. Kali 관련 테스트 110개 통과. backend와 root observer를
+  `ShadowTrace-live-release-6`으로 재시작했고 API 200을 확인했다. 실제 루프백 curl의
+  출력 1,010바이트가 PassiveActivity 8번(`observed`, confidence 60)과 Evidence 8번으로
+  저장됐다. 원본과 보존본 SHA-256이 같고 보존본 권한은 0600, Finding은 0건이었다.
 - ffuf JSON 후속 작업(2026-09-26, `b5d4763`): observer가 ffuf의 exec/stdout/exit를
   passive inbox에 기록하도록 확장했고, backend는 명시한 JSON 출력 파일의 소유자·크기·
   실행 시각을 확인한다. URL의 literal IP가 기존 Target 하나와 일치하고 JSON의 URL도
