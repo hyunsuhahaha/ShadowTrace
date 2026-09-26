@@ -132,7 +132,8 @@ export function Inspector(props: {
     queryFn: () => api<{steps: Array<{id:number;title:string;description:string;
       status:string;outcome:string;activation:string;result:string;notes:string;
       evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[];
-      remote_execution_ids:number[];session_ids:number[];handoffs:{to_step_id:number}[]}>}>(
+      remote_execution_ids:number[];session_ids:number[];
+      handoffs:{to_step_id:number;remote_execution_id:number;evidence_id:number;reason:string}[]}>}>(
         `/runbooks/instances/${runbookInstanceId}`),
     select: instance => instance.steps.find(step => step.id === source?.id),
   });
@@ -1053,6 +1054,13 @@ export function Inspector(props: {
                 <a href={runbookMeta.assetId?`/api/evidence/${id}/file`:`#evidence/${runbookMeta.targetId}/${id}`}>Evidence #{id} 열기</a>
               </div>)}
             </div>}
+          </div>}
+          {!!runbookStep.data?.handoffs?.length&&<div style={{marginTop:8}}>
+            {runbookStep.data.handoffs.map(item=><div key={item.to_step_id}>
+              Handoff → Step #{item.to_step_id} · RemoteExecution #{item.remote_execution_id} ·
+              <a href={`/api/evidence/${item.evidence_id}/file`}>Evidence #{item.evidence_id}</a>
+              <div>{item.reason}</div>
+            </div>)}
           </div>}
           <a href={runbookMeta.assetId?`#assessment/${runbookMeta.assetId}/${source?.id}`:
             `#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>

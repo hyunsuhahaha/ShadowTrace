@@ -47,6 +47,7 @@ def test_graph_path_snapshot_keeps_original_nodes_edges_and_evidence_hash():
     assert "Changed later" not in render_report_after_review(db, report)
     markdown = export_report(report.id, "markdown", db, "client").body.decode()
     assert "Host A" in markdown and "a"*64 in markdown
+    assert "enumerated / succeeded" in markdown
     assert "Sensitive proof" not in markdown
 
 

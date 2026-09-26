@@ -12,7 +12,7 @@ from ...config import WORKSPACE_DIR
 from ...database import Base, get_db
 from ...models import (AssessmentAsset, AssessmentAssetSubject, Evidence, Finding, Project, ProjectRoe,
                        ProjectRoeEvent, RunbookInstance,
-                       Service, ServiceObservation, Target)
+                       RunbookStepSubject, Service, ServiceObservation, Target)
 from ...product_policy import public_policy
 from ...schemas import (
     ASSET_SUBJECT_SPECS, AssessmentAssetIn, AssessmentAssetOut,
@@ -271,6 +271,13 @@ def update_assessment_asset_subject(ident: int, body: AssessmentAssetSubjectIn,
     if row.asset_id != body.asset_id:
         raise HTTPException(400, "Subject cannot move between assets")
     _validate_subject_kind(db, body)
+    duplicate = db.scalar(select(AssessmentAssetSubject.id).where(
+        AssessmentAssetSubject.asset_id == body.asset_id,
+        AssessmentAssetSubject.kind == body.kind,
+        AssessmentAssetSubject.identifier == body.identifier.strip(),
+        AssessmentAssetSubject.id != ident))
+    if duplicate is not None:
+        raise HTTPException(409, "Assessment subject already exists")
     row.kind, row.label, row.identifier = body.kind, body.label.strip(), body.identifier.strip()
     row.attributes = json.dumps(body.attributes, ensure_ascii=False)
     row.scope_status = body.scope_status
@@ -281,6 +288,9 @@ def update_assessment_asset_subject(ident: int, body: AssessmentAssetSubjectIn,
 
 @router.delete("/api/assessment-asset-subjects/{ident}", status_code=204)
 def delete_assessment_asset_subject(ident: int, db: Session = Depends(get_db)):
+    if db.scalar(select(RunbookStepSubject.step_id).where(
+            RunbookStepSubject.subject_id == ident)) is not None:
+        raise HTTPException(409, "Subject is linked to a Runbook step")
     db.delete(need(db, AssessmentAssetSubject, ident)); db.commit()
 
 
@@ -363,6 +373,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     remove("runbook_step_http_exchanges", "step_id", runbook_step_ids)
     remove("runbook_step_remote_executions", "step_id", runbook_step_ids)
     remove("runbook_step_sessions", "step_id", runbook_step_ids)
+    remove("runbook_step_subjects", "step_id", runbook_step_ids)
     remove("runbook_step_handoffs", "from_step_id", runbook_step_ids)
     remove("assessment_asset_subjects", "asset_id", asset_ids)
     remove("runbook_step_credentials", "step_id", runbook_step_ids)

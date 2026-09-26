@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session
 from ...database import get_db
 from ...engagement import require_roe
 from ...models import (
-    AssessmentAsset, Credential, Evidence, Execution, Finding, HttpExchange,
+    AssessmentAsset, AssessmentAssetSubject, Credential, Evidence, Execution, Finding, HttpExchange,
     HttpRequest, InteractiveSession, RemoteExecution, RunbookInstance, Target,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
     RunbookStepExecution, RunbookStepHandoff, RunbookStepHttpExchange,
     RunbookStepInstance, RunbookStepRemoteExecution, RunbookStepSession,
+    RunbookStepSubject,
 )
 from ...time import utcnow
 from .engine import approval_required, recompute
@@ -251,6 +252,22 @@ def attach_session(ident: int, body: LinkIn, db: Session = Depends(get_db)):
     return instance_dict(db, instance, True)
 
 
+@router.post("/steps/{ident}/subjects", status_code=201)
+def attach_subject(ident: int, body: LinkIn, db: Session = Depends(get_db)):
+    step, instance = link_scope(db, ident)
+    subject = need(db, AssessmentAssetSubject, body.resource_id)
+    if instance.asset_id is None or subject.asset_id != instance.asset_id:
+        raise HTTPException(400, "Subject belongs to another Runbook asset")
+    if subject.scope_status != "in_scope":
+        raise HTTPException(409, "Subject must be in scope before assessment")
+    if not db.get(RunbookStepSubject, (step.id, subject.id)):
+        db.add(RunbookStepSubject(step_id=step.id, subject_id=subject.id))
+        event(db, instance.id, "subject_attached", step.id,
+              {"subject_id": subject.id})
+        db.commit()
+    return instance_dict(db, instance, True)
+
+
 @router.post("/steps/{ident}/handoffs", status_code=201)
 def create_handoff(ident: int, body: HandoffIn, db: Session = Depends(get_db)):
     source, source_instance = link_scope(db, ident)
@@ -269,6 +286,10 @@ def create_handoff(ident: int, body: HandoffIn, db: Session = Depends(get_db)):
     evidence = need(db, Evidence, run.evidence_id)
     if credential.project_id != source_instance.project_id or evidence.project_id != source_instance.project_id:
         raise HTTPException(400, "Handoff provenance belongs to another project")
+    if len(evidence.sha256 or "") != 64:
+        raise HTTPException(409, "Handoff Evidence must have a SHA-256 digest")
+    if not body.reason.strip():
+        raise HTTPException(400, "Handoff reason is required")
     if credential.target_id is not None and credential.target_id != source_instance.target_id:
         raise HTTPException(400, "Credential origin does not match source Target")
     if not db.get(RunbookStepCredential, (source.id, credential.id)):

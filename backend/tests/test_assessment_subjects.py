@@ -7,9 +7,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import AssessmentAsset, GraphEdge, GraphNode, Project
-from app.modules.core.router import create_assessment_asset_subject, delete_assessment_asset
+from app.models import AssessmentAsset, Evidence, GraphEdge, GraphNode, Project
+from app.modules.core.router import create_assessment_asset_subject, delete_assessment_asset, delete_assessment_asset_subject
 from app.modules.graph import service as graph
+from app.modules.runbooks.execution_router import attach_evidence, attach_subject
+from app.modules.runbooks.support import ApplyIn, LinkIn, PublishIn, StepIn, TemplateIn
+from app.modules.runbooks.workflow_router import apply, create_template, publish
 from app.schemas import ASSET_SUBJECT_SPECS, AssessmentAssetSubjectIn
 
 
@@ -62,3 +65,50 @@ def test_subject_attribute_schema_rejects_incomplete_wireless_and_ics_records():
         AssessmentAssetSubjectIn(asset_id=1, kind="ics_device",
             label="Controller", identifier="PLC 1",
             attributes={"device":"PLC 1","process":"line A","segment":"OT"})
+
+
+def test_subject_step_link_records_specific_assessment_and_evidence_lineage():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    project = Project(name="Scoped API review")
+    db.add(project); db.flush()
+    asset = AssessmentAsset(project_id=project.id, kind="api",
+                            name="API", scope_status="in_scope")
+    other = AssessmentAsset(project_id=project.id, kind="api",
+                            name="Other API", scope_status="in_scope")
+    db.add_all([asset, other]); db.flush()
+    attrs = {key: "fixture" for key in ASSET_SUBJECT_SPECS["api"]["api_operation"]}
+    subject = create_assessment_asset_subject(AssessmentAssetSubjectIn(
+        asset_id=asset.id, kind="api_operation", label="Invoice read",
+        identifier="GET /invoices/{id}", attributes=attrs,
+        scope_status="in_scope"), db)
+    foreign = create_assessment_asset_subject(AssessmentAssetSubjectIn(
+        asset_id=other.id, kind="api_operation", label="Other operation",
+        identifier="GET /other", attributes=attrs, scope_status="in_scope"), db)
+    template = create_template(TemplateIn(name="API authorization check"), db)
+    version = publish(template["id"], PublishIn(steps=[StepIn(title="Check object access")]), db)
+    run = apply(ApplyIn(version_id=version["id"], asset_id=asset.id), db)
+    step_id = run["steps"][0]["id"]
+    linked = attach_subject(step_id, LinkIn(resource_id=subject.id), db)
+    assert linked["steps"][0]["subject_ids"] == [subject.id]
+    evidence = Evidence(project_id=project.id, asset_id=asset.id,
+                        title="Authorization result", kind="markdown", sha256="c" * 64)
+    db.add(evidence); db.commit()
+    assert attach_evidence(step_id, LinkIn(resource_id=evidence.id), db)["steps"][0]["evidence_ids"] == [evidence.id]
+    graph.sync_from_project(db, project.id)
+    nodes = db.scalars(select(GraphNode).where(GraphNode.project_id == project.id)).all()
+    detail = next(node for node in nodes if json.loads(node.source_ref or "{}").get("kind") == "asset_subject"
+                  and json.loads(node.source_ref)["id"] == subject.id)
+    step = next(node for node in nodes if json.loads(node.source_ref or "{}").get("kind") == "runbook_step"
+                and json.loads(node.source_ref)["id"] == step_id)
+    assert db.scalar(select(GraphEdge).where(GraphEdge.source == detail.id,
+        GraphEdge.target == step.id, GraphEdge.relation == "assesses"))
+    assert db.scalar(select(GraphEdge).where(GraphEdge.source == step.id,
+        GraphEdge.relation == "documented-by"))
+    with pytest.raises(HTTPException) as mismatch:
+        attach_subject(step_id, LinkIn(resource_id=foreign.id), db)
+    assert mismatch.value.status_code == 400
+    with pytest.raises(HTTPException) as blocked:
+        delete_assessment_asset_subject(subject.id, db)
+    assert blocked.value.status_code == 409

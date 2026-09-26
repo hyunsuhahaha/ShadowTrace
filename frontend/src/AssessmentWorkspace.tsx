@@ -13,6 +13,7 @@ type Template = {id:number;name:string;tags:string[];latest_version_id:number|nu
 type Step = {id:number;position:number;title:string;description:string;status:string;
   outcome:string;activation:string;result:string;notes:string;status_reason:string;
   approval_status:string;approval_reason:string;evidence_ids:number[];
+  subject_ids:number[];
   observations:{id:number;title:string;status:string}[]};
 type Instance = {id:number;asset_id:number|null;template_name:string;progress:{completed:number;total:number};steps?:Step[]};
 type Evidence = {id:number;title:string;original_name:string;sensitivity:string;asset_id:number|null};
@@ -51,7 +52,8 @@ async function request<T>(path:string, init?:RequestInit):Promise<T>{
 }
 const json=(value:unknown,method="POST"):RequestInit=>({method,headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});
 
-function StepEditor({step,asset,projectId,onChanged}:{step:Step;asset:Asset;projectId:number;onChanged:()=>Promise<void>}){
+function StepEditor({step,asset,subjects,projectId,onChanged}:{step:Step;asset:Asset;
+  subjects:Subject[];projectId:number;onChanged:()=>Promise<void>}){
   const[status,setStatus]=useState(step.status),[outcome,setOutcome]=useState(step.outcome);
   const[result,setResult]=useState(step.result),[notes,setNotes]=useState(step.notes);
   const[reason,setReason]=useState(step.status_reason),[approvalReason,setApprovalReason]=useState(step.approval_reason||"");
@@ -89,8 +91,17 @@ function StepEditor({step,asset,projectId,onChanged}:{step:Step;asset:Asset;proj
       <select aria-label="연결할 증거" defaultValue="" onChange={event=>{const id=Number(event.target.value);if(id)act(()=>request(`/runbooks/steps/${step.id}/evidence`,json({resource_id:id})));event.target.value="";}}>
         <option value="">증거 연결…</option>{evidence.data?.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}
       </select>
-      <span>증거 {step.evidence_ids.length} · 관찰 {step.observations.length}</span>
+      <select aria-label="평가 세부 대상 연결" defaultValue="" onChange={event=>{const id=Number(event.target.value);
+        if(id)act(()=>request(`/runbooks/steps/${step.id}/subjects`,json({resource_id:id})));
+        event.target.value="";}}>
+        <option value="">세부 대상 연결…</option>{subjects.filter(item=>item.scope_status==="in_scope").map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+      </select>
+      <span>세부 대상 {step.subject_ids?.length||0} · 증거 {step.evidence_ids.length} · 관찰 {step.observations.length}</span>
     </div>
+    {!!step.subject_ids?.length&&<div className="assessmentLinked">{step.subject_ids.map(id=>{
+      const item=subjects.find(row=>row.id===id);
+      return <span key={id}>{item?.label||`Subject #${id}`}</span>;
+    })}</div>}
     {step.evidence_ids.length>0&&<div className="assessmentLinked">{step.evidence_ids.map(id=>{
       const item=evidence.data?.find(row=>row.id===id);
       return <a key={id} href={`/api/evidence/${id}/file`}>{item?.sensitivity==="normal"?item.title:`Evidence #${id}`} ↗</a>;
@@ -209,7 +220,8 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
         {selectedInstances.length>1&&<label>적용된 Runbook<select value={activeInstance?.id||""} onChange={event=>setSelectedInstanceId(Number(event.target.value))}>
           {selectedInstances.map(item=><option key={item.id} value={item.id}>{item.template_name}</option>)}</select></label>}
         {activeInstance&&<section className="assessmentRunbook"><h3>{activeInstance.template_name} <small>{activeInstance.progress.completed}/{activeInstance.progress.total}</small></h3>
-          {detail.data?.steps?.map(step=><StepEditor key={step.id} step={step} asset={selected} projectId={projectId}
+          {detail.data?.steps?.map(step=><StepEditor key={step.id} step={step} asset={selected}
+            subjects={subjects.data||[]} projectId={projectId}
             onChanged={async()=>{await qc.invalidateQueries({queryKey:["assessmentInstance"]});await request(`/projects/${projectId}/graph/sync`,{method:"POST"});}}/>)}</section>}
       </>}</section>
     </div>{error&&<p role="alert" className="assessmentError">{error}</p>}

@@ -155,7 +155,7 @@ def test_remote_execution_session_and_cross_target_handoff_have_graph_provenance
     credential = Credential(project_id=project.id, target_id=origin.id,
                             username="tester", secret_kind="password")
     evidence = Evidence(project_id=project.id, target_id=destination.id,
-                        title="Access proof", kind="markdown")
+                        title="Access proof", kind="markdown", sha256="b"*64)
     db.add_all([credential, evidence]); db.flush()
     run = RemoteExecution(project_id=project.id, target_id=destination.id,
                           credential_id=credential.id, evidence_id=evidence.id,

@@ -21,7 +21,7 @@ from ...models import (AssessmentAsset, AssessmentAssetSubject, AutoReconRun, Co
                        PassiveActivity, ProcessInstance, Project, ProjectRoe, RemoteExecution, RunbookInstance,
                        RunbookStepInstance, RunbookStepExecution, RunbookStepHandoff,
                        RunbookStepHttpExchange, RunbookStepRemoteExecution,
-                       RunbookStepSession, RunbookStepEvidence,
+                       RunbookStepSession, RunbookStepSubject, RunbookStepEvidence,
                        RunbookObservation,
                        RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
@@ -233,6 +233,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "precedes": ({"technique"}, {"technique"}),
     "records-execution": ({"technique"}, {"technique"}),
     "handoff": ({"technique"}, {"technique"}),
+    "assesses": ({"asset"}, {"technique"}),
     "links-credential": ({"technique"}, {"credential"}),
     "documented-by": ({"technique"}, {"evidence"}),
     "produced-finding": ({"technique"}, {"finding"}),
@@ -1357,6 +1358,13 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     linked_http_exchange_ids: set[int] = set()
     linked_remote_execution_ids: set[int] = set()
     if runbook_step_ids:
+        for link in db.scalars(select(RunbookStepSubject).where(
+                RunbookStepSubject.step_id.in_(runbook_step_ids))):
+            subject = index.get(("asset_subject", link.subject_id))
+            step_node = index.get(("runbook_step", link.step_id))
+            if subject and step_node:
+                ensure_edge(subject, step_node, "assesses", status="untried")
+                desired_links.add((subject.id, step_node.id, "assesses"))
         for link in db.scalars(select(RunbookStepExecution).where(
                 RunbookStepExecution.step_id.in_(runbook_step_ids))):
             source = index.get(("runbook_step", link.step_id))
@@ -1489,7 +1497,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             del index[key]
     for edge in db.scalars(select(GraphEdge).where(
             GraphEdge.project_id == project_id,
-            GraphEdge.relation.in_(("records-execution", "handoff", "links-credential",
+            GraphEdge.relation.in_(("records-execution", "handoff", "assesses", "links-credential",
                                    "documented-by", "produced-finding")))):
         if (edge.source, edge.target, edge.relation) not in desired_links:
             db.delete(edge)

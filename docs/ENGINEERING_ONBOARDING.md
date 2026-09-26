@@ -1022,6 +1022,11 @@ Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용
 `/api/assessment-asset-subjects` GET/POST와 `/{id}` PUT/DELETE로 관리하고,
 Graph는 각 세부 대상을 부모 자산 아래 `asset` 노드로 투영한다. 민감한 세부 속성은
 Graph 메타에 복사하지 않고 Inspector가 자산 화면으로 이동한다.
+`RunbookStepSubject`(마이그레이션 0053)는 `/api/runbooks/steps/{id}/subjects`로
+같은 자산의 범위 내 세부 대상을 검사 Step에 연결한다. Graph의 `assesses` 엣지가
+세부 대상에서 해당 Step으로 이어지고, Step의 Evidence 연결로 검사 근거를 추적한다.
+이 관계는 `untried`로 유지하며 검사 성공으로 판정하지 않는다. 연결된 세부 대상은
+삭제할 수 없고, Inspector와 자산 화면에서 해당 계보를 확인한다.
 프로젝트 RoE는 `project_roe`와 `project_roe_events`에 승인 대상 IP/CIDR·호스트명,
 제외 대상, 자산 ID, 허용 행위, 기간, 승인자·사유와 revision 이력을 저장한다
 (마이그레이션 0048). `/api/projects/{id}/roe` 초안을 고치면 승인이 해제되고,

@@ -134,7 +134,7 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
 완료 기준은 각 평가 유형에서 실제 작업·부정 결과·증거·Finding이 자산과 Graph
 계보에 남고, 승인 범위 밖의 실행이 거부되는지 시나리오로 확인하는 것이다.
 
-### 0050–0052 구현 후 상태
+### 0050–0053 구현 후 상태
 
 - 같은 Target의 RemoteExecution과 InteractiveSession은 Runbook Step에 직접 연결되고
   Graph에서 실제 기록 노드로 보인다. 여러 Target 사이의 `handoff`는 원본 Step에
@@ -147,7 +147,10 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
   모바일 build, 클라우드 계정·역할·리소스, Kubernetes workload, 소스 commit,
   무선 BSSID·장소, ICS 장비·공정·운영 승인을 유형별 필수 속성과 함께 여러 개 저장하고
   자산 아래 Graph 노드로 투영한다.
+- 범위 내 세부 대상을 특정 Runbook Step에 연결하면 `assesses` Graph 엣지가 생기고,
+  해당 Step에 붙인 Evidence까지 계보를 따라 확인할 수 있다. 관계만으로 검사를
+  성공 처리하지 않는다.
 
-남은 제한은 세부 대상별 실제 테스트 판정·Evidence 연결, 모바일/클라우드/Kubernetes/
+남은 제한은 모바일/클라우드/Kubernetes/
 무선/ICS 원본 수집 어댑터, 고객 의사결정 기록, API 밖에서 ORM으로 만든 Project의
 RoE 행 누락 예외다. 세부 자산 노드의 존재는 검사를 완료했다는 뜻이 아니다.

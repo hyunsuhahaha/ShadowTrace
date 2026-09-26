@@ -158,9 +158,10 @@ def capture_graph_path(ident: int, body: GraphPathCaptureIn,
                 if evidence_ref.get("kind") == "evidence":
                     evidence_ids.add(evidence_ref["id"])
     evidence = [db.get(Evidence, evidence_id) for evidence_id in sorted(evidence_ids)]
-    evidence = [item for item in evidence if item and item.project_id == report.project_id]
+    evidence = [item for item in evidence if item and item.project_id == report.project_id
+                and len(item.sha256 or "") == 64]
     if not evidence:
-        raise HTTPException(409, "Attach at least one same-project Evidence item to this path")
+        raise HTTPException(409, "Attach at least one same-project Evidence item with SHA-256 to this path")
     snapshots = json.loads(report.graph_path_snapshots or "[]")
     if len(snapshots) >= 20:
         raise HTTPException(409, "A report can contain at most 20 path snapshots")
@@ -260,6 +261,10 @@ def _paths_markdown(row: Report) -> str:
         lines.append(f"Captured: {snapshot['captured_at']}")
         for node in snapshot["nodes"]:
             lines.append(f"- {node['type']}: {node['label']} ({node['status']})")
+        for source, edge, target in zip(snapshot["nodes"], snapshot["edges"],
+                                        snapshot["nodes"][1:]):
+            lines.append(f"- {source['label']} → {target['label']}: "
+                         f"{edge['relation']} / {edge['status']}")
         for evidence in snapshot["evidence"]:
             lines.append(f"- Evidence #{evidence['id']} · SHA-256 {evidence['sha256']}")
     return "\n".join(lines) + "\n"
@@ -306,11 +311,16 @@ def render_report(db: Session, row: Report, profile: str = "internal") -> str:
         nodes_html = "".join(f"<li>{html.escape(node['type'])}: "
                              f"{html.escape(node['label'])} ({html.escape(node['status'])})</li>"
                              for node in snapshot["nodes"])
+        edges_html = "".join(f"<li>{html.escape(source['label'])} → "
+            f"{html.escape(target['label'])}: {html.escape(edge['relation'])} "
+            f"({html.escape(edge['status'])})</li>" for source, edge, target in zip(
+                snapshot["nodes"], snapshot["edges"], snapshot["nodes"][1:]))
         evidence_html = "".join(f"<li>Evidence #{item['id']} · SHA-256 "
                                 f"{html.escape(item['sha256'])}</li>"
                                 for item in snapshot["evidence"])
         path_sections.append(f"<article><h3>{title}</h3><p>Captured "
             f"{html.escape(snapshot['captured_at'])}</p><ol>{nodes_html}</ol>"
+            f"<ul>{edges_html}</ul>"
             f"<ul>{evidence_html}</ul></article>")
     paths_section = (f"<section><h2>Captured Graph Paths</h2>{''.join(path_sections)}</section>"
                      if path_sections else "")
@@ -558,6 +568,11 @@ def render_docx(db: Session, row: Report, profile: str) -> bytes:
             for node in snapshot["nodes"]:
                 document.add_paragraph(
                     f"{node['type']}: {node['label']} ({node['status']})", style="List Bullet")
+            for source, edge, target in zip(snapshot["nodes"], snapshot["edges"],
+                                            snapshot["nodes"][1:]):
+                document.add_paragraph(
+                    f"{source['label']} → {target['label']}: {edge['relation']} "
+                    f"({edge['status']})", style="List Bullet")
             for item in snapshot["evidence"]:
                 document.add_paragraph(
                     f"Evidence #{item['id']} · SHA-256 {item['sha256']}", style="List Bullet")

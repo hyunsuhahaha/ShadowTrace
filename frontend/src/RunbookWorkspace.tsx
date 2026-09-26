@@ -17,7 +17,7 @@ type Step={id:number;position:number;title:string;description:string;command_ref
     step_id:number;position:number;title:string}[];raw_preserved?:boolean};
   evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[];
   remote_execution_ids:number[];session_ids:number[];
-  handoffs:{to_step_id:number;remote_execution_id:number}[];
+  handoffs:{to_step_id:number;remote_execution_id:number;evidence_id:number;reason:string}[];
   credential_ids:number[];condition_met:boolean;
   observations:{id:number;title:string;detail:string;status:string}[];
   timer_started_at?:string|null;elapsed_seconds?:number;
@@ -749,7 +749,10 @@ function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLink
       <label>연결 이유<input value={handoffReason} onChange={event=>setHandoffReason(event.target.value)} placeholder="원본 Credential과 목적 접근 확인"/></label>
       <Button disabled={!handoffStepId||!handoffRunId||!handoffReason.trim()}
         onClick={()=>onHandoff(Number(handoffStepId),Number(handoffRunId),handoffReason)}>Handoff 기록</Button>
-      {!!step.handoffs?.length&&<small>확인된 다른 Target 전이 {step.handoffs.length}개</small>}
+      {!!step.handoffs?.length&&<div>{step.handoffs.map(item=><small key={item.to_step_id}>
+        목적 단계 #{item.to_step_id} · RemoteExecution #{item.remote_execution_id} ·
+        <a href={`/api/evidence/${item.evidence_id}/file`}>Evidence #{item.evidence_id}</a> · {item.reason}
+      </small>)}</div>}
     </div>
     {step.assessment?.summary&&<section className="stepAssessment"><strong>실행 결과 판정 · {step.outcome}</strong>
       <p>{step.assessment.summary}</p>

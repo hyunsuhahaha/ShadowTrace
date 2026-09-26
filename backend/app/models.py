@@ -970,6 +970,13 @@ class RunbookStepSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RunbookStepSubject(Base):
+    __tablename__ = "runbook_step_subjects"
+    step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("assessment_asset_subjects.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RunbookStepHandoff(Base):
     __tablename__ = "runbook_step_handoffs"
     from_step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
