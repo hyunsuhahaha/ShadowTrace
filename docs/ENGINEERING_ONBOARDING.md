@@ -961,6 +961,14 @@ GraphCanvas/OutlineView/Inspector/AddNodeForm/ProjectOperatorSession 등은
 `features/graph/` 하위 파일로 분리돼 있다. `ProjectOperatorSession.tsx`는 project-root를
 실행기가 아닌 Target·최근 세션 TUI 라우터로 렌더하며, host는 source_ref의 target id를
 `ScanCenter`에 직접 전달한다.
+Runbook instance의 각 `RunbookStepInstance`는 `runbook_step` source_ref가 있는
+technique 노드로 투영된다(`graph/service.py`). 첫 단계는 Target/Service에서 `attempted`,
+이후 단계는 `precedes`로 연결한다. 분기 템플릿은 선언된 transition만, 구형 선형
+템플릿은 position 순서대로 연결한다. 상태·판정·activation은 메타에 동기화하고
+result/notes 원문은 넣지 않는다. Inspector는 선택 시 Runbook API에서 상세를 조회하고
+`#runbooks/{projectId}/{targetId}/{serviceId 또는 0}/{instanceId}/{stepId}`로 이동한다.
+`Root.tsx`가 이 딥링크를 첫 브라우저 세션에도 유지하며 `RunbookWorkspace.tsx`가 해당
+instance와 단계를 선택·스크롤한다. 새 route page는 추가되지 않았다.
 완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
 host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
 `pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라

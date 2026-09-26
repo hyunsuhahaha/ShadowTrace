@@ -84,13 +84,17 @@ const json=(body:unknown):RequestInit=>({
   method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
 });
 
-export default function RunbookWorkspace(){
+export default function RunbookWorkspace({initialProjectId,initialTargetId,initialServiceId,
+  initialInstanceId,initialStepId}:{initialProjectId?:number;initialTargetId?:number;
+  initialServiceId?:number;initialInstanceId?:number;initialStepId?:number}={}){
   const qc=useQueryClient();
   const[view,setView]=useState<"library"|"instances">("instances");
-  const[projectId,setProjectId]=useState(()=>Number(localStorage.getItem("oscp-workspace-project")));
-  const[targetId,setTargetId]=useState<number>();
-  const[serviceId,setServiceId]=useState<number>();
-  const[selectedId,setSelectedId]=useState<number>();
+  const[projectId,setProjectId]=useState(()=>initialProjectId||Number(localStorage.getItem("oscp-workspace-project")));
+  const[targetId,setTargetId]=useState<number|undefined>(initialTargetId);
+  const[serviceId,setServiceId]=useState<number|undefined>(initialServiceId);
+  const[selectedId,setSelectedId]=useState<number|undefined>(initialInstanceId);
+  const focusedStep=useRef<number|undefined>(initialStepId);
+  const hostDeepLink=useRef(!!initialInstanceId&&!initialServiceId);
   const autoApplyKey=useRef("");
   const[editing,setEditing]=useState(false);
   const[name,setName]=useState("");
@@ -130,16 +134,19 @@ export default function RunbookWorkspace(){
   const targets=useQuery({queryKey:["targets",projectId],
     queryFn:()=>api<Target[]>(`/targets?project_id=${projectId}`),enabled:!!projectId});
   useEffect(()=>{
-    setTargetId(targets.data?.[0]?.id);
-    setServiceId(undefined);
-    setSelectedId(undefined);
+    if(!targets.data)return;
+    setTargetId(current=>targets.data?.some(item=>item.id===current)?current:targets.data?.[0]?.id);
   },[projectId,targets.data]);
   useEffect(()=>{
     if(targetId)dispatchEvent(new CustomEvent("oscp-target-change",{detail:targetId}));
   },[targetId]);
   const services=useQuery({queryKey:["services",targetId],
     queryFn:()=>api<Service[]>(`/targets/${targetId}/services`),enabled:!!targetId});
-  useEffect(()=>setServiceId(services.data?.[0]?.id),[targetId,services.data]);
+  useEffect(()=>{
+    if(!services.data)return;
+    if(hostDeepLink.current)return;
+    setServiceId(current=>services.data?.some(item=>item.id===current)?current:services.data?.[0]?.id);
+  },[targetId,services.data]);
   useEffect(()=>{setLibraryMode("scoped");setEditing(false);},[targetId,serviceId]);
   const templates=useQuery({queryKey:["runbookTemplates"],
     queryFn:()=>api<Template[]>("/runbooks/templates")});
@@ -289,6 +296,16 @@ export default function RunbookWorkspace(){
   if(projects.error)return <ErrorState message="Runbook 데이터를 불러오지 못했습니다."/>;
   const activeDetail=detail.data?.target_id===targetId&&detail.data?.id===selectedId
     ?detail.data:undefined;
+  useEffect(()=>{
+    if(!activeDetail||!focusedStep.current||
+      !activeDetail.steps?.some(step=>step.id===focusedStep.current))return;
+    const id=focusedStep.current;
+    const timer=setTimeout(()=>{
+      document.getElementById(`runbook-step-${id}`)?.scrollIntoView({block:"center"});
+      focusedStep.current=undefined;
+    },100);
+    return()=>clearTimeout(timer);
+  },[activeDetail]);
   const shown=(activeDetail?.steps||[]).filter(step=>(showExcluded||step.activation!=="excluded")&&
     (filter==="all"||step.status===filter));
   const currentSummary=summaries.data?.find(item=>item.target_id===targetId);

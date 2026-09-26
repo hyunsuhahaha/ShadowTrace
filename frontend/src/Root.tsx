@@ -24,7 +24,8 @@ const GraphWorkspace=lazy(()=>import("./features/graph/GraphWorkspace"));
 if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem("oscp-home-shown")) {
   sessionStorage.setItem("oscp-home-shown", "1");
   if (location.hash && location.hash !== "#graph"
-      && !/^#evidence\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)) location.hash = "#graph";
+      && !/^#evidence\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)
+      && !/^#runbooks\/[1-9]\d*\/[1-9]\d*\/(?:0|[1-9]\d*)\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)) location.hash = "#graph";
 }
 
 const route=()=>{
@@ -61,7 +62,13 @@ export default function Root(){
     case"reports":content=<ReportWorkspace/>;break;
     case"operations":content=<OperationsWorkspace/>;break;
     case"exploit-research":content=<ExploitResearchWorkspace/>;break;
-    case"runbooks":content=<RunbookWorkspace/>;break;
+    case"runbooks":{
+      const [projectId,targetId,serviceId,instanceId,stepId] = (subroute||"").split("/").map(Number);
+      content=<RunbookWorkspace key={subroute} initialProjectId={projectId||undefined}
+        initialTargetId={targetId||undefined} initialServiceId={serviceId||undefined}
+        initialInstanceId={instanceId||undefined} initialStepId={stepId||undefined}/>;
+      break;
+    }
     case"post-exploitation":content=<PostExploitationWorkspace/>;break;
     case"hash-cracking":content=<HashCrackingWorkspace/>;break;
     case"tools":content=<ToolsWorkspace/>;break;

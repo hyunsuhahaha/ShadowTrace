@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
-                       PassiveActivity, ProcessInstance, Project, RemoteExecution, ScanArtifact, ScanJob,
+                       PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
+                       RunbookStepInstance, ScanArtifact, ScanJob,
                        Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
@@ -225,6 +226,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "pivoted-to": ({"host"}, {"host"}),
     "reused-credential": ({"credential"}, {"host", "service"}),
     "blocked-by": ({"technique", "finding"}, NODE_TYPES),
+    "precedes": ({"technique"}, {"technique"}),
 }
 
 
@@ -515,7 +517,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
                    "autorecon_run": AutoReconRun, "autorecon_results": ScanJob,
-                   "passive_activity": PassiveActivity, "command_activity": CommandActivity}
+                   "passive_activity": PassiveActivity, "command_activity": CommandActivity,
+                   "runbook_step": RunbookStepInstance}
     for key, node in list(index.items()):
         kind, ident = key
         model = kind_models.get(kind)
@@ -537,6 +540,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             owner_id = row.project_id
         elif isinstance(row, CommandActivity):
             owner_id = command_owners.get(row.id, (None, None))[0]
+        elif isinstance(row, RunbookStepInstance):
+            instance = db.get(RunbookInstance, row.instance_id)
+            owner_id = instance.project_id if instance else None
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         deprecated = kind == "autorecon_run"
         if model is not None and (row is None or owner_id != project_id
@@ -683,6 +689,90 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         if service_id and ("service", service_id) in index:
             return index[("service", service_id)]
         return host_for(target_id) if target_id else None
+
+    # Runbook steps are first-class workflow nodes. Keep only IDs and state in
+    # graph metadata; result, notes and evidence remain in the Runbook API.
+    def runbook_status(step: RunbookStepInstance) -> str:
+        if step.status == "blocked" or step.activation == "blocked":
+            return "blocked"
+        if step.status in {"skipped", "not_applicable"} or step.activation == "excluded":
+            return "not-applicable"
+        if step.outcome == "error":
+            return "attempt-failed"
+        if step.status == "completed":
+            return "succeeded"  # the check finished, not a confirmed vulnerability
+        if step.status in {"in_progress", "attempted", "suspicious"}:
+            return "in-progress"
+        return "untried"
+
+    for instance in db.scalars(select(RunbookInstance).where(
+            RunbookInstance.project_id == project_id).order_by(RunbookInstance.id)):
+        parent = parent_of(instance.service_id, instance.target_id)
+        if parent is None:
+            continue
+        steps = list(db.scalars(select(RunbookStepInstance).where(
+            RunbookStepInstance.instance_id == instance.id).order_by(
+                RunbookStepInstance.position, RunbookStepInstance.id)))
+        by_key = {step.node_key or f"step-{step.position}": step for step in steps}
+        transitions: dict[int, list[dict]] = {}
+        for step in steps:
+            try:
+                parsed = json.loads(step.transitions or "[]")
+            except (TypeError, ValueError):
+                parsed = []
+            transitions[step.id] = parsed if isinstance(parsed, list) else []
+            if ("runbook_step", step.id) in dismissed:
+                continue
+            meta = json.dumps({"instanceId": instance.id, "targetId": instance.target_id,
+                               "serviceId": instance.service_id, "position": step.position,
+                               "stepStatus": step.status, "outcome": step.outcome,
+                               "activation": step.activation,
+                               "templateName": instance.template_name})
+            node = index.get(("runbook_step", step.id))
+            if node is None:
+                node = create_node(db, project_id, "technique", label=step.title,
+                                   status=runbook_status(step),
+                                   source_ref=_source_ref("runbooks", "runbook_step", step.id),
+                                   meta=meta)
+                index[("runbook_step", step.id)] = node
+                created["techniques"] += 1
+            else:
+                node.meta = meta
+                node.status = runbook_status(step)
+        if any(transitions.values()):
+            incoming: set[int] = set()
+            for step in steps:
+                source = index.get(("runbook_step", step.id))
+                for transition in transitions[step.id]:
+                    if not isinstance(transition, dict):
+                        continue
+                    keys = transition.get("targets", transition.get("target", []))
+                    if isinstance(keys, str):
+                        keys = [keys]
+                    for key in keys if isinstance(keys, list) else []:
+                        target_step = by_key.get(key)
+                        if target_step is None:
+                            continue
+                        incoming.add(target_step.id)
+                        destination = index.get(("runbook_step", target_step.id))
+                        if source and destination:
+                            ensure_edge(source, destination, "precedes",
+                                        label=str(transition.get("label") or ""),
+                                        status=runbook_status(target_step))
+            roots = [step for step in steps if step.id not in incoming]
+        else:
+            roots = steps[:1]
+            for first, second in zip(steps, steps[1:]):
+                source = index.get(("runbook_step", first.id))
+                destination = index.get(("runbook_step", second.id))
+                if source and destination:
+                    ensure_edge(source, destination, "precedes",
+                                status=runbook_status(second))
+        for step in roots:
+            node = index.get(("runbook_step", step.id))
+            if node:
+                ensure_edge(parent, node, "attempted", label=instance.template_name,
+                            status=runbook_status(step))
 
     for finding in db.scalars(
             select(Finding).where(Finding.project_id == project_id)):

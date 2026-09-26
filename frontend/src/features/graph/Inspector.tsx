@@ -118,6 +118,17 @@ export function Inspector(props: {
       return Number.isInteger(ref.id) ? { kind: ref.kind as string, id: ref.id as number } : null;
     } catch { return null; }
   })();
+  const runbookMeta = source?.kind === "runbook_step" && n ? nodeMeta(n) : null;
+  const runbookInstanceId = Number(runbookMeta?.instanceId || 0);
+  const runbookStep = useQuery({
+    queryKey: ["graphRunbookInstance", runbookInstanceId],
+    enabled: !!runbookMeta && runbookInstanceId > 0,
+    queryFn: () => api<{steps: Array<{id:number;title:string;description:string;
+      status:string;outcome:string;activation:string;result:string;notes:string;
+      evidence_ids:number[];execution_ids:number[]}>}>(
+        `/runbooks/instances/${runbookInstanceId}`),
+    select: instance => instance.steps.find(step => step.id === source?.id),
+  });
   const executionId = source?.kind === "execution" ? source.id : null;
   const sessionId = source?.kind === "session" ? source.id : null;
   const credentialId = source?.kind === "credential" ? source.id : null;
@@ -1019,6 +1030,20 @@ export function Inspector(props: {
           ))}
         </div>
       </div>}
+      {runbookMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="Runbook 단계">
+        <div style={S.executionResultsHead}><strong>Runbook 단계</strong>
+          <span>{String(runbookMeta.templateName || "")}</span></div>
+        <div style={S.terminalBody}>
+          <div>단계 {String(runbookMeta.position || "")} · {runbookStep.data?.status || String(runbookMeta.stepStatus || "")}
+            {runbookStep.data?.outcome && ` · ${runbookStep.data.outcome}`}</div>
+          {runbookStep.data?.description && <p>{runbookStep.data.description}</p>}
+          {runbookStep.data?.result && <pre style={S.terminalOutput}>{runbookStep.data.result}</pre>}
+          {runbookStep.data?.notes && <p>{runbookStep.data.notes}</p>}
+          {runbookStep.data && <div>증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개</div>}
+          <a href={`#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>
+            Runbook에서 이 단계 열기 →</a>
+        </div>
+      </section>}
       {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">
         <div style={S.executionResultsHead}><strong>터미널 활동</strong>
           <span>passive · {passive.confidence ?? 0}%

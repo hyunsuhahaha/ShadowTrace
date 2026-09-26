@@ -7,6 +7,11 @@
 
 ## 현재 상태
 
+- Runbook→Progress Graph 흐름 투영(2026-09-26): Runbook 단계가 Graph에 전혀 생성되지
+  않는 공백을 확인했다. 각 단계를 technique 노드로 투영하고 분기 transition 또는 선형
+  순서에 따라 `precedes`로 연결한다. Inspector에서 단계 결과를 조회하고 원래 단계로
+  이동하는 딥링크를 추가했다. 백엔드 테스트와 Kali 화면 검증 결과는 이번 작업 완료 시
+  갱신한다.
 - 공개 현업 평가 흐름 재현(2026-09-26, `a8bc6bb`, `f282689`): Cure53 Raspberry Pi
   공개 보고서, CISA 레드팀 평가, PTES/OWASP reporting을 제품 흐름과 대응했다
   (`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`). 실제 보고서에서 취약점이

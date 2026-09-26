@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import (CommandActivity, GraphEdge, GraphNode, PassiveActivity,
-                        ProcessInstance, Project, Target, TerminalSession)
+                        ProcessInstance, Project, RunbookInstance,
+                        RunbookStepInstance, Target, TerminalSession)
 from app.modules.graph import service
 from app.modules.graph.service import GraphIntegrityError
 
@@ -126,6 +127,46 @@ def test_sync_is_idempotent():
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     # 1 project-root + 1 host + 2 services, no duplicates on re-sync
     assert len(nodes) == 4
+
+
+def test_runbook_workflow_projects_steps_and_branch_edges():
+    db = database()
+    p = project(db)
+    target = target_with_services(db, p.id)
+    instance = RunbookInstance(project_id=p.id, target_id=target.id,
+                               version_id=1, template_name="HTTP 검증",
+                               target_name=target.name)
+    db.add(instance)
+    db.flush()
+    steps = [
+        RunbookStepInstance(instance_id=instance.id, source_step_id=1,
+                            position=1, title="초기 확인", node_key="start",
+                            status="completed", outcome="not_found",
+                            transitions=json.dumps([{"target": "next", "label": "미발견"}])),
+        RunbookStepInstance(instance_id=instance.id, source_step_id=2,
+                            position=2, title="다음 확인", node_key="next",
+                            status="not_started", activation="ready"),
+    ]
+    db.add_all(steps)
+    db.flush()
+    service.sync_from_project(db, p.id)
+    service.sync_from_project(db, p.id)
+    nodes = {json.loads(n.source_ref)["id"]: n for n in db.query(GraphNode).all()
+             if n.source_ref and json.loads(n.source_ref).get("kind") == "runbook_step"}
+    assert len(nodes) == 2
+    assert nodes[steps[0].id].status == "succeeded"
+    assert json.loads(nodes[steps[0].id].meta)["outcome"] == "not_found"
+    assert db.query(GraphEdge).filter_by(source=nodes[steps[0].id].id,
+                                         target=nodes[steps[1].id].id,
+                                         relation="precedes").count() == 1
+    host = db.query(GraphNode).filter_by(type="host").one()
+    assert db.query(GraphEdge).filter_by(source=host.id,
+                                         target=nodes[steps[0].id].id,
+                                         relation="attempted").count() == 1
+    steps[1].status = "blocked"
+    db.flush()
+    service.sync_from_project(db, p.id)
+    assert nodes[steps[1].id].status == "blocked"
 
 
 def test_passive_command_appears_as_a_graph_node_without_duplicates():
