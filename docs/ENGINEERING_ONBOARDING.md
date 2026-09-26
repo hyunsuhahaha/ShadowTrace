@@ -194,7 +194,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 | Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs, 종료 세션 `/retry` 재시작 |
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
-| Evidence | `modules/evidence/router.py` | Evidence files, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
+| Evidence | `modules/evidence/router.py` | Evidence files, 출처(`source_type`/`source_id`) 필터, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
 | Note | `modules/notes/router.py` | `Note` rows (project 필수, target/service/credential 선택 스코프) |
 | Finding | `modules/findings/router.py` | Finding과 link tables |
 | Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export |
@@ -625,14 +625,15 @@ API: `/targets`, `/web/requests*`(CRUD, duplicate, exchanges, send), `/web/excha
 | `ProxyPanel.tsx` | mitmproxy 패시브 캡처(시작/중지, CA 인증서 다운로드), 클라우드 지문 배지 |
 | `murmurHash.ts` / `curlImport.ts` | Shodan favicon 해시 계산 / cURL → 요청 초안 파서(비-컴포넌트 헬퍼) |
 
-### 10.4 `EvidenceWorkspace.tsx` — 증적 (`#evidence`)
+### 10.4 `EvidenceWorkspace.tsx` — 증적 (`#evidence`, `#evidence/{targetId}/{evidenceId}`)
 
 대상별 파일/스크린샷/플래그/마크다운 업로드(드래그앤드롭), 메타데이터 편집(제목,
 사용자명/호스트명/획득 권한, 민감도, 보고서 포함 여부, 태그), Exploit Research 후보
 연결, 선택적 ZIP export. 목록은 종류·원본 파일·출처·획득 시각·크기를 표시하고,
 command output/Nmap XML/HTTP/Markdown 등 텍스트 파일은 최대 256 KiB까지 오른쪽에서
 미리본을 제공한다. 하위 컴포넌트 없음.
-API: `/targets`, `/evidence?target_id=`, `/evidence/{id}`, `/evidence/{id}/preview`, `/evidence/upload`,
+그래프의 passive 터미널 활동 상세에서 출처별 증거를 조회해 해당 항목으로 이동할 수 있다.
+API: `/targets`, `/evidence?target_id=`, `/evidence?project_id=&source_type=&source_id=`, `/evidence/{id}`, `/evidence/{id}/preview`, `/evidence/upload`,
 `/evidence/export`, `/projects/{id}/exploit-research?target_id=`.
 
 ### 10.5 `DirectoryWorkspace.tsx` — AD 정보 (`#directory`)

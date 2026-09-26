@@ -4,6 +4,7 @@ import { EmptyState, ErrorState, LoadingState } from "./ui";
 type Target = { id: number; project_id: number; name: string; ip: string };
 type Evidence = {
   id: number;
+  target_id: number;
   title: string;
   description: string;
   kind: string;
@@ -30,6 +31,7 @@ const sourceLabel = (item: Evidence) => {
   const source = item.source_type === "scan" ? "Scan"
     : item.source_type === "hash_crack" || item.source_type === "hash_crack_job" ? "Hash cracking"
     : item.source_type === "execution" ? "Execution"
+    : item.source_type === "passive_activity" ? "터미널 수집"
     : item.source_type === "upload" ? "직접 업로드" : item.source_type || "기록";
   return `${source}${item.source_id ? ` #${item.source_id}` : ""}`;
 };
@@ -51,9 +53,11 @@ const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
   return r.json();
 };
-export default function EvidenceWorkspace() {
+export default function EvidenceWorkspace({ initialTargetId, initialEvidenceId }: {
+  initialTargetId?: number; initialEvidenceId?: number;
+}) {
   const qc = useQueryClient();
-  const [targetId, setTargetId] = useState<number>(),
+  const [targetId, setTargetId] = useState<number | undefined>(initialTargetId),
     [researchId, setResearchId] = useState<number>(),
     [selected, setSelected] = useState<number[]>([]),
     [active, setActive] = useState<Evidence>(),
@@ -84,6 +88,16 @@ export default function EvidenceWorkspace() {
   useEffect(() => {
     if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
   }, [targets.data, targetId]);
+  useEffect(() => {
+    if (!initialTargetId || !initialEvidenceId) return;
+    setTargetId(initialTargetId);
+    setActive(undefined);
+  }, [initialTargetId, initialEvidenceId]);
+  useEffect(() => {
+    if (!initialEvidenceId || !evidence.data) return;
+    const linked = evidence.data.find((item) => item.id === initialEvidenceId);
+    if (linked) setActive(linked);
+  }, [initialEvidenceId, evidence.data]);
   useEffect(() => {
     if (targetId) dispatchEvent(new CustomEvent("oscp-target-change", {detail: targetId}));
   }, [targetId]);

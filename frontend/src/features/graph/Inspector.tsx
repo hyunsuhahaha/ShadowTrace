@@ -126,6 +126,12 @@ export function Inspector(props: {
   const autoReconResultJobId = source?.kind === "autorecon_results" ? source.id : null;
   const passive = n && (source?.kind === "command_activity" || source?.kind === "passive_activity")
     ? nodeMeta(n) : null;
+  const passiveEvidence = useQuery({
+    queryKey: ["passiveEvidence", props.projectId, source?.id],
+    enabled: !!passive && !!props.projectId && source?.id !== undefined,
+    queryFn: () => api<Array<{ id: number; target_id: number; title: string; original_name: string }>>(
+      `/evidence?project_id=${props.projectId}&source_type=passive_activity&source_id=${source!.id}`),
+  });
   const [openAutoReconPath, setOpenAutoReconPath] = useState<string | null>(null);
   const autoReconResults = useQuery({
     queryKey: ["autoReconResults", autoReconResultJobId],
@@ -1025,6 +1031,13 @@ export function Inspector(props: {
             {passive.startedAt || ""}{passive.endedAt ? ` → ${passive.endedAt}` : ""}
             {passive.exitCode != null ? ` · exit ${passive.exitCode}` : ""}
           </div>
+          {!!passiveEvidence.data?.length && <div style={{ marginTop: 10 }}>
+            <strong>수집된 증거</strong>
+            {passiveEvidence.data.map((item) => <div key={item.id}>
+              <a href={`#evidence/${item.target_id}/${item.id}`}>{item.title}</a>
+              {item.original_name && <> · <a href={`/api/evidence/${item.id}/file`}>다운로드</a></>}
+            </div>)}
+          </div>}
         </div>
       </section>}
       {ftpAnonMatch && (

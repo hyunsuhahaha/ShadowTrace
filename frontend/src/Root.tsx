@@ -49,7 +49,12 @@ export default function Root(){
   switch(page){
     case"enumeration":content=<><a className="backToScans" href="#scans">← Scan Center</a><Enumeration/></>;break;
     case"web":content=<WebWorkspace initialTab={subroute}/>;break;
-    case"evidence":content=<EvidenceWorkspace/>;break;
+    case"evidence":{
+      const [target, evidence] = (subroute || "").split("/").map(Number);
+      content=<EvidenceWorkspace initialTargetId={target || undefined}
+        initialEvidenceId={evidence || undefined}/>;
+      break;
+    }
     case"directory":content=<DirectoryWorkspace/>;break;
     case"sessions":content=<SessionWorkspace/>;break;
     case"reports":content=<ReportWorkspace/>;break;

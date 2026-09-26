@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Evidence, Finding, FindingEvidence, GraphEdge, Project, Target
-from app.modules.evidence.router import (evidence_archive, evidence_preview,
+from app.modules.evidence.router import (evidence, evidence_archive, evidence_preview,
     evidence_zip2john, export_evidence, extract_archive_entry, upload_evidence)
 from app.schemas import ArchiveExtractIn
 
@@ -18,6 +18,28 @@ def database():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
+
+
+def test_evidence_can_be_filtered_by_passive_activity_source():
+    db = database()
+    project = Project(name="Evidence Lab", description="")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Box", ip="10.10.10.12")
+    db.add(target); db.flush()
+    db.add_all([
+        Evidence(project_id=project.id, target_id=target.id, title="ffuf",
+                 kind="command_output", source_type="passive_activity", source_id=7),
+        Evidence(project_id=project.id, target_id=target.id, title="curl",
+                 kind="command_output", source_type="passive_activity", source_id=8),
+        Evidence(project_id=project.id, target_id=target.id, title="upload",
+                 kind="attachment", source_type="upload", source_id=7),
+    ])
+    db.commit()
+
+    rows = evidence(target_id=target.id, project_id=project.id,
+                    source_type="passive_activity", source_id=7, db=db)
+
+    assert [row.title for row in rows] == ["ffuf"]
 
 
 def test_evidence_hash_duplicate_and_zip_manifest(tmp_path, monkeypatch):

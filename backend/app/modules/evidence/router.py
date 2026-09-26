@@ -48,12 +48,17 @@ def need(db: Session, model, ident: int):
 
 @router.get("", response_model=list[EvidenceOut])
 def evidence(target_id: int | None = None, project_id: int | None = None,
+             source_type: str | None = None, source_id: int | None = None,
              db: Session = Depends(get_db)):
     statement = select(Evidence).order_by(Evidence.id.desc())
     if target_id:
         statement = statement.where(Evidence.target_id == target_id)
     if project_id:
         statement = statement.where(Evidence.project_id == project_id)
+    if source_type:
+        statement = statement.where(Evidence.source_type == source_type)
+    if source_id is not None:
+        statement = statement.where(Evidence.source_id == source_id)
     return db.scalars(statement.limit(1000)).all()
 
 
