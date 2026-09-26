@@ -706,10 +706,10 @@ class Observer:
         tail = self._proc(pid, "stat").read_text().rpartition(") ")[2].split()
         return tail[19]
 
-    def _handle_nmap_exec(self, pid: int, uid: int) -> None:
+    def _handle_activity_exec(self, pid: int, uid: int) -> None:
         try:
             argv = redact_argv(self._argv(pid))
-            if not argv or Path(argv[0]).name != "nmap":
+            if not argv or Path(argv[0]).name not in {"nmap", "ffuf"}:
                 return
             process_key = f"{self.boot_id}:{pid}:{self._start_ticks(pid)}"
             stem = hashlib.sha256(process_key.encode()).hexdigest()
@@ -729,7 +729,7 @@ class Observer:
         except (FileNotFoundError, OSError, ValueError):
             return
 
-    def _handle_nmap_write(self, event: Event) -> None:
+    def _handle_activity_write(self, event: Event) -> None:
         activity = self.activities.get(event.pid)
         if not activity:
             return
@@ -743,7 +743,7 @@ class Observer:
         if event.total_size > event.size or len(chunk) < event.size:
             activity["capture_truncated"] = True
 
-    def _handle_nmap_exit(self, event: Event) -> None:
+    def _handle_activity_exit(self, event: Event) -> None:
         activity = self.activities.pop(event.pid, None)
         if not activity:
             return
@@ -769,13 +769,13 @@ class Observer:
             return
         if event.kind == 1:
             self._generic_process(event, "process_exec")
-            self._handle_nmap_exec(event.pid, event.uid)
+            self._handle_activity_exec(event.pid, event.uid)
         elif event.kind == 2:
             self._generic_io(event, "stdio_write")
-            self._handle_nmap_write(event)
+            self._handle_activity_write(event)
         elif event.kind == 3:
             self._generic_process(event, "process_exit")
-            self._handle_nmap_exit(event)
+            self._handle_activity_exit(event)
         elif event.kind == 4:
             self._generic_process(event, "process_fork")
         elif event.kind == 5:

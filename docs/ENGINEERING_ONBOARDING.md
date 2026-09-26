@@ -256,7 +256,7 @@ process 처리는 [`backend/app/executor.py`](../backend/app/executor.py)에 있
 `router.py`가 아니라 [`backend/app/modules/executions/service.py`](../backend/app/modules/executions/service.py)의
 `start_execution()`에 분리돼 있다.
 
-### Passive endpoint events와 Nmap projection
+### Passive endpoint events와 Nmap/ffuf projection
 
 ```text
 사용자 process 계보의 fork/exec/exit, stdio read/write,
@@ -278,6 +278,12 @@ socket connect/bind/listen/accept4/first-sendto,
   → Target / open Service / ScanArtifact / Evidence
   → 기존 Graph projection + snapshot
   → PassiveActivity 자체도 해당 Host 아래 technique 노드로 투영
+
+같은 observer의 local ffuf exec/write/exit
+  → state/passive-inbox에 stdout + metadata 보존
+  → 명시한 JSON 출력 파일의 소유자·크기·실행 시각 확인
+  → URL의 literal IP가 기존 Target 하나와 일치할 때 PassiveActivity / 민감 Evidence 저장
+  → 결과 URL이 다른 IP를 가리키면 unresolved (자동 Finding/ServiceObservation 없음)
 ```
 
 Graph 투영은 [`backend/app/modules/graph/service.py`](../backend/app/modules/graph/service.py)의
@@ -289,7 +295,7 @@ PassiveActivity는 process key로 중복을 제거한다. 민감 입력은 노�
 collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), raw batch 검증과
 저장은 [`backend/app/modules/passive_activity/raw_events.py`](../backend/app/modules/passive_activity/raw_events.py),
 session correlation은 [`backend/app/modules/passive_activity/reconstruction.py`](../backend/app/modules/passive_activity/reconstruction.py),
-Nmap text parser·resolver는 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
+Nmap text parser·resolver와 ffuf JSON 증거 수집은 [`backend/app/modules/passive_activity/service.py`](../backend/app/modules/passive_activity/service.py)에
 있다. raw schema는 [`0044_raw_activity_events.py`](../backend/alembic/versions/0044_raw_activity_events.py),
 derived schema는 [`0045_passive_session_reconstruction.py`](../backend/alembic/versions/0045_passive_session_reconstruction.py)가
 관리한다. `POST /api/passive/sync`는 기존 응답 필드를 유지하면서 raw ingest 뒤 reconstruction

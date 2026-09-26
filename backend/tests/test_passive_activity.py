@@ -231,3 +231,79 @@ def test_declared_nmap_xml_symlink_is_not_read(tmp_path):
     assert service._fresh_declared_xml(
         ["nmap", "-oA", "scan", "10.10.11.23"],
         {"cwd": str(tmp_path), "started_at": now, "ended_at": now}) is None
+
+
+def test_passive_ffuf_json_becomes_sensitive_evidence_without_finding(
+        tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    monkeypatch.setattr(service, "WORKSPACE_DIR", tmp_path / "workspace")
+    db = database()
+    project = Project(name="Lab")
+    db.add(project); db.flush()
+    target = Target(project_id=project.id, name="Loopback", ip="127.0.0.1")
+    db.add(target); db.commit()
+    url = "http://127.0.0.1:8000/FUZZ"
+    content = json.dumps({
+        "config": {"url": url},
+        "results": [{"url": "http://127.0.0.1:8000/docs", "status": 200,
+                     "length": 1010, "input": {"FUZZ": "docs"}}],
+    }).encode()
+    (tmp_path / "ffuf.json").write_bytes(content)
+    (inbox / "capture.out").write_bytes(b"docs\n")
+    start = datetime.now(timezone.utc) - timedelta(seconds=1)
+    metadata = {
+        "process_key": "boot:ffuf:1", "pid": 77, "uid": os.getuid(),
+        "argv": ["ffuf", "-u", url, "-w", "/tmp/words", "-of", "json",
+                 "-o", "ffuf.json"],
+        "cwd": str(tmp_path), "started_at": start.isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "output_file": "capture.out", "exit_code": 0,
+    }
+    (inbox / "capture.json").write_text(json.dumps(metadata))
+
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    activity = db.query(PassiveActivity).one()
+    evidence = db.query(Evidence).one()
+    assert (activity.status, activity.parser, activity.target_id) == (
+        "observed", "ffuf-json-v1", target.id)
+    assert evidence.source_type == "passive_activity"
+    assert evidence.source_id == activity.id
+    assert evidence.sensitivity == "sensitive"
+    assert Path(evidence.file_path).read_bytes() == content
+    assert db.query(Finding).count() == 0
+    assert db.query(ServiceObservation).count() == 0
+    (inbox / "capture.json").write_text(json.dumps(metadata))
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    assert db.query(Evidence).count() == 1
+
+
+def test_passive_ffuf_rejects_cross_target_json(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    db = database()
+    project = Project(name="Lab")
+    db.add(project); db.flush()
+    db.add(Target(project_id=project.id, name="Loopback", ip="127.0.0.1"))
+    db.commit()
+    url = "http://127.0.0.1:8000/FUZZ"
+    (tmp_path / "ffuf.json").write_text(json.dumps({
+        "config": {"url": url},
+        "results": [{"url": "http://10.10.11.23/private", "status": 200}],
+    }))
+    (inbox / "capture.out").write_bytes(b"")
+    (inbox / "capture.json").write_text(json.dumps({
+        "process_key": "boot:ffuf:2", "pid": 78, "uid": os.getuid(),
+        "argv": ["ffuf", "-u", url, "-o", "ffuf.json"],
+        "cwd": str(tmp_path),
+        "started_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "output_file": "capture.out", "exit_code": 0,
+    }))
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    assert db.query(PassiveActivity).one().status == "unresolved"
+    assert db.query(Evidence).count() == 0

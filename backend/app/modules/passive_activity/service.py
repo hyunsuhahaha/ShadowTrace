@@ -10,6 +10,7 @@ import stat
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from xml.etree.ElementTree import ParseError
 
 from defusedxml.common import DefusedXmlException
@@ -17,8 +18,8 @@ from defusedxml.common import DefusedXmlException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...config import STATE_DIR
-from ...models import PassiveActivity, Project, ScanArtifact, ScanJob, Target
+from ...config import STATE_DIR, WORKSPACE_DIR
+from ...models import Evidence, PassiveActivity, Project, ScanArtifact, ScanJob, Target
 from ...nmap_parser import parse_nmap
 from ..graph import service as graph_service
 from ..scan_center.service import (
@@ -114,6 +115,10 @@ def _declared_xml_path(argv: list[str], cwd: str) -> Path | None:
 
 def _fresh_declared_xml(argv: list[str], metadata: dict) -> bytes | None:
     path = _declared_xml_path(argv, str(metadata.get("cwd") or ""))
+    return _fresh_declared_file(path, metadata)
+
+
+def _fresh_declared_file(path: Path | None, metadata: dict) -> bytes | None:
     started = metadata.get("started_at")
     if path is None or not started:
         return None
@@ -130,11 +135,124 @@ def _fresh_declared_xml(argv: list[str], metadata: dict) -> bytes | None:
                     or info.st_mtime > min(end_time + 2, time.time() + 2)):
                 return None
             with os.fdopen(fd, "rb", closefd=False) as source:
-                return source.read(10 * 1024 * 1024 + 1)
+                content = source.read(10 * 1024 * 1024 + 1)
+                return content if len(content) <= 10 * 1024 * 1024 else None
         finally:
             os.close(fd)
     except (OSError, TypeError, ValueError):
         return None
+
+
+def _ffuf_json_path(argv: list[str], cwd: str) -> Path | None:
+    output = ""
+    output_format = "json"  # ffuf's default output-file format.
+    for index, value in enumerate(argv[1:], 1):
+        if value == "-o" and index + 1 < len(argv):
+            output = argv[index + 1]
+        elif value.startswith("-o="):
+            output = value[3:]
+        elif value == "-of" and index + 1 < len(argv):
+            output_format = argv[index + 1]
+        elif value.startswith("-of="):
+            output_format = value[4:]
+    if not output or output == "-" or output_format != "json":
+        return None
+    path = Path(output)
+    if not path.is_absolute() and not Path(cwd).is_absolute():
+        return None
+    return path if path.is_absolute() else Path(cwd) / path
+
+
+def _ffuf_url(argv: list[str]) -> str:
+    for index, value in enumerate(argv[1:], 1):
+        if value == "-u" and index + 1 < len(argv):
+            return argv[index + 1]
+        if value.startswith("-u="):
+            return value[3:]
+    return ""
+
+
+def _literal_http_ip(url: str) -> str | None:
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        return str(ipaddress.ip_address(parsed.hostname))
+    except ValueError:
+        return None
+
+
+def _ingest_ffuf(db: Session, metadata: dict, argv: list[str],
+                 output_path: Path) -> PassiveActivity:
+    partial = bool(metadata.get("capture_truncated")) or bool(
+        int(metadata.get("loss_count", 0)))
+    activity = PassiveActivity(
+        process_key=str(metadata["process_key"])[:160], tool="ffuf",
+        command=shlex.join(_redact_argv(argv)), argv=json.dumps(_redact_argv(argv)),
+        cwd=str(metadata.get("cwd", "")), tty=str(metadata.get("tty", ""))[:160],
+        pid=int(metadata["pid"]),
+        ppid=int(metadata["ppid"]) if metadata.get("ppid") is not None else None,
+        uid=int(metadata["uid"]), started_at=_timestamp(metadata.get("started_at")),
+        ended_at=_timestamp(metadata.get("ended_at")),
+        exit_code=int(metadata["exit_code"]) if metadata.get("exit_code") is not None else None,
+        output_path=str(output_path), parser="ffuf-json-v1",
+        confidence=60 if partial else 85,
+    )
+    db.add(activity)
+    db.flush()
+    try:
+        target_ip = _literal_http_ip(_ffuf_url(argv))
+        if target_ip is None:
+            raise ValueError("ffuf requires one literal HTTP IP target")
+        targets = list(db.scalars(select(Target).where(Target.ip == target_ip)))
+        if len(targets) != 1:
+            raise ValueError("ffuf target must match exactly one existing target")
+        path = _ffuf_json_path(argv, activity.cwd)
+        content = _fresh_declared_file(path, metadata)
+        if content is None:
+            raise ValueError("fresh ffuf JSON output is unavailable")
+        document = json.loads(content)
+        if not isinstance(document, dict) or not isinstance(document.get("results"), list):
+            raise ValueError("invalid ffuf JSON output")
+        config = document.get("config")
+        if not isinstance(config, dict) or config.get("url") != _ffuf_url(argv):
+            raise ValueError("ffuf JSON does not match the executed URL")
+        if any(not isinstance(row, dict) or _literal_http_ip(str(row.get("url", ""))) != target_ip
+               for row in document["results"]):
+            raise ValueError("ffuf JSON contains results for another target")
+        target = targets[0]
+        project = db.get(Project, target.project_id)
+        folder = WORKSPACE_DIR / "passive" / str(project.id) / str(target.id) / str(activity.id)
+        folder.mkdir(parents=True, exist_ok=True)
+        os.chmod(folder, 0o700)
+        destination = folder / "ffuf.json"
+        destination.write_bytes(content)
+        os.chmod(destination, 0o600)
+        digest = hashlib.sha256(content).hexdigest()
+        db.add(Evidence(
+            project_id=project.id, target_id=target.id,
+            title=f"ffuf JSON results ({len(document['results'])})",
+            description="Passive capture of the declared ffuf JSON output file.",
+            kind="command_output", source_type="passive_activity", source_id=activity.id,
+            file_path=str(destination), original_name=path.name, sha256=digest,
+            size=len(content), sensitivity="sensitive", include_report=False,
+        ))
+        activity.project_id, activity.target_id = project.id, target.id
+        activity.output_path, activity.sha256 = str(destination), digest
+        activity.status = "observed"
+        if partial:
+            activity.error = "collector reported truncation or event loss"
+        db.commit()
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return activity
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        activity.status = "unresolved"
+        activity.error = str(exc)
+        db.commit()
+        return activity
 
 
 def _resolve_target(db: Session, ip: str) -> tuple[Project, Target]:
@@ -178,9 +296,14 @@ def ingest_file(db: Session, metadata_path: Path) -> PassiveActivity:
     if len(output) > 20 * 1024 * 1024:
         raise ValueError("captured output exceeds 20 MiB")
     argv = metadata.get("argv")
-    if not isinstance(argv, list) or not argv or Path(str(argv[0])).name != "nmap":
-        raise ValueError("activity is not an nmap execution")
+    if not isinstance(argv, list) or not argv:
+        raise ValueError("activity has no executable")
     argv = [str(value) for value in argv]
+    tool = Path(argv[0]).name
+    if tool == "ffuf":
+        return _ingest_ffuf(db, metadata, argv, output_path)
+    if tool != "nmap":
+        raise ValueError("activity is not a supported execution")
     redacted_argv = _redact_argv(argv)
     declared_xml = _fresh_declared_xml(argv, metadata)
     selected_output = declared_xml if declared_xml is not None else output

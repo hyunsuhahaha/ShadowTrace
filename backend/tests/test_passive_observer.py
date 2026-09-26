@@ -1,6 +1,7 @@
 import importlib.util
 import ctypes
 import json
+import os
 from pathlib import Path
 
 
@@ -25,6 +26,27 @@ def test_redact_argv_covers_separate_flags_headers_and_assignments():
         "Authorization: <redacted>", "https://<redacted>@example.test/",
     ]
     assert observer.redact_argv(["nmap", "-p", "80", "127.0.0.1"])[2] == "80"
+
+
+def test_ffuf_exec_is_tracked_for_declared_output(tmp_path, monkeypatch):
+    instance = observer.Observer.__new__(observer.Observer)
+    instance.inbox = tmp_path
+    instance.boot_id = "boot"
+    instance.owner_uid = os.getuid()
+    instance.owner_gid = os.getgid()
+    instance.activities = {}
+    monkeypatch.setattr(instance, "_argv", lambda _pid: [
+        "/usr/bin/ffuf", "-u", "http://127.0.0.1/FUZZ",
+        "-of", "json", "-o", "results.json"])
+    monkeypatch.setattr(instance, "_start_ticks", lambda _pid: "123")
+    monkeypatch.setattr(instance, "_context", lambda *_args: {
+        "ppid": 1, "cwd": str(tmp_path), "fd_target": "/dev/pts/1"})
+
+    instance._handle_activity_exec(77, instance.owner_uid)
+
+    assert instance.activities[77]["argv"][0] == "/usr/bin/ffuf"
+    assert instance.activities[77]["process_key"] == "boot:77:123"
+    os.close(instance.activities[77]["output_fd"])
 
 
 def test_event_spool_persists_sequence_and_loss(tmp_path):
@@ -105,7 +127,7 @@ def test_server_pid_is_ignored_but_child_process_is_not(monkeypatch):
     instance.ignored_pids = {10}
     seen = []
     monkeypatch.setattr(instance, "_generic_process", lambda event, kind: seen.append((event.pid, kind)))
-    monkeypatch.setattr(instance, "_handle_nmap_exec", lambda *_args: None)
+    monkeypatch.setattr(instance, "_handle_activity_exec", lambda *_args: None)
 
     for pid in (10, 11):
         event = observer.Event(kind=1, pid=pid)
