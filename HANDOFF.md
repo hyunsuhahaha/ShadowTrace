@@ -20,9 +20,16 @@
   PostExploitation 비동기 테스트 파일 단독 8/8 통과. Kali live DB는
   `/home/kali/shadowtrace-db-backups/live-pre-release15.db`에 백업한 뒤 0049→0053으로
   마이그레이션했다. 실행본은 `/home/kali/projects/ShadowTrace-live-release-15`의
-  `1e7a92d`, PID 429097, port 8000. SPA/OpenAPI/Projects/Graph GET 200,
+  코드 `e05dabb`, PID 433691, port 8000. SPA/OpenAPI/Projects/Graph GET 200,
   새 API 라우트 4종 등록 확인. 원본 수집 어댑터와 의사결정 기록 등 남은 제한은
   `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에 적었다.
+- 2026-09-27 재검증: 보고서에 새 민감 Graph 경로 또는 Evidence를 추가하면 이전
+  민감도 검토가 남는 문제와, 범위 밖 자산의 세부 대상을 새 Step에 연결할 수 있는
+  문제를 재현하고 차단했다. 세부 대상이 있는 자산의 유형 변경도 거부해 유형별
+  속성 검증과 저장된 계보가 어긋나지 않게 했다. 관련 28개, 전체 backend 658개,
+  프런트 빌드 통과. Kali 실행본을 `e05dabb`로 재시작했고 live DB 0053 및
+  SPA/OpenAPI/Projects/Graph GET 200을 재확인했다. README의 기본 Runbook 수와
+  보고서 기능, 아키텍처 API 목록, 온보딩 문서와 현업 흐름 제한도 갱신했다.
 - 비 IP 평가 자산·RoE·HTTP 실행 계보(2026-09-26, `47449a6`–`675af0f`):
   `AssessmentAsset` 8유형과 모바일·클라우드·Kubernetes·소스·무선·ICS 수동
   Runbook 6종(총 30종)을 추가했다. `#assessment`에서 자산·범위·Runbook 단계·Evidence·

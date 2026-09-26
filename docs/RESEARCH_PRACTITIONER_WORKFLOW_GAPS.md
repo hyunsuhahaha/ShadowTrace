@@ -156,6 +156,7 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
   유형 변경은 거부된다. 보고서에 새 민감 Graph 경로 또는 Evidence를 더하면 기존
   민감도 검토를 다시 해야 한다.
 
-남은 제한은 모바일/클라우드/Kubernetes/
-무선/ICS 원본 수집 어댑터, 고객 의사결정 기록, API 밖에서 ORM으로 만든 Project의
-RoE 행 누락 예외다. 세부 자산 노드의 존재는 검사를 완료했다는 뜻이 아니다.
+남은 제한은 세부 대상·역할·버전별 결과 비교와 coverage 집계,
+모바일/클라우드/Kubernetes/소스/무선/ICS 원본 수집 어댑터, 고객 의사결정 기록,
+API 밖에서 ORM으로 만든 Project의 RoE 행 누락 예외다. 세부 자산 노드의 존재는
+검사를 완료했다는 뜻이 아니다.

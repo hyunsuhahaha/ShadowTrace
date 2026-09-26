@@ -170,9 +170,10 @@ Step과 Graph의 연결은 검사 또는 침해 성공 판정이 아닙니다.
 ### Reports
 
 - 사용자가 작성한 Markdown 기반 보고서
-- 선택한 Evidence와 Exploit Research 결과 연결
+- 선택한 Evidence, Exploit Research 결과, Runbook 검사 범위 연결
+- 성공 Graph 경로의 노드·엣지와 Evidence SHA-256을 시점별로 고정
 - 누락 항목과 민감정보 검토
-- Markdown, HTML 및 PDF 내보내기
+- Markdown, HTML, PDF 및 DOCX 내보내기
 
 ### Operations 및 VPN
 
