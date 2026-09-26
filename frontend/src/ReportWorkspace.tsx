@@ -13,6 +13,7 @@ type Report = {
   evidence_links: string;
   exploit_research_links: string;
   runbook_instance_links: string;
+  graph_path_snapshots: string;
   sensitivity_reviewed: boolean;
 };
 type Evidence = {
@@ -30,6 +31,9 @@ type Research = {
   validation_status: string;
 };
 type Runbook = { id: number; template_name: string; target_name: string; status: string };
+type GraphPathSnapshot = {captured_at:string;caption:string;
+  nodes:{id:string;label:string;type:string;status:string}[];
+  evidence:{id:number;sha256:string;sensitivity:string}[]};
 const api = async <T,>(p: string, i?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + p, i);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -43,6 +47,7 @@ const blank = (projectId?: number): Partial<Report> => ({
   evidence_links: "[]",
   exploit_research_links: "[]",
   runbook_instance_links: "[]",
+  graph_path_snapshots: "[]",
   sensitivity_reviewed: false,
 });
 export default function ReportWorkspace({ embedded = false, initialProjectId, onBack }: {
@@ -57,7 +62,9 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
     [preview, setPreview] = useState(""),
     [view, setView] = useState<"findings" | "library" | "reports">("findings"),
     [profile, setProfile] = useState<"client" | "internal">("client"),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [selectedPathIndex,setSelectedPathIndex] = useState(""),
+    [pathCaption,setPathCaption] = useState("");
   const projects = useQuery({
       queryKey: ["projects"],
       queryFn: () => api<Project[]>("/projects"),
@@ -82,6 +89,16 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
       queryKey: ["reportRunbooks", projectId],
       queryFn: () => api<Runbook[]>(`/runbooks/instances?project_id=${projectId}`),
       enabled: !!projectId,
+    }),
+    graphPaths = useQuery({
+      queryKey:["reportGraphPaths",projectId],
+      queryFn:()=>api<{paths:string[][]}>(`/projects/${projectId}/graph/attack-paths`),
+      enabled:!!projectId,
+    }),
+    graphNodes = useQuery({
+      queryKey:["reportGraphNodes",projectId],
+      queryFn:()=>api<{nodes:{id:string;label:string}[]}>(`/projects/${projectId}/graph`),
+      enabled:!!projectId,
     });
   useEffect(() => {
     if (!projectId && projects.data?.[0]) setProjectId(projects.data[0].id);
@@ -142,6 +159,33 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
     exploit_research_links: researchLinks(),
     runbook_instance_links: runbookLinks(),
   });
+  const snapshots = ():GraphPathSnapshot[] => {
+    try{return JSON.parse(draft.graph_path_snapshots||"[]");}catch{return [];}
+  };
+  const capturePath = async () => {
+    if(!reportId||dirty||selectedPathIndex===""){
+      setError("보고서를 저장하고 Graph 경로를 선택하세요.");return;
+    }
+    const path=graphPaths.data?.paths[Number(selectedPathIndex)];
+    if(!path)return;
+    try{
+      setError("");
+      const row=await api<Report>(`/reports/${reportId}/graph-paths`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({node_ids:path,caption:pathCaption}),
+      });
+      setDraft(row);setBaseline(JSON.stringify(row));setPathCaption("");
+      qc.invalidateQueries({queryKey:["reports",projectId]});
+    }catch(exc){setError(String(exc));}
+  };
+  const removePath = async (index:number) => {
+    if(!reportId||dirty){setError("보고서를 저장한 뒤 경로를 변경하세요.");return;}
+    try{
+      const row=await api<Report>(`/reports/${reportId}/graph-paths/${index}`,{method:"DELETE"});
+      setDraft(row);setBaseline(JSON.stringify(row));
+      qc.invalidateQueries({queryKey:["reports",projectId]});
+    }catch(exc){setError(String(exc));}
+  };
   const save = async () => {
     try {
       setError("");
@@ -286,6 +330,23 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
               <span>{item.template_name}<small>{item.target_name} · {item.status}</small></span>
             </label>
           ))}
+          <h3>Graph 공격 경로 스냅샷</h3>
+          <small>현재 성공 경로를 선택하면 연결된 Evidence ID·SHA-256과 함께 보고서에 고정합니다.</small>
+          <select aria-label="Graph 경로 선택" value={selectedPathIndex}
+            onChange={event=>setSelectedPathIndex(event.target.value)}>
+            <option value="">경로 선택…</option>{graphPaths.data?.paths.map((path,index)=>{
+              const label=(id:string)=>graphNodes.data?.nodes.find(node=>node.id===id)?.label||id;
+              return <option key={index} value={index}>{label(path[0])} → {label(path[path.length-1])} ({path.length} 노드)</option>;
+            })}</select>
+          <input aria-label="경로 설명" value={pathCaption} maxLength={200}
+            onChange={event=>setPathCaption(event.target.value)} placeholder="경로 설명" />
+          <button type="button" disabled={!reportId||dirty||selectedPathIndex===""}
+            onClick={()=>void capturePath()}>선택한 경로 고정</button>
+          {snapshots().map((snapshot,index)=><div key={index} className="reportPathSnapshot">
+            <strong>{snapshot.caption||`경로 ${index+1}`}</strong>
+            <small>{snapshot.nodes.length} 노드 · Evidence {snapshot.evidence.length}개 · {snapshot.captured_at}</small>
+            <button type="button" disabled={dirty} onClick={()=>void removePath(index)}>제거</button>
+          </div>)}
         </aside>
         <section>
           <div className="reportTools">

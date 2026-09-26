@@ -10,15 +10,18 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 from ...database import get_db
 from ...config import WORKSPACE_DIR
-from ...models import (Evidence, EvidenceImageEdit, Finding, FindingAsset,
+from ...models import (AssessmentAsset, Evidence, EvidenceImageEdit, Finding, FindingAsset,
     FindingEvidence, FindingRetest,
     ExploitLocalRun, ExploitModification, ExploitResearch, ExploitSource,
-    Project, Report, RunbookInstance, RunbookStepInstance, Service, Target)
+    GraphEdge, GraphNode, Project, RemoteExecution, Report,
+    RunbookInstance, RunbookStepInstance, Service, Target)
+from ..graph import service as graph_service
 from ...schemas import ReportIn, ReportOut
 from ...time import utcnow
 
@@ -104,6 +107,93 @@ def update_report(ident: int, body: ReportIn,
     return row
 
 
+class GraphPathCaptureIn(BaseModel):
+    node_ids: list[str] = Field(min_length=2, max_length=50)
+    caption: str = Field(default="", max_length=200)
+
+
+@router.post("/{ident}/graph-paths", response_model=ReportOut, status_code=201)
+def capture_graph_path(ident: int, body: GraphPathCaptureIn,
+                       db: Session = Depends(get_db)):
+    report = need(db, Report, ident)
+    if body.node_ids not in graph_service.get_attack_paths(db, report.project_id):
+        raise HTTPException(409, "Select a current confirmed Graph attack path")
+    nodes = [need(db, GraphNode, node_id) for node_id in body.node_ids]
+    if any(node.project_id != report.project_id or node.hidden for node in nodes):
+        raise HTTPException(400, "Graph path contains an inaccessible node")
+    edges = []
+    for source, target in zip(nodes, nodes[1:]):
+        edge = db.scalar(select(GraphEdge).where(
+            GraphEdge.project_id == report.project_id,
+            GraphEdge.source == source.id, GraphEdge.target == target.id,
+            GraphEdge.status == "succeeded",
+            GraphEdge.relation.in_(graph_service.engine.STRUCTURAL_RELATIONS)
+        ).order_by(GraphEdge.created_at, GraphEdge.id))
+        if not edge:
+            raise HTTPException(409, "Graph path changed; choose it again")
+        edges.append(edge)
+    evidence_ids: set[int] = set()
+    for node in nodes:
+        try:
+            ref = json.loads(node.source_ref or "{}")
+        except ValueError:
+            ref = {}
+        if ref.get("kind") == "finding":
+            evidence_ids.update(db.scalars(select(FindingEvidence.evidence_id).where(
+                FindingEvidence.finding_id == ref.get("id"))).all())
+        elif ref.get("kind") == "remote_execution":
+            run = db.get(RemoteExecution, ref.get("id"))
+            if run and run.evidence_id:
+                evidence_ids.add(run.evidence_id)
+        for linked in db.scalars(select(GraphEdge).where(
+                GraphEdge.project_id == report.project_id,
+                GraphEdge.source == node.id,
+                GraphEdge.relation == "documented-by")):
+            evidence_node = db.get(GraphNode, linked.target)
+            if evidence_node:
+                try:
+                    evidence_ref = json.loads(evidence_node.source_ref or "{}")
+                except ValueError:
+                    evidence_ref = {}
+                if evidence_ref.get("kind") == "evidence":
+                    evidence_ids.add(evidence_ref["id"])
+    evidence = [db.get(Evidence, evidence_id) for evidence_id in sorted(evidence_ids)]
+    evidence = [item for item in evidence if item and item.project_id == report.project_id]
+    if not evidence:
+        raise HTTPException(409, "Attach at least one same-project Evidence item to this path")
+    snapshots = json.loads(report.graph_path_snapshots or "[]")
+    if len(snapshots) >= 20:
+        raise HTTPException(409, "A report can contain at most 20 path snapshots")
+    snapshot = {
+        "captured_at": utcnow().isoformat(), "caption": body.caption.strip(),
+        "nodes": [{"id": node.id, "type": node.type, "label": node.label,
+                   "status": node.status} for node in nodes],
+        "edges": [{"id": edge.id, "relation": edge.relation,
+                   "label": edge.label, "status": edge.status} for edge in edges],
+        "evidence": [{"id": item.id, "label": (item.title if item.sensitivity == "normal"
+                      else f"Evidence #{item.id}"), "sha256": item.sha256,
+                      "sensitivity": item.sensitivity} for item in evidence],
+    }
+    snapshots.append(snapshot)
+    report.graph_path_snapshots = json.dumps(snapshots, ensure_ascii=False)
+    report.updated_at = utcnow()
+    db.commit(); db.refresh(report)
+    return report
+
+
+@router.delete("/{ident}/graph-paths/{index}", response_model=ReportOut)
+def remove_graph_path(ident: int, index: int, db: Session = Depends(get_db)):
+    report = need(db, Report, ident)
+    snapshots = json.loads(report.graph_path_snapshots or "[]")
+    if not 0 <= index < len(snapshots):
+        raise HTTPException(404, "Graph path snapshot not found")
+    snapshots.pop(index)
+    report.graph_path_snapshots = json.dumps(snapshots, ensure_ascii=False)
+    report.updated_at = utcnow()
+    db.commit(); db.refresh(report)
+    return report
+
+
 def _runbook_coverage(db: Session, row: Report) -> list[tuple[RunbookInstance, str, list[RunbookStepInstance]]]:
     """Only explicitly selected, same-project runs become report coverage."""
     coverage = []
@@ -111,13 +201,20 @@ def _runbook_coverage(db: Session, row: Report) -> list[tuple[RunbookInstance, s
         instance = need(db, RunbookInstance, int(ident))
         if instance.project_id != row.project_id:
             raise HTTPException(400, "Linked Runbook belongs to another project")
-        target = need(db, Target, instance.target_id)
-        if target.project_id != row.project_id:
-            raise HTTPException(400, "Runbook target belongs to another project")
+        if instance.asset_id is not None:
+            asset = need(db, AssessmentAsset, instance.asset_id)
+            if asset.project_id != row.project_id:
+                raise HTTPException(400, "Runbook asset belongs to another project")
+            subject = asset.name
+        else:
+            target = need(db, Target, instance.target_id)
+            if target.project_id != row.project_id:
+                raise HTTPException(400, "Runbook target belongs to another project")
+            subject = target.ip
         steps = list(db.scalars(select(RunbookStepInstance).where(
             RunbookStepInstance.instance_id == instance.id).order_by(
             RunbookStepInstance.position, RunbookStepInstance.id)))
-        coverage.append((instance, target.ip, steps))
+        coverage.append((instance, subject, steps))
     return coverage
 
 
@@ -149,6 +246,25 @@ def _coverage_markdown(coverage: list[tuple[RunbookInstance, str, list[RunbookSt
     return "\n".join(lines) + "\n"
 
 
+def _path_snapshots(row: Report) -> list[dict]:
+    return json.loads(row.graph_path_snapshots or "[]")
+
+
+def _paths_markdown(row: Report) -> str:
+    snapshots = _path_snapshots(row)
+    if not snapshots:
+        return ""
+    lines = ["## Captured Graph Paths"]
+    for index, snapshot in enumerate(snapshots, 1):
+        lines.append(f"### {index}. {snapshot['caption'] or 'Confirmed path'}")
+        lines.append(f"Captured: {snapshot['captured_at']}")
+        for node in snapshot["nodes"]:
+            lines.append(f"- {node['type']}: {node['label']} ({node['status']})")
+        for evidence in snapshot["evidence"]:
+            lines.append(f"- Evidence #{evidence['id']} · SHA-256 {evidence['sha256']}")
+    return "\n".join(lines) + "\n"
+
+
 def render_report(db: Session, row: Report, profile: str = "internal") -> str:
     if profile not in ("client", "internal"):
         raise HTTPException(400, "Profile must be client or internal")
@@ -172,6 +288,9 @@ def render_report(db: Session, row: Report, profile: str = "internal") -> str:
         evidence_rows.append(
             f"<article><h3>Evidence #{evidence.id}: {html.escape(evidence.title)}</h3>"
             f"{preview}<p>{caption}</p><code>SHA-256: {evidence.sha256}</code></article>")
+    snapshots = _path_snapshots(row)
+    sensitive.extend(item["id"] for snapshot in snapshots for item in snapshot["evidence"]
+                     if item["sensitivity"] != "normal")
     if sensitive and not row.sensitivity_reviewed:
         raise HTTPException(
             409, f"Sensitive evidence review required for IDs: {sensitive}")
@@ -181,6 +300,20 @@ def render_report(db: Session, row: Report, profile: str = "internal") -> str:
     coverage_rows = _coverage_html(_runbook_coverage(db, row))
     coverage_section = (f"<section><h2>Testing Coverage</h2>{coverage_rows}</section>"
                         if coverage_rows else "")
+    path_sections = []
+    for index, snapshot in enumerate(snapshots, 1):
+        title = html.escape(snapshot["caption"] or f"Confirmed path {index}")
+        nodes_html = "".join(f"<li>{html.escape(node['type'])}: "
+                             f"{html.escape(node['label'])} ({html.escape(node['status'])})</li>"
+                             for node in snapshot["nodes"])
+        evidence_html = "".join(f"<li>Evidence #{item['id']} · SHA-256 "
+                                f"{html.escape(item['sha256'])}</li>"
+                                for item in snapshot["evidence"])
+        path_sections.append(f"<article><h3>{title}</h3><p>Captured "
+            f"{html.escape(snapshot['captured_at'])}</p><ol>{nodes_html}</ol>"
+            f"<ul>{evidence_html}</ul></article>")
+    paths_section = (f"<section><h2>Captured Graph Paths</h2>{''.join(path_sections)}</section>"
+                     if path_sections else "")
     research_rows = []
     status_labels = {
         "unverified": "미확인", "researching": "조사 중",
@@ -338,6 +471,7 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #aaa;padding
 <tbody>{''.join(summary_rows)}</tbody></table></section>
 <section><h2>Finding Details</h2>{''.join(finding_rows)}</section>
 {coverage_section}
+{paths_section}
 <section><h2>Exploit Research</h2>{''.join(research_rows)}</section>
 <section><h2>Evidence Index</h2>{''.join(evidence_rows)}</section></body></html>"""
 
@@ -414,6 +548,19 @@ def render_docx(db: Session, row: Report, profile: str) -> bytes:
                 for cell, value in zip(table.add_row().cells,
                                        (step.title, step.status, step.outcome)):
                     cell.text = value
+
+    snapshots = _path_snapshots(row)
+    if snapshots:
+        document.add_heading("Captured Graph Paths", level=1)
+        for index, snapshot in enumerate(snapshots, 1):
+            document.add_heading(snapshot["caption"] or f"Confirmed path {index}", level=2)
+            document.add_paragraph(f"Captured {snapshot['captured_at']}")
+            for node in snapshot["nodes"]:
+                document.add_paragraph(
+                    f"{node['type']}: {node['label']} ({node['status']})", style="List Bullet")
+            for item in snapshot["evidence"]:
+                document.add_paragraph(
+                    f"Evidence #{item['id']} · SHA-256 {item['sha256']}", style="List Bullet")
 
     findings = db.scalars(select(Finding).where(
         Finding.project_id == row.project_id)).all()
@@ -523,7 +670,9 @@ def export_report(ident: int, format: str = "html",
     document = render_report(db, row, profile)
     if format == "markdown":
         coverage = _coverage_markdown(_runbook_coverage(db, row))
-        markdown = row.markdown + ("\n\n" + coverage if coverage else "")
+        paths = _paths_markdown(row)
+        markdown = row.markdown + ("\n\n" + coverage if coverage else "") + (
+            "\n\n" + paths if paths else "")
         return Response(markdown, media_type="text/markdown",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}.md"'})
     if format == "html":

@@ -456,7 +456,7 @@ class ReportIn(BaseModel):
 class ReportOut(ORM):
     id: int; project_id: int; title: str; template: str; markdown: str
     evidence_links: str; exploit_research_links: str
-    runbook_instance_links: str; sensitivity_reviewed: bool
+    runbook_instance_links: str; graph_path_snapshots: str; sensitivity_reviewed: bool
     created_at: datetime; updated_at: datetime
 
 Severity = Literal["Critical", "High", "Medium", "Low", "Informational"]

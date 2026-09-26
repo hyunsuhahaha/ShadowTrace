@@ -3,16 +3,63 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import (Evidence, Finding, FindingEvidence, Project, Report,
+from app.models import (Evidence, Finding, FindingEvidence, GraphEdge, GraphNode, Project, Report,
     RunbookInstance, RunbookStepInstance, Target)
 from docx import Document
-from app.modules.reports.router import export_report, render_report
+from app.modules.reports.router import (GraphPathCaptureIn, capture_graph_path,
+    export_report, render_report)
 
 
 def database():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
+
+
+def test_graph_path_snapshot_keeps_original_nodes_edges_and_evidence_hash():
+    db = database()
+    project = Project(name="Path Lab")
+    db.add(project); db.flush()
+    report = Report(project_id=project.id, title="Client path report", markdown="")
+    proof = Evidence(project_id=project.id, title="Sensitive proof", kind="markdown",
+                     sensitivity="sensitive", sha256="a"*64)
+    db.add_all([report, proof]); db.flush()
+    host = GraphNode(id="path-host", project_id=project.id, type="host",
+                     label="Host A", status="succeeded")
+    finding = GraphNode(id="path-finding", project_id=project.id, type="finding",
+                        label="Confirmed finding", status="succeeded")
+    evidence_node = GraphNode(id="path-evidence", project_id=project.id,
+        type="evidence", label=f"Evidence #{proof.id}", status="untried",
+        source_ref=json.dumps({"kind":"evidence","id":proof.id}))
+    db.add_all([host, finding, evidence_node]); db.flush()
+    edge = GraphEdge(id="path-edge", project_id=project.id, source=host.id,
+                     target=finding.id, relation="enumerated", status="succeeded")
+    db.add(edge); db.add(GraphEdge(id="proof-edge", project_id=project.id,
+        source=finding.id, target=evidence_node.id, relation="documented-by",
+        status="untried")); db.commit()
+    captured = capture_graph_path(report.id, GraphPathCaptureIn(
+        node_ids=[host.id, finding.id], caption="Access path"), db)
+    frozen = json.loads(captured.graph_path_snapshots)[0]
+    assert frozen["nodes"][0]["label"] == "Host A"
+    assert frozen["evidence"] == [{"id":proof.id,"label":f"Evidence #{proof.id}",
+        "sha256":"a"*64,"sensitivity":"sensitive"}]
+    host.label = "Changed later"; edge.status = "untried"; db.commit()
+    assert "Changed later" not in render_report_after_review(db, report)
+    markdown = export_report(report.id, "markdown", db, "client").body.decode()
+    assert "Host A" in markdown and "a"*64 in markdown
+    assert "Sensitive proof" not in markdown
+
+
+def render_report_after_review(db, report):
+    try:
+        render_report(db, report, "client")
+    except HTTPException as exc:
+        assert exc.status_code == 409
+    else:
+        raise AssertionError("sensitive path evidence exported without review")
+    report.sensitivity_reviewed = True
+    db.commit()
+    return render_report(db, report, "client")
 
 
 def test_selected_runbook_coverage_survives_export_without_raw_notes():

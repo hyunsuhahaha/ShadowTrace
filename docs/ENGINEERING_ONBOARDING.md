@@ -664,6 +664,12 @@ API: `/targets`, `/tunnels*`, `/interactive-sessions*`, `/{kind}/{id}/stop`.
 실시간 HTML 미리보기, Markdown/HTML/PDF/DOCX export). Runbook 링크는 검사 범위 표에
 단계 제목·상태·판정만 출력하며 원문 결과와 메모는 자동 공개하지 않는다. 저장 컬럼은
 `Report.runbook_instance_links`(`0046_report_runbook_coverage.py`)이다.
+`0051_report_graph_paths.py`는 선택한 성공 Graph 경로의 노드·엣지·Evidence ID와
+SHA-256을 `Report.graph_path_snapshots`에 고정한다. `/reports/{id}/graph-paths`는
+현재 경로와 같은 프로젝트의 Evidence가 있을 때만 캡처하고, 이후 Graph 상태가
+바뀌어도 내보내기에는 캡처 당시 값이 남는다. 클라이언트 출력의 민감 Evidence는
+보고서 민감도 검토가 필요하며 제목은 캡처에서 익명화한다. 비 IP 자산 Runbook도
+검사 범위 출력에서 자산 이름으로 표시한다.
 API: `/projects`, `/reports*`, `/reports/{id}/export`, `/evidence?project_id=`,
 `/projects/{id}/exploit-research?limit=`, `/runbooks/instances?project_id=`.
 
