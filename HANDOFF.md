@@ -7,6 +7,19 @@
 
 ## 현재 상태
 
+- 공개 현업 평가 흐름 재현(2026-09-26, `a8bc6bb`, `f282689`): Cure53 Raspberry Pi
+  공개 보고서, CISA 레드팀 평가, PTES/OWASP reporting을 제품 흐름과 대응했다
+  (`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`). 실제 보고서에서 취약점이
+  발견되지 않은 검사도 방법론·범위에 남기는 데 비해, ShadowTrace의 Runbook 단계 판정은
+  보고서에서 누락됐다. 보고서에 선택한 Runbook instance의 단계 제목·상태·판정을
+  HTML/PDF/DOCX/Markdown으로 내보내도록 연결했다. 원문 result/notes는 자동 포함하지
+  않으며 다른 프로젝트 Runbook 링크는 거부한다. Kali 격리 DB에서 Project→Target→
+  Runbook 적용/`not_found` 판정→Report 선택→4종 export를 재현했고 브라우저에서
+  체크박스·미리보기도 확인했다. 관련 backend 17 tests와 프런트 빌드 통과.
+  마이그레이션 `0046_report_runbook_coverage`를 smoke DB에 적용하고 API를
+  `ShadowTrace-live-release-8`(PID 325472)로 재시작했다. root observer는 release-6
+  (PID 298467)에서 계속 실행 중. 다음 제품 공백은 구조화된 평가 범위/허용 조건과
+  보고서에 고정된 증거 기반 공격 경로다.
 - 비루프백·다중 프로젝트 smoke와 Evidence 딥링크(2026-09-26): Kali 자신의
   `10.0.2.15`에 임시 HTTP 서버를 바인딩하고 격리 DB에 프로젝트 2/Target 2를 만든 뒤
   curl·ffuf를 실행했다. Evidence 9·10번은 프로젝트 2/Target 2에만 저장됐고
@@ -166,6 +179,14 @@
   본문만 온보딩 화면으로 빠졌음)
 
 ## 다음 작업
+
+사용자 우선순위(2026-09-26): 성능 튜닝보다 실제 현업 펜테스터의 공개 작업 흐름을
+ShadowTrace에서 재현하고, 단계 사이의 빈 구간을 찾는다. 현재 발견한 빈 구간은
+[`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`](docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md)에
+정리했다. 다음은 **평가 범위·제외 대상·허용 조건을 구조화해 Project/Target과 연결**하고,
+공개 보고서와 같은 순서로 신규 프로젝트부터 보고서까지 다시 걸어볼 것. 그다음은
+Graph 공격 경로를 증거와 함께 보고서에 고정하는 흐름을 검토한다. 아래 passive 성능·
+장시간 관찰 과제는 이보다 후순위다.
 
 Passive reconstruction의 다음 필수 단계:
 
