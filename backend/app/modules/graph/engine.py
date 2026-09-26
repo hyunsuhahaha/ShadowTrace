@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 STRUCTURAL_RELATIONS = frozenset(
     {"discovered", "enumerated", "attempted", "precedes", "documented-by",
      "yielded", "pivoted-to",
-     "operates", "runs"}
+     "operates", "runs", "handoff"}
 )
 
 SUCCESS_STATUS = "succeeded"

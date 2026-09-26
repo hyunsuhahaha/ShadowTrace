@@ -994,6 +994,13 @@ HTTP Exchange도 `/api/runbooks/steps/{id}/http-exchanges`로 같은 Target의 S
 노드와 `records-execution` 엣지로 투영한다. 요청·응답 본문은 Graph 메타에 넣지 않으며
 Inspector에서 Web Testing 화면과 응답 본문 파일로 이동한다. 연결을 제거하거나 원본
 Exchange가 삭제되면 sync에서 해당 투영을 정리한다.
+`/api/runbooks/steps/{id}/remote-executions`와 `/sessions`는 같은 Target의 실제
+RemoteExecution/InteractiveSession을 Step에 연결한다(마이그레이션 0050).
+`/api/runbooks/handoff-candidates`가 다른 Target의 Step을 목록으로 제공한다.
+`/api/runbooks/steps/{id}/handoffs`는 원본 Step에 연결된 Credential, 목적 Step에
+연결된 완료·exit 0 RemoteExecution, 그 실행의 Evidence를 확인한 뒤 다른 Target의
+Step으로 `handoff` Graph 엣지를 만든다. 엣지 메타에는 실행·Evidence ID만 두고
+상태는 `untried`로 유지해 절차 전이가 공격 성공 경로로 오인되지 않게 한다.
 `AssessmentAsset`은 IP Target과 별개로 `web`/`api`/`mobile`/`cloud`/
 `kubernetes`/`source`/`wireless`/`ics` 유형을 저장한다(마이그레이션 0047).
 Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용한 Runbook의

@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 from ...models import (AssessmentAsset, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, HttpExchange, HttpRequest, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, ProjectRoe, RemoteExecution, RunbookInstance,
-                       RunbookStepInstance, RunbookStepExecution, RunbookStepHttpExchange, RunbookStepEvidence,
+                       RunbookStepInstance, RunbookStepExecution, RunbookStepHandoff,
+                       RunbookStepHttpExchange, RunbookStepRemoteExecution,
+                       RunbookStepSession, RunbookStepEvidence,
                        RunbookObservation,
                        RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
@@ -230,6 +232,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "blocked-by": ({"technique", "finding"}, NODE_TYPES),
     "precedes": ({"technique"}, {"technique"}),
     "records-execution": ({"technique"}, {"technique"}),
+    "handoff": ({"technique"}, {"technique"}),
     "links-credential": ({"technique"}, {"credential"}),
     "documented-by": ({"technique"}, {"evidence"}),
     "produced-finding": ({"technique"}, {"finding"}),
@@ -523,6 +526,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                    "project_roe": ProjectRoe,
                    "service": Service, "finding": Finding,
                    "evidence": Evidence, "http_exchange": HttpExchange,
+                   "remote_execution": RemoteExecution,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
                    "autorecon_run": AutoReconRun, "autorecon_results": ScanJob,
@@ -553,6 +557,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             instance = db.get(RunbookInstance, row.instance_id)
             owner_id = instance.project_id if instance else None
         elif isinstance(row, ProjectRoe):
+            owner_id = row.project_id
+        elif isinstance(row, RemoteExecution):
             owner_id = row.project_id
         elif isinstance(row, HttpExchange):
             request = db.get(HttpRequest, row.request_id)
@@ -1323,6 +1329,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     desired_links: set[tuple[str, str, str]] = set()
     linked_evidence_ids: set[int] = set()
     linked_http_exchange_ids: set[int] = set()
+    linked_remote_execution_ids: set[int] = set()
     if runbook_step_ids:
         for link in db.scalars(select(RunbookStepExecution).where(
                 RunbookStepExecution.step_id.in_(runbook_step_ids))):
@@ -1357,6 +1364,51 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 node.meta = meta
             ensure_edge(source, node, "records-execution", status="untried")
             desired_links.add((source.id, node.id, "records-execution"))
+        for link in db.scalars(select(RunbookStepRemoteExecution).where(
+                RunbookStepRemoteExecution.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            run = db.get(RemoteExecution, link.remote_execution_id)
+            if not source or not run or run.project_id != project_id:
+                continue
+            linked_remote_execution_ids.add(run.id)
+            if ("remote_execution", run.id) in dismissed:
+                continue
+            node = index.get(("remote_execution", run.id))
+            meta = json.dumps({"remoteExecutionId": run.id, "targetId": run.target_id,
+                               "status": run.status, "exitCode": run.exit_code,
+                               "evidenceId": run.evidence_id})
+            if node is None:
+                node = create_node(db, project_id, "technique",
+                                   label=f"RemoteExecution #{run.id}", status="untried",
+                                   source_ref=_source_ref("post_exploitation", "remote_execution", run.id),
+                                   meta=meta)
+                index[("remote_execution", run.id)] = node
+                created["techniques"] += 1
+            else:
+                node.meta = meta
+            ensure_edge(source, node, "records-execution", status="untried")
+            desired_links.add((source.id, node.id, "records-execution"))
+        for link in db.scalars(select(RunbookStepSession).where(
+                RunbookStepSession.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            session = index.get(("session", link.session_id))
+            if source and session:
+                ensure_edge(source, session, "records-execution", status="untried")
+                desired_links.add((source.id, session.id, "records-execution"))
+        for handoff in db.scalars(select(RunbookStepHandoff).where(
+                RunbookStepHandoff.from_step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", handoff.from_step_id))
+            destination = index.get(("runbook_step", handoff.to_step_id))
+            run = db.get(RemoteExecution, handoff.remote_execution_id)
+            if not source or not destination or not run or run.project_id != project_id:
+                continue
+            if run.status != "completed" or run.exit_code != 0 or run.evidence_id != handoff.evidence_id:
+                continue
+            ensure_edge(source, destination, "handoff", status="untried",
+                        label="확인된 원격 접근",
+                        meta=json.dumps({"remoteExecutionId": run.id,
+                                         "evidenceId": handoff.evidence_id}))
+            desired_links.add((source.id, destination.id, "handoff"))
         for link in db.scalars(select(RunbookStepCredential).where(
                 RunbookStepCredential.step_id.in_(runbook_step_ids))):
             source = index.get(("runbook_step", link.step_id))
@@ -1402,7 +1454,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 desired_links.add((source.id, target.id, "produced-finding"))
     for key, node in list(index.items()):
         if (key[0] == "evidence" and key[1] not in linked_evidence_ids or
-                key[0] == "http_exchange" and key[1] not in linked_http_exchange_ids):
+                key[0] == "http_exchange" and key[1] not in linked_http_exchange_ids or
+                key[0] == "remote_execution" and key[1] not in linked_remote_execution_ids):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
             ).delete(synchronize_session=False)
@@ -1410,7 +1463,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             del index[key]
     for edge in db.scalars(select(GraphEdge).where(
             GraphEdge.project_id == project_id,
-            GraphEdge.relation.in_(("records-execution", "links-credential",
+            GraphEdge.relation.in_(("records-execution", "handoff", "links-credential",
                                    "documented-by", "produced-finding")))):
         if (edge.source, edge.target, edge.relation) not in desired_links:
             db.delete(edge)

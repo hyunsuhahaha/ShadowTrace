@@ -16,6 +16,8 @@ type Step={id:number;position:number;title:string;description:string;command_ref
   assessment:{summary?:string;facts?:Record<string,unknown>[];next_recommendations?:{
     step_id:number;position:number;title:string}[];raw_preserved?:boolean};
   evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[];
+  remote_execution_ids:number[];session_ids:number[];
+  handoffs:{to_step_id:number;remote_execution_id:number}[];
   credential_ids:number[];condition_met:boolean;
   observations:{id:number;title:string;detail:string;status:string}[];
   timer_started_at?:string|null;elapsed_seconds?:number;
@@ -32,6 +34,10 @@ type Recommendation={template_id:number;template_name:string;version_id:number;v
 type Evidence={id:number;title:string};
 type Execution={id:number;service_id:number|null;template_id:string;status:string};
 type HttpExchange={id:number;request_id:number;status_code:number|null;review_status:string};
+type RemoteRun={id:number;project_id:number;target_id:number;status:string;exit_code:number|null;
+  credential_id:number|null;evidence_id:number|null};
+type InteractiveRun={id:number;target_id:number;template_id:string;status:string};
+type HandoffCandidate={step_id:number;target_id:number;target_name:string;title:string};
 type Credential={id:number;username:string;secret_kind:string;secret_hint:string;domain:string;
   service_names:string[]};
 type Summary={target_id:number;target_name:string;instances:number;steps:number;completed:number;
@@ -174,6 +180,12 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
     queryFn:()=>api<Execution[]>(`/executions?target_id=${targetId}`),enabled:!!targetId});
   const httpExchanges=useQuery({queryKey:["runbookHttpExchanges",targetId],
     queryFn:()=>api<HttpExchange[]>(`/web/exchanges?target_id=${targetId}`),enabled:!!targetId});
+  const remoteRuns=useQuery({queryKey:["runbookRemoteRuns",projectId],
+    queryFn:()=>api<RemoteRun[]>("/post-exploitation"),enabled:!!projectId});
+  const interactiveRuns=useQuery({queryKey:["runbookSessions",targetId],
+    queryFn:()=>api<InteractiveRun[]>(`/interactive-sessions?target_id=${targetId}`),enabled:!!targetId});
+  const handoffCandidates=useQuery({queryKey:["runbookHandoffCandidates",projectId,targetId],
+    queryFn:()=>api<HandoffCandidate[]>(`/runbooks/handoff-candidates?project_id=${projectId}&exclude_target_id=${targetId}`),enabled:!!projectId&&!!targetId});
   const credentials=useQuery({queryKey:["runbookCredentials",projectId],
     queryFn:()=>api<Credential[]>(`/runbooks/credentials?project_id=${projectId}`),enabled:!!projectId});
   const summaries=useQuery({queryKey:["runbookSummary",projectId],
@@ -249,8 +261,13 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
     onSuccess:row=>refresh(row.id),
   });
   const link=useMutation({
-    mutationFn:({step,kind,id}:{step:Step;kind:"evidence"|"executions"|"credentials"|"http-exchanges";id:number})=>
+    mutationFn:({step,kind,id}:{step:Step;kind:"evidence"|"executions"|"credentials"|"http-exchanges"|"remote-executions"|"sessions";id:number})=>
       api(`/runbooks/steps/${step.id}/${kind}`,json({resource_id:id})),
+    onSuccess:()=>refresh(),
+  });
+  const handoff=useMutation({
+    mutationFn:({step,toStepId,remoteExecutionId,reason}:{step:Step;toStepId:number;remoteExecutionId:number;reason:string})=>
+      api(`/runbooks/steps/${step.id}/handoffs`,json({to_step_id:toStepId,remote_execution_id:remoteExecutionId,reason})),
     onSuccess:()=>refresh(),
   });
   const createCredential=useMutation({
@@ -555,15 +572,20 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
         </div>
         <div className="instanceSteps">{shown.map(step=>
           <StepEditor key={step.id} step={step} saving={saveStep.isPending}
+            stepTargetId={targetId||0}
             onSave={(values)=>saveStep.mutate({step,...values})}
             onApprove={(decision,reason)=>approveStep.mutate({step,decision,reason})}
             evidence={evidence.data||[]} executions={(executions.data||[]).filter(item=>
               activeDetail.service_id?item.service_id===activeDetail.service_id:item.service_id==null)}
             httpExchanges={httpExchanges.data||[]}
+            remoteRuns={(remoteRuns.data||[]).filter(item=>item.project_id===projectId)}
+            interactiveRuns={interactiveRuns.data||[]}
+            handoffCandidates={handoffCandidates.data||[]}
             credentials={credentials.data||[]}
             linkEvidence={linkEvidence} setLinkEvidence={setLinkEvidence}
             linkExecution={linkExecution} setLinkExecution={setLinkExecution}
             onLink={(kind,id)=>link.mutate({step,kind,id})}
+            onHandoff={(toStepId,remoteExecutionId,reason)=>handoff.mutate({step,toStepId,remoteExecutionId,reason})}
             onRefresh={()=>refresh()}/>)}</div></>
         :<section className="runbookDetailError"><ErrorState message="선택한 Runbook 상세가 비어 있습니다."/>
           <Button onClick={()=>void detail.refetch()}>다시 불러오기</Button></section>}
@@ -597,13 +619,17 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
 }
 
 function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLinkEvidence,
-  linkExecution,setLinkExecution,httpExchanges,onLink,credentials,onRefresh,onApprove}:{step:Step;saving:boolean;
+  linkExecution,setLinkExecution,httpExchanges,remoteRuns,interactiveRuns,handoffCandidates,
+  onLink,onHandoff,credentials,onRefresh,onApprove,stepTargetId}:{step:Step;saving:boolean;stepTargetId:number;
   onSave:(values:{status:string;result:string;notes:string;status_reason:string;outcome:string})=>void;
   onApprove:(decision:"approved"|"rejected",reason:string)=>void;
-  evidence:Evidence[];executions:Execution[];httpExchanges:HttpExchange[];linkEvidence:string;
+  evidence:Evidence[];executions:Execution[];httpExchanges:HttpExchange[];
+  remoteRuns:RemoteRun[];interactiveRuns:InteractiveRun[];handoffCandidates:HandoffCandidate[];
+  linkEvidence:string;
   credentials:Credential[];onRefresh:()=>void;
   setLinkEvidence:(value:string)=>void;linkExecution:string;setLinkExecution:(value:string)=>void;
-  onLink:(kind:"evidence"|"executions"|"credentials"|"http-exchanges",id:number)=>void}){
+  onLink:(kind:"evidence"|"executions"|"credentials"|"http-exchanges"|"remote-executions"|"sessions",id:number)=>void;
+  onHandoff:(toStepId:number,remoteExecutionId:number,reason:string)=>void}){
   const[status,setStatus]=useState(step.status);
   const[result,setResult]=useState(step.result);
   const[notes,setNotes]=useState(step.notes);
@@ -611,6 +637,11 @@ function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLink
   const[outcome,setOutcome]=useState(step.outcome||"unknown");
   const[credentialId,setCredentialId]=useState("");
   const[httpExchangeId,setHttpExchangeId]=useState("");
+  const[remoteRunId,setRemoteRunId]=useState("");
+  const[sessionId,setSessionId]=useState("");
+  const[handoffStepId,setHandoffStepId]=useState("");
+  const[handoffRunId,setHandoffRunId]=useState("");
+  const[handoffReason,setHandoffReason]=useState("");
   const[observationTitle,setObservationTitle]=useState("");
   const[observationDetail,setObservationDetail]=useState("");
   const[approvalReason,setApprovalReason]=useState("");
@@ -694,11 +725,31 @@ function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLink
         <option value="">요청/응답 선택</option>{httpExchanges.map(item=><option key={item.id} value={item.id}>
           #{item.id} · 요청 #{item.request_id} · HTTP {item.status_code??"오류"} · {item.review_status}</option>)}</select>
         <Button disabled={!httpExchangeId} onClick={()=>onLink("http-exchanges",Number(httpExchangeId))}>연결</Button></label>
+      <label>RemoteExecution<select value={remoteRunId} onChange={event=>setRemoteRunId(event.target.value)}>
+        <option value="">원격 실행 선택</option>{remoteRuns.filter(item=>item.target_id===stepTargetId).map(item=><option key={item.id} value={item.id}>
+          #{item.id} · {item.status} · exit {item.exit_code??"?"}</option>)}</select>
+        <Button disabled={!remoteRunId} onClick={()=>onLink("remote-executions",Number(remoteRunId))}>연결</Button></label>
+      <label>InteractiveSession<select value={sessionId} onChange={event=>setSessionId(event.target.value)}>
+        <option value="">세션 선택</option>{interactiveRuns.map(item=><option key={item.id} value={item.id}>
+          #{item.id} · {item.template_id} · {item.status}</option>)}</select>
+        <Button disabled={!sessionId} onClick={()=>onLink("sessions",Number(sessionId))}>연결</Button></label>
       <label>Credential<select value={credentialId} onChange={event=>setCredentialId(event.target.value)}>
         <option value="">Credential 선택</option>{credentials.map(item=><option key={item.id} value={item.id}>
           #{item.id} {item.domain&&`${item.domain}\\`}{item.username}</option>)}</select>
         <Button disabled={!credentialId} onClick={()=>onLink("credentials",Number(credentialId))}>연결</Button></label>
-      <small>Evidence {step.evidence_ids.length} · Execution {step.execution_ids.length} · HTTP {step.http_exchange_ids?.length||0} · Credential {step.credential_ids.length}</small>
+      <small>Evidence {step.evidence_ids.length} · Execution {step.execution_ids.length} · HTTP {step.http_exchange_ids?.length||0} · Remote {step.remote_execution_ids?.length||0} · Session {step.session_ids?.length||0} · Credential {step.credential_ids.length}</small>
+    </div>
+    <div className="stepLinks" aria-label="다른 Target으로의 확인된 handoff">
+      <label>다른 Target 단계<select value={handoffStepId} onChange={event=>setHandoffStepId(event.target.value)}>
+        <option value="">목적 단계 선택</option>{handoffCandidates.map(item=><option key={item.step_id} value={item.step_id}>
+          {item.target_name} · {item.title} (#{item.step_id})</option>)}</select></label>
+      <label>접근 근거<select value={handoffRunId} onChange={event=>setHandoffRunId(event.target.value)}>
+        <option value="">완료된 원격 실행 선택</option>{remoteRuns.filter(item=>item.status==="completed"&&item.exit_code===0&&item.evidence_id&&item.credential_id).map(item=><option key={item.id} value={item.id}>
+          #{item.id} · Target #{item.target_id} · Evidence #{item.evidence_id}</option>)}</select></label>
+      <label>연결 이유<input value={handoffReason} onChange={event=>setHandoffReason(event.target.value)} placeholder="원본 Credential과 목적 접근 확인"/></label>
+      <Button disabled={!handoffStepId||!handoffRunId||!handoffReason.trim()}
+        onClick={()=>onHandoff(Number(handoffStepId),Number(handoffRunId),handoffReason)}>Handoff 기록</Button>
+      {!!step.handoffs?.length&&<small>확인된 다른 Target 전이 {step.handoffs.length}개</small>}
     </div>
     {step.assessment?.summary&&<section className="stepAssessment"><strong>실행 결과 판정 · {step.outcome}</strong>
       <p>{step.assessment.summary}</p>

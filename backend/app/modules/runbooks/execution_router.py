@@ -6,19 +6,34 @@ from ...database import get_db
 from ...engagement import require_roe
 from ...models import (
     AssessmentAsset, Credential, Evidence, Execution, Finding, HttpExchange,
-    HttpRequest, RunbookInstance,
+    HttpRequest, InteractiveSession, RemoteExecution, RunbookInstance, Target,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
-    RunbookStepExecution, RunbookStepHttpExchange, RunbookStepInstance,
+    RunbookStepExecution, RunbookStepHandoff, RunbookStepHttpExchange,
+    RunbookStepInstance, RunbookStepRemoteExecution, RunbookStepSession,
 )
 from ...time import utcnow
 from .engine import approval_required, recompute
 from .support import (
-    ACTIVATION_LOCKED, ApprovalIn, FindingIn, LinkIn, ObservationIn,
+    ACTIVATION_LOCKED, ApprovalIn, FindingIn, HandoffIn, LinkIn, ObservationIn,
     OUTCOMES, REASON_REQUIRED, STATUSES, StepUpdate, condition_met, event,
     instance_dict, link_scope, need, observations, seconds_since,
 )
 
 router = APIRouter(prefix="/api/runbooks", tags=["Runbooks"])
+
+
+@router.get("/handoff-candidates")
+def handoff_candidates(project_id: int, exclude_target_id: int,
+                       db: Session = Depends(get_db)):
+    rows = db.execute(select(RunbookStepInstance, RunbookInstance, Target).join(
+        RunbookInstance, RunbookStepInstance.instance_id == RunbookInstance.id).join(
+        Target, RunbookInstance.target_id == Target.id).where(
+        RunbookInstance.project_id == project_id,
+        RunbookInstance.target_id != exclude_target_id).order_by(
+        RunbookInstance.id, RunbookStepInstance.position).limit(500)).all()
+    return [{"step_id": step.id, "target_id": target.id,
+             "target_name": target.name, "title": step.title}
+            for step, _, target in rows]
 
 
 @router.patch("/steps/{ident}")
@@ -203,6 +218,76 @@ def attach_http_exchange(ident: int, body: LinkIn,
               {"exchange_id": exchange.id})
         db.commit()
     return instance_dict(db, instance, True)
+
+
+@router.post("/steps/{ident}/remote-executions", status_code=201)
+def attach_remote_execution(ident: int, body: LinkIn,
+                            db: Session = Depends(get_db)):
+    step, instance = link_scope(db, ident)
+    run = need(db, RemoteExecution, body.resource_id)
+    if run.project_id != instance.project_id or run.target_id != instance.target_id:
+        raise HTTPException(400, "Remote execution belongs to another Runbook target")
+    if not db.get(RunbookStepRemoteExecution, (step.id, run.id)):
+        db.add(RunbookStepRemoteExecution(step_id=step.id, remote_execution_id=run.id))
+        event(db, instance.id, "remote_execution_attached", step.id,
+              {"remote_execution_id": run.id})
+        db.commit()
+    return instance_dict(db, instance, True)
+
+
+@router.post("/steps/{ident}/sessions", status_code=201)
+def attach_session(ident: int, body: LinkIn, db: Session = Depends(get_db)):
+    step, instance = link_scope(db, ident)
+    session = need(db, InteractiveSession, body.resource_id)
+    from ...models import Target
+    target = need(db, Target, session.target_id)
+    if target.project_id != instance.project_id or session.target_id != instance.target_id:
+        raise HTTPException(400, "Session belongs to another Runbook target")
+    if not db.get(RunbookStepSession, (step.id, session.id)):
+        db.add(RunbookStepSession(step_id=step.id, session_id=session.id))
+        event(db, instance.id, "session_attached", step.id,
+              {"session_id": session.id})
+        db.commit()
+    return instance_dict(db, instance, True)
+
+
+@router.post("/steps/{ident}/handoffs", status_code=201)
+def create_handoff(ident: int, body: HandoffIn, db: Session = Depends(get_db)):
+    source, source_instance = link_scope(db, ident)
+    destination, destination_instance = link_scope(db, body.to_step_id)
+    run = need(db, RemoteExecution, body.remote_execution_id)
+    if source_instance.project_id != destination_instance.project_id or source.id == destination.id:
+        raise HTTPException(400, "Handoff must stay in one project and use distinct steps")
+    if (source_instance.target_id is None or destination_instance.target_id is None or
+            source_instance.target_id == destination_instance.target_id or
+            run.project_id != source_instance.project_id or
+            run.target_id != destination_instance.target_id):
+        raise HTTPException(400, "Handoff must connect distinct Target Runbooks")
+    if run.status != "completed" or run.exit_code != 0 or not run.credential_id or not run.evidence_id:
+        raise HTTPException(409, "Handoff requires completed credential access and Evidence")
+    credential = need(db, Credential, run.credential_id)
+    evidence = need(db, Evidence, run.evidence_id)
+    if credential.project_id != source_instance.project_id or evidence.project_id != source_instance.project_id:
+        raise HTTPException(400, "Handoff provenance belongs to another project")
+    if credential.target_id is not None and credential.target_id != source_instance.target_id:
+        raise HTTPException(400, "Credential origin does not match source Target")
+    if not db.get(RunbookStepCredential, (source.id, credential.id)):
+        raise HTTPException(409, "Link the used Credential to the source step first")
+    if not db.get(RunbookStepRemoteExecution, (destination.id, run.id)):
+        raise HTTPException(409, "Link the RemoteExecution to the destination step first")
+    row = db.get(RunbookStepHandoff, (source.id, destination.id))
+    if row is None:
+        row = RunbookStepHandoff(from_step_id=source.id, to_step_id=destination.id,
+                                 remote_execution_id=run.id, evidence_id=evidence.id,
+                                 reason=body.reason.strip())
+        db.add(row)
+        event(db, source_instance.id, "handoff_created", source.id,
+              {"to_step_id": destination.id, "remote_execution_id": run.id,
+               "evidence_id": evidence.id})
+        db.commit()
+    elif row.remote_execution_id != run.id:
+        raise HTTPException(409, "Handoff already uses another RemoteExecution")
+    return instance_dict(db, source_instance, True)
 
 
 @router.post("/steps/{ident}/observations", status_code=201)

@@ -4,11 +4,13 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Evidence, Execution, GraphEdge, GraphNode, HttpExchange, HttpRequest, Project, Service, Target
+from app.models import (Credential, Evidence, Execution, GraphEdge, GraphNode,
+                        HttpExchange, HttpRequest, InteractiveSession, Project,
+                        RemoteExecution, Service, Target)
 from app.modules.graph import service as graph
 from app.modules.runbooks.support import (
     ApplyIn, ApprovalIn, CloneIn, CredentialIn, DismissIn, FindingIn, FindingUpdate,
-    ImportIn, LinkIn, ObservationIn, PublishIn, StepIn, StepUpdate, TemplateIn,
+    HandoffIn, ImportIn, LinkIn, ObservationIn, PublishIn, StepIn, StepUpdate, TemplateIn,
 )
 from app.modules.runbooks.workflow_router import (
     apply, archive_template, clone_template,
@@ -19,7 +21,8 @@ from app.modules.runbooks.workflow_router import (
     update_finding, update_template,
 )
 from app.modules.runbooks.execution_router import (
-    attach_credential, attach_evidence, attach_execution, attach_http_exchange, create_observation,
+    attach_credential, attach_evidence, attach_execution, attach_http_exchange,
+    attach_remote_execution, attach_session, create_handoff, create_observation,
     promote_observation, step_timer, decide_approval, update_step,
 )
 from app.modules.runbooks.credentials_router import (
@@ -138,6 +141,55 @@ def test_http_exchange_link_appears_as_actual_runbook_graph_node():
     with pytest.raises(HTTPException) as rejected:
         attach_http_exchange(step_id, LinkIn(resource_id=other_exchange.id), db)
     assert rejected.value.status_code == 400
+
+
+def test_remote_execution_session_and_cross_target_handoff_have_graph_provenance():
+    db = database()
+    project, origin, _ = scope(db)
+    destination = Target(project_id=project.id, name="Destination", ip="10.10.10.11")
+    db.add(destination); db.flush()
+    template = create_template(TemplateIn(name="Access review"), db)
+    version = publish(template["id"], PublishIn(steps=[StepIn(title="Verify access")]), db)
+    source_step = apply(ApplyIn(version_id=version["id"], target_id=origin.id), db)["steps"][0]["id"]
+    dest_step = apply(ApplyIn(version_id=version["id"], target_id=destination.id), db)["steps"][0]["id"]
+    credential = Credential(project_id=project.id, target_id=origin.id,
+                            username="tester", secret_kind="password")
+    evidence = Evidence(project_id=project.id, target_id=destination.id,
+                        title="Access proof", kind="markdown")
+    db.add_all([credential, evidence]); db.flush()
+    run = RemoteExecution(project_id=project.id, target_id=destination.id,
+                          credential_id=credential.id, evidence_id=evidence.id,
+                          command_id="whoami", category="manual", connection="ssh",
+                          request_key="handoff-test-1", approval_token_hash="fixture",
+                          argv_json="[]", timeout_seconds=10, status="completed", exit_code=0)
+    session = InteractiveSession(target_id=destination.id, template_id="shell",
+                                 command="sh", cwd="/tmp", status="completed")
+    db.add_all([run, session]); db.commit()
+    attach_credential(source_step, LinkIn(resource_id=credential.id), db)
+    dest = attach_remote_execution(dest_step, LinkIn(resource_id=run.id), db)
+    dest = attach_session(dest_step, LinkIn(resource_id=session.id), db)
+    assert dest["steps"][0]["remote_execution_ids"] == [run.id]
+    assert dest["steps"][0]["session_ids"] == [session.id]
+    source = create_handoff(source_step, HandoffIn(
+        to_step_id=dest_step, remote_execution_id=run.id,
+        reason="Confirmed scoped credential access"), db)
+    assert source["steps"][0]["handoffs"][0]["to_step_id"] == dest_step
+    graph.sync_from_project(db, project.id)
+    nodes = db.scalars(select(GraphNode).where(GraphNode.project_id == project.id)).all()
+    source_node = next(node for node in nodes if '"kind": "runbook_step"' in (node.source_ref or "")
+                       and f'"id": {source_step}' in (node.source_ref or ""))
+    dest_node = next(node for node in nodes if '"kind": "runbook_step"' in (node.source_ref or "")
+                     and f'"id": {dest_step}' in (node.source_ref or ""))
+    remote_node = next(node for node in nodes if '"kind": "remote_execution"' in (node.source_ref or ""))
+    assert remote_node.label == f"RemoteExecution #{run.id}"
+    assert db.scalar(select(GraphEdge).where(GraphEdge.source == source_node.id,
+        GraphEdge.target == dest_node.id, GraphEdge.relation == "handoff"))
+    assert db.scalar(select(GraphEdge).where(GraphEdge.source == dest_node.id,
+        GraphEdge.target == remote_node.id, GraphEdge.relation == "records-execution"))
+    with pytest.raises(HTTPException) as denied:
+        create_handoff(dest_step, HandoffIn(to_step_id=source_step,
+            remote_execution_id=run.id, reason="Wrong direction"), db)
+    assert denied.value.status_code == 400
 
 
 def test_runbook_recommendations_prioritize_detected_service_over_port():

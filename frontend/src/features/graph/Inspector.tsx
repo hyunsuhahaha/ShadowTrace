@@ -123,13 +123,15 @@ export function Inspector(props: {
   const assetMeta = source?.kind === "asset" && n ? nodeMeta(n) : null;
   const scopeMeta = source?.kind === "project_roe" && n ? nodeMeta(n) : null;
   const httpExchangeMeta = source?.kind === "http_exchange" && n ? nodeMeta(n) : null;
+  const remoteRunMeta = source?.kind === "remote_execution" && n ? nodeMeta(n) : null;
   const runbookInstanceId = Number(runbookMeta?.instanceId || 0);
   const runbookStep = useQuery({
     queryKey: ["graphRunbookInstance", runbookInstanceId],
     enabled: !!runbookMeta && runbookInstanceId > 0,
     queryFn: () => api<{steps: Array<{id:number;title:string;description:string;
       status:string;outcome:string;activation:string;result:string;notes:string;
-      evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[]}>}>(
+      evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[];
+      remote_execution_ids:number[];session_ids:number[];handoffs:{to_step_id:number}[]}>}>(
         `/runbooks/instances/${runbookInstanceId}`),
     select: instance => instance.steps.find(step => step.id === source?.id),
   });
@@ -1021,7 +1023,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && !scopeMeta && !httpExchangeMeta && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && !scopeMeta && !httpExchangeMeta && !remoteRunMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -1044,7 +1046,7 @@ export function Inspector(props: {
           {runbookStep.data?.result && <pre style={S.terminalOutput}>{runbookStep.data.result}</pre>}
           {runbookStep.data?.notes && <p>{runbookStep.data.notes}</p>}
           {runbookStep.data && <div>
-            증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개 · HTTP {runbookStep.data.http_exchange_ids?.length||0}개
+            증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개 · HTTP {runbookStep.data.http_exchange_ids?.length||0}개 · Remote {runbookStep.data.remote_execution_ids?.length||0}개 · Session {runbookStep.data.session_ids?.length||0}개 · Handoff {runbookStep.data.handoffs?.length||0}개
             {!!runbookStep.data.evidence_ids.length && <div>
               {runbookStep.data.evidence_ids.map(id => <div key={id}>
                 <a href={runbookMeta.assetId?`/api/evidence/${id}/file`:`#evidence/${runbookMeta.targetId}/${id}`}>Evidence #{id} 열기</a>
@@ -1086,6 +1088,14 @@ export function Inspector(props: {
           <div>요청 #{String(httpExchangeMeta.requestId||"")} · HTTP {String(httpExchangeMeta.statusCode??"오류")} · {String(httpExchangeMeta.reviewStatus||"pending")}</div>
           <a href="#web/results">Web Testing 결과 열기 →</a>
           <a href={`/api/web/exchanges/${source?.id}/body?download=true`} style={{marginLeft:10}}>응답 본문 다운로드 ↗</a>
+        </div>
+      </section>}
+      {remoteRunMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="원격 실행 기록">
+        <div style={S.executionResultsHead}><strong>RemoteExecution #{source?.id}</strong></div>
+        <div style={S.terminalBody}>
+          <div>Target #{String(remoteRunMeta.targetId||"")} · {String(remoteRunMeta.status||"")} · exit {String(remoteRunMeta.exitCode??"?")}</div>
+          {remoteRunMeta.evidenceId&&<a href={`/api/evidence/${remoteRunMeta.evidenceId}/file`}>Evidence #{String(remoteRunMeta.evidenceId)} ↗</a>}
+          <a href="#post-exploitation" style={{marginLeft:10}}>접근 후 실행 열기 →</a>
         </div>
       </section>}
       {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">

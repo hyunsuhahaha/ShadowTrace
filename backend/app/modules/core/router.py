@@ -300,6 +300,10 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
 
     remove("runbook_step_evidence", "step_id", runbook_step_ids)
     remove("runbook_step_executions", "step_id", runbook_step_ids)
+    remove("runbook_step_http_exchanges", "step_id", runbook_step_ids)
+    remove("runbook_step_remote_executions", "step_id", runbook_step_ids)
+    remove("runbook_step_sessions", "step_id", runbook_step_ids)
+    remove("runbook_step_handoffs", "from_step_id", runbook_step_ids)
     remove("runbook_step_credentials", "step_id", runbook_step_ids)
     remove("finding_evidence", "finding_id", finding_ids)
     remove("finding_assets", "finding_id", finding_ids)

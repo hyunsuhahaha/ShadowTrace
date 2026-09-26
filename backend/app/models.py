@@ -942,6 +942,30 @@ class RunbookStepHttpExchange(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RunbookStepRemoteExecution(Base):
+    __tablename__ = "runbook_step_remote_executions"
+    step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
+    remote_execution_id: Mapped[int] = mapped_column(ForeignKey("remote_executions.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RunbookStepSession(Base):
+    __tablename__ = "runbook_step_sessions"
+    step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("interactive_sessions.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RunbookStepHandoff(Base):
+    __tablename__ = "runbook_step_handoffs"
+    from_step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
+    to_step_id: Mapped[int] = mapped_column(ForeignKey("runbook_step_instances.id"), primary_key=True)
+    remote_execution_id: Mapped[int] = mapped_column(ForeignKey("remote_executions.id"), nullable=False)
+    evidence_id: Mapped[int] = mapped_column(ForeignKey("evidence.id"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RunbookActivityEvent(Base):
     __tablename__ = "runbook_activity_events"
     id: Mapped[int] = mapped_column(primary_key=True)
