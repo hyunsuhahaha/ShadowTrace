@@ -179,6 +179,8 @@ def render_report(db: Session, row: Report, profile: str = "internal") -> str:
     content = markdown_lib.markdown(
         safe_markdown, extensions=["fenced_code", "tables"])
     coverage_rows = _coverage_html(_runbook_coverage(db, row))
+    coverage_section = (f"<section><h2>Testing Coverage</h2>{coverage_rows}</section>"
+                        if coverage_rows else "")
     research_rows = []
     status_labels = {
         "unverified": "미확인", "researching": "조사 중",
@@ -335,7 +337,7 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #aaa;padding
 <section><h2>Finding Summary</h2><table><thead><tr><th>Risk</th><th>Finding</th><th>Status</th><th>Target</th></tr></thead>
 <tbody>{''.join(summary_rows)}</tbody></table></section>
 <section><h2>Finding Details</h2>{''.join(finding_rows)}</section>
-<section><h2>Testing Coverage</h2>{coverage_rows}</section>
+{coverage_section}
 <section><h2>Exploit Research</h2>{''.join(research_rows)}</section>
 <section><h2>Evidence Index</h2>{''.join(evidence_rows)}</section></body></html>"""
 
@@ -399,17 +401,19 @@ def render_docx(db: Session, row: Report, profile: str) -> bytes:
         f"Editable {profile.title()} penetration test report")
     _add_markdown(document, row.markdown)
 
-    document.add_heading("Testing Coverage", level=1)
-    for instance, target_ip, steps in _runbook_coverage(db, row):
-        document.add_heading(f"{instance.template_name} · {target_ip}", level=2)
-        table = document.add_table(rows=1, cols=3)
-        table.style = "Table Grid"
-        for cell, label in zip(table.rows[0].cells, ("Test", "Status", "Outcome")):
-            cell.text = label
-        for step in steps:
-            for cell, value in zip(table.add_row().cells,
-                                   (step.title, step.status, step.outcome)):
-                cell.text = value
+    coverage = _runbook_coverage(db, row)
+    if coverage:
+        document.add_heading("Testing Coverage", level=1)
+        for instance, target_ip, steps in coverage:
+            document.add_heading(f"{instance.template_name} · {target_ip}", level=2)
+            table = document.add_table(rows=1, cols=3)
+            table.style = "Table Grid"
+            for cell, label in zip(table.rows[0].cells, ("Test", "Status", "Outcome")):
+                cell.text = label
+            for step in steps:
+                for cell, value in zip(table.add_row().cells,
+                                       (step.title, step.status, step.outcome)):
+                    cell.text = value
 
     findings = db.scalars(select(Finding).where(
         Finding.project_id == row.project_id)).all()
