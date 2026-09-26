@@ -7,6 +7,18 @@
 
 ## 현재 상태
 
+- 공개 현업 흐름 확장(2026-09-26): PTES/NIST 평가 수명주기, OWASP WSTG v4.2 12개
+  웹 검사 범주, Cure53 웹·API/모바일 보고서, CISA 레드팀 경로와 MITRE 전술을 다시
+  대조했다(`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`). 내장 Runbook 3종·30단계를
+  추가해 승인/부정 결과 분기, 병렬 검사와 all-join, 접근 후 영향·정리를 Graph 노드에
+  표현한다. `decision_trace`에서 실제 선택된 전이를 청록색, 제외된 전이를 점선으로
+  표시한다. 모바일·클라우드 등 IP 기반 Target이 아닌 자산과 Project 수준
+  RoE는 미지원임을 문서에 명시했다. Kali 격리 DB에서 3종 적용→31개 Runbook 노드
+  (기존 1개 포함)·45개 전이 확인, 범위 승인 후 선택 분기 meta 확인, Chrome Outline에서
+  웹 업무 로직 노드→Inspector→Runbook 14단계 딥링크 확인. 관련 백엔드 111 tests 및
+  프런트 빌드 통과. Kali API/UI는 `ShadowTrace-live-release-10`(PID 340408)에서
+  각각 HTTP 200, 실제 smoke DB에 세 내장 템플릿이 설치됐다. root observer는
+  release-6(PID 298467)에서 계속 실행 중이다.
 - Runbook→Progress Graph 흐름 투영(2026-09-26): Runbook 단계가 Graph에 전혀 생성되지
   않는 공백을 확인했다. 각 단계를 technique 노드로 투영하고 분기 transition 또는 선형
   순서에 따라 `precedes`로 연결한다. Inspector에서 단계 결과를 조회하고 원래 단계로
