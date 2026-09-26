@@ -1,5 +1,21 @@
 # Implementation Worklog
 
+## 2026-09-27 — Progress Graph 노드 시각 식별
+
+- 격리 DB의 Runbook Step, 자산 세부 대상, Credential, HTTP Exchange, 원격 SSH 실행,
+  Nmap/FFUF/NetExec 실행을 Graph에 동기화해 실제 Canvas 화면을 확인했다. 자동 투영된
+  technique가 같은 번개 아이콘으로 보이는 원인을 `type`만 보는 그리기 분기로 확인했다.
+- 원본 종류와 도구에 따라 glyph·색·분류·상태가 다른 카드/육각형을 그린다. Outline와
+  Inspector도 같은 식별자를 표시한다. 카드의 크기를 레이아웃 충돌 처리와 클릭 영역에
+  반영하고, 실제 절차 연결(`assesses`, `records-execution`, `handoff`)을 구조선으로 그린다.
+- 선택 전 빈 상세 패널을 접고 모바일 상세는 닫을 수 있는 하단 패널로 표시한다. 모바일
+  앱 헤더의 줄바꿈도 조정했다. 원본 자격증명 값은 노드 표면에 표시하지 않는다.
+
+검증: Graph 관련 프런트엔드 71개·전체 589개, Kali 격리 DB 기반 Graph/Runbook
+백엔드 108개·전체 658개, 프런트엔드 빌드 통과. Chrome 1440×900 및 390×844
+캡처에서 노드 식별과 배치를 확인했다.
+실제 외부 대상이나 시험 환경에서는 실행하지 않았다.
+
 ## 2026-09-27 — 현업 절차 계보 구현 재검증
 
 - 마이그레이션 0050–0053의 원격 실행·세션 연결, 다른 Target 간 Evidence 기반

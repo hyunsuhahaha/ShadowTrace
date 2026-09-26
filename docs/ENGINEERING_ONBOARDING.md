@@ -768,6 +768,12 @@ Inspector(하위 노드 추가 폼) 또는 — project-root/host 노드
 선택 시 `ScanCenter.tsx`를, service 노드 선택 시 `App.tsx`를 `embedded` prop으로 그대로
 끼워넣는다(`lazy(() => import(...))`, 자체 chrome는 숨김). Execution에서 투영된 모든
 technique 노드는 원본 실행 상태·대상/서비스·명령·stdout/stderr/error를 표시한다.
+`graphModel.ts`의 `nodeIdentity()`가 `source_ref`와 안전한 meta를 읽어 Runbook 단계,
+자산 세부 대상, HTTP Exchange, SSH 원격 실행, Session, Nmap/FFUF/NetExec 등의 실행,
+해시 크래킹과 수동 CommandActivity에 각기 다른 glyph·분류·색·보조 텍스트를 부여한다.
+`GraphCanvas.tsx`는 이를 유형별 카드/육각형으로 그리고 카드 크기를 충돌 배치·클릭
+영역에도 반영한다. Outline/Inspector도 동일한 노드 식별자를 쓴다. 상세 패널은 노드
+선택 전에는 접고, 모바일에서는 캔버스 위에 닫을 수 있는 하단 패널로 연다.
 명령 시작으로 execution 노드가 추가될 때는 기존 Canvas 좌표를 700ms 유지하고 새 노드를
 부모 근처에서 먼저 안정화해, topology 갱신이 화면 전체를 밀어내는 들썩임을 방지한다.
 `http-link-extract`는 여기에 유형순 링크 목록, Evidence 파생 저장과 Web Testing Request
@@ -1318,6 +1324,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `floating-terminal.css` | `FloatingTerminal.tsx` | AppShell 전역 플로팅 터미널 이동·우측/하단/모서리 크기 조절 chrome |
 | `smart-terminal.css` | `SmartTerminalOutput.tsx` | stdout token underline, Smart Action command menu, staged fuzz target |
 | `features/graph/graph-time-machine.css` | `GraphTimeMachine.tsx` | Graph replay playhead, LIVE/READ-ONLY 상태 |
+| `features/graph/graph-workspace.css` | `GraphWorkspace.tsx` | 선택 전 상세 패널 접기, 모바일 캔버스/하단 상세 패널 |
 | `features/graph/project-operator-session.css` | `ProjectOperatorSession.tsx` | project-root의 Target router·최근 세션 TUI |
 | `service-intelligence.css` | `App.tsx` | `ServiceIntelligencePanel` |
 | `web.css` | `main.tsx` | Web Testing 기본 레이아웃 |

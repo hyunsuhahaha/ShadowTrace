@@ -6,6 +6,7 @@ import { parseLinkExtractResults } from "../../serviceIntel";
 import { setPendingServiceNav } from "../../pendingServiceNav";
 import { consumePendingGraphFocus } from "../../pendingGraphFocus";
 import { S } from "./graphStyles";
+import "./graph-workspace.css";
 import { OutlineView } from "./OutlineView";
 import { AddNodeForm, BlankCanvasQuickMenu, DeleteNodeDialog, ElapsedTimer, Empty, NodeQuickMenu,
   OnboardingPane, Tab, TaskQueue } from "./graphLeaves";
@@ -514,6 +515,8 @@ export default function GraphWorkspace() {
   const selectedNode = selected
     ? replayNodeById.get(selected)
     : undefined;
+  const inspectorOpen = Boolean(noProject || selectedNode || reportPanel || webRequest
+    || hashPanel || postPanel || fileTreePanel);
   const objectivePath = pathHighlight && selected
     ? pathToObjective(replayData, selected) : null;
   const selectedTargetId = selectedNode?.type === "host" && selectedNode.source_ref
@@ -526,8 +529,8 @@ export default function GraphWorkspace() {
   const rootNode = data.nodes.find((n) => n.type === "project-root");
 
   return (
-    <div style={S.wrap}>
-      <div style={S.bar}>
+    <div className="graphWorkspace" style={S.wrap}>
+      <div className="graphWorkspace__bar" style={S.bar}>
         <div style={S.tabs}>
           <Tab on={view === "graph"} onClick={() => setView("graph")}>그래프</Tab>
           <Tab on={view === "tree"} onClick={() => setView("tree")}>트리</Tab>
@@ -627,7 +630,7 @@ export default function GraphWorkspace() {
           <button style={S.resultAction} onClick={() => setDropFileError("")}>✕</button>
         </div>
       )}
-      <div style={S.stage} ref={stageRef}>
+      <div className="graphWorkspace__stage" style={S.stage} ref={stageRef}>
         {view !== "outline" ? (
           <GraphCanvas data={visibleData} hostCount={hostCount} showHidden={showHidden}
             credentialOverlay={credentialOverlay} objectivePath={objectivePath}
@@ -641,10 +644,13 @@ export default function GraphWorkspace() {
           <OutlineView tree={tree.data} nodes={replayData.nodes}
             onSelect={setSelected} selected={selected} />
         )}
-        <div style={S.splitter} onPointerDown={onSplitDown}
+        <div className="graphWorkspace__splitter" data-open={inspectorOpen} style={S.splitter} onPointerDown={onSplitDown}
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />
-        <div style={{ width: paneWidth, flexShrink: 0, display: "flex",
+        <div className="graphWorkspace__inspector" data-open={inspectorOpen}
+          style={{ width: paneWidth, flexShrink: 0, display: "flex",
           minWidth: 0, minHeight: 0, containerType: "inline-size", containerName: "graph-pane" }}>
+          <button className="graphWorkspace__inspectorClose" type="button"
+            aria-label="노드 상세 닫기" onClick={() => setSelected(null)}>×</button>
           {replayAt != null ? (
             <div style={S.inspector}>
               <div className="graphReplayLock"><b>TIME-MACHINE · READ ONLY</b>

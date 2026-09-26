@@ -163,6 +163,26 @@
   }
 }
 
+@media (max-width: 700px) {
+  .contextBar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem .65rem;
+  }
+
+  .contextProject { flex: 1 1 150px; }
+  .contextProject button {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contextBar > div { min-width: 0; }
+  .contextBar > div strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .contextBar > .vpn { margin-left: 0; }
+}
+
 .pageStage > div.app > main.enumerationLayout {
   grid-template-columns: var(--services-width, 235px) minmax(450px, 1fr) var(--notes-width, 360px);
   transition: grid-template-columns 160ms ease;

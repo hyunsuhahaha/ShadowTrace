@@ -88,6 +88,11 @@ export function GraphCanvas(props: {
         || initialGraphPosition(n.id, i, data.nodes.length, cached);
       return { ...n, ...point, vx: 0, vy: 0 };
     });
+    const footprints = new Map(nodes.map((node) => {
+      const identity = nodeIdentity(node);
+      return [node.id, { width: identity?.width || (node.type === "credential" ? 130 : 42),
+        height: identity ? 58 : node.type === "credential" ? 42 : 54 }];
+    }));
     const stabilizationEnds = retained.size && retained.size < nodes.length
       ? performance.now() + 700 : 0;
     const index = new Map(nodes.map((n) => [n.id, n]));
@@ -95,7 +100,7 @@ export function GraphCanvas(props: {
       && (props.credentialOverlay
         || !["reused-credential", "pivoted-to"].includes(e.relation)));
     const structural = new Set(["discovered", "enumerated", "attempted", "precedes",
-      "documented-by", "yielded",
+      "documented-by", "yielded", "assesses", "records-execution", "handoff",
       "pivoted-to", "operates", "runs"]);
     const depths = new Map<string, number>([[anchorId || "", 0]]);
     for (let pass = 0; pass < nodes.length; pass++) for (const edge of edges) {
@@ -184,6 +189,20 @@ export function GraphCanvas(props: {
           const d = Math.sqrt(d2), f = 6500 / d2;
           a.vx += (dx / d) * f; a.vy += (dy / d) * f;
           b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+          // Card nodes occupy more space than the original circle glyphs.
+          // Keep their visible bounds apart, including the short label below.
+          const aSize = footprints.get(a.id)!, bSize = footprints.get(b.id)!;
+          const gapX = (aSize.width + bSize.width) / 2 + 22 - Math.abs(dx);
+          const gapY = (aSize.height + bSize.height) / 2 + 18 - Math.abs(dy);
+          if (gapX > 0 && gapY > 0) {
+            if (gapX < gapY) {
+              const push = Math.sign(dx || (i < j ? -1 : 1)) * gapX * .06;
+              a.vx += push; b.vx -= push;
+            } else {
+              const push = Math.sign(dy || (i < j ? -1 : 1)) * gapY * .06;
+              a.vy += push; b.vy -= push;
+            }
+          }
         }
       for (const e of edges) {
         const a = index.get(e.source)!, b = index.get(e.target)!;

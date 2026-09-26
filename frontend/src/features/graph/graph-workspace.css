@@ -1,0 +1,51 @@
+.graphWorkspace__inspectorClose { display: none; }
+.graphWorkspace__inspector[data-open="false"],
+.graphWorkspace__splitter[data-open="false"] { display: none !important; }
+
+@media (max-width: 700px) {
+  .graphWorkspace {
+    height: max(540px, calc(100dvh - 190px)) !important;
+    min-width: 0;
+  }
+
+  .graphWorkspace__bar {
+    min-width: 0;
+    overflow-x: auto;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .graphWorkspace__bar > div:last-child { display: none !important; }
+
+  .graphWorkspace__stage { position: relative; min-width: 0; }
+  .graphWorkspace__splitter { display: none !important; }
+
+  .graphWorkspace__inspector {
+    position: absolute;
+    z-index: 7;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100% !important;
+    height: min(68%, 530px);
+    border-top: 2px solid #6aa9ff;
+    background: #16161c;
+    box-shadow: 0 -16px 45px #000b;
+  }
+
+  .graphWorkspace__inspectorClose {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    z-index: 9;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #596477;
+    border-radius: 3px;
+    background: #252936;
+    color: #eff3ff;
+    font-size: 20px;
+  }
+}

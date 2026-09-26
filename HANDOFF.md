@@ -7,6 +7,15 @@
 
 ## 현재 상태
 
+- Progress Graph 시각 식별(2026-09-27): source_ref/meta에 따라 Runbook 단계,
+  유형별 자산 세부 대상, HTTP Exchange, 원격 SSH 실행, Session, Nmap/FFUF/NetExec,
+  Hash Crack 및 터미널 활동을 서로 다른 glyph·색·분류·형태로 그린다. 기존 Credential
+  금색 카드도 유지한다. Outline/Inspector에 같은 식별자를 적용했고 카드 크기에 맞춘
+  충돌·클릭 영역과 실제 `assesses`/`records-execution`/`handoff` 구조선을 반영했다.
+  선택 전 빈 상세 패널을 접으며 모바일에서는 닫을 수 있는 하단 패널로 연다.
+  격리 fixture를 1440×900/390×844 Chrome 화면에서 확인했다. 프런트엔드 전체
+  589개, 백엔드 전체 658개, 빌드 통과. 실제 외부 대상이나 시험 환경은 사용하지 않았다.
+
 - 현업 절차 계보 후속 구현(2026-09-27, `67ce3a3`–`1e7a92d`): Runbook Step에
   동일 Target의 RemoteExecution/InteractiveSession을 연결하고 Graph에 실제 실행
   노드로 투영한다(0050). 다른 Target 간 인계는 원본 Step의 Credential, 목적 Step의
