@@ -448,6 +448,10 @@ def _dismissed_sources(db: Session, project_id: int) -> set[tuple[str, int]]:
 
 def _command_owner(activity: CommandActivity, targets: list[Target]) -> tuple[int | None, int | None]:
     """Attribute an external command only when its workspace is unambiguous."""
+    if activity.kind not in {"command", "pipeline"}:
+        # Shell/SSH input and explicit remote argv are unconfirmed candidates,
+        # not observed local executions suitable for semantic projection.
+        return None, None
     command = activity.command or ""
     try:
         inference = json.loads(activity.inference or "{}")

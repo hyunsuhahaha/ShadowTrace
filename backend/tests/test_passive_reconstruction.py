@@ -13,6 +13,7 @@ from app.models import (
 from app.modules.graph import router as graph_api
 from app.modules.passive_activity import router as passive_api
 from app.modules.passive_activity import raw_events, service as passive_service
+from app.modules.passive_activity import reconstruction as reconstruction_module
 from app.modules.passive_activity.reconstruction import _losses, _processes, reconstruct
 
 
@@ -175,6 +176,52 @@ def test_scoped_reconstruction_updates_one_terminal_without_touching_another():
     assert (untouched.id, untouched.evidence_event_ids) == (
         untouched_id, untouched_events)
     assert reconstruct(db, changed_event_ids=[])["commands"] == 3
+
+
+def test_scoped_reconstruction_does_not_replay_unrelated_raw_history(monkeypatch):
+    db = database(); events = Events(db)
+    shell(events)
+    for pid in range(1000, 1200):
+        events.add("process_exec", pid, ppid=1,
+                   payload={"start_ticks": str(pid * 10), "comm": "panel"})
+    db.commit(); reconstruct(db)
+
+    events.process(101, ["/usr/bin/id"], ppid=100, sid=100,
+                   tty_nr=1, tty="/dev/pts/1", exit=False)
+    db.commit()
+    changed_ids = [row.id for row in db.query(RawActivityEvent).filter(
+        RawActivityEvent.pid == 101)]
+    examined = []
+    original = reconstruction_module._processes
+
+    def counted(raw_events, observer_loss):
+        examined.append(len(raw_events))
+        return original(raw_events, observer_loss)
+
+    monkeypatch.setattr(reconstruction_module, "_processes", counted)
+    assert reconstruct(db, changed_event_ids=changed_ids)["commands"] == 1
+    assert max(examined) < 20
+
+
+def test_scoped_reconstruction_replays_existing_shell_input_for_late_exec():
+    db = database(); events = Events(db)
+    context = shell(events)
+    events.input(100, "id\n", context)
+    db.commit(); reconstruct(db)
+    assert db.query(CommandActivity).one().kind == "shell-input"
+
+    events.process(101, ["/usr/bin/id"], ppid=100, sid=100, pgid=101,
+                   tty_nr=1, tty="/dev/pts/1")
+    db.commit()
+    changed_ids = [row.id for row in db.query(RawActivityEvent).filter(
+        RawActivityEvent.pid == 101)]
+    reconstruct(db, changed_event_ids=changed_ids)
+    scoped = [(row.kind, row.command, row.confidence)
+              for row in db.query(CommandActivity).all()]
+    reconstruct(db)
+    full = [(row.kind, row.command, row.confidence)
+            for row in db.query(CommandActivity).all()]
+    assert scoped == full == [("command", "id", 85)]
 
 
 def test_observed_process_reconstructs_and_appears_in_existing_graph_api(
@@ -393,6 +440,43 @@ def test_late_start_ticks_merge_the_same_pid_incarnation():
     assert rows[0].start_ticks == "6020"
     assert rows[0].confidence == 100
     assert_evidence_without_graph_claim(db)
+
+
+def test_explicit_ssh_remote_command_is_unconfirmed_candidate():
+    db = database(); events = Events(db)
+    project = Project(name="SSH lab")
+    db.add(project); db.flush()
+    db.add(Target(project_id=project.id, name="host", ip="10.10.11.23"))
+    shell(events)
+    events.process(400, ["/usr/bin/ssh", "-p", "22", "kali@10.10.11.23",
+                         "printf 'proof marker'"], ppid=100, sid=100,
+                   pgid=400, tty_nr=1, tty="/dev/pts/1", exit=False)
+    db.commit(); reconstruct(db)
+
+    remote = db.query(RemoteSessionCandidate).one()
+    assert (remote.destination, remote.username) == ("10.10.11.23", "kali")
+    candidate = db.query(CommandActivity).filter_by(kind="remote-argv").one()
+    assert candidate.command == "printf 'proof marker'"
+    assert candidate.confidence <= 60 and candidate.sensitive
+    assert json.loads(candidate.inference)["execution"] == "unconfirmed"
+    assert candidate.cwd == ""
+    assert remote.client_activity_id != candidate.id
+    assert_evidence_without_graph_claim(db)
+    graph_api.sync_graph(project.id, db)
+    graph = graph_api.get_graph(project.id, db)
+    assert all(not (node.source_ref and json.loads(node.source_ref).get("kind")
+                    == "command_activity" and json.loads(node.source_ref).get("id")
+                    == candidate.id) for node in graph.nodes)
+
+
+def test_ssh_port_forward_without_command_has_no_remote_argv_candidate():
+    db = database(); events = Events(db)
+    shell(events)
+    events.process(401, ["/usr/bin/ssh", "-N", "-L", "8080:127.0.0.1:80",
+                         "kali@target"], ppid=100, sid=100, pgid=401,
+                   tty_nr=1, tty="/dev/pts/1", exit=False)
+    db.commit(); reconstruct(db)
+    assert db.query(CommandActivity).filter_by(kind="remote-argv").count() == 0
 
 
 def test_many_late_start_ticks_preserve_earlier_event_attribution():

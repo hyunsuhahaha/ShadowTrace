@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from ...models import (
@@ -486,24 +486,60 @@ def _persist_commands(db: Session, groups: list[dict], sessions: dict[str, Termi
     return rows
 
 
-def _ssh_destination(argv: list[str]) -> tuple[str, str]:
+def _ssh_invocation(argv: list[str]) -> tuple[str, str, str]:
     takes_value = {"-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J",
                    "-L", "-l", "-m", "-O", "-o", "-P", "-p", "-Q", "-R", "-S", "-W", "-w"}
     username = ""
     index = 1
     while index < len(argv):
         value = argv[index]
+        if value == "--":
+            index += 1
+            break
         if value in takes_value:
             if value == "-l" and index + 1 < len(argv):
                 username = argv[index + 1]
             index += 2
             continue
+        if value.startswith("-l") and len(value) > 2:
+            username = value[2:]
         if value.startswith("-"):
             index += 1
             continue
-        inline_user, separator, destination = value.rpartition("@")
-        return (destination, inline_user) if separator else (value, username)
-    return "", ""
+        break
+    if index >= len(argv):
+        return "", username, ""
+    inline_user, separator, destination = argv[index].rpartition("@")
+    host = destination if separator else argv[index]
+    return host, inline_user if separator else username, " ".join(argv[index + 1:])
+
+
+def _ssh_argv_groups(processes: dict[str, dict], process_session: dict[str, str]) -> list[dict]:
+    groups = []
+    for key, process in processes.items():
+        if (_basename(process) not in SSH_NAMES or key not in process_session
+                or process["argv_source"] != "exec-argv"):
+            continue
+        destination, _, command = _ssh_invocation(process["argv"])
+        if not destination or not command:
+            continue
+        event_ids = sorted(set(process["event_ids"]))
+        groups.append({
+            "activity_key": f"ssh-argv:{key}",
+            "session_key": process_session[key], "member_keys": [key],
+            "kind": "remote-argv", "command": command, "cwd": "",
+            "pgid": process["pgid"], "is_pipeline": False,
+            "is_background": False, "stdin_target": "", "stdout_target": "",
+            "stderr_target": "", "evidence_event_ids": event_ids,
+            "evidence_streams": {"process": sorted(set(
+                process["evidence_streams"]["process"]))},
+            "inference": {"command_source": "ssh-argv", "execution": "unconfirmed",
+                          "remote": True, "destination": destination},
+            "started_at": process["started_at"], "ended_at": process["ended_at"],
+            "confidence": min(process["confidence"], 60),
+            "losses": set(process["losses"]), "sensitive": True,
+        })
+    return groups
 
 
 def _remote_candidates(db: Session, processes: dict[str, dict], process_rows,
@@ -512,9 +548,10 @@ def _remote_candidates(db: Session, processes: dict[str, dict], process_rows,
     for key, process in processes.items():
         if _basename(process) not in SSH_NAMES or key not in process_session:
             continue
-        destination, username = _ssh_destination(process["argv"])
+        destination, username, _ = _ssh_invocation(process["argv"])
         activity = next((row for activity_key, row in commands.items()
-                         if process_rows[key].id in _json(row.process_instance_ids, [])), None)
+                         if row.kind in {"command", "pipeline"}
+                         and process_rows[key].id in _json(row.process_instance_ids, [])), None)
         candidate_key = f"ssh:{key}"
         _upsert(db, RemoteSessionCandidate, "candidate_key", candidate_key, {
             "terminal_session_id": sessions[process_session[key]].id,
@@ -545,24 +582,108 @@ def _summary(db: Session) -> dict[str, int]:
                                 ("remote_candidates", RemoteSessionCandidate))}
 
 
+def _observer_loss_summary(db: Session) -> dict[str, set[str]]:
+    """Retain corpus-wide loss provenance without materializing raw payloads."""
+    loss = case((or_(RawActivityEvent.kind == "loss",
+                     RawActivityEvent.loss_before > 0), 1), else_=0)
+    result: dict[str, set[str]] = defaultdict(set)
+    for observer, first, last, count, has_loss in db.execute(select(
+            RawActivityEvent.observer_id, func.min(RawActivityEvent.sequence),
+            func.max(RawActivityEvent.sequence), func.count(), func.max(loss),
+    ).group_by(RawActivityEvent.observer_id)):
+        if last - first + 1 != count:
+            result[observer].add("sequence-gap")
+        if has_loss:
+            result[observer].add("event-loss")
+    return result
+
+
+def _events_for_processes(db: Session, identities: set[tuple[str, int]]) -> list[RawActivityEvent]:
+    events = []
+    ordered = sorted(identities)
+    for offset in range(0, len(ordered), 300):
+        events.extend(db.scalars(select(RawActivityEvent).where(tuple_(
+            RawActivityEvent.boot_id, RawActivityEvent.pid,
+        ).in_(ordered[offset:offset + 300]))))
+    return events
+
+
+def _lineage_corpus(db: Session, identities: set[tuple[str, int]], observer_loss):
+    # The source process and its ancestors may supply terminal identity or
+    # tmux ancestry. Do not infer either from a truncated parent chain.
+    for _ in range(16):
+        events = _events_for_processes(db, identities)
+        processes, event_process = _processes(events, observer_loss)
+        parents = {(item["boot_id"], item["ppid"])
+                   for item in processes.values()
+                   if item.get("ppid") and item["ppid"] > 1}
+        missing = parents - identities
+        if not missing:
+            return events, processes, event_process
+        identities.update(missing)
+    return None
+
+
+def _scoped_corpus(db: Session, changed_event_ids: list[int], observer_loss):
+    changed_events = []
+    for offset in range(0, len(changed_event_ids), 400):
+        changed_events.extend(db.scalars(select(RawActivityEvent).where(
+            RawActivityEvent.id.in_(changed_event_ids[offset:offset + 400]))))
+    if not changed_events:
+        return [], {}, {}, []
+    if any(event.kind == "loss" or event.pid is None for event in changed_events):
+        return None
+
+    identities = {(event.boot_id, event.pid) for event in changed_events}
+    corpus = _lineage_corpus(db, identities, observer_loss)
+    if corpus is None:
+        return None
+    events, processes, event_process = corpus
+
+    changed_ids = {event.id for event in changed_events}
+    changed_keys = {event_process[event_id] for event_id in changed_ids
+                    if event_id in event_process}
+    affected = {_terminal_identity(processes[key])[1]
+                for key in changed_keys
+                if _terminal_identity(processes[key]) is not None}
+    if affected:
+        session_ids = list(db.scalars(select(TerminalSession.id).where(
+            TerminalSession.session_key.in_(affected))))
+        if session_ids:
+            peers = db.execute(select(ProcessInstance.boot_id, ProcessInstance.pid).where(
+                ProcessInstance.terminal_session_id.in_(session_ids)))
+            peer_identities = {(boot, pid) for boot, pid in peers}
+            if not peer_identities.issubset(identities):
+                identities.update(peer_identities)
+                corpus = _lineage_corpus(db, identities, observer_loss)
+                if corpus is None:
+                    return None
+                events, processes, event_process = corpus
+    return events, processes, event_process, changed_events
+
+
 def reconstruct(db: Session, changed_event_ids: list[int] | None = None) -> dict[str, int]:
     """Rebuild all evidence explicitly, or only sessions touched by a sync batch."""
     if changed_event_ids == []:
         return _summary(db)
-    events = list(db.scalars(select(RawActivityEvent).order_by(
-        RawActivityEvent.recorded_at, RawActivityEvent.monotonic_ns, RawActivityEvent.id)))
-    if not events:
-        return {"processes": 0, "sessions": 0, "commands": 0, "remote_candidates": 0}
-    observer_loss = _losses(events)
-    processes, event_process = _processes(events, observer_loss)
     scoped = changed_event_ids is not None
+    if scoped:
+        observer_loss = _observer_loss_summary(db)
+        corpus = _scoped_corpus(db, changed_event_ids, observer_loss)
+        if corpus is None:
+            return reconstruct(db)
+        events, processes, event_process, changed_events = corpus
+    else:
+        events = list(db.scalars(select(RawActivityEvent).order_by(
+            RawActivityEvent.recorded_at, RawActivityEvent.monotonic_ns, RawActivityEvent.id)))
+        if not events:
+            return {"processes": 0, "sessions": 0, "commands": 0, "remote_candidates": 0}
+        observer_loss = _losses(events)
+        processes, event_process = _processes(events, observer_loss)
     selected = processes
     selected_events = events
     if scoped:
         changed_ids = set(changed_event_ids)
-        changed_events = [event for event in events if event.id in changed_ids]
-        if any(event.kind == "loss" or event.pid is None for event in changed_events):
-            return reconstruct(db)
         changed_keys = {event_process[event.id] for event in changed_events
                         if event.id in event_process}
         affected_sessions = {_terminal_identity(processes[key])[1]
@@ -592,6 +713,7 @@ def reconstruct(db: Session, changed_event_ids: list[int] | None = None) -> dict
     groups = _command_groups(selected, process_session)
     lines = _input_lines(selected_events, event_process, selected, process_session)
     groups = _correlate_input(groups, lines, selected)
+    groups.extend(_ssh_argv_groups(selected, process_session))
     commands = _persist_commands(db, groups, sessions, process_rows)
     remote_keys = _remote_candidates(
         db, selected, process_rows, process_session, sessions, commands)
