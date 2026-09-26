@@ -120,6 +120,79 @@ export function nodeMeta(node: Pick<GraphNode, "meta">): Record<string, any> {
   try { return JSON.parse(node.meta || "{}"); } catch { return {}; }
 }
 
+export type NodeIdentity = { glyph: string; tag: string; detail: string;
+  accent: string; background: string; width: number;
+  shape?: "step" | "subject" | "exchange" };
+
+// Source identity is distinct from Graph type: a Runbook check, a saved HTTP
+// response and an actual command are all "technique" nodes, but must not look
+// like the same action. Use only saved metadata, never a command or secret.
+export function nodeIdentity(node: Pick<GraphNode, "type" | "source_ref" | "meta" | "label">): NodeIdentity | null {
+  let kind = "";
+  try { kind = String(JSON.parse(node.source_ref || "{}").kind || ""); } catch { /* manual node */ }
+  const meta = nodeMeta(node);
+  if (kind === "runbook_step") return {
+    glyph: "☷", tag: `STEP ${String(meta.position || "?").padStart(2, "0")}`,
+    detail: String(meta.stepStatus || "not_started").replaceAll("_", " ").toUpperCase(),
+    accent: "#75aaff", background: "#101c2e", width: 82, shape: "step",
+  };
+  if (kind === "asset_subject") {
+    const subject = String(meta.kind || "subject");
+    const groups: Record<string, [string, string]> = {
+      web: ["⌘", "WEB"], api: ["⇄", "API"], mobile: ["▣", "APP"],
+      cloud: ["☁", "CLOUD"], kubernetes: ["⬡", "K8S"], source: ["⌥", "SOURCE"],
+      wireless: ["⌁", "RADIO"], ics: ["▤", "ICS"],
+    };
+    const family = groups[subject.split("_")[0]] || ["⬡", "ASSET"];
+    return { glyph: family[0], tag: family[1], detail: subject.replaceAll("_", " ").toUpperCase(),
+      accent: "#54d6cf", background: "#0e2728", width: 86, shape: "subject" };
+  }
+  if (kind === "http_exchange") return {
+    glyph: "⇄", tag: `${String(meta.method || "HTTP").toUpperCase()} ${meta.statusCode || "—"}`,
+    detail: "HTTP RESPONSE", accent: "#64c9d4", background: "#102329", width: 86,
+    shape: "exchange",
+  };
+  if (kind === "remote_execution") return {
+    glyph: "›_", tag: String(meta.connection || "REMOTE").toUpperCase(),
+    detail: meta.exitCode == null ? String(meta.status || "").toUpperCase() : `EXIT ${meta.exitCode}`,
+    accent: "#a98bff", background: "#211a32", width: 90,
+  };
+  if (kind === "session") return {
+    glyph: /responder/i.test(String(meta.tool || "")) ? "⌁" : "›_",
+    tag: /responder/i.test(String(meta.tool || "")) ? "LISTENER" : "SHELL",
+    detail: String(meta.activity?.status || meta.executionStatus || "SESSION").toUpperCase(),
+    accent: "#74c7ff", background: "#10263a", width: 88,
+  };
+  if (kind === "autorecon_results") return {
+    glyph: "⌖", tag: "AUTORECON", detail: "SAVED RESULTS",
+    accent: "#6be3a2", background: "#14281e", width: 94,
+  };
+  if (kind === "hash_crack_job") return {
+    glyph: "#", tag: "HASH CRACK", detail: String(meta.status || "SAVED JOB").toUpperCase(),
+    accent: "#c39aff", background: "#211a32", width: 94,
+  };
+  if (kind === "command_activity" || kind === "passive_activity") return {
+    glyph: "›_", tag: "TERMINAL", detail: "OBSERVED",
+    accent: "#81b69b", background: "#14221c", width: 88,
+  };
+  if (kind === "execution") {
+    const tool = String(meta.tool || "").toLowerCase();
+    const families: [RegExp, string, string, string][] = [
+      [/nmap|masscan/, "⌖", "NMAP", "#6be3a2"],
+      [/ffuf|ferox|gobuster|dirsearch/, "✳", "FUZZ", "#ffb665"],
+      [/netexec|crackmapexec|nxc/, "▦", "NETEXEC", "#9daeff"],
+      [/hashcat|john/, "#", "CRACK", "#c39aff"],
+      [/smbclient|rpcclient|ldapsearch/, "⇄", "ENUM", "#71d6d1"],
+    ];
+    const family = families.find(([pattern]) => pattern.test(tool));
+    const label = family?.[2] || tool.split(/[-_]/)[0]?.toUpperCase().slice(0, 10) || "COMMAND";
+    return { glyph: family?.[1] || "›_", tag: label,
+      detail: String(meta.executionStatus || "SAVED RUN").toUpperCase(),
+      accent: family?.[3] || "#8bc4a5", background: "#14221c", width: 88 };
+  }
+  return null;
+}
+
 // Set once, server-side, the moment a password-protected archive entry gets
 // successfully extracted (see extract_archive_entry) -- a fact about how
 // this node came to exist, not an ongoing state, so the canvas only plays
@@ -216,7 +289,7 @@ export type ActivityItem = { nodeId: string; at: string; text: string; kind: Act
 export type ActivityPanelState = { x?: number; y?: number; width: number; height: number; collapsed: boolean };
 export const ACTIVITY_PANEL_KEY = "oscp-graph-activity-panel";
 export const defaultActivityPanel: ActivityPanelState = {
-  width: 380, height: 340, collapsed: false,
+  width: 380, height: 340, collapsed: true,
 };
 
 export function clampActivityPanel(x: number, y: number, width: number, height: number,

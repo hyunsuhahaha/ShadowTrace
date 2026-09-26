@@ -128,6 +128,7 @@ def test_http_exchange_link_appears_as_actual_runbook_graph_node():
     source = next(node for node in nodes if '"kind": "runbook_step"' in (node.source_ref or ""))
     result = next(node for node in nodes if '"kind": "http_exchange"' in (node.source_ref or ""))
     assert result.label == f"HTTP Exchange #{exchange.id}"
+    assert __import__("json").loads(result.meta)["method"] == "GET"
     assert db.scalar(select(GraphEdge).where(GraphEdge.source == source.id,
                                                 GraphEdge.target == result.id,
                                                 GraphEdge.relation == "records-execution"))
@@ -182,6 +183,7 @@ def test_remote_execution_session_and_cross_target_handoff_have_graph_provenance
                      and f'"id": {dest_step}' in (node.source_ref or ""))
     remote_node = next(node for node in nodes if '"kind": "remote_execution"' in (node.source_ref or ""))
     assert remote_node.label == f"RemoteExecution #{run.id}"
+    assert __import__("json").loads(remote_node.meta)["connection"] == "ssh"
     assert db.scalar(select(GraphEdge).where(GraphEdge.source == source_node.id,
         GraphEdge.target == dest_node.id, GraphEdge.relation == "handoff"))
     assert db.scalar(select(GraphEdge).where(GraphEdge.source == dest_node.id,

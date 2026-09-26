@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { ActivityItem, ActivityKind, ACTIVITY_PANEL_KEY, ActivityStatusFilter,
   buildActivityFeed, clampActivityPanel, color, evidenceCount, fileFindingGlyph, filterActivityFeed,
-  getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition,
+  getNodeActivity, credentialBadge, GLYPH, GraphNode, GraphOut, GraphPosition, nodeIdentity,
   initialGraphPosition, initialGraphPositionNearParent, isFlagFinding, justUnlockedAt, NodeActivity,
   nodeStatusReason, nodeSummary, ObjectivePath, readActivityPanel, Sim } from "./graphModel";
 import { S } from "./graphStyles";
@@ -711,6 +711,59 @@ export function GraphCanvas(props: {
           ctx.lineWidth = 2; ctx.stroke();
           ctx.restore();
         }
+        const identity = nodeIdentity(current);
+        if (identity) {
+          const w = identity.width, h = 38, x = n.x - w / 2, y = n.y - h / 2;
+          ctx.save();
+          ctx.shadowColor = isSel ? "#fff" : identity.accent;
+          ctx.shadowBlur = isSel ? 18 : 9;
+          ctx.fillStyle = identity.background;
+          ctx.beginPath();
+          if (identity.shape === "subject") {
+            ctx.moveTo(x + 9, y); ctx.lineTo(x + w - 9, y);
+            ctx.lineTo(x + w, y + h / 2); ctx.lineTo(x + w - 9, y + h);
+            ctx.lineTo(x + 9, y + h); ctx.lineTo(x, y + h / 2);
+          } else if (identity.shape === "step") {
+            ctx.moveTo(x, y); ctx.lineTo(x + w - 9, y);
+            ctx.lineTo(x + w, y + 9); ctx.lineTo(x + w, y + h);
+            ctx.lineTo(x, y + h);
+          } else {
+            ctx.rect(x, y, w, h);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = isSel ? "#fff" : identity.accent;
+          ctx.lineWidth = isSel ? 2 : 1.3; ctx.stroke();
+          if (identity.shape === "exchange") {
+            ctx.globalAlpha *= .36;
+            ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+            ctx.globalAlpha = current.hidden ? .3 : 1;
+          }
+          ctx.fillStyle = identity.accent;
+          ctx.font = "700 15px ui-monospace,monospace";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(identity.glyph, x + 17, n.y);
+          ctx.textAlign = "left"; ctx.fillStyle = "#ecf3f0";
+          ctx.font = "700 9px ui-monospace,monospace";
+          ctx.fillText(identity.tag, x + 33, y + 14, w - 38);
+          ctx.fillStyle = identity.accent;
+          ctx.font = "600 7px ui-monospace,monospace";
+          ctx.fillText(identity.detail, x + 33, y + 27, w - 38);
+          ctx.fillStyle = color(current.status);
+          ctx.fillRect(x + w - 5, y + h - 5, 4, 4);
+          ctx.restore();
+          drawEvidenceBadge(evidenceCount(current), x + w - 1, y);
+          ctx.fillStyle = isSel ? "#fff" : "#dce8e5";
+          ctx.textAlign = "center"; ctx.textBaseline = "top";
+          ctx.font = "11px sans-serif";
+          let label = current.label;
+          while (label.length > 1 && ctx.measureText(label).width > 126)
+            label = label.slice(0, -1);
+          if (label !== current.label) label = `${label.slice(0, -1)}…`;
+          ctx.fillText(label, n.x, y + h + 7);
+          ctx.globalAlpha = 1;
+          continue;
+        }
         ctx.save();
         ctx.shadowColor = isFlag ? "#f5c518" : activity ? nodeSignal
           : awaitingReview ? color(current.status) : isAnchor ? "#6aa9ff" : color(current.status);
@@ -796,6 +849,9 @@ export function GraphCanvas(props: {
       for (const n of nodes) {
         if (n.type === "credential"
             && Math.abs(n.x - x) <= 95 && Math.abs(n.y - y) <= 20) return n;
+        const identity = nodeIdentity(n);
+        if (identity && Math.abs(n.x - x) <= identity.width / 2
+            && Math.abs(n.y - y) <= 20) return n;
         if (n.type === "memo"
             && Math.abs(n.x - x) <= 26 && Math.abs(n.y - y) <= 22) return n;
         const rr = n.type === "project-root" ? 30 : n.id === anchorId ? 28 : 18;

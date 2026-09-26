@@ -21,7 +21,7 @@ import { impacketAuthArgs, shellQuote } from "../../enumerationModel";
 import { FILE_DRAG_MIME, type FileDragPayload } from "../../fileTree";
 import { setPendingGraphFocus } from "../../pendingGraphFocus";
 import { AddForm, color, CredentialHandoff, DeepLink, EXECUTION_STATUS_LABEL, findTextMatches,
-  GLYPH, GraphNode, GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeMeta, nodeStatusReason,
+  GLYPH, GraphNode, GraphRequestDraft, LINK_KIND_LABEL, LINK_KIND_ORDER, nodeIdentity, nodeMeta, nodeStatusReason,
   STATUS_LABEL, STATUS_ORDER, STATUS_REASON } from "./graphModel";
 import { S } from "./graphStyles";
 import { AddNodeForm } from "./graphLeaves";
@@ -1021,7 +1021,7 @@ export function Inspector(props: {
           onClick={() => props.onSetDetails?.(n.id, { pinned: !n.pinned })}>
           {n.pinned ? "★" : "☆"}</button></div>
       <div style={{ color: "#6b6b76", fontSize: 12 }}>
-        {GLYPH[n.type]} {n.type}
+        {nodeIdentity(n)?.glyph || GLYPH[n.type]} {nodeIdentity(n)?.tag || n.type}
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>

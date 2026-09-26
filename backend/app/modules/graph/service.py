@@ -1385,6 +1385,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             node = index.get(("http_exchange", row.id))
             meta = json.dumps({"exchangeId": row.id, "requestId": request.id,
                                "targetId": request.target_id,
+                               "method": request.method,
                                "statusCode": row.status_code,
                                "reviewStatus": row.review_status})
             if node is None:
@@ -1409,6 +1410,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 continue
             node = index.get(("remote_execution", run.id))
             meta = json.dumps({"remoteExecutionId": run.id, "targetId": run.target_id,
+                               "connection": run.connection,
                                "status": run.status, "exitCode": run.exit_code,
                                "evidenceId": run.evidence_id})
             if node is None:

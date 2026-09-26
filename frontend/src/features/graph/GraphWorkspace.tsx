@@ -90,7 +90,7 @@ export default function GraphWorkspace() {
   }, [selected]);
   const [paneWidth, setPaneWidth] = useState(() => {
     const saved = Number(localStorage.getItem("oscp-graph-pane"));
-    return saved >= 320 ? saved : 640;
+    return saved >= 320 ? saved : 440;
   });
   const stageRef = useRef<HTMLDivElement>(null);
   const clampPaneWidth = (width: number) => {
@@ -638,7 +638,8 @@ export default function GraphWorkspace() {
             onActivitySelect={(id) => { setSelected(id); setFocus({ id, nonce: Date.now() }); }}
             onDropFile={(payload) => void dropFile(payload)} dropFileBusy={dropFileBusy} />
         ) : (
-          <OutlineView tree={tree.data} onSelect={setSelected} selected={selected} />
+          <OutlineView tree={tree.data} nodes={replayData.nodes}
+            onSelect={setSelected} selected={selected} />
         )}
         <div style={S.splitter} onPointerDown={onSplitDown}
           onPointerMove={onSplitMove} onPointerUp={onSplitUp} />

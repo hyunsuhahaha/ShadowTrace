@@ -2,8 +2,23 @@ import { expect, it } from "vitest";
 import { buildActivityFeed, clampActivityPanel, credentialBadge, evidenceCount,
   fileFindingGlyph, filterActivityFeed, filterGraph, findTextMatches, formatElapsed,
   getNodeActivity, initialGraphPosition, initialGraphPositionNearParent,
-  isCrackableCredential, isFlagFinding, justUnlockedAt, nodeStatusReason, nodeSummary,
+  isCrackableCredential, isFlagFinding, justUnlockedAt, nodeIdentity, nodeStatusReason, nodeSummary,
   pathToObjective } from "./graphModel";
+
+it("gives saved workflow and tool nodes distinct visual identities", () => {
+  const identified = (kind: string, meta: Record<string, unknown>) => nodeIdentity({
+    type: kind === "asset_subject" ? "asset" : "technique",
+    label: "Lab record", source_ref: JSON.stringify({kind}), meta: JSON.stringify(meta),
+  });
+  expect(identified("runbook_step", {position: 7, stepStatus: "completed"})?.tag).toBe("STEP 07");
+  expect(identified("asset_subject", {kind: "api_operation"})?.shape).toBe("subject");
+  expect(identified("http_exchange", {method: "GET", statusCode: 403})?.tag).toBe("GET 403");
+  expect(identified("remote_execution", {connection: "ssh", exitCode: 0})?.tag).toBe("SSH");
+  expect(identified("execution", {tool: "nmap-syn-scan"})?.tag).toBe("NMAP");
+  expect(identified("execution", {tool: "ffuf-directory"})?.tag).toBe("FUZZ");
+  expect(identified("execution", {tool: "netexec-smb"})?.tag).toBe("NETEXEC");
+  expect(identified("session", {tool: "responder-listener"})?.tag).toBe("LISTENER");
+});
 
 it("recognizes only flag.txt as a flag finding, case- and path-insensitively", () => {
   expect(isFlagFinding({type: "finding",

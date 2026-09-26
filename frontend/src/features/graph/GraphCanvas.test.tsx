@@ -26,7 +26,7 @@ function stubCanvasContext() {
   const gradient = { addColorStop: vi.fn() };
   const ctx = {
     clearRect: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(),
-    beginPath: vi.fn(), closePath: vi.fn(), arc: vi.fn(), fill: vi.fn(),
+    beginPath: vi.fn(), closePath: vi.fn(), rect: vi.fn(), arc: vi.fn(), fill: vi.fn(),
     stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), quadraticCurveTo: vi.fn(),
     save: vi.fn(), restore: vi.fn(), scale: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
     setTransform: vi.fn(), setLineDash: vi.fn(), fillText: vi.fn(),
@@ -105,6 +105,8 @@ it("shows the empty activity stream state when nothing is happening", () => {
   render(<GraphCanvas data={emptyData} hostCount={0} showHidden={false} credentialOverlay
     selected={null} onSelect={vi.fn()} focus={null} layoutMode="graph"
     onActivitySelect={vi.fn()} multiSelected={new Set()} onToggleMultiSelect={vi.fn()} onContext={vi.fn()} />);
+  expect(document.querySelector('button[aria-label="활동 펼치기"]')).toBeTruthy();
+  fireEvent.click(document.querySelector('button[aria-label="활동 펼치기"]')!);
   expect(document.body.textContent).toContain("아직 기록된 활동이 없습니다.");
 });
 
