@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
+from ...engagement import require_roe
 from ...models import HttpExchange, HttpRequest, Project, Target
 from ...schemas import (
     HttpExchangeOut, HttpRequestOut, ProxyCaptureIn, ProxyCaptureOut, ProxyStartIn,
@@ -21,7 +22,11 @@ CAPTURE_TAG = "proxy-capture"
 
 
 @router.post("/start")
-async def start_proxy(body: ProxyStartIn):
+async def start_proxy(body: ProxyStartIn, db: Session = Depends(get_db)):
+    target = need(db, Target, body.target_id)
+    if target.project_id != body.project_id:
+        raise HTTPException(400, "Target belongs to another project")
+    require_roe(db, body.project_id, "web", target=target)
     try:
         return await manager.start(body.project_id, body.target_id, body.port)
     except ValueError as exc:

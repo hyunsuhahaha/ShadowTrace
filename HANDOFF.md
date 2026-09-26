@@ -17,7 +17,13 @@
   RoE 행 부재 예외는 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에 기록했다.
   Kali 격리 DB에서 mobile 자산→6단계→증거 첨부→Graph의 익명 Evidence 노드와
   비성공 경로를 확인했다. Chrome 데스크톱·모바일에서 자산 화면을 확인하고 CSS
-  배치 문제를 수정했다. 전체 테스트와 Kali live 전환은 이 기록 시점에 진행 중이다.
+  배치 문제를 수정했다. 전체 backend 651 passed, 프런트 빌드 통과. 프런트 전체
+  587 passed/기존 PostExploitation 비동기 테스트 1건 시간 초과였으며 해당 파일
+  단독 재실행 8 passed. 기존 live DB를
+  `/home/kali/shadowtrace-db-backups/live-pre-release14.db`에 백업하고 0047·0048로
+  올렸다. Kali live는 `/home/kali/projects/ShadowTrace-live-release-14`의 `a534795`
+  기반, PID 376222·port 8000. SPA/Runbook/RoE API 200, 30종 템플릿,
+  기존 프로젝트 RoE `draft`와 Graph sync 후 `scope=blocked`를 확인했다.
 - 현업 흐름 추가 검증(2026-09-26): 앞선 3개 Runbook 추가만으로 전체 coverage를 주장한
   것은 성급했다. OWASP API Top 10 2023을 별도 12단계 절차로 추가하고, 평가 유형별
   절차/실행 기록/자산 모델을 나눠 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에

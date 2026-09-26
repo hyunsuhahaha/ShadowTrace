@@ -1000,7 +1000,8 @@ Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용
 제외 대상, 자산 ID, 허용 행위, 기간, 승인자·사유와 revision 이력을 저장한다
 (마이그레이션 0048). `/api/projects/{id}/roe` 초안을 고치면 승인이 해제되고,
 `/approve` 또는 `/revoke`가 이력을 남긴다. `engagement.py`의 `require_roe`는
-스캔·AutoRecon·명령 실행·HTTP 요청·세션·터널·접근 후 실행·Runbook 검사
+스캔·AutoRecon·명령 실행·HTTP 요청·웹 프록시 시작·세션·터널·접근 후 실행·
+로컬 PoC 실행·Runbook 검사
 진입점에서 현재 승인 범위를 검증한다. 새 프로젝트와 기존 프로젝트 모두 미승인
 초안에서 시작한다. RoE는 project-root 아래 `scope` 노드로 투영하며 승인 상태,
 revision, 기간과 대상·자산 수만 메타에 넣는다. Inspector의 `scope` 노드는

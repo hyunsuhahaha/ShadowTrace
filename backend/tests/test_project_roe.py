@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -9,9 +10,10 @@ from app.database import Base
 from app.engagement import require_roe
 from app.models import AssessmentAsset, GraphNode, ProjectRoeEvent, Target
 from app.modules.graph import service as graph
+from app.modules.web_proxy.router import start_proxy
 from app.modules.core.router import (approve_project_roe, create_project,
                                      revoke_project_roe, update_project_roe)
-from app.schemas import ProjectIn, ProjectRoeDecisionIn, ProjectRoeDraftIn
+from app.schemas import ProjectIn, ProjectRoeDecisionIn, ProjectRoeDraftIn, ProxyStartIn
 from app.time import utcnow
 
 
@@ -28,6 +30,10 @@ def test_project_roe_requires_approved_window_action_and_exact_scope():
     with pytest.raises(HTTPException) as pending:
         require_roe(db, project.id, "scan", target=target)
     assert pending.value.status_code == 409
+    with pytest.raises(HTTPException) as proxy_pending:
+        asyncio.run(start_proxy(ProxyStartIn(
+            project_id=project.id, target_id=target.id), db))
+    assert proxy_pending.value.status_code == 409
     draft = ProjectRoeDraftIn(
         included_targets=["10.20.30.0/24"], excluded_targets=["10.20.30.9"],
         asset_ids=[asset.id], allowed_actions=["scan", "runbook"],
