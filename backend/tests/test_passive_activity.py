@@ -1,4 +1,6 @@
 import json
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -118,3 +120,114 @@ def test_ambiguous_project_keeps_activity_unresolved(tmp_path, monkeypatch):
     assert "exactly one project" in activity.error
     assert db.query(Target).count() == 0
     assert db.query(ScanJob).count() == 0
+
+
+def test_passive_nmap_xml_stdout_preserves_structured_service_and_evidence(
+        tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    import app.modules.scan_center.service as scan_service
+    monkeypatch.setattr(scan_service, "WORKSPACE_DIR", tmp_path / "workspace")
+    db = database()
+    db.autoflush = False
+    db.add(Project(name="Lab", description=""))
+    db.commit()
+    xml = (b'<?xml version="1.0"?><nmaprun><host><address addr="10.10.11.23"/>'
+           b'<ports><port protocol="tcp" portid="22"><state state="open"/>'
+           b'<service name="ssh" product="OpenSSH" version="9.2"/>'
+           b'</port></ports></host></nmaprun>')
+    (inbox / "capture.out").write_bytes(xml)
+    (inbox / "capture.json").write_text(json.dumps({
+        "process_key": "boot:xml:1", "pid": 9, "uid": 1000,
+        "argv": ["nmap", "-oX", "-", "10.10.11.23"],
+        "output_file": "capture.out",
+    }))
+
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    activity = db.query(PassiveActivity).one()
+    assert activity.status == "observed"
+    assert activity.parser == "nmap-xml-v1"
+    row = db.query(Service).one()
+    assert (row.name, row.product, row.version) == ("ssh", "OpenSSH", "9.2")
+    artifact = db.query(Evidence).one()
+    assert Path(artifact.file_path).read_bytes() == xml
+    assert db.query(Finding).count() == 0
+
+
+def test_malformed_passive_xml_is_unresolved_not_server_error(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    db = database()
+    db.add(Project(name="Lab", description=""))
+    db.commit()
+    (inbox / "capture.out").write_bytes(b"<?xml version='1.0'?><nmaprun><host>")
+    (inbox / "capture.json").write_text(json.dumps({
+        "process_key": "boot:broken:1", "pid": 10, "uid": 1000,
+        "argv": ["nmap", "-oX", "-", "10.10.11.23"],
+        "output_file": "capture.out",
+    }))
+
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    activity = db.query(PassiveActivity).one()
+    assert activity.status == "unresolved"
+    assert activity.parser == "nmap-xml-v1"
+    assert "invalid Nmap XML" in activity.error
+    assert db.query(ScanJob).count() == 0
+
+
+def test_declared_nmap_oa_xml_enriches_stdout_observation(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(service, "INBOX", inbox)
+    monkeypatch.setattr(service, "ARCHIVE", tmp_path / "archive")
+    import app.modules.scan_center.service as scan_service
+    monkeypatch.setattr(scan_service, "WORKSPACE_DIR", tmp_path / "workspace")
+    db = database()
+    db.autoflush = False
+    db.add(Project(name="Lab", description=""))
+    db.commit()
+    start = datetime.now(timezone.utc) - timedelta(seconds=1)
+    xml = (b'<nmaprun><host><address addr="10.10.11.23"/><ports>'
+           b'<port protocol="tcp" portid="80"><state state="open"/>'
+           b'<service name="http" product="Apache" version="2.4"/>'
+           b'</port></ports></host></nmaprun>')
+    (tmp_path / "scan.xml").write_bytes(xml)
+    output = b"Nmap scan report for 10.10.11.23\n80/tcp open http\n"
+    (inbox / "capture.out").write_bytes(output)
+    (inbox / "capture.json").write_text(json.dumps({
+        "process_key": "boot:oa:1", "pid": 11, "uid": os.getuid(),
+        "argv": ["nmap", "-oA", "scan", "10.10.11.23"],
+        "cwd": str(tmp_path), "started_at": start.isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "output_file": "capture.out",
+    }))
+
+    assert service.sync_inbox(db) == {"processed": 1, "failed": 0}
+    activity = db.query(PassiveActivity).one()
+    assert activity.parser == "nmap-xml-v1"
+    row = db.query(Service).one()
+    assert (row.product, row.version) == ("Apache", "2.4")
+    assert db.query(Evidence).count() == 2
+    assert Path(activity.output_path).read_bytes() == xml
+
+
+def test_declared_nmap_xml_symlink_is_not_read(tmp_path):
+    assert service._declared_xml_path(["nmap", "-oA", "scan"], "") is None
+    xml = tmp_path / "unrelated.xml"
+    xml.write_bytes(b"<nmaprun/>")
+    (tmp_path / "scan.xml").symlink_to(xml)
+    now = datetime.now(timezone.utc).isoformat()
+    assert service._fresh_declared_xml(
+        ["nmap", "-oA", "scan", "10.10.11.23"],
+        {"cwd": str(tmp_path), "started_at": now, "ended_at": now}) is None
+    (tmp_path / "scan.xml").unlink()
+    (tmp_path / "scan.xml").write_bytes(b"<nmaprun/>")
+    stale = datetime.now(timezone.utc).timestamp() - 3600
+    os.utime(tmp_path / "scan.xml", (stale, stale))
+    assert service._fresh_declared_xml(
+        ["nmap", "-oA", "scan", "10.10.11.23"],
+        {"cwd": str(tmp_path), "started_at": now, "ended_at": now}) is None

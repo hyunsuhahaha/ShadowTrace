@@ -299,6 +299,12 @@ summary를 추가한다. `router.py`는 sync와 reconstruct 요청을 프로세�
 payload에는 terminal output 등 민감정보가 포함될 수 있으므로 localhost 데이터로 취급한다.
 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project 해결이 모호하면
 `unresolved`로만 보존한다.
+일반 Kali 터미널에서 실행한 Nmap은 stdout 텍스트 외에 `-oX -` XML stdout과
+`-oX`/`-oA`가 선언한 최신 XML 파일도 처리한다. 파일은 백엔드가 leaf symlink를
+따르지 않고 사용자 소유·정규 파일·10 MiB 이하·실행 시간 내 갱신을 확인한 경우에만
+읽는다. XML은 기존 Scan Center 파서로 제품·버전·NSE 구조를 보존하고, stdout이
+별도로 있으면 두 원본을 각각 Evidence로 남긴다. root 소유 파일이나 오래된 파일은
+읽지 않고 stdout 해석만 시도한다.
 자동 sync는 새 raw event가 없으면 재구성을 건너뛰고, 있으면 영향받은 터미널 세션과
 프로세스의 파생 행만 다시 저장한다(terminal identity 변경 또는 loss 이벤트는 전체
 재구성). observer는 서버 PID를 제외하되 서버가 실행한 자식 명령은 계속 수집한다.

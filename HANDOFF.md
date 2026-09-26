@@ -122,6 +122,16 @@
 
 Passive reconstruction의 다음 필수 단계:
 
+- 실제 펜테스팅 흐름 감사에서 Nmap `-oX -`의 XML stdout이 raw로만 남고 서비스로
+  승격되지 않는 문제를 Kali loopback에서 재현했다. `-oN`은 stdout 포트 표가 있어
+  같은 증상이 없었다. XML stdout과 안전하게 검증된 `-oA`/`-oX` XML 파일을 기존
+  Scan Center 파서로 가져오고, XML·stdout을 별도 Evidence로 남기도록 수정했다.
+  실제 XML stdout 스캔은 `observed`, 서비스 product `Uvicorn`, Finding 0건.
+  후속 `-oA` 루프백 스캔에서는 XML·stdout 각각 ScanArtifact/Evidence 1건,
+  product 유지, Finding 0건을 확인했다. 운영 DB의 `autoflush=False`에서 stdout
+  Evidence가 누락되던 오류도 flush 추가와 회귀 테스트로 수정했다.
+  관련 30 tests, MongoDB 2개 모듈을 제외한 backend 621 tests 통과.
+
 1. ffuf/curl의 원시 수집·loopback 귀속 smoke는 확인했다. 더 긴 관찰기 연속 실행과
    비루프백 다중 프로젝트 귀속을 검증한다. 36k corpus full rebuild 7.8초,
    idle sync 0.065초, 30초 batch·서버 PID 제외 후 5초 평균 backend CPU 0.4%.

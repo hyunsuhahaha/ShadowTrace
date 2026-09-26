@@ -180,3 +180,28 @@ During the sustained observer run, BCC reported perf-buffer loss and exposed
 a callback signature mismatch. The callback now records dropped-event counts
 in the loss stream instead of throwing; coverage claims must still be reduced
 when a loss marker occurs.
+
+## Nmap output modes in a real shell
+
+An authorized loopback scan with `-oN path` still wrote a human port table to
+stdout, so that mode did not reproduce a missing service. `nmap -oX -` did:
+the old passive parser retained the XML bytes but marked the scan unresolved
+with "no Nmap port-table observations found". The passive ingest now uses the
+existing hardened XML parser for XML stdout and stores the XML as a hashed scan
+artifact. The same loopback scan became `observed` with the service product
+from XML; no Finding was created.
+
+For the common `-oA prefix` and `-oX file` modes, the declared XML can enrich
+the stdout observation. Only a fresh, regular, non-symlink, owner-owned XML
+file of at most 10 MiB is read; the file must have been modified during the
+observed execution window. XML and stdout become separate hashed Evidence.
+Root-owned outputs are intentionally not imported by this path, and hostname,
+range, or ambiguous-project scans remain unresolved rather than guessed.
+In a live `-oA` loopback run, both XML and stdout became distinct ScanArtifact
+and Evidence rows, the service product was retained, and Finding count stayed
+zero. An initial run exposed that `SessionLocal(autoflush=False)` hid the new
+stdout artifact from Evidence registration; an explicit flush fixed it and
+the production-session regression test now checks for both Evidence rows.
+The Kali backend run passed 621 tests with the two MongoDB modules excluded
+because `pymongo` is not installed there; the final Nmap-targeted rerun passed
+30 tests after tightening relative-path handling.
