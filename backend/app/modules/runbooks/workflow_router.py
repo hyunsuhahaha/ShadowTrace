@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import (
-    Finding, Project, RunbookActivityEvent, RunbookInstance,
+    AssessmentAsset, Finding, Project, RunbookActivityEvent, RunbookInstance,
     RunbookRecommendationDismissal, RunbookStepInstance, RunbookStepTemplate,
     RunbookTemplate, RunbookTemplateVersion, Service, Target,
 )
@@ -165,12 +165,16 @@ def instances(project_id: int | None = None, target_id: int | None = None,
 @router.post("/instances", status_code=201)
 def apply(body: ApplyIn, db: Session = Depends(get_db)):
     version = need(db, RunbookTemplateVersion, body.version_id)
-    target = need(db, Target, body.target_id)
+    target = need(db, Target, body.target_id) if body.target_id is not None else None
+    asset = need(db, AssessmentAsset, body.asset_id) if body.asset_id is not None else None
     service = need(db, Service, body.service_id) if body.service_id else None
-    if service and service.target_id != target.id:
+    if service and (target is None or service.target_id != target.id):
         raise HTTPException(400, "Service does not belong to the target")
+    if asset and asset.scope_status == "out_of_scope":
+        raise HTTPException(409, "Asset is outside the approved scope")
     existing = db.scalar(select(RunbookInstance).where(
-        RunbookInstance.target_id == target.id,
+        RunbookInstance.target_id == (target.id if target else None),
+        RunbookInstance.asset_id == (asset.id if asset else None),
         RunbookInstance.service_id == body.service_id,
         RunbookInstance.version_id == version.id))
     if existing:
@@ -180,9 +184,10 @@ def apply(body: ApplyIn, db: Session = Depends(get_db)):
         # leaving the execution view empty.
         return instance_dict(db, existing, True)
     row = RunbookInstance(
-        project_id=target.project_id, target_id=target.id,
+        project_id=target.project_id if target else asset.project_id,
+        target_id=target.id if target else None, asset_id=asset.id if asset else None,
         service_id=service.id if service else None, version_id=version.id,
-        template_name=version.name, target_name=target.name,
+        template_name=version.name, target_name=target.name if target else asset.name,
         service_name=service.name if service else "")
     db.add(row); db.flush()
     source_steps = db.scalars(select(RunbookStepTemplate).where(
@@ -387,7 +392,8 @@ def findings(project_id: int, db: Session = Depends(get_db)):
     rows = db.scalars(select(Finding).where(
         Finding.project_id == project_id).order_by(Finding.id.desc())).all()
     return [{
-        "id": row.id, "target_id": row.target_id, "service_id": row.service_id,
+        "id": row.id, "target_id": row.target_id, "asset_id": row.asset_id,
+        "service_id": row.service_id,
         "observation_id": row.observation_id, "title": row.title,
         "description": row.description, "status": row.status,
         "created_at": row.created_at,
@@ -403,7 +409,8 @@ def update_finding(ident: int, body: FindingUpdate,
     row.status = body.status
     db.commit(); db.refresh(row)
     return {
-        "id": row.id, "target_id": row.target_id, "service_id": row.service_id,
+        "id": row.id, "target_id": row.target_id, "asset_id": row.asset_id,
+        "service_id": row.service_id,
         "observation_id": row.observation_id, "title": row.title,
         "description": row.description, "status": row.status,
         "created_at": row.created_at,
@@ -418,12 +425,15 @@ def export_findings(project_id: int, db: Session = Depends(get_db)):
         Finding.target_id, Finding.id)).all()
     lines = [f"# {project.name} — Runbook Findings", ""]
     for row in rows:
-        target = need(db, Target, row.target_id)
+        target = db.get(Target, row.target_id) if row.target_id is not None else None
+        asset = db.get(AssessmentAsset, row.asset_id) if row.asset_id is not None else None
         service = db.get(Service, row.service_id) if row.service_id else None
         lines.extend([
             f"## {row.title}", "",
             f"- Status: `{row.status}`",
-            f"- Target: `{target.name}` (`{target.ip}`)",
+            (f"- Target: `{target.name}` (`{target.ip}`)" if target else
+             f"- Asset: `{asset.kind}` / `{asset.name}`" if asset else
+             "- Asset: Project-wide"),
             f"- Service: `{service.name} {service.port}/{service.protocol}`"
             if service else "- Service: Target-level",
             f"- Source observation: `#{row.observation_id}`", "",

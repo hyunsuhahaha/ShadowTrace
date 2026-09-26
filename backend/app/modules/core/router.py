@@ -10,9 +10,12 @@ from sqlalchemy.orm import Session
 
 from ...config import WORKSPACE_DIR
 from ...database import Base, get_db
-from ...models import Project, Service, ServiceObservation, Target
+from ...models import (AssessmentAsset, Evidence, Finding, Project, ProjectRoe,
+                       ProjectRoeEvent, RunbookInstance,
+                       Service, ServiceObservation, Target)
 from ...product_policy import public_policy
 from ...schemas import (
+    AssessmentAssetIn, AssessmentAssetOut, ProjectRoeDecisionIn, ProjectRoeDraftIn,
     MetasploitLockIn,
     ProjectIn,
     ProjectOut,
@@ -79,6 +82,8 @@ def projects(db: Session = Depends(get_db)):
 def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     row = Project(**body.model_dump())
     db.add(row)
+    db.flush()
+    db.add(ProjectRoe(project_id=row.id))
     db.commit()
     db.refresh(row)
     return row
@@ -91,6 +96,134 @@ def update_project(ident: int, body: ProjectIn, db: Session = Depends(get_db)):
         setattr(row, key, value)
     db.commit()
     return row
+
+
+def _roe_dict(row: ProjectRoe) -> dict:
+    return {"project_id": row.project_id, "status": row.status,
+            "included_targets": json.loads(row.included_targets or "[]"),
+            "excluded_targets": json.loads(row.excluded_targets or "[]"),
+            "asset_ids": json.loads(row.asset_ids or "[]"),
+            "allowed_actions": json.loads(row.allowed_actions or "[]"),
+            "valid_from": row.valid_from, "valid_until": row.valid_until,
+            "notes": row.notes, "approved_by": row.approved_by,
+            "approval_reason": row.approval_reason, "revision": row.revision,
+            "updated_at": row.updated_at}
+
+
+def _roe_event(db: Session, row: ProjectRoe, action: str, actor: str) -> None:
+    db.add(ProjectRoeEvent(project_id=row.project_id, revision=row.revision,
+                           action=action, actor=actor,
+                           snapshot=json.dumps(_roe_dict(row), default=str, ensure_ascii=False)))
+
+
+@router.get("/api/projects/{ident}/roe")
+def get_project_roe(ident: int, db: Session = Depends(get_db)):
+    need(db, Project, ident)
+    row = need(db, ProjectRoe, ident)
+    return _roe_dict(row)
+
+
+@router.get("/api/projects/{ident}/roe/history")
+def project_roe_history(ident: int, db: Session = Depends(get_db)):
+    need(db, Project, ident)
+    rows = db.scalars(select(ProjectRoeEvent).where(
+        ProjectRoeEvent.project_id == ident).order_by(ProjectRoeEvent.id.desc())).all()
+    return [{"id": row.id, "revision": row.revision, "action": row.action,
+             "actor": row.actor, "snapshot": json.loads(row.snapshot),
+             "occurred_at": row.occurred_at} for row in rows]
+
+
+@router.put("/api/projects/{ident}/roe")
+def update_project_roe(ident: int, body: ProjectRoeDraftIn,
+                       db: Session = Depends(get_db)):
+    row = need(db, ProjectRoe, ident)
+    if body.asset_ids:
+        owned = set(db.scalars(select(AssessmentAsset.id).where(
+            AssessmentAsset.project_id == ident,
+            AssessmentAsset.id.in_(body.asset_ids))))
+        if owned != set(body.asset_ids):
+            raise HTTPException(400, "RoE references an asset from another project")
+    row.included_targets = json.dumps(list(dict.fromkeys(body.included_targets)))
+    row.excluded_targets = json.dumps(list(dict.fromkeys(body.excluded_targets)))
+    row.asset_ids = json.dumps(list(dict.fromkeys(body.asset_ids)))
+    row.allowed_actions = json.dumps(list(dict.fromkeys(body.allowed_actions)))
+    row.valid_from, row.valid_until, row.notes = body.valid_from, body.valid_until, body.notes
+    row.status, row.approved_by, row.approval_reason = "draft", "", ""
+    row.revision += 1
+    row.updated_at = utcnow()
+    _roe_event(db, row, "revised", "local")
+    db.commit(); db.refresh(row)
+    return _roe_dict(row)
+
+
+@router.post("/api/projects/{ident}/roe/approve")
+def approve_project_roe(ident: int, body: ProjectRoeDecisionIn,
+                        db: Session = Depends(get_db)):
+    row = need(db, ProjectRoe, ident)
+    if not row.valid_from or not row.valid_until or not json.loads(row.allowed_actions):
+        raise HTTPException(409, "RoE requires an approved window and allowed actions")
+    if not json.loads(row.included_targets) and not json.loads(row.asset_ids):
+        raise HTTPException(409, "RoE requires targets or assets in scope")
+    row.status, row.approved_by, row.approval_reason = (
+        "approved", body.actor.strip(), body.reason.strip())
+    row.updated_at = utcnow()
+    _roe_event(db, row, "approved", body.actor.strip())
+    db.commit(); db.refresh(row)
+    return _roe_dict(row)
+
+
+@router.post("/api/projects/{ident}/roe/revoke")
+def revoke_project_roe(ident: int, body: ProjectRoeDecisionIn,
+                       db: Session = Depends(get_db)):
+    row = need(db, ProjectRoe, ident)
+    row.status, row.approved_by, row.approval_reason = (
+        "revoked", body.actor.strip(), body.reason.strip())
+    row.updated_at = utcnow()
+    _roe_event(db, row, "revoked", body.actor.strip())
+    db.commit(); db.refresh(row)
+    return _roe_dict(row)
+
+
+@router.get("/api/assessment-assets", response_model=list[AssessmentAssetOut])
+def assessment_assets(project_id: int, db: Session = Depends(get_db)):
+    need(db, Project, project_id)
+    return db.scalars(select(AssessmentAsset).where(
+        AssessmentAsset.project_id == project_id).order_by(AssessmentAsset.id)).all()
+
+
+@router.post("/api/assessment-assets", response_model=AssessmentAssetOut, status_code=201)
+def create_assessment_asset(body: AssessmentAssetIn, db: Session = Depends(get_db)):
+    need(db, Project, body.project_id)
+    row = AssessmentAsset(project_id=body.project_id, kind=body.kind,
+                          name=body.name.strip(), locator=body.locator.strip(),
+                          details=json.dumps(body.details, ensure_ascii=False),
+                          scope_status=body.scope_status)
+    db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
+@router.put("/api/assessment-assets/{ident}", response_model=AssessmentAssetOut)
+def update_assessment_asset(ident: int, body: AssessmentAssetIn,
+                            db: Session = Depends(get_db)):
+    row = need(db, AssessmentAsset, ident)
+    if row.project_id != body.project_id:
+        raise HTTPException(400, "Asset cannot move between projects")
+    row.kind, row.name, row.locator = body.kind, body.name.strip(), body.locator.strip()
+    row.details = json.dumps(body.details, ensure_ascii=False)
+    row.scope_status = body.scope_status
+    row.updated_at = utcnow()
+    db.commit(); db.refresh(row)
+    return row
+
+
+@router.delete("/api/assessment-assets/{ident}", status_code=204)
+def delete_assessment_asset(ident: int, db: Session = Depends(get_db)):
+    row = need(db, AssessmentAsset, ident)
+    linked = any(db.scalar(select(model.id).where(model.asset_id == ident)) is not None
+                 for model in (RunbookInstance, Evidence, Finding))
+    if linked:
+        raise HTTPException(409, "Asset has workflow, evidence, or findings")
+    db.delete(row); db.commit()
 
 
 @router.put("/api/projects/{ident}/metasploit-lock", response_model=ProjectOut)
@@ -196,7 +329,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
         # graph tables were added after this cascade; without them a deleted
         # project's nodes orphan and resurface when SQLite reuses the id.
         "graph_events", "graph_edges", "graph_nodes", "graph_project_meta",
-        "notes",
+        "notes", "assessment_assets", "project_roe_events", "project_roe",
     ]:
         db.execute(sql_delete(tables[table_name]).where(
             tables[table_name].c.project_id == ident))
@@ -252,6 +385,7 @@ def ensure_target(body: TargetEnsureIn, db: Session = Depends(get_db)):
             project = Project(name=body.ip, description="")
             db.add(project)
             db.flush()
+            db.add(ProjectRoe(project_id=project.id))
     row = Target(
         project_id=project.id, name=body.name or body.ip, ip=body.ip,
         hostname="", os_guess="", vpn="tun0", notes="",

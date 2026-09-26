@@ -2,11 +2,11 @@ from __future__ import annotations
 import hashlib
 import json
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from ...models import (
-    Credential, Project, RunbookActivityEvent, RunbookInstance,
+    AssessmentAsset, Credential, Project, RunbookActivityEvent, RunbookInstance,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
     RunbookStepExecution, RunbookStepInstance, RunbookStepTemplate,
     RunbookTemplate, RunbookTemplateVersion, Service, Target,
@@ -171,8 +171,17 @@ class PublishIn(BaseModel):
 
 class ApplyIn(BaseModel):
     version_id: int
-    target_id: int
+    target_id: int | None = None
+    asset_id: int | None = None
     service_id: int | None = None
+
+    @model_validator(mode="after")
+    def one_subject(self):
+        if (self.target_id is None) == (self.asset_id is None):
+            raise ValueError("Exactly one target_id or asset_id is required")
+        if self.asset_id is not None and self.service_id is not None:
+            raise ValueError("A non-IP asset cannot have a host service")
+        return self
 
 
 class StepUpdate(BaseModel):
@@ -270,8 +279,13 @@ def instance_scope_current(db: Session, row: RunbookInstance) -> bool:
     joined to an unrelated project that later received the same numeric ID.
     """
     project = db.get(Project, row.project_id)
-    target = db.get(Target, row.target_id)
-    if not project or not target or target.project_id != project.id:
+    target = db.get(Target, row.target_id) if row.target_id is not None else None
+    asset = db.get(AssessmentAsset, row.asset_id) if row.asset_id is not None else None
+    if not project or (target is None) == (asset is None):
+        return False
+    if target and target.project_id != project.id:
+        return False
+    if asset and asset.project_id != project.id:
         return False
     instance_created = row.created_at
     project_created = project.created_at
@@ -283,7 +297,7 @@ def instance_scope_current(db: Session, row: RunbookInstance) -> bool:
         return False
     if row.service_id is not None:
         service = db.get(Service, row.service_id)
-        if not service or service.target_id != target.id:
+        if not target or not service or service.target_id != target.id:
             return False
     return True
 
@@ -350,6 +364,7 @@ def instance_dict(db: Session, row: RunbookInstance, include_steps: bool = False
     recompute(db, row, steps, condition_met)
     result = {
         "id": row.id, "project_id": row.project_id, "target_id": row.target_id,
+        "asset_id": row.asset_id,
         "service_id": row.service_id, "version_id": row.version_id,
         "template_name": row.template_name, "target_name": row.target_name,
         "service_name": row.service_name, "status": row.status,

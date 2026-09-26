@@ -12,6 +12,7 @@
 | 경로 | 내용 |
 |---|---|
 | `backend/app` | FastAPI 애플리케이션, SQLAlchemy 모델, 실행 관리자와 기능별 router |
+| `backend/app/engagement.py` | 프로젝트 RoE 승인 기간·허용 행위·대상 범위의 실행 전 검사 |
 | `backend/alembic` | SQLite schema migration |
 | `backend/templates` | 명령, Runbook, Service Intelligence, Credential Hunt YAML |
 | `backend/tests` | Pytest 테스트 |
@@ -188,13 +189,13 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 
 | 기능 | HTTP/interface 위치 | 실행 및 저장 위치 |
 |---|---|---|
-| Project, Target, Service | `modules/core/router.py` | `models.py`, workspace target directories |
+| Project, Target, Service, AssessmentAsset | `modules/core/router.py` | `models.py`, workspace target directories; 비 IP 평가 자산은 `assessment_assets`와 `/api/assessment-assets`, 프로젝트 승인 범위는 `/api/projects/{id}/roe`에 저장 |
 | Scan | `modules/scan_center/router.py` | `service.py`, `manager.py`, scan artifacts |
 | Captured command | `modules/executions/router.py` | `executor.py`, output files, ftp-directory-tree 멤버 재다운로드(FTP 재접속) |
 | Interactive session | `modules/sessions/router.py` | `pty_manager.py`, session logs, 종료 세션 `/retry` 재시작 |
 | Web request | `modules/web_testing/router.py` | `HttpRequest`, `HttpExchange`, response files |
 | Web proxy | `modules/web_proxy/router.py` | `manager.py`, mitmproxy addon |
-| Evidence | `modules/evidence/router.py` | Evidence files, 출처(`source_type`/`source_id`) 필터, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
+| Evidence | `modules/evidence/router.py` | Evidence files, 비 IP 자산용 `/upload-asset`, 출처(`source_type`/`source_id`) 필터, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
 | Note | `modules/notes/router.py` | `Note` rows (project 필수, target/service/credential 선택 스코프) |
 | Finding | `modules/findings/router.py` | Finding과 link tables |
 | Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export; 선택한 Runbook instance의 단계별 검사 상태·판정 출력 |
@@ -510,6 +511,7 @@ non-2xx 오류 처리와 JSON decode를 제공한다
 | `#operations` | `OperationsWorkspace.tsx` |
 | `#exploit-research` | `ExploitResearchWorkspace.tsx` |
 | `#runbooks` | `RunbookWorkspace.tsx` |
+| `#assessment`, `#assessment/{assetId}/{stepId?}` | `AssessmentWorkspace.tsx` — 비 IP 자산·Runbook·Evidence·Finding 작업 화면; `ProjectRoePanel.tsx`가 프로젝트 승인 범위와 이력 관리 |
 | `#post-exploitation` | `PostExploitationWorkspace.tsx` |
 | `#hash-cracking` | `HashCrackingWorkspace.tsx` |
 | `#tools` | `ToolsWorkspace.tsx` |
@@ -986,6 +988,20 @@ Step과 연결된다.
 이 연결은 성공 판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음
 sync에서 엣지와 연결이 없어진 Evidence 노드도 제거한다. Inspector의 Evidence
 노드는 원본 Evidence 화면 딥링크를 제공한다.
+`AssessmentAsset`은 IP Target과 별개로 `web`/`api`/`mobile`/`cloud`/
+`kubernetes`/`source`/`wireless`/`ics` 유형을 저장한다(마이그레이션 0047).
+Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용한 Runbook의
+단계·첨부 Evidence·승격 Finding을 같은 계보에 연결한다. `#assessment` 화면은
+자산 등록, 범위 상태, 자산별 Runbook·Evidence·Observation을 관리하며
+`assessment-workspace.css`를 직접 불러온다. `target_id` 없이 적용한 Runbook은
+`asset_id`로 범위를 검증한다. `out_of_scope` 자산에는 적용할 수 없고 검사 상태
+기록은 `in_scope`에서만 허용한다.
+프로젝트 RoE는 `project_roe`와 `project_roe_events`에 승인 대상 IP/CIDR·호스트명,
+제외 대상, 자산 ID, 허용 행위, 기간, 승인자·사유와 revision 이력을 저장한다
+(마이그레이션 0048). `/api/projects/{id}/roe` 초안을 고치면 승인이 해제되고,
+`/approve` 또는 `/revoke`가 이력을 남긴다. `engagement.py`의 `require_roe`는
+스캔·명령 실행·HTTP 요청·접근 후 실행·Runbook 검사 진입점에서 현재 승인 범위를
+검증한다. 새 프로젝트와 기존 프로젝트 모두 미승인 초안에서 시작한다.
 완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
 host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
 `pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라
@@ -1274,6 +1290,7 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `finding-advanced.css` | `FindingWorkspace.tsx` | Finding 목록/일괄 편집 |
 | `finding-responsive.css` | `FindingWorkspace.tsx` | Finding 좁은 화면 대응 |
 | `runbooks.css` | `main.tsx` | Runbook 워크스페이스 |
+| `assessment-workspace.css` | `AssessmentWorkspace.tsx` | 비 IP 평가 자산·검사 단계 |
 | `post-exploitation.css` | `main.tsx` | Post-Exploitation("loot") 워크스페이스 |
 | `hash-cracking.css` | `HashCrackingWorkspace.tsx` | Hash Cracking 워크스페이스 |
 | `exploit-research.css` | `main.tsx` | Exploit Research 워크스페이스 |

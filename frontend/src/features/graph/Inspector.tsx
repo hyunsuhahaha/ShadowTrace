@@ -120,6 +120,7 @@ export function Inspector(props: {
   })();
   const runbookMeta = source?.kind === "runbook_step" && n ? nodeMeta(n) : null;
   const evidenceMeta = source?.kind === "evidence" && n ? nodeMeta(n) : null;
+  const assetMeta = source?.kind === "asset" && n ? nodeMeta(n) : null;
   const runbookInstanceId = Number(runbookMeta?.instanceId || 0);
   const runbookStep = useQuery({
     queryKey: ["graphRunbookInstance", runbookInstanceId],
@@ -1018,7 +1019,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && !runbookMeta && !evidenceMeta && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -1044,11 +1045,12 @@ export function Inspector(props: {
             증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개
             {!!runbookStep.data.evidence_ids.length && <div>
               {runbookStep.data.evidence_ids.map(id => <div key={id}>
-                <a href={`#evidence/${runbookMeta.targetId}/${id}`}>Evidence #{id} 열기</a>
+                <a href={runbookMeta.assetId?`/api/evidence/${id}/file`:`#evidence/${runbookMeta.targetId}/${id}`}>Evidence #{id} 열기</a>
               </div>)}
             </div>}
           </div>}
-          <a href={`#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>
+          <a href={runbookMeta.assetId?`#assessment/${runbookMeta.assetId}/${source?.id}`:
+            `#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>
             Runbook에서 이 단계 열기 →</a>
         </div>
       </section>}
@@ -1056,8 +1058,16 @@ export function Inspector(props: {
         <div style={S.executionResultsHead}><strong>연결된 Evidence</strong></div>
         <div style={S.terminalBody}>
           <div>{String(evidenceMeta.kind || "")} · {String(evidenceMeta.sensitivity || "normal")}</div>
-          <a href={`#evidence/${evidenceMeta.targetId}/${source?.id}`}>
+          <a href={evidenceMeta.assetId?`#assessment/${evidenceMeta.assetId}`:`#evidence/${evidenceMeta.targetId}/${source?.id}`}>
             Evidence 원본 열기 →</a>
+          {evidenceMeta.assetId&&<a href={`/api/evidence/${source?.id}/file`} style={{marginLeft:10}}>파일 다운로드 ↗</a>}
+        </div>
+      </section>}
+      {assetMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="평가 자산">
+        <div style={S.executionResultsHead}><strong>{String(assetMeta.kind||"").toUpperCase()} 평가 자산</strong></div>
+        <div style={S.terminalBody}><div>{String(assetMeta.locator||"식별자 없음")}</div>
+          <div>범위: {String(assetMeta.scopeStatus||"pending")}</div>
+          <a href={`#assessment/${source?.id}`}>자산·Runbook·증거 열기 →</a>
         </div>
       </section>}
       {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">

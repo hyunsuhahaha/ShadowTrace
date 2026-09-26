@@ -90,6 +90,8 @@ async def run_scan(body: ScanPreviewIn, db: Session = Depends(get_db)):
     if body.target_id is None:
         raise HTTPException(400, "Save the target before running a scan")
     target, profile = need(db, Target, body.target_id), need(db, ScanProfile, body.profile_id)
+    from ...engagement import require_roe
+    require_roe(db, target.project_id, "scan", target=target)
     active = db.scalar(select(ScanJob.id).where(
         ScanJob.target_id == target.id,
         ScanJob.status.in_(("queued", "running"))))
@@ -210,6 +212,8 @@ def update_job(scan_id: int, body: ScanJobUpdate, db: Session = Depends(get_db))
 async def rerun(scan_id: int, db: Session = Depends(get_db)):
     previous = need(db, ScanJob, scan_id)
     target = need(db, Target, previous.target_id)
+    from ...engagement import require_roe
+    require_roe(db, target.project_id, "scan", target=target)
     if previous.source != "executed":
         raise HTTPException(409, "Imported scans cannot be rerun")
     argv = shlex.split(previous.command)

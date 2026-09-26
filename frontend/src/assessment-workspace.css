@@ -1,0 +1,50 @@
+.assessmentWorkspace{padding:28px 32px;color:#e7e7ee;min-height:100%;background:#0d0e12}
+.assessmentWorkspace .uiPageHeader{margin-bottom:24px}
+.assessmentRoe{border:1px solid #594d32;background:#201e18;border-radius:8px;margin-bottom:20px;overflow:hidden}
+.assessmentRoe summary{display:flex;align-items:center;gap:12px;padding:13px 17px;cursor:pointer;font-size:13px}
+.assessmentRoe summary span{font-weight:700}.assessmentRoe summary strong{color:#e5b866;margin-left:auto}.assessmentRoe summary small{color:#a69b83}
+.assessmentRoeBody{padding:0 17px 17px}.assessmentRoeBody p{font-size:12px;color:#c1b9a7}
+.assessmentRoeGrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}.assessmentRoe fieldset{border:1px solid #3f3b31;border-radius:5px;margin:7px 0 14px;padding:8px 11px}
+.assessmentRoe legend{font-size:12px;color:#cbbd9c}.assessmentRoeChoices{display:flex;flex-wrap:wrap;gap:8px 20px}.assessmentRoeChoices label{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0;white-space:nowrap}.assessmentRoeChoices input{width:auto}
+.assessmentRoeActions{display:flex;flex-wrap:wrap;align-items:end;gap:9px}.assessmentRoeActions label{flex:1;min-width:130px;margin:0}.assessmentRoeHistory{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;font-size:11px;color:#b8b09e}.assessmentRoeHistory span{border-left:1px solid #645a45;padding-left:8px}
+.assessmentGraphLink{color:#85c2ff;text-decoration:none;font-size:13px}
+.assessmentLayout{display:grid;grid-template-columns:minmax(245px,310px) minmax(0,1fr);gap:22px;align-items:start}
+.assessmentRail,.assessmentMain{border:1px solid #292b34;background:#15171d;border-radius:10px;min-width:0}
+.assessmentRail{position:sticky;top:20px;overflow:hidden}
+.assessmentRail form{padding:19px;border-bottom:1px solid #292b34}
+.assessmentRail h2{font-size:14px;letter-spacing:.04em;margin:0 0 16px}
+.assessmentWorkspace label{display:flex;flex-direction:column;gap:6px;color:#a9adb9;font-size:12px;margin:0 0 12px}
+.assessmentWorkspace input,.assessmentWorkspace select,.assessmentWorkspace textarea{box-sizing:border-box;width:100%;background:#0c0e13;border:1px solid #343744;border-radius:5px;color:#eceef4;font:inherit;font-size:13px;padding:9px 10px;min-width:0}
+.assessmentWorkspace textarea{resize:vertical;line-height:1.45}
+.assessmentWorkspace input:focus,.assessmentWorkspace select:focus,.assessmentWorkspace textarea:focus{outline:2px solid #397ab5;outline-offset:1px}
+.assessmentAssetList{max-height:55vh;overflow:auto;padding:7px}
+.assessmentAssetList button{display:grid;grid-template-columns:70px 1fr;align-items:center;gap:4px 10px;width:100%;text-align:left;border:0;background:transparent;color:#e5e5eb;padding:10px;border-radius:6px;cursor:pointer}
+.assessmentAssetList button:hover,.assessmentAssetList button.selected{background:#252b35}
+.assessmentAssetList span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#77baff}
+.assessmentAssetList strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assessmentAssetList small{grid-column:2;color:#9599a6;font-size:11px}
+.assessmentMain{padding:22px;min-height:420px}
+.assessmentAssetHeader{display:flex;justify-content:space-between;align-items:start;gap:18px;padding-bottom:18px;border-bottom:1px solid #2a2d37}
+.assessmentAssetHeader h2{font-size:24px;margin:4px 0 2px;overflow-wrap:anywhere}
+.assessmentAssetHeader small{color:#79b9f5;letter-spacing:.1em}
+.assessmentAssetHeader p{font-size:13px;color:#a5a9b5;margin:0;overflow-wrap:anywhere}
+.assessmentAssetHeader label{min-width:150px}
+.assessmentToolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:18px 0}
+.assessmentToolbar label{min-width:210px;margin:0}
+.assessmentUpload input{max-width:300px}
+.assessmentEvidence{display:flex;gap:8px;flex-wrap:wrap;border:1px solid #2b3d38;background:#121e1b;padding:10px 12px;border-radius:6px;font-size:12px}
+.assessmentEvidence strong{color:#a5d8c2;margin-right:7px}.assessmentEvidence a,.assessmentLinked a{color:#8dc8f7}
+.assessmentRunbook{margin-top:24px}.assessmentRunbook h3{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #313541;padding-bottom:12px;font-size:17px}
+.assessmentRunbook h3 small{color:#9aa2af;font-weight:400}
+.assessmentStep{margin:12px 0;padding:17px;border:1px solid #303540;border-radius:7px;background:#1a1e26}
+.assessmentStep header{display:flex;gap:12px;align-items:center;margin-bottom:10px}.assessmentStep header div{display:flex;flex-direction:column;gap:3px}.assessmentStep header small{color:#929caa;font-size:11px}
+.assessmentStepIndex{color:#80b9e8;font:600 13px ui-monospace,monospace}.assessmentStep p{color:#aeb5c1;font-size:13px}
+.assessmentStepControls{display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px}
+.assessmentStepActions,.assessmentApproval,.assessmentObservation,.assessmentObservationRow{display:flex;flex-wrap:wrap;align-items:end;gap:9px;margin-top:10px}
+.assessmentStepActions select{width:auto;max-width:270px}.assessmentStepActions span{font-size:12px;color:#a1aab8}
+.assessmentApproval label{flex:1;min-width:200px;margin:0}.assessmentObservation input{flex:1;min-width:170px}
+.assessmentObservationRow{justify-content:space-between;border-top:1px solid #30343f;padding-top:9px;font-size:12px}
+.assessmentLinked{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0;font-size:12px}
+.assessmentError{color:#ff9c9c;font-size:12px}
+@media(max-width:850px){.assessmentWorkspace{padding:18px}.assessmentLayout{grid-template-columns:1fr}.assessmentRail{position:static}.assessmentAssetList{max-height:210px}.assessmentStepControls{grid-template-columns:1fr 1fr}.assessmentStepControls label:last-child{grid-column:1/-1}.assessmentRoeGrid{grid-template-columns:1fr}}
+@media(max-width:500px){.assessmentAssetHeader{display:block}.assessmentAssetHeader label{margin-top:16px}.assessmentStepControls{grid-template-columns:1fr}.assessmentStepControls label:last-child{grid-column:auto}}

@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
+from ...models import (AssessmentAsset, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
                        RunbookStepInstance, RunbookStepExecution, RunbookStepEvidence,
@@ -202,7 +202,7 @@ from . import engine
 from .ids import new_ulid
 
 NODE_TYPES = {
-    "project-root", "operator", "host", "service", "finding", "technique",
+    "project-root", "operator", "host", "asset", "service", "finding", "technique",
     "credential", "evidence", "memo",
 }
 NODE_STATUSES = {
@@ -217,9 +217,9 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "runs": ({"operator"}, {"technique"}),
     "captures-from": ({"technique"}, {"host"}),
     "scans": ({"technique"}, {"host"}),
-    "discovered": ({"project-root", "host"}, {"host", "service"}),
-    "enumerated": ({"service", "host"}, {"finding", "credential"}),
-    "attempted": ({"finding", "service", "host"}, {"technique"}),
+    "discovered": ({"project-root", "host"}, {"host", "asset", "service"}),
+    "enumerated": ({"service", "host", "asset"}, {"finding", "credential"}),
+    "attempted": ({"finding", "service", "host", "asset"}, {"technique"}),
     # "finding" as a source covers a file pulled back out of another finding
     # (e.g. extracting an entry from a downloaded archive) -- the archive's
     # own finding "yielded" the extracted one, same relationship a technique
@@ -519,7 +519,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # Heal orphans: a node projected from a domain row whose row no longer exists
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
     # Manually-created nodes (no source_ref) are never pruned.
-    kind_models = {"target": Target, "service": Service, "finding": Finding,
+    kind_models = {"target": Target, "asset": AssessmentAsset,
+                   "service": Service, "finding": Finding,
                    "evidence": Evidence,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
@@ -531,7 +532,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         model = kind_models.get(kind)
         row = db.get(model, ident) if model is not None else None
         owner_id = None
-        if isinstance(row, (Target, Finding, Credential, Evidence)):
+        if isinstance(row, (Target, AssessmentAsset, Finding, Credential, Evidence)):
             owner_id = row.project_id
         elif isinstance(row, (Service, Execution, InteractiveSession)):
             target = db.get(Target, row.target_id)
@@ -562,12 +563,15 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             del index[key]
     db.flush()
 
-    created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0,
+    created = {"hosts": 0, "assets": 0, "services": 0, "findings": 0, "credentials": 0,
                "techniques": 0, "evidence": 0}
     target_ids: list[int] = []
 
     def host_for(target_id: int) -> GraphNode | None:
         return index.get(("target", target_id))
+
+    def asset_for(asset_id: int | None) -> GraphNode | None:
+        return index.get(("asset", asset_id)) if asset_id is not None else None
 
     def ensure_edge(source: GraphNode, target: GraphNode, relation: str,
                     label: str = "", status: str | None = None,
@@ -691,6 +695,25 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                     node.label = refined
                 node.meta = service_meta
 
+    for asset in db.scalars(select(AssessmentAsset).where(
+            AssessmentAsset.project_id == project_id)):
+        if ("asset", asset.id) in dismissed:
+            continue
+        meta = json.dumps({"assetId": asset.id, "kind": asset.kind,
+                           "locator": asset.locator, "scopeStatus": asset.scope_status})
+        node = index.get(("asset", asset.id))
+        if node is None:
+            node = create_node(db, project_id, "asset", label=asset.name,
+                               status="blocked" if asset.scope_status == "out_of_scope" else "untried",
+                               source_ref=_source_ref("core", "asset", asset.id), meta=meta)
+            index[("asset", asset.id)] = node
+            ensure_edge(root, node, "discovered", status="untried")
+            created["assets"] += 1
+        else:
+            node.meta = meta
+            node.label = asset.name
+            node.status = "blocked" if asset.scope_status == "out_of_scope" else "untried"
+
     # findings + credentials attach to their service, else their host.
     def parent_of(service_id, target_id) -> GraphNode | None:
         if service_id and ("service", service_id) in index:
@@ -723,7 +746,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
 
     for instance in db.scalars(select(RunbookInstance).where(
             RunbookInstance.project_id == project_id).order_by(RunbookInstance.id)):
-        parent = parent_of(instance.service_id, instance.target_id)
+        parent = (asset_for(instance.asset_id) if instance.asset_id is not None
+                  else parent_of(instance.service_id, instance.target_id))
         if parent is None:
             continue
         steps = list(db.scalars(select(RunbookStepInstance).where(
@@ -740,6 +764,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if ("runbook_step", step.id) in dismissed:
                 continue
             meta = json.dumps({"instanceId": instance.id, "targetId": instance.target_id,
+                               "assetId": instance.asset_id,
                                "serviceId": instance.service_id, "position": step.position,
                                "stepStatus": step.status, "outcome": step.outcome,
                                "activation": step.activation,
@@ -800,7 +825,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             select(Finding).where(Finding.project_id == project_id)):
         if ("finding", finding.id) in dismissed:
             continue
-        parent = parent_of(finding.service_id, finding.target_id)
+        parent = (asset_for(finding.asset_id) if finding.asset_id is not None
+                  else parent_of(finding.service_id, finding.target_id))
         if parent is None:
             continue
         evidence_count = db.scalar(select(func.count(FindingEvidence.id)).where(
@@ -1297,10 +1323,11 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 continue
             node = index.get(("evidence", row.id))
             meta = json.dumps({"evidenceId": row.id, "targetId": row.target_id,
+                               "assetId": row.asset_id,
                                "kind": row.kind, "sensitivity": row.sensitivity})
             if node is None:
                 node = create_node(db, project_id, "evidence",
-                                   label=(f"Evidence #{row.id}" if row.sensitivity == "sensitive"
+                                   label=(f"Evidence #{row.id}" if row.sensitivity in {"sensitive", "secret"}
                                           else row.title), status="untried",
                                    source_ref=_source_ref("evidence", "evidence", row.id),
                                    meta=meta)
@@ -1308,7 +1335,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 created["evidence"] += 1
             else:
                 node.meta = meta
-                if row.sensitivity == "sensitive":
+                if row.sensitivity in {"sensitive", "secret"}:
                     node.label = f"Evidence #{row.id}"
             ensure_edge(source, node, "documented-by", status="untried")
             desired_links.add((source.id, node.id, "documented-by"))

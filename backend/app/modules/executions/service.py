@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ...config import WORKSPACE_DIR
+from ...engagement import require_roe
 from ...executor import queues, run_execution
 from ...models import Execution, Project, Service, Target
 from ...templates import catalog
@@ -78,6 +79,7 @@ def start_execution(
     output_filename: str = "", command_override: str | None = None,
     graph_node_id: str | None = None,
 ) -> Execution:
+    require_roe(db, project.id, "command", target=target)
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
     output_dir = target_dir / "outputs"

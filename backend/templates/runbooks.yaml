@@ -837,3 +837,88 @@ runbooks:
         node_type: evidence
         guidance: {stage_id: review, phase: reporting, join: all, question: "각 위험에 결과 또는 제외 사유가 있는가?", purpose: "모든 API 범주 판정을 재현 가능하게 묶습니다."}
         expected_observations: [10개 위험 판정, 역할·객체별 요청·응답 Evidence, 미검사 사유]
+
+  - key: mobile-app-review
+    revision: 1
+    name: 모바일 앱 평가
+    description: 앱 빌드와 플랫폼을 고정하고 MASVS 통제군을 근거별로 판정합니다.
+    tags: [mobile, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 앱·빌드·기기·계정 범위 확인, node_key: scope, node_type: approval, approval: {required: true, reason: "앱 빌드와 기기·계정 범위 확인"}, transitions: [{when: {approval_status: approved}, targets: [storage, auth, platform, privacy]}, {default: true, target: review}], expected_observations: [패키지 ID와 빌드 해시, OS 버전, 테스트 계정과 허용 행위]}
+      - {title: 저장소·암호화·네트워크, node_key: storage, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [로컬 데이터와 키 보호, 전송 보안, 재현 근거]}
+      - {title: 인증·세션·권한, node_key: auth, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [로그인·토큰 수명, 사용자와 객체별 권한 차이]}
+      - {title: 플랫폼·코드·변조 저항, node_key: platform, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [플랫폼 API·딥링크·앱 무결성, 적용 불가 사유]}
+      - {title: 개인정보와 데이터 흐름, node_key: privacy, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [수집·공유 데이터, 동의와 보존 경계]}
+      - {title: MASVS 결과와 증거 검토, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [통제군별 결과·미검사 사유, 빌드 해시와 Evidence]}
+
+  - key: cloud-account-review
+    revision: 1
+    name: 클라우드 계정·테넌트 평가
+    description: 제공자 허용 범위와 계정·역할·리소스의 실제 경계를 확인합니다.
+    tags: [cloud, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 계정·테넌트·허용 서비스와 기간 승인, node_key: scope, node_type: approval, approval: {required: true, reason: "제공자 정책과 고객 RoE 확인"}, transitions: [{when: {approval_status: approved}, targets: [identity, resources, boundaries]}, {default: true, target: review}], expected_observations: [계정 ID, 리전, 허용 서비스, 제외 리소스, 중단 조건]}
+      - {title: 역할과 신뢰 정책, node_key: identity, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [테스트 주체, 실제 권한, 역할 전환·신뢰 경계]}
+      - {title: 리소스·데이터 노출, node_key: resources, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [리소스 ID와 소유 계정, 공개 설정, 최소 증명]}
+      - {title: 네트워크·로그·외부 연결, node_key: boundaries, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [네트워크 경계, 로깅과 방어 반응, 타 계정 연결]}
+      - {title: 클라우드 결과와 증거 검토, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [서비스별 판정, API 응답 Evidence, 제공자 정책 준수]}
+
+  - key: kubernetes-review
+    revision: 1
+    name: Kubernetes 클러스터 평가
+    description: 클러스터·namespace·workload·service account 경계를 분리해 검토합니다.
+    tags: [kubernetes, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 클러스터·namespace·권한 범위 확인, node_key: scope, node_type: approval, approval: {required: true, reason: "클러스터와 운영 영향 허용 범위 확인"}, transitions: [{when: {approval_status: approved}, targets: [rbac, workload, network]}, {default: true, target: review}], expected_observations: [클러스터 ID, namespace, 읽기·쓰기 권한, 제외 workload]}
+      - {title: RBAC와 service account, node_key: rbac, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [주체별 verb·resource 권한, 범위 이탈 가능성]}
+      - {title: Pod·workload 보안, node_key: workload, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [보안 컨텍스트, secret 노출, 이미지·배포 버전]}
+      - {title: namespace와 네트워크 정책, node_key: network, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [Ingress·Egress 경계, 메타데이터 API 노출]}
+      - {title: 클러스터 결과와 증거 검토, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [리소스 UID와 버전, 권한·정책별 판정]}
+
+  - key: source-code-review
+    revision: 1
+    name: 소스 코드 보안 리뷰
+    description: 저장소와 커밋을 고정하고 입력·권한·비밀값 흐름의 근거를 남깁니다.
+    tags: [source, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 저장소·커밋·검토 범위 확인, node_key: scope, node_type: approval, approval: {required: true, reason: "코드 접근과 재현 환경 승인"}, transitions: [{when: {approval_status: approved}, targets: [entry, auth, secrets]}, {default: true, target: review}], expected_observations: [저장소 URL, 커밋 SHA, 제외 디렉터리, 빌드 조건]}
+      - {title: 입력점과 데이터 흐름, node_key: entry, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [입력→검증→sink 코드 위치와 호출 경로]}
+      - {title: 인증·권한 경계, node_key: auth, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [역할과 객체 권한 검사, 누락 경로]}
+      - {title: 비밀값·의존성·구성, node_key: secrets, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [노출 지점, 의존성 버전, 환경별 구성 차이]}
+      - {title: 커밋 기준 Finding 검토, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [파일·라인·커밋 근거, 오탐과 미검사 사유]}
+
+  - key: wireless-review
+    revision: 1
+    name: 무선 네트워크 평가
+    description: 승인된 장소·시간과 SSID·AP를 고정하고 수동 관측 결과를 기록합니다.
+    tags: [wireless, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 장소·시간·SSID·행위 승인, node_key: scope, node_type: approval, approval: {required: true, reason: "전파 범위와 허용 행위·중단 조건 확인"}, transitions: [{when: {approval_status: approved}, targets: [inventory, auth, isolation]}, {default: true, target: review}], expected_observations: [승인 장소·시간, SSID·BSSID 목록, 금지 행위]}
+      - {title: AP·클라이언트와 구성 관측, node_key: inventory, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [AP 식별자, 채널, 암호화 설정, 관측 시각]}
+      - {title: 인증과 게스트 경계, node_key: auth, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [승인 계정 인증 결과, 게스트 정책과 차단]}
+      - {title: 네트워크 분리와 로밍, node_key: isolation, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [분리 정책, 허용된 최소 연결 검증]}
+      - {title: 무선 결과와 증거 검토, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [장소·시간·BSSID별 판정과 Evidence]}
+
+  - key: ics-safety-review
+    revision: 1
+    name: OT·ICS 안전 중심 평가
+    description: 운영자 승인과 안전 경계를 우선하고 관측·구성 검토로만 결과를 기록합니다.
+    tags: [ics, manual]
+    service_names: []
+    ports: []
+    steps:
+      - {title: 운영자·설비·안전 경계 승인, node_key: scope, node_type: approval, approval: {required: true, reason: "설비 운영자 승인과 중단·복구 절차 확인"}, transitions: [{when: {approval_status: approved}, targets: [inventory, access, monitoring]}, {default: true, target: review}], expected_observations: [설비·세그먼트, 운영 창, 금지 명령, 중단 담당자]}
+      - {title: 자산·프로토콜 수동 식별, node_key: inventory, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [제어 장비와 공정 연계, 구성 문서와 관측 근거]}
+      - {title: 접근과 원격 관리 경계, node_key: access, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [운영자 계정·원격 경로, 변경 승인 절차]}
+      - {title: 모니터링·안전 영향 검토, node_key: monitoring, node_type: manual_check, transitions: [{default: true, target: review}], expected_observations: [탐지·중단 조건, 가용성 영향, 운영자 확인]}
+      - {title: OT 결과와 운영자 인계, node_key: review, node_type: evidence, guidance: {join: all}, expected_observations: [수동 관측 Evidence, 미검사 사유, 안전 상태와 인계]}

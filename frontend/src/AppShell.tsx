@@ -50,6 +50,7 @@ const pages = [
       { route: "web", step: "03", label: "Web Testing · Intruder" },
       { route: "exploit-research", step: "04", label: "Exploit Research" },
       { route: "runbooks", step: "", label: "Runbooks" },
+      { route: "assessment", step: "", label: "Assessment Assets" },
       { route: "post-exploitation", step: "", label: "Post-Exploitation" },
       { route: "hash-cracking", step: "", label: "Hash Cracking" },
       { route: "tools", step: "", label: "Tools" },

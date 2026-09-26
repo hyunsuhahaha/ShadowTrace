@@ -215,6 +215,8 @@ async def send_once(db: Session, row: HttpRequest,
                     variables: dict[str, str]) -> HttpExchange:
     target = need(db, Target, row.target_id)
     project = need(db, Project, row.project_id)
+    from ...engagement import require_roe
+    require_roe(db, project.id, "web", target=target)
     url = substitute(row.url, variables)
     require_private_destination(url)
     query = {key: substitute(value, variables)

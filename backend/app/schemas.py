@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, IPvAnyAddress, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, IPvAnyAddress, field_validator, model_validator
 
 class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -14,6 +14,49 @@ class ProjectOut(ProjectIn, ORM):
     created_at: datetime
     metasploit_target_id: int | None = None
     metasploit_locked_at: datetime | None = None
+
+AssetKind = Literal["web", "api", "mobile", "cloud", "kubernetes", "source", "wireless", "ics"]
+
+class AssessmentAssetIn(BaseModel):
+    project_id: int
+    kind: AssetKind
+    name: str = Field(min_length=1, max_length=200)
+    locator: str = Field(default="", max_length=500)
+    details: dict[str, str | int | bool | None] = Field(default_factory=dict)
+    scope_status: Literal["pending", "in_scope", "out_of_scope"] = "pending"
+
+class AssessmentAssetOut(ORM):
+    id: int
+    project_id: int
+    kind: AssetKind
+    name: str
+    locator: str
+    details: str
+    scope_status: str
+    created_at: datetime
+    updated_at: datetime
+
+class ProjectRoeDraftIn(BaseModel):
+    included_targets: list[str] = Field(default_factory=list, max_length=500)
+    excluded_targets: list[str] = Field(default_factory=list, max_length=500)
+    asset_ids: list[int] = Field(default_factory=list, max_length=500)
+    allowed_actions: list[Literal["scan", "command", "web", "session", "post", "runbook"]] = Field(default_factory=list)
+    valid_from: datetime
+    valid_until: datetime
+    notes: str = Field(default="", max_length=20000)
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if self.valid_until <= self.valid_from:
+            raise ValueError("RoE end must be after start")
+        if any(not item.strip() or len(item) > 253 for item in
+               [*self.included_targets, *self.excluded_targets]):
+            raise ValueError("Invalid RoE target selector")
+        return self
+
+class ProjectRoeDecisionIn(BaseModel):
+    actor: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=20000)
 
 class MetasploitLockIn(BaseModel):
     target_id: int | None = None
@@ -318,7 +361,7 @@ class ProxyCaptureIn(BaseModel):
     duration_ms: int = Field(default=0, ge=0)
 
 class EvidenceOut(ORM):
-    id: int; project_id: int; target_id: int; service_id: int | None
+    id: int; project_id: int; target_id: int | None; asset_id: int | None; service_id: int | None
     title: str; description: str; kind: str; source_type: str
     source_id: int | None; file_path: str; original_name: str
     sha256: str; size: int; acquired_at: datetime; username: str

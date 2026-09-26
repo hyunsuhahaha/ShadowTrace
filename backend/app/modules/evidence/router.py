@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...config import WORKSPACE_DIR
 from ...database import get_db
-from ...models import (Evidence, ExploitResearch, Finding, FindingEvidence, GraphNode, Project,
+from ...models import (AssessmentAsset, Evidence, ExploitResearch, Finding, FindingEvidence, GraphNode, Project,
                        Service, Target)
 from ...schemas import ArchiveExtractIn, EvidenceOut, EvidenceUpdate
 from ...time import utcnow
@@ -48,11 +48,14 @@ def need(db: Session, model, ident: int):
 
 @router.get("", response_model=list[EvidenceOut])
 def evidence(target_id: int | None = None, project_id: int | None = None,
+             asset_id: int | None = None,
              source_type: str | None = None, source_id: int | None = None,
              db: Session = Depends(get_db)):
     statement = select(Evidence).order_by(Evidence.id.desc())
     if target_id:
         statement = statement.where(Evidence.target_id == target_id)
+    if asset_id:
+        statement = statement.where(Evidence.asset_id == asset_id)
     if project_id:
         statement = statement.where(Evidence.project_id == project_id)
     if source_type:
@@ -122,6 +125,45 @@ async def upload_evidence(
     return row
 
 
+@router.post("/upload-asset", response_model=EvidenceOut, status_code=201)
+async def upload_asset_evidence(
+    project_id: int = Form(...), asset_id: int = Form(...),
+    title: str = Form(...), kind: str = Form("attachment"),
+    description: str = Form(""), sensitivity: str = Form("normal"),
+    include_report: bool = Form(False), file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    project = need(db, Project, project_id)
+    asset = need(db, AssessmentAsset, asset_id)
+    if asset.project_id != project_id:
+        raise HTTPException(400, "Asset belongs to another project")
+    if not title.strip() or kind not in KINDS or sensitivity not in (
+            "normal", "sensitive", "secret"):
+        raise HTTPException(400, "Invalid evidence metadata")
+    content = await file.read(MAX_FILE + 1)
+    if len(content) > MAX_FILE:
+        raise HTTPException(413, "Evidence file exceeds 50 MiB")
+    digest = hashlib.sha256(content).hexdigest()
+    duplicate = db.scalar(select(Evidence).where(
+        Evidence.project_id == project_id, Evidence.sha256 == digest))
+    row = Evidence(project_id=project_id, asset_id=asset_id, target_id=None,
+                   service_id=None, title=title.strip()[:200],
+                   description=description[:20000], kind=kind,
+                   source_type="upload", sha256=digest, size=len(content),
+                   original_name=Path(file.filename or "evidence.bin").name[:255],
+                   sensitivity=sensitivity, include_report=include_report,
+                   duplicate_of=duplicate.id if duplicate else None)
+    db.add(row); db.flush()
+    folder = (WORKSPACE_DIR / "projects" / _safe(project.name) / "assets" /
+              str(asset.id) / "evidence" / str(row.id))
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / _safe(row.original_name)
+    path.write_bytes(content)
+    row.file_path = str(path)
+    db.commit(); db.refresh(row)
+    return row
+
+
 @router.post("/notes", response_model=EvidenceOut, status_code=201)
 def create_note(project_id: int, target_id: int, body: EvidenceUpdate,
                 db: Session = Depends(get_db)):
@@ -138,7 +180,12 @@ def create_note(project_id: int, target_id: int, body: EvidenceUpdate,
 def update_evidence(ident: int, body: EvidenceUpdate,
                     db: Session = Depends(get_db)):
     row = need(db, Evidence, ident)
-    validate_links(db, row.project_id, row.target_id, body.service_id)
+    if row.asset_id is not None:
+        asset = need(db, AssessmentAsset, row.asset_id)
+        if asset.project_id != row.project_id or body.service_id is not None:
+            raise HTTPException(400, "Asset evidence cannot have a host service")
+    else:
+        validate_links(db, row.project_id, row.target_id, body.service_id)
     for key, value in body.model_dump(exclude={"tags"}).items():
         setattr(row, key, value)
     row.tags = json.dumps(body.tags, ensure_ascii=False)

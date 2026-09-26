@@ -12,6 +12,7 @@ const ReportWorkspace=lazy(()=>import("./ReportWorkspace"));
 const OperationsWorkspace=lazy(()=>import("./OperationsWorkspace"));
 const ExploitResearchWorkspace=lazy(()=>import("./ExploitResearchWorkspace"));
 const RunbookWorkspace=lazy(()=>import("./RunbookWorkspace"));
+const AssessmentWorkspace=lazy(()=>import("./AssessmentWorkspace"));
 const PostExploitationWorkspace=lazy(()=>import("./PostExploitationWorkspace"));
 const HashCrackingWorkspace=lazy(()=>import("./HashCrackingWorkspace"));
 const ToolsWorkspace=lazy(()=>import("./ToolsWorkspace"));
@@ -25,6 +26,7 @@ if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem("oscp-home-
   sessionStorage.setItem("oscp-home-shown", "1");
   if (location.hash && location.hash !== "#graph"
       && !/^#evidence\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)
+      && !/^#assessment\/[1-9]\d*(?:\/[1-9]\d*)?$/.test(location.hash)
       && !/^#runbooks\/[1-9]\d*\/[1-9]\d*\/(?:0|[1-9]\d*)\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)) location.hash = "#graph";
 }
 
@@ -67,6 +69,11 @@ export default function Root(){
       content=<RunbookWorkspace key={subroute} initialProjectId={projectId||undefined}
         initialTargetId={targetId||undefined} initialServiceId={serviceId||undefined}
         initialInstanceId={instanceId||undefined} initialStepId={stepId||undefined}/>;
+      break;
+    }
+    case"assessment":{
+      const[assetId,stepId]=(subroute||"").split("/").map(Number);
+      content=<AssessmentWorkspace initialAssetId={assetId||undefined} initialStepId={stepId||undefined}/>;
       break;
     }
     case"post-exploitation":content=<PostExploitationWorkspace/>;break;

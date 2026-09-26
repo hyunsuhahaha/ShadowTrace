@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 // files (GraphWorkspace.tsx, GraphCanvas.tsx, Inspector.tsx,
 // GraphRequestPanel.tsx, OutlineView.tsx, graphLeaves.tsx).
 
-export type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
+export type NodeType = "project-root" | "operator" | "host" | "asset" | "service" | "finding"
   | "technique" | "credential" | "evidence" | "memo";
 export type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
@@ -70,7 +70,7 @@ export const EXECUTION_STATUS_LABEL: Record<string, string> = {
   interrupted: "중단됨",
 };
 export const GLYPH: Record<NodeType, string> = {
-  "project-root": "◎", operator: "⌁", host: "▣", service: "◉", finding: "◇",
+  "project-root": "◎", operator: "⌁", host: "▣", asset: "⬡", service: "◉", finding: "◇",
   technique: "⚡", credential: "🔑", evidence: "▧", memo: "🗒️",
 };
 export const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
@@ -392,7 +392,9 @@ export const RELATIONS = ["discovered", "enumerated", "attempted", "yielded",
   "precedes", "records-execution", "links-credential", "documented-by", "pivoted-to",
   "produced-finding", "reused-credential", "blocked-by"];
 const RELATION_DEFAULT: Record<string, string> = {
-  "project-root>host": "discovered", "host>service": "discovered",
+  "project-root>host": "discovered", "project-root>asset": "discovered",
+  "host>service": "discovered", "asset>technique": "attempted",
+  "asset>finding": "enumerated",
   "host>finding": "enumerated", "host>technique": "attempted", "host>host": "pivoted-to",
   "service>finding": "enumerated", "service>credential": "enumerated",
   "service>technique": "attempted", "finding>technique": "attempted",

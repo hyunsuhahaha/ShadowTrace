@@ -78,7 +78,7 @@ def test_builtin_catalog_installs_idempotently_and_recommends():
 def test_practitioner_workflows_project_all_review_branches_into_graph():
     db = database()
     target, service = scope(db)
-    assert ensure_builtin_runbooks(db) == 24
+    assert ensure_builtin_runbooks(db) == 30
     for key, expected in (("assessment-lifecycle", 9),
                           ("web-application-review", 14),
                           ("post-access-review", 7),

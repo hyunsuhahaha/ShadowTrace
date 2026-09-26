@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...database import get_db
+from ...engagement import require_roe
 from ...models import (
-    Credential, Evidence, Execution, Finding, RunbookInstance,
+    AssessmentAsset, Credential, Evidence, Execution, Finding, RunbookInstance,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
     RunbookStepExecution, RunbookStepInstance,
 )
@@ -29,6 +30,17 @@ def update_step(ident: int, body: StepUpdate, db: Session = Depends(get_db)):
     if body.status in REASON_REQUIRED and not body.status_reason.strip():
         raise HTTPException(400, "A reason is required for this status")
     instance = need(db, RunbookInstance, step.instance_id)
+    if instance.target_id is not None and body.status in {
+            "in_progress", "completed", "attempted", "suspicious"}:
+        from ...models import Target
+        require_roe(db, instance.project_id, "runbook",
+                    target=need(db, Target, instance.target_id))
+    if instance.asset_id is not None and body.status in {
+            "in_progress", "completed", "attempted", "suspicious"}:
+        asset = need(db, AssessmentAsset, instance.asset_id)
+        if asset.scope_status != "in_scope":
+            raise HTTPException(409, "Asset must be marked in scope before assessment")
+        require_roe(db, instance.project_id, "runbook", asset=asset)
     steps = db.scalars(select(RunbookStepInstance).where(
         RunbookStepInstance.instance_id == instance.id).order_by(
         RunbookStepInstance.position)).all()
@@ -134,6 +146,8 @@ def attach_evidence(ident: int, body: LinkIn, db: Session = Depends(get_db)):
     evidence = need(db, Evidence, body.resource_id)
     if evidence.project_id != instance.project_id:
         raise HTTPException(400, "Evidence belongs to another project")
+    if instance.asset_id is not None and evidence.asset_id != instance.asset_id:
+        raise HTTPException(400, "Evidence belongs to another asset")
     if not db.get(RunbookStepEvidence, (step.id, evidence.id)):
         db.add(RunbookStepEvidence(step_id=step.id, evidence_id=evidence.id))
         event(db, instance.id, "evidence_attached", step.id,
@@ -182,6 +196,8 @@ def create_observation(ident: int, body: ObservationIn,
         evidence = need(db, Evidence, body.evidence_id)
         if evidence.project_id != instance.project_id:
             raise HTTPException(400, "Evidence belongs to another project")
+        if instance.asset_id is not None and evidence.asset_id != instance.asset_id:
+            raise HTTPException(400, "Evidence belongs to another asset")
     row = RunbookObservation(
         step_id=step.id, title=body.title.strip(), detail=body.detail,
         evidence_id=body.evidence_id)
@@ -203,6 +219,7 @@ def promote_observation(ident: int, body: FindingIn,
         raise HTTPException(409, "Observation is already promoted")
     finding = Finding(
         project_id=instance.project_id, target_id=instance.target_id,
+        asset_id=instance.asset_id,
         service_id=instance.service_id, observation_id=observation.id,
         title=body.title.strip(), description=body.description)
     observation.status = "promoted"

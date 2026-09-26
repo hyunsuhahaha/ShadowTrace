@@ -110,7 +110,7 @@ def test_sync_projects_targets_and_services_into_graph():
     p = project(db)
     target_with_services(db, p.id)
     result = service.sync_from_project(db, p.id)
-    assert result["created"] == {"hosts": 1, "services": 2,
+    assert result["created"] == {"hosts": 1, "assets": 0, "services": 2,
                                  "findings": 0, "credentials": 0, "techniques": 0,
                                  "evidence": 0}
     tree = service.get_tree(db, p.id)
@@ -126,7 +126,7 @@ def test_sync_is_idempotent():
     target_with_services(db, p.id)
     service.sync_from_project(db, p.id)
     second = service.sync_from_project(db, p.id)
-    assert second["created"] == {"hosts": 0, "services": 0,
+    assert second["created"] == {"hosts": 0, "assets": 0, "services": 0,
                                  "findings": 0, "credentials": 0, "techniques": 0,
                                  "evidence": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
@@ -449,7 +449,7 @@ def test_sync_projects_findings_and_credentials():
                       source_kind="smb"))
     db.flush()
     result = service.sync_from_project(db, p.id)
-    assert result["created"] == {"hosts": 1, "services": 1,
+    assert result["created"] == {"hosts": 1, "assets": 0, "services": 1,
                                  "findings": 1, "credentials": 1, "techniques": 0,
                                  "evidence": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()

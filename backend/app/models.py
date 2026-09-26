@@ -20,6 +20,45 @@ class Project(Base):
     targets: Mapped[list["Target"]] = relationship(
         cascade="all, delete-orphan", foreign_keys="Target.project_id")
 
+class ProjectRoe(Base):
+    __tablename__ = "project_roe"
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    included_targets: Mapped[str] = mapped_column(Text, default="[]")
+    excluded_targets: Mapped[str] = mapped_column(Text, default="[]")
+    asset_ids: Mapped[str] = mapped_column(Text, default="[]")
+    allowed_actions: Mapped[str] = mapped_column(Text, default="[]")
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    approved_by: Mapped[str] = mapped_column(String(160), default="")
+    approval_reason: Mapped[str] = mapped_column(Text, default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class ProjectRoeEvent(Base):
+    __tablename__ = "project_roe_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(24))
+    actor: Mapped[str] = mapped_column(String(160))
+    snapshot: Mapped[str] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class AssessmentAsset(Base):
+    """A scoped assessment subject that is not necessarily an IP host."""
+    __tablename__ = "assessment_assets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(200))
+    locator: Mapped[str] = mapped_column(String(500), default="")
+    details: Mapped[str] = mapped_column(Text, default="{}")
+    scope_status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 class Target(Base):
     __tablename__ = "targets"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -383,7 +422,8 @@ class Evidence(Base):
     __tablename__ = "evidence"
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assessment_assets.id"), nullable=True)
     service_id: Mapped[int | None] = mapped_column(ForeignKey("services.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -493,6 +533,7 @@ class Finding(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assessment_assets.id"), nullable=True)
     service_id: Mapped[int | None] = mapped_column(ForeignKey("services.id"), nullable=True)
     observation_id: Mapped[int | None] = mapped_column(
         ForeignKey("runbook_observations.id"), unique=True, nullable=True)
@@ -827,11 +868,12 @@ class RunbookInstance(Base):
     __tablename__ = "runbook_instances"
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("targets.id"), nullable=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assessment_assets.id"), nullable=True)
     service_id: Mapped[int | None] = mapped_column(ForeignKey("services.id"), nullable=True)
     version_id: Mapped[int] = mapped_column(ForeignKey("runbook_template_versions.id"))
     template_name: Mapped[str] = mapped_column(String(160))
-    target_name: Mapped[str] = mapped_column(String(120))
+    target_name: Mapped[str] = mapped_column(String(200))
     service_name: Mapped[str] = mapped_column(String(80), default="")
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
