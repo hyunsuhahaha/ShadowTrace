@@ -7,6 +7,14 @@
 
 ## 현재 상태
 
+- passive Evidence UI 연결(2026-09-26, `224e081`, `5db4364`): Evidence API에
+  `source_type`/`source_id` 필터를 추가하고 Graph의 터미널 활동 상세에서 해당 활동의
+  증거 목록·다운로드·`#evidence/{targetId}/{evidenceId}` 이동을 제공한다. Evidence
+  화면에서 passive 출처를 "터미널 수집"으로 표시한다. Kali 격리 DB의 ffuf/curl 증거
+  7·8번은 목록·미리보기·다운로드 HTTP 200이었고 출처 필터가 각 1건을 반환했다.
+  백엔드 Evidence 테스트 17개, 프런트 Inspector 테스트 41개와 빌드가 통과했다.
+  backend는 `ShadowTrace-live-release-7`(PID 310957)로 재시작했다. root observer는
+  코드 변경이 없어 release-6(PID 298467)에서 계속 실행 중이다.
 - curl 출력 증거 후속 작업(2026-09-26, `32014aa`): observer가 curl exec/write/exit를
   passive inbox에 기록한다. 단일 literal HTTP IP URL, 명시적 `-o`/`--output` 파일,
   기존 Target 단일 일치, 파일 소유자·크기·실행 시각이 확인된 경우에만 민감 Evidence를
