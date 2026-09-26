@@ -1,4 +1,4 @@
-.assessmentWorkspace{padding:28px 32px;color:#e7e7ee;min-height:100%;background:#0d0e12}
+.assessmentWorkspace{display:block;height:auto;min-width:0;padding:28px 32px;color:#e7e7ee;min-height:100%;background:#0d0e12}
 .assessmentWorkspace .uiPageHeader{margin-bottom:24px}
 .assessmentRoe{border:1px solid #594d32;background:#201e18;border-radius:8px;margin-bottom:20px;overflow:hidden}
 .assessmentRoe summary{display:flex;align-items:center;gap:12px;padding:13px 17px;cursor:pointer;font-size:13px}

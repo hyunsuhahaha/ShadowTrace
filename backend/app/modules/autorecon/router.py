@@ -217,6 +217,8 @@ async def start_run(body: AutoReconRunIn, db: Session = Depends(get_db)):
     for target in targets:
         if target.project_id != project.id:
             raise HTTPException(400, "Target does not belong to project")
+        from ...engagement import require_roe
+        require_roe(db, project.id, "scan", target=target)
     try:
         extra_args = shlex.split(body.arguments)
         render_autorecon_command(targets, Path("."), extra_args)

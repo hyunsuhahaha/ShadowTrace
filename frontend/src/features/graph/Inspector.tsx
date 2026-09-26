@@ -121,6 +121,7 @@ export function Inspector(props: {
   const runbookMeta = source?.kind === "runbook_step" && n ? nodeMeta(n) : null;
   const evidenceMeta = source?.kind === "evidence" && n ? nodeMeta(n) : null;
   const assetMeta = source?.kind === "asset" && n ? nodeMeta(n) : null;
+  const scopeMeta = source?.kind === "project_roe" && n ? nodeMeta(n) : null;
   const runbookInstanceId = Number(runbookMeta?.instanceId || 0);
   const runbookStep = useQuery({
     queryKey: ["graphRunbookInstance", runbookInstanceId],
@@ -1019,7 +1020,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && !scopeMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -1068,6 +1069,14 @@ export function Inspector(props: {
         <div style={S.terminalBody}><div>{String(assetMeta.locator||"식별자 없음")}</div>
           <div>범위: {String(assetMeta.scopeStatus||"pending")}</div>
           <a href={`#assessment/${source?.id}`}>자산·Runbook·증거 열기 →</a>
+        </div>
+      </section>}
+      {scopeMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="프로젝트 승인 범위">
+        <div style={S.executionResultsHead}><strong>Rules of Engagement · rev {String(scopeMeta.revision||1)}</strong></div>
+        <div style={S.terminalBody}><div>상태: {String(scopeMeta.status||"draft")}</div>
+          <div>대상 {String(scopeMeta.targetCount||0)}개 · 자산 {String(scopeMeta.assetCount||0)}개</div>
+          <div>{String(scopeMeta.validFrom||"시작 미정")} → {String(scopeMeta.validUntil||"종료 미정")}</div>
+          <a href="#assessment">승인 범위와 이력 열기 →</a>
         </div>
       </section>}
       {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">

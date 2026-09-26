@@ -118,6 +118,8 @@ async def create_tunnel(body: TunnelIn, db: Session = Depends(get_db)):
     target = need(db, Target, body.target_id)
     if target.project_id != project.id:
         raise HTTPException(400, "Target does not belong to the project")
+    from ...engagement import require_roe
+    require_roe(db, project.id, "session", target=target)
     if not shutil.which("ssh"):
         raise HTTPException(409, "OpenSSH client is not installed")
     try:

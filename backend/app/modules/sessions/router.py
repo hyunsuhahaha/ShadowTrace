@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from ...config import CONFIG_DIR, WORKSPACE_DIR
 from ...database import SessionLocal, get_db
+from ...engagement import require_roe
 from ...executor import queues, run_execution
 from ...models import (Credential, Evidence, Execution, Finding, FindingEvidence,
                        GraphNode, InteractiveSession, Project, Service, Target)
@@ -64,6 +65,7 @@ def create_interactive_session(
     target = need(db, Target, body.target_id)
     service = need(db, Service, body.service_id) if body.service_id else None
     project = need(db, Project, target.project_id)
+    require_roe(db, project.id, "session", target=target)
     if "password" in body.variables:
         raise HTTPException(400, "Passwords must be entered interactively")
     if (
@@ -181,6 +183,7 @@ def create_manual_terminal(
     if service and service.target_id != target.id:
         raise HTTPException(400, "Service does not belong to target")
     project = need(db, Project, target.project_id)
+    require_roe(db, project.id, "session", target=target)
     target_dir = (WORKSPACE_DIR / "projects" / safe_part(project.name) /
                   "targets" / safe_part(target.ip))
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -318,6 +321,8 @@ def launch_interactive_session_in_desktop(
     row = need(db, InteractiveSession, ident)
     if row.status != "ready":
         raise HTTPException(409, "Session is not ready")
+    target = need(db, Target, row.target_id)
+    require_roe(db, target.project_id, "session", target=target)
     terminal = shutil.which("qterminal") or shutil.which("x-terminal-emulator")
     if not terminal:
         raise HTTPException(409, "Kali desktop terminal is not installed")
@@ -399,6 +404,8 @@ async def stop_interactive_session(ident: int):
 )
 def retry_interactive_session(ident: int, db: Session = Depends(get_db)):
     previous = need(db, InteractiveSession, ident)
+    target = need(db, Target, previous.target_id)
+    require_roe(db, target.project_id, "session", target=target)
     if previous.status not in {"failed", "stopped", "completed", "interrupted"}:
         raise HTTPException(409, "Only ended sessions can be restarted")
     if previous.template_id == "responder-listener":

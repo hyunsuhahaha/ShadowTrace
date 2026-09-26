@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ...models import (AssessmentAsset, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
-                       PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
+                       PassiveActivity, ProcessInstance, Project, ProjectRoe, RemoteExecution, RunbookInstance,
                        RunbookStepInstance, RunbookStepExecution, RunbookStepEvidence,
                        RunbookObservation,
                        RunbookStepCredential, ScanArtifact, ScanJob,
@@ -202,7 +202,7 @@ from . import engine
 from .ids import new_ulid
 
 NODE_TYPES = {
-    "project-root", "operator", "host", "asset", "service", "finding", "technique",
+    "project-root", "scope", "operator", "host", "asset", "service", "finding", "technique",
     "credential", "evidence", "memo",
 }
 NODE_STATUSES = {
@@ -217,7 +217,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "runs": ({"operator"}, {"technique"}),
     "captures-from": ({"technique"}, {"host"}),
     "scans": ({"technique"}, {"host"}),
-    "discovered": ({"project-root", "host"}, {"host", "asset", "service"}),
+    "discovered": ({"project-root", "host"}, {"scope", "host", "asset", "service"}),
     "enumerated": ({"service", "host", "asset"}, {"finding", "credential"}),
     "attempted": ({"finding", "service", "host", "asset"}, {"technique"}),
     # "finding" as a source covers a file pulled back out of another finding
@@ -520,6 +520,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
     # Manually-created nodes (no source_ref) are never pruned.
     kind_models = {"target": Target, "asset": AssessmentAsset,
+                   "project_roe": ProjectRoe,
                    "service": Service, "finding": Finding,
                    "evidence": Evidence,
                    "credential": Credential, "execution": Execution,
@@ -551,6 +552,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         elif isinstance(row, RunbookStepInstance):
             instance = db.get(RunbookInstance, row.instance_id)
             owner_id = instance.project_id if instance else None
+        elif isinstance(row, ProjectRoe):
+            owner_id = row.project_id
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         deprecated = kind == "autorecon_run"
         if model is not None and (row is None or owner_id != project_id
@@ -607,6 +610,25 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             operator.label, operator.meta = label, meta
         ensure_edge(root, operator, "operates")
         return operator
+
+    roe = db.get(ProjectRoe, project_id)
+    if roe and ("project_roe", project_id) not in dismissed:
+        scope = index.get(("project_roe", project_id))
+        scope_meta = json.dumps({"revision": roe.revision, "status": roe.status,
+                                 "validFrom": roe.valid_from.isoformat() if roe.valid_from else None,
+                                 "validUntil": roe.valid_until.isoformat() if roe.valid_until else None,
+                                 "targetCount": len(json.loads(roe.included_targets or "[]")),
+                                 "assetCount": len(json.loads(roe.asset_ids or "[]"))})
+        if scope is None:
+            scope = create_node(db, project_id, "scope", label="Rules of Engagement",
+                                status="in-progress" if roe.status == "approved" else "blocked",
+                                source_ref=_source_ref("core", "project_roe", project_id),
+                                meta=scope_meta)
+            index[("project_roe", project_id)] = scope
+        else:
+            scope.status = "in-progress" if roe.status == "approved" else "blocked"
+            scope.meta = scope_meta
+        ensure_edge(root, scope, "discovered", status="untried")
 
     active_scans = {
         scan.target_id: scan for scan in db.scalars(

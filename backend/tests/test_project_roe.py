@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.engagement import require_roe
-from app.models import AssessmentAsset, ProjectRoeEvent, Target
+from app.models import AssessmentAsset, GraphNode, ProjectRoeEvent, Target
+from app.modules.graph import service as graph
 from app.modules.core.router import (approve_project_roe, create_project,
                                      revoke_project_roe, update_project_roe)
 from app.schemas import ProjectIn, ProjectRoeDecisionIn, ProjectRoeDraftIn
@@ -37,6 +38,10 @@ def test_project_roe_requires_approved_window_action_and_exact_scope():
         actor="Lab owner", reason="Approved scope and time"), db)
     require_roe(db, project.id, "scan", target=target)
     require_roe(db, project.id, "runbook", asset=asset)
+    graph.sync_from_project(db, project.id)
+    scope_node = db.scalar(select(GraphNode).where(
+        GraphNode.project_id == project.id, GraphNode.type == "scope"))
+    assert scope_node.status == "in-progress"
     for action, subject in (("command", {"target": target}),
                             ("scan", {"target": excluded})):
         with pytest.raises(HTTPException) as denied:
@@ -44,6 +49,9 @@ def test_project_roe_requires_approved_window_action_and_exact_scope():
         assert denied.value.status_code == 409
     revoke_project_roe(project.id, ProjectRoeDecisionIn(
         actor="Lab owner", reason="Window closed"), db)
+    graph.sync_from_project(db, project.id)
+    db.refresh(scope_node)
+    assert scope_node.status == "blocked"
     with pytest.raises(HTTPException):
         require_roe(db, project.id, "scan", target=target)
     assert [item.action for item in db.scalars(select(ProjectRoeEvent).order_by(
