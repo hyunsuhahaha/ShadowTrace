@@ -66,7 +66,7 @@
 | 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결. 첨부 Evidence는 민감 제목을 숨긴 Graph 노드로 투영. Observation에서 승격한 Finding도 원래 Step과 연결 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
 | 작업 결과와 고객 보고 | Runbook 단계별 판정, Evidence·Execution 연결, 선택형 보고서 coverage | 고객과의 범위 변경·질의·중단 결정을 독립 기록으로 묶는 협업 로그 없음 |
 
-이 세 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,
+이 네 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,
 자동 익스플로잇·대규모 취약점 스캔·포이즈닝 기능을 추가하지 않는다. Runbook
 단계 완료는 작업 완료일 뿐 침해 성공의 증명이 아니므로 Graph의 공격 성공 경로로
 집계하지 않는다. 사용자별 실제 평가 환경에 맞춰 템플릿을 복제·수정할 수 있다.
@@ -94,8 +94,10 @@
 | API | OWASP API Top 10 2023의 10위험 수동 분기 | HTTP 요청/응답, Finding, Evidence | HTTP Service | API 버전·스키마·객체·호출자별 결과 비교 모델 없음 |
 | 모바일 앱 | 없음. [Cure53 ODK](https://docs.getodk.org/_downloads/f43f464fe506c2dfea9dad21fac5286b/ODK-Pentest-2024.pdf)는 앱·서버·위협 모델을 별도 작업 패키지로 다룸 | 앱 바이너리·디바이스 런타임 수집 없음 | 앱/빌드/플랫폼 자산 없음 | [MASVS의 8개 통제군](https://mas.owasp.org/MASVS/)을 IP Target에 억지로 넣지 말 것 |
 | 퍼블릭 클라우드 | 없음. [CSA Playbook](https://cloudsecurityalliance.org/artifacts/cloud-penetration-testing-playbook) 참조 | 계정/역할/API 호출의 구조화 기록 없음 | 계정·테넌트·리소스 자산 없음 | [AWS 서비스별 허용 범위](https://aws.amazon.com/security/penetration-testing/)와 제공자 RoE를 모델링해야 함 |
-| 컨테이너·Kubernetes | 없음 | 워크로드/클러스터 상태 기록 없음 | 클러스터·namespace·workload 자산 없음 | Host/Service와 다른 권한·경계 단위가 필요 |
-| 소스 코드 리뷰 | Exploit Research에 PoC 작업 기록은 있음 | 코드 변경·분석 근거의 평가 단위 없음 | 저장소·커밋·패키지 자산 없음 | 코드 버전별 Finding/Evidence 고정 필요 |
+| 컨테이너·Kubernetes | 없음. [Kubernetes 보안 체크리스트](https://kubernetes.io/docs/concepts/security/security-checklist/)는 인증/RBAC, 네트워크 정책, Pod 보안 등을 별도 범주로 다룸 | 워크로드/클러스터 상태 기록 없음 | 클러스터·namespace·workload·service account 자산 없음 | Host/Service와 다른 권한·경계 단위가 필요 |
+| 소스 코드 리뷰 | [OWASP Code Review Guide](https://owasp.org/www-project-code-review-guide/assets/OWASP_Code_Review_Guide_v2.pdf)의 위험 기반 코드 분석 절차 없음. Exploit Research에 PoC 작업 기록은 있음 | 코드 변경·분석 근거의 평가 단위 없음 | 저장소·커밋·패키지 자산 없음 | 코드 버전별 Finding/Evidence 고정 필요 |
+| 무선 네트워크 | 없음. [NIST SP 800-115](https://csrc.nist.gov/pubs/sp/800/115/final)의 통신·무선 평가 범주와 별도 | 무선 관측/측정 기록 없음 | SSID·BSSID·AP·클라이언트 자산 없음 | 승인된 무선 범위와 물리 위치·시간을 IP Target으로 표현할 수 없음 |
+| OT/ICS | 없음. [MITRE ATT&CK ICS](https://attack.mitre.org/matrices/ics/)는 Enterprise와 다른 전술·기술을 정의 | 장비 상태·안전 영향·운영자 승인 기록 없음 | 제어 장비·프로세스·세그먼트 자산 없음 | 운영 안전·가용성 제약을 먼저 모델링해야 하므로 범용 네트워크 절차를 재사용하면 안 됨 |
 | 재검증·보고 | Runbook 재검증 단계, Finding retest, 보고서 coverage | Evidence 원본 SHA-256과 Finding 링크 | Project/Target/Service | 보고서의 공격 경로 스냅샷과 고객 의사결정 이력 없음 |
 
 지원하지 않는 평가 유형에 대한 빈 템플릿을 억지로 추가하면 "검사 가능"하다는 잘못된
