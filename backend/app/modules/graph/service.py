@@ -17,9 +17,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...models import (AssessmentAsset, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
-                       GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
+                       GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, HttpExchange, HttpRequest, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, ProjectRoe, RemoteExecution, RunbookInstance,
-                       RunbookStepInstance, RunbookStepExecution, RunbookStepEvidence,
+                       RunbookStepInstance, RunbookStepExecution, RunbookStepHttpExchange, RunbookStepEvidence,
                        RunbookObservation,
                        RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
@@ -522,7 +522,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     kind_models = {"target": Target, "asset": AssessmentAsset,
                    "project_roe": ProjectRoe,
                    "service": Service, "finding": Finding,
-                   "evidence": Evidence,
+                   "evidence": Evidence, "http_exchange": HttpExchange,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
                    "autorecon_run": AutoReconRun, "autorecon_results": ScanJob,
@@ -554,6 +554,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             owner_id = instance.project_id if instance else None
         elif isinstance(row, ProjectRoe):
             owner_id = row.project_id
+        elif isinstance(row, HttpExchange):
+            request = db.get(HttpRequest, row.request_id)
+            owner_id = request.project_id if request else None
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         deprecated = kind == "autorecon_run"
         if model is not None and (row is None or owner_id != project_id
@@ -1319,6 +1322,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     runbook_step_ids = [ident for kind, ident in index if kind == "runbook_step"]
     desired_links: set[tuple[str, str, str]] = set()
     linked_evidence_ids: set[int] = set()
+    linked_http_exchange_ids: set[int] = set()
     if runbook_step_ids:
         for link in db.scalars(select(RunbookStepExecution).where(
                 RunbookStepExecution.step_id.in_(runbook_step_ids))):
@@ -1327,6 +1331,32 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if source and target:
                 ensure_edge(source, target, "records-execution", status="untried")
                 desired_links.add((source.id, target.id, "records-execution"))
+        for link in db.scalars(select(RunbookStepHttpExchange).where(
+                RunbookStepHttpExchange.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            row = db.get(HttpExchange, link.exchange_id)
+            request = db.get(HttpRequest, row.request_id) if row else None
+            if not source or not row or not request or request.project_id != project_id:
+                continue
+            linked_http_exchange_ids.add(row.id)
+            if ("http_exchange", row.id) in dismissed:
+                continue
+            node = index.get(("http_exchange", row.id))
+            meta = json.dumps({"exchangeId": row.id, "requestId": request.id,
+                               "targetId": request.target_id,
+                               "statusCode": row.status_code,
+                               "reviewStatus": row.review_status})
+            if node is None:
+                node = create_node(db, project_id, "technique",
+                                   label=f"HTTP Exchange #{row.id}", status="untried",
+                                   source_ref=_source_ref("web_testing", "http_exchange", row.id),
+                                   meta=meta)
+                index[("http_exchange", row.id)] = node
+                created["techniques"] += 1
+            else:
+                node.meta = meta
+            ensure_edge(source, node, "records-execution", status="untried")
+            desired_links.add((source.id, node.id, "records-execution"))
         for link in db.scalars(select(RunbookStepCredential).where(
                 RunbookStepCredential.step_id.in_(runbook_step_ids))):
             source = index.get(("runbook_step", link.step_id))
@@ -1371,7 +1401,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 ensure_edge(source, target, "produced-finding", status="untried")
                 desired_links.add((source.id, target.id, "produced-finding"))
     for key, node in list(index.items()):
-        if key[0] == "evidence" and key[1] not in linked_evidence_ids:
+        if (key[0] == "evidence" and key[1] not in linked_evidence_ids or
+                key[0] == "http_exchange" and key[1] not in linked_http_exchange_ids):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
             ).delete(synchronize_session=False)

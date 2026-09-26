@@ -442,6 +442,14 @@ def exchanges(ident: int, db: Session = Depends(get_db)):
         HttpExchange.request_id == ident).order_by(HttpExchange.id.desc())).all()
     return [public_exchange(row) for row in rows]
 
+
+@router.get("/exchanges", response_model=list[HttpExchangeOut])
+def target_exchanges(target_id: int, db: Session = Depends(get_db)):
+    need(db, Target, target_id)
+    rows = db.scalars(select(HttpExchange).join(HttpRequest).where(
+        HttpRequest.target_id == target_id).order_by(HttpExchange.id.desc()).limit(200)).all()
+    return [public_exchange(row) for row in rows]
+
 @router.patch("/exchanges/{ident}/review", response_model=HttpExchangeOut)
 def review_exchange(ident: int, body: ExchangeReviewIn, db: Session = Depends(get_db)):
     row = need(db, HttpExchange, ident)

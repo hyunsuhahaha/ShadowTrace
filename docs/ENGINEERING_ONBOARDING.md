@@ -988,6 +988,12 @@ Step과 연결된다.
 이 연결은 성공 판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음
 sync에서 엣지와 연결이 없어진 Evidence 노드도 제거한다. Inspector의 Evidence
 노드는 원본 Evidence 화면 딥링크를 제공한다.
+HTTP Exchange도 `/api/runbooks/steps/{id}/http-exchanges`로 같은 Target의 Step에
+연결한다(마이그레이션 0049). `/api/web/exchanges?target_id=...`는 최근 기록 200개를
+조회해 Runbook 선택기에 보여준다. 연결된 Exchange는 Graph에 제목만 있는 technique
+노드와 `records-execution` 엣지로 투영한다. 요청·응답 본문은 Graph 메타에 넣지 않으며
+Inspector에서 Web Testing 화면과 응답 본문 파일로 이동한다. 연결을 제거하거나 원본
+Exchange가 삭제되면 sync에서 해당 투영을 정리한다.
 `AssessmentAsset`은 IP Target과 별개로 `web`/`api`/`mobile`/`cloud`/
 `kubernetes`/`source`/`wireless`/`ics` 유형을 저장한다(마이그레이션 0047).
 Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용한 Runbook의

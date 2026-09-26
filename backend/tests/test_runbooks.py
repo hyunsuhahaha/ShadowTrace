@@ -1,9 +1,11 @@
 from datetime import timedelta
+import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Evidence, Execution, Project, Service, Target
+from app.models import Evidence, Execution, GraphEdge, GraphNode, HttpExchange, HttpRequest, Project, Service, Target
+from app.modules.graph import service as graph
 from app.modules.runbooks.support import (
     ApplyIn, ApprovalIn, CloneIn, CredentialIn, DismissIn, FindingIn, FindingUpdate,
     ImportIn, LinkIn, ObservationIn, PublishIn, StepIn, StepUpdate, TemplateIn,
@@ -17,7 +19,7 @@ from app.modules.runbooks.workflow_router import (
     update_finding, update_template,
 )
 from app.modules.runbooks.execution_router import (
-    attach_credential, attach_evidence, attach_execution, create_observation,
+    attach_credential, attach_evidence, attach_execution, attach_http_exchange, create_observation,
     promote_observation, step_timer, decide_approval, update_step,
 )
 from app.modules.runbooks.credentials_router import (
@@ -102,6 +104,40 @@ def test_links_validate_scope_and_recommendations_report_apply_state():
     repeated = apply(ApplyIn(
         version_id=version["id"], target_id=target.id, service_id=service.id), db)
     assert repeated["id"] == instance["id"]
+
+
+def test_http_exchange_link_appears_as_actual_runbook_graph_node():
+    db = database()
+    project, target, service = scope(db)
+    template = create_template(TemplateIn(name="Web review"), db)
+    version = publish(template["id"], PublishIn(steps=[StepIn(title="Review response")]), db)
+    instance = apply(ApplyIn(version_id=version["id"], target_id=target.id), db)
+    request = HttpRequest(project_id=project.id, target_id=target.id,
+                          name="Login", method="GET", url="http://10.10.10.10/")
+    db.add(request); db.flush()
+    exchange = HttpExchange(request_id=request.id, request_snapshot="{}", status_code=403)
+    db.add(exchange); db.commit()
+    step_id = instance["steps"][0]["id"]
+    linked = attach_http_exchange(step_id, LinkIn(resource_id=exchange.id), db)
+    assert linked["steps"][0]["http_exchange_ids"] == [exchange.id]
+    graph.sync_from_project(db, project.id)
+    nodes = db.scalars(select(GraphNode).where(GraphNode.project_id == project.id)).all()
+    source = next(node for node in nodes if '"kind": "runbook_step"' in (node.source_ref or ""))
+    result = next(node for node in nodes if '"kind": "http_exchange"' in (node.source_ref or ""))
+    assert result.label == f"HTTP Exchange #{exchange.id}"
+    assert db.scalar(select(GraphEdge).where(GraphEdge.source == source.id,
+                                                GraphEdge.target == result.id,
+                                                GraphEdge.relation == "records-execution"))
+    other = Target(project_id=project.id, name="Other", ip="10.10.10.11")
+    db.add(other); db.flush()
+    other_request = HttpRequest(project_id=project.id, target_id=other.id,
+                                name="Other", method="GET", url="http://10.10.10.11/")
+    db.add(other_request); db.flush()
+    other_exchange = HttpExchange(request_id=other_request.id, request_snapshot="{}")
+    db.add(other_exchange); db.commit()
+    with pytest.raises(HTTPException) as rejected:
+        attach_http_exchange(step_id, LinkIn(resource_id=other_exchange.id), db)
+    assert rejected.value.status_code == 400
 
 
 def test_runbook_recommendations_prioritize_detected_service_over_port():

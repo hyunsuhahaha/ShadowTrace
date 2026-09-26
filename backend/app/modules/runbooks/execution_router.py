@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from ...database import get_db
 from ...engagement import require_roe
 from ...models import (
-    AssessmentAsset, Credential, Evidence, Execution, Finding, RunbookInstance,
+    AssessmentAsset, Credential, Evidence, Execution, Finding, HttpExchange,
+    HttpRequest, RunbookInstance,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
-    RunbookStepExecution, RunbookStepInstance,
+    RunbookStepExecution, RunbookStepHttpExchange, RunbookStepInstance,
 )
 from ...time import utcnow
 from .engine import approval_required, recompute
@@ -184,6 +185,22 @@ def attach_credential(ident: int, body: LinkIn, db: Session = Depends(get_db)):
             RunbookStepInstance.instance_id == instance.id).order_by(
             RunbookStepInstance.position)).all()
         recompute(db, instance, steps, condition_met)
+        db.commit()
+    return instance_dict(db, instance, True)
+
+
+@router.post("/steps/{ident}/http-exchanges", status_code=201)
+def attach_http_exchange(ident: int, body: LinkIn,
+                         db: Session = Depends(get_db)):
+    step, instance = link_scope(db, ident)
+    exchange = need(db, HttpExchange, body.resource_id)
+    request = need(db, HttpRequest, exchange.request_id)
+    if request.project_id != instance.project_id or request.target_id != instance.target_id:
+        raise HTTPException(400, "HTTP exchange belongs to another Runbook target")
+    if not db.get(RunbookStepHttpExchange, (step.id, exchange.id)):
+        db.add(RunbookStepHttpExchange(step_id=step.id, exchange_id=exchange.id))
+        event(db, instance.id, "http_exchange_attached", step.id,
+              {"exchange_id": exchange.id})
         db.commit()
     return instance_dict(db, instance, True)
 

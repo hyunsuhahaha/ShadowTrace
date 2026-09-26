@@ -118,8 +118,9 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
 아직 남은 구현 공백은 다음과 같다.
 
 1. 웹 URL/기능/역할/객체 및 API 버전/스키마/호출자별 coverage 항목의 구조화.
-2. HTTP Exchange, RemoteExecution, InteractiveSession의 Runbook Step 직접 참조와
-   확인된 다중 Target 작업의 절차 계보. 현재 Graph의 access lineage는 실제 완료된
+2. RemoteExecution, InteractiveSession의 Runbook Step 직접 참조와
+   확인된 다중 Target 작업의 절차 계보. HTTP Exchange는 동일 Target의 Runbook Step에
+   직접 연결해 Graph에 기록한다. 현재 Graph의 access lineage는 실제 완료된
    원격 실행을 표현하지만, 별도 Runbook instance들의 단계를 자동으로 이어주지 않는다.
 3. 모바일 빌드, 클라우드 계정·역할·리소스, Kubernetes namespace·workload,
    저장소 commit, 무선 BSSID·물리 위치, ICS 장비·운영자 승인 같은 유형별 자산 필드와

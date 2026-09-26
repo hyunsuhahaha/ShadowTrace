@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ...models import (
     AssessmentAsset, Credential, Project, RunbookActivityEvent, RunbookInstance,
     RunbookObservation, RunbookStepCredential, RunbookStepEvidence,
-    RunbookStepExecution, RunbookStepInstance, RunbookStepTemplate,
+    RunbookStepExecution, RunbookStepHttpExchange, RunbookStepInstance, RunbookStepTemplate,
     RunbookTemplate, RunbookTemplateVersion, Service, Target,
 )
 from ...time import utcnow
@@ -380,12 +380,18 @@ def instance_dict(db: Session, row: RunbookInstance, include_steps: bool = False
         executions = db.execute(select(
             RunbookStepExecution.step_id, RunbookStepExecution.execution_id).where(
             RunbookStepExecution.step_id.in_(step_ids))).all() if step_ids else []
+        http_exchanges = db.execute(select(
+            RunbookStepHttpExchange.step_id, RunbookStepHttpExchange.exchange_id).where(
+            RunbookStepHttpExchange.step_id.in_(step_ids))).all() if step_ids else []
         evidence_map: dict[int, list[int]] = {}
         execution_map: dict[int, list[int]] = {}
+        http_exchange_map: dict[int, list[int]] = {}
         for step_id, resource_id in evidence:
             evidence_map.setdefault(step_id, []).append(resource_id)
         for step_id, resource_id in executions:
             execution_map.setdefault(step_id, []).append(resource_id)
+        for step_id, resource_id in http_exchanges:
+            http_exchange_map.setdefault(step_id, []).append(resource_id)
         result["steps"] = [{
             "id": step.id, "position": step.position, "title": step.title,
             "description": step.description,
@@ -414,6 +420,7 @@ def instance_dict(db: Session, row: RunbookInstance, include_steps: bool = False
                 if step.timer_started_at else 0),
             "evidence_ids": evidence_map.get(step.id, []),
             "execution_ids": execution_map.get(step.id, []),
+            "http_exchange_ids": http_exchange_map.get(step.id, []),
             "credential_ids": credential_ids(db, step.id),
             "observations": observations(db, step.id),
         } for step in steps]

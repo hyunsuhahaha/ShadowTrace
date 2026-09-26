@@ -934,6 +934,14 @@ class RunbookStepExecution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RunbookStepHttpExchange(Base):
+    __tablename__ = "runbook_step_http_exchanges"
+    step_id: Mapped[int] = mapped_column(
+        ForeignKey("runbook_step_instances.id"), primary_key=True)
+    exchange_id: Mapped[int] = mapped_column(ForeignKey("http_exchanges.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RunbookActivityEvent(Base):
     __tablename__ = "runbook_activity_events"
     id: Mapped[int] = mapped_column(primary_key=True)

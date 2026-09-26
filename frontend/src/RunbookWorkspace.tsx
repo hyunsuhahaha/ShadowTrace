@@ -15,7 +15,8 @@ type Step={id:number;position:number;title:string;description:string;command_ref
     manual_checks?:string[];prerequisites?:string[];auth?:string;safety?:string};
   assessment:{summary?:string;facts?:Record<string,unknown>[];next_recommendations?:{
     step_id:number;position:number;title:string}[];raw_preserved?:boolean};
-  evidence_ids:number[];execution_ids:number[];credential_ids:number[];condition_met:boolean;
+  evidence_ids:number[];execution_ids:number[];http_exchange_ids:number[];
+  credential_ids:number[];condition_met:boolean;
   observations:{id:number;title:string;detail:string;status:string}[];
   timer_started_at?:string|null;elapsed_seconds?:number;
   node_key:string;node_type:string;activation:string;decision_trace:{kind?:string;reason?:string;
@@ -30,6 +31,7 @@ type Recommendation={template_id:number;template_name:string;version_id:number;v
   reasons:string[];applied:boolean;instance_id?:number|null;dismissed?:boolean};
 type Evidence={id:number;title:string};
 type Execution={id:number;service_id:number|null;template_id:string;status:string};
+type HttpExchange={id:number;request_id:number;status_code:number|null;review_status:string};
 type Credential={id:number;username:string;secret_kind:string;secret_hint:string;domain:string;
   service_names:string[]};
 type Summary={target_id:number;target_name:string;instances:number;steps:number;completed:number;
@@ -170,6 +172,8 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
     queryFn:()=>api<Evidence[]>(`/evidence?project_id=${projectId}`),enabled:!!projectId});
   const executions=useQuery({queryKey:["executions",targetId],
     queryFn:()=>api<Execution[]>(`/executions?target_id=${targetId}`),enabled:!!targetId});
+  const httpExchanges=useQuery({queryKey:["runbookHttpExchanges",targetId],
+    queryFn:()=>api<HttpExchange[]>(`/web/exchanges?target_id=${targetId}`),enabled:!!targetId});
   const credentials=useQuery({queryKey:["runbookCredentials",projectId],
     queryFn:()=>api<Credential[]>(`/runbooks/credentials?project_id=${projectId}`),enabled:!!projectId});
   const summaries=useQuery({queryKey:["runbookSummary",projectId],
@@ -245,7 +249,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
     onSuccess:row=>refresh(row.id),
   });
   const link=useMutation({
-    mutationFn:({step,kind,id}:{step:Step;kind:"evidence"|"executions"|"credentials";id:number})=>
+    mutationFn:({step,kind,id}:{step:Step;kind:"evidence"|"executions"|"credentials"|"http-exchanges";id:number})=>
       api(`/runbooks/steps/${step.id}/${kind}`,json({resource_id:id})),
     onSuccess:()=>refresh(),
   });
@@ -555,6 +559,7 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
             onApprove={(decision,reason)=>approveStep.mutate({step,decision,reason})}
             evidence={evidence.data||[]} executions={(executions.data||[]).filter(item=>
               activeDetail.service_id?item.service_id===activeDetail.service_id:item.service_id==null)}
+            httpExchanges={httpExchanges.data||[]}
             credentials={credentials.data||[]}
             linkEvidence={linkEvidence} setLinkEvidence={setLinkEvidence}
             linkExecution={linkExecution} setLinkExecution={setLinkExecution}
@@ -592,19 +597,20 @@ export default function RunbookWorkspace({initialProjectId,initialTargetId,initi
 }
 
 function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLinkEvidence,
-  linkExecution,setLinkExecution,onLink,credentials,onRefresh,onApprove}:{step:Step;saving:boolean;
+  linkExecution,setLinkExecution,httpExchanges,onLink,credentials,onRefresh,onApprove}:{step:Step;saving:boolean;
   onSave:(values:{status:string;result:string;notes:string;status_reason:string;outcome:string})=>void;
   onApprove:(decision:"approved"|"rejected",reason:string)=>void;
-  evidence:Evidence[];executions:Execution[];linkEvidence:string;
+  evidence:Evidence[];executions:Execution[];httpExchanges:HttpExchange[];linkEvidence:string;
   credentials:Credential[];onRefresh:()=>void;
   setLinkEvidence:(value:string)=>void;linkExecution:string;setLinkExecution:(value:string)=>void;
-  onLink:(kind:"evidence"|"executions"|"credentials",id:number)=>void}){
+  onLink:(kind:"evidence"|"executions"|"credentials"|"http-exchanges",id:number)=>void}){
   const[status,setStatus]=useState(step.status);
   const[result,setResult]=useState(step.result);
   const[notes,setNotes]=useState(step.notes);
   const[reason,setReason]=useState(step.status_reason);
   const[outcome,setOutcome]=useState(step.outcome||"unknown");
   const[credentialId,setCredentialId]=useState("");
+  const[httpExchangeId,setHttpExchangeId]=useState("");
   const[observationTitle,setObservationTitle]=useState("");
   const[observationDetail,setObservationDetail]=useState("");
   const[approvalReason,setApprovalReason]=useState("");
@@ -684,11 +690,15 @@ function StepEditor({step,saving,onSave,evidence,executions,linkEvidence,setLink
           #{item.id} {item.template_id} · {item.status}</option>)}</select>
         <Button disabled={!linkExecution} onClick={()=>onLink("executions",Number(linkExecution))}>연결</Button></label>
       <Button disabled={!linkExecution} onClick={()=>void assess()}>원문 판정·연결</Button>
+      <label>HTTP Exchange<select value={httpExchangeId} onChange={event=>setHttpExchangeId(event.target.value)}>
+        <option value="">요청/응답 선택</option>{httpExchanges.map(item=><option key={item.id} value={item.id}>
+          #{item.id} · 요청 #{item.request_id} · HTTP {item.status_code??"오류"} · {item.review_status}</option>)}</select>
+        <Button disabled={!httpExchangeId} onClick={()=>onLink("http-exchanges",Number(httpExchangeId))}>연결</Button></label>
       <label>Credential<select value={credentialId} onChange={event=>setCredentialId(event.target.value)}>
         <option value="">Credential 선택</option>{credentials.map(item=><option key={item.id} value={item.id}>
           #{item.id} {item.domain&&`${item.domain}\\`}{item.username}</option>)}</select>
         <Button disabled={!credentialId} onClick={()=>onLink("credentials",Number(credentialId))}>연결</Button></label>
-      <small>Evidence {step.evidence_ids.length} · Execution {step.execution_ids.length} · Credential {step.credential_ids.length}</small>
+      <small>Evidence {step.evidence_ids.length} · Execution {step.execution_ids.length} · HTTP {step.http_exchange_ids?.length||0} · Credential {step.credential_ids.length}</small>
     </div>
     {step.assessment?.summary&&<section className="stepAssessment"><strong>실행 결과 판정 · {step.outcome}</strong>
       <p>{step.assessment.summary}</p>
