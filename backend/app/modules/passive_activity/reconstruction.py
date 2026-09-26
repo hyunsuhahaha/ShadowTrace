@@ -65,7 +65,7 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
     processes: dict[str, dict] = {}
     current: dict[tuple[str, int], str] = {}
     event_process: dict[int, str] = {}
-    for event in sorted(events, key=lambda item: (item.recorded_at, item.monotonic_ns, item.id)):
+    for event in sorted(events, key=lambda item: (item.boot_id, item.monotonic_ns, item.id)):
         if event.pid is None:
             continue
         payload = _json(event.payload, {})
@@ -96,7 +96,8 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
             "confidence": 100, "losses": set(), "event_ids": [],
             "evidence_streams": defaultdict(list),
             "network_endpoints": set(),
-            "observer_ids": set(), "exec": False, "min_monotonic_ns": event.monotonic_ns,
+            "observer_ids": set(), "exec": False, "argv_source": "",
+            "min_monotonic_ns": event.monotonic_ns,
         })
         process["event_ids"].append(event.id)
         stream = "process"
@@ -135,6 +136,7 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
         if payload.get("argv"):
             process["argv"] = [str(value) for value in payload["argv"]]
             process["executable"] = process["executable"] or process["argv"][0]
+            process["argv_source"] = "exec-argv"
         targets = payload.get("fd_targets") or {}
         if isinstance(targets, dict):
             process["fd_topology"].update({str(k): str(v) for k, v in targets.items()})
@@ -146,10 +148,25 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
                                    if value.startswith(("/dev/pts/", "/dev/tty"))), "")
         if event.kind == "process_exec":
             process["exec"] = True
+            if not process["argv"] and payload.get("comm"):
+                process["argv"] = [str(payload["comm"])]
+                process["executable"] = str(payload["comm"])
+                process["argv_source"] = "kernel-comm"
+                process["losses"].add("argv-unavailable")
+                process["confidence"] = min(process["confidence"], 65)
         elif event.kind == "process_exit":
             process["ended_at"] = event.recorded_at
             process["exit_code"] = payload.get("exit_code")
+    by_pid = {(item["boot_id"], item["pid"]): item for item in processes.values()}
     for process in processes.values():
+        if _terminal_identity(process) is None and process.get("ppid") is not None:
+            parent = by_pid.get((process["boot_id"], process["ppid"]))
+            if (parent and parent["min_monotonic_ns"] <= process["min_monotonic_ns"]
+                    and _terminal_identity(parent) is not None):
+                for name in ("sid", "tty_nr", "tty", "pid_namespace"):
+                    process[name] = parent[name]
+                process["losses"].add("terminal-inherited-from-parent")
+                process["confidence"] = min(process["confidence"], 70)
         if not process["start_ticks"]:
             process["confidence"] = max(20, process["confidence"] - 20)
         if process["exec"] and not process["argv"]:
@@ -290,7 +307,9 @@ def _command_groups(processes: dict[str, dict], process_session: dict[str, str])
         tpgids = [item["tpgid"] for item in members if item["tpgid"] is not None]
         background = bool(tpgids and pgid > 0 and all(value != pgid for value in tpgids))
         first_event = min(evidence)
-        inference = {"grouping": "terminal+pgid", "command_source": "exec-argv"}
+        source = ("kernel-comm" if any(item["argv_source"] == "kernel-comm"
+                                   for item in members) else "exec-argv")
+        inference = {"grouping": "terminal+pgid", "command_source": source}
         endpoints = sorted({address for item in members
                             for address in item["network_endpoints"]})
         if endpoints:
@@ -314,6 +333,7 @@ def _command_groups(processes: dict[str, dict], process_session: dict[str, str])
             "evidence_streams": {name: sorted(set(event_ids))
                                  for name, event_ids in streams.items()},
             "started_at": min(item["started_at"] for item in members),
+            "monotonic_ns": min(item["min_monotonic_ns"] for item in members),
             "ended_at": (max(item["ended_at"] for item in members)
                          if all(item["ended_at"] for item in members) else None),
             "confidence": max(20, confidence - (5 if background else 0)),
@@ -327,21 +347,38 @@ def _input_lines(events: list[RawActivityEvent], event_process: dict[int, str],
     buffers: dict[str, bytearray] = defaultdict(bytearray)
     evidence: dict[str, list[int]] = defaultdict(list)
     started: dict[str, datetime] = {}
+    started_ns: dict[str, int] = {}
+    blocked: set[str] = set()
     line_numbers: dict[int, int] = defaultdict(int)
     lines = []
-    for event in sorted(events, key=lambda item: (item.recorded_at, item.monotonic_ns, item.id)):
-        if event.kind != "stdio_read" or event.capture_state == "redacted":
+    for event in sorted(events, key=lambda item: (item.boot_id, item.monotonic_ns, item.id)):
+        if event.kind != "stdio_read":
             continue
         payload = _json(event.payload, {})
         encoded = payload.get("data_b64")
         process_key = event_process.get(event.id)
-        if not encoded or not process_key or process_key not in process_session:
+        if not process_key or process_key not in process_session:
+            continue
+        if event.capture_state != "captured" or not encoded:
+            buffers[process_key].clear()
+            evidence[process_key].clear()
+            started.pop(process_key, None)
+            started_ns.pop(process_key, None)
+            blocked.add(process_key)
             continue
         try:
             chunk = base64.b64decode(encoded, validate=True)
         except (ValueError, TypeError):
             continue
+        if process_key in blocked:
+            if b"\n" not in chunk:
+                continue
+            chunk = chunk.split(b"\n", 1)[1]
+            blocked.remove(process_key)
+            if not chunk:
+                continue
         started.setdefault(process_key, event.recorded_at)
+        started_ns.setdefault(process_key, event.monotonic_ns)
         evidence[process_key].append(event.id)
         buffers[process_key].extend(chunk)
         while b"\n" in buffers[process_key]:
@@ -350,11 +387,14 @@ def _input_lines(events: list[RawActivityEvent], event_process: dict[int, str],
             text = raw.rstrip(b"\r").decode("utf-8", errors="replace").strip()
             event_ids = list(evidence[process_key])
             timestamp = started[process_key]
+            monotonic_ns = started_ns[process_key]
             evidence[process_key] = [event.id] if rest else []
             if rest:
                 started[process_key] = event.recorded_at
+                started_ns[process_key] = event.monotonic_ns
             else:
                 started.pop(process_key, None)
+                started_ns.pop(process_key, None)
             if text:
                 first_event = event_ids[0]
                 line_number = line_numbers[first_event]
@@ -363,6 +403,7 @@ def _input_lines(events: list[RawActivityEvent], event_process: dict[int, str],
                               "session_key": process_session[process_key],
                               "text": text, "event_ids": event_ids,
                               "line_number": line_number,
+                              "monotonic_ns": monotonic_ns,
                               "started_at": timestamp, "ended_at": event.recorded_at})
     return lines
 
@@ -378,8 +419,8 @@ def _correlate_input(groups: list[dict], lines: list[dict],
         candidates = [group for group in groups
                       if group["session_key"] == line["session_key"]
                       and group["activity_key"] not in used
-                      and line["started_at"] - timedelta(milliseconds=250)
-                      <= group["started_at"] <= line["ended_at"] + timedelta(seconds=5)]
+                      and line["monotonic_ns"] - 250_000_000
+                      <= group["monotonic_ns"] <= line["monotonic_ns"] + 5_000_000_000]
         if candidates and not remote and _basename(process) in SHELLS:
             group = min(candidates, key=lambda item: item["started_at"])
             group["command"] = line["text"]

@@ -160,7 +160,8 @@ TRACEPOINT_PROBE(sched, sched_process_exec) {
         return 0;
     event->kind = EVENT_EXEC;
     fill_identity(event);
-    events.perf_submit(args, event, HEADER_BYTES);
+    bpf_get_current_comm(event->data, 16);
+    events.perf_submit(args, event, HEADER_BYTES + 16);
     return 0;
 }
 
@@ -606,6 +607,9 @@ class Observer:
         context = self._context(event.pid, include_stdio=True)
         payload = {"gid": event.gid, **context}
         if kind == "process_exec":
+            comm = bytes(event.data[:16]).split(b"\0", 1)[0].decode(errors="replace")
+            if comm:
+                payload["comm"] = comm
             try:
                 argv = redact_argv(self._argv(event.pid))
                 payload.update(argv=argv, executable=argv[0] if argv else "")

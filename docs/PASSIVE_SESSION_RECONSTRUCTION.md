@@ -73,9 +73,19 @@ the VM to its own localhost created a separate local SSH session and one
 RemoteSessionCandidate. These observations establish session separation for
 this small authorized corpus, not universal activity coverage.
 
-The corpus also exposed gaps: very short `true` commands in the tmux panes did
+The initial corpus exposed gaps: very short external commands in tmux panes did
 not become CommandActivity rows, and some rapidly pasted PTY input became
-garbled shell-input candidates. While the observer's automatic sync ran,
+garbled shell-input candidates. The collector now records `comm` at the kernel
+exec tracepoint, reconstruction orders events by kernel monotonic time and may
+inherit a missing terminal identity from a captured parent. When `/proc` argv
+is gone, the command is only the executable basename, explicitly marked
+`kernel-comm` with reduced confidence and `argv-unavailable` loss; arguments
+are never invented. A redacted or partial PTY read discards the current line
+and waits for the next newline before accepting another candidate. On the
+Kali VM, 30 rapid `/usr/bin/true` executions missed userspace argv and all 30
+were reconstructed as `true` with this provenance and one terminal session.
+The temporary Graph retained its five existing nodes; no new host or project
+claim was made for those unbound commands. While the observer's automatic sync ran,
 overlapping manual `POST /api/passive/sync` calls sometimes returned HTTP 500;
 the same endpoint completed after stopping the observer. A process-local lock
 now serializes sync and reconstruct requests. A concurrent regression test
@@ -101,6 +111,8 @@ Synthetic raw-event integration tests cover:
 | remote `whoami`, `sudo -l` | low-confidence remote-input candidates |
 | local `sudo -l` | PTY text correlated with local sudo exec, no privilege claim |
 | short-lived process | ProcessInstance retained with reduced confidence |
+| out-of-order fork/exec/exit with missing argv | kernel `comm` command, inherited parent PTY, reduced confidence |
+| redacted PTY gap between fragments | no concatenated shell-input candidate |
 | observer restart | same TerminalSession plus observer-restart loss state |
 | event loss / sequence gap | loss state propagated and idempotent rebuild |
 | truncated output | partial-capture state propagated |
@@ -109,7 +121,9 @@ The earlier passive targeted suite passed (`24 passed`), migration
 `0045_session_reconstruction` passed fresh, hybrid and contaminated-schema
 tests (`4 passed`), and the full backend suite passed (`604 passed`). On
 2026-09-26 the updated passive, graph service and graph router subset passed
-(`89 passed`); the full suite was not rerun.
+(`89 passed`). After the short-command fix the targeted subset passed
+(`91 passed`), and the broader Kali VM backend run passed (`611 passed`) after
+excluding two MongoDB test modules that could not collect without `pymongo`.
 
 ## Known ambiguous and failed cases
 
@@ -133,5 +147,6 @@ tests (`4 passed`), and the full backend suite passed (`604 passed`). On
 
 **No-go for ffuf, curl or Burp semantic parsers yet.** BPF load, live smoke and
 the small two-terminal, two-pane and SSH corpus passed. The next gate is to
-reproduce and fix missing short-lived commands and garbled PTY candidates,
-then verify that live Graph attribution makes no false project or host claim.
+continue broader live coverage and attribution validation before adding semantic
+parsers. The short-command and PTY-fragment defects above passed targeted and
+live checks; the current corpus is not a universal coverage claim.

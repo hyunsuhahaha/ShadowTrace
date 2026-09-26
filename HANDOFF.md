@@ -92,9 +92,12 @@
   `RemoteSessionCandidate` 1건이 됐다. 관련 backend targeted `89 passed`.
 - 자동 observer sync와 수동 sync가 겹칠 때 관찰된 HTTP 500에 대해 router의 sync/reconstruct
   직렬화를 추가했다. 회귀 테스트는 수정 전 실패, 수정 후 통과. 최신 코드로 별도 포트에서
-  같은 batch의 동시 요청을 보내 모두 HTTP 200을 확인했다. 라이브 검증 중 짧은 `true`
-  명령 누락과 깨진 shell-input 후보도 발견돼 상세 내용은
-  `docs/PASSIVE_SESSION_RECONSTRUCTION.md`에 남겼다.
+  같은 batch의 동시 요청을 보내 모두 HTTP 200을 확인했다. 후속 작업에서 커널 exec
+  `comm` 보존·monotonic 재정렬·부모 PTY 상속과 PTY redaction gap 폐기를 추가했다.
+  실제 Kali에서 argv를 놓친 짧은 `/usr/bin/true` 30건 모두 `kernel-comm` 출처,
+  낮은 confidence의 `true` 명령으로 복원됐다. Graph 노드 5개는 그대로였고
+  새 host/project claim은 없었다. 상세 내용은
+  `docs/PASSIVE_SESSION_RECONSTRUCTION.md`에 있다.
 - 이전 원본 기준 backend suite: `542 passed` (golden-path 통합 테스트 포함)
 - 전체 frontend Vitest: `95 files / 497 tests` 통과
 - `tsc -b`, Vite production build 통과
@@ -119,9 +122,8 @@
 
 Passive reconstruction의 다음 필수 단계:
 
-1. live corpus에서 짧은 명령 누락과 깨진 PTY shell-input 후보의 원인을 재현·수정한다.
-2. Graph에 투영된 live 활동이 대상/프로젝트를 잘못 주장하지 않는지 확인한다.
-3. 위 품질 gate 전에는 ffuf/curl/Burp semantic parser를 추가하지 않는다.
+1. 다른 명령·PTY 편집 패턴으로 live coverage와 귀속을 더 넓게 확인한다.
+2. ffuf/curl/Burp semantic parser 추가 전 각 도구의 원시 이벤트와 대상 귀속 품질을 검증한다.
 
 그 이후 선택 후보:
 

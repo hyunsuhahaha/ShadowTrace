@@ -118,6 +118,39 @@ def test_plain_bash_command_and_shell_builtin_are_distinct_candidates():
     assert_evidence_without_graph_claim(db)
 
 
+def test_short_exec_uses_kernel_order_and_parent_session_without_inventing_args():
+    db = database(); events = Events(db)
+    shell(events)
+    fork = events.add("process_fork", 101, ppid=100)
+    events.add("process_exec", 101,
+               payload={"comm": "true", "argv_unavailable": True})
+    events.add("process_exit", 101, payload={"exit_code": None})
+    # Perf buffers from different CPUs can deliver the fork after exec/exit.
+    fork.recorded_at = BASE + timedelta(seconds=10)
+    db.commit(); reconstruct(db)
+
+    command = db.query(CommandActivity).filter_by(kind="command").one()
+    parent = db.query(ProcessInstance).filter_by(pid=100).one()
+    child = db.query(ProcessInstance).filter_by(pid=101).one()
+    assert command.command == "true"
+    assert command.terminal_session_id == parent.terminal_session_id
+    assert child.terminal_session_id == parent.terminal_session_id
+    assert json.loads(command.inference)["command_source"] == "kernel-comm"
+    assert command.confidence < 100
+
+
+def test_redacted_pty_gap_does_not_join_command_fragments():
+    db = database(); events = Events(db)
+    context = shell(events)
+    events.input(100, "cu", context)
+    events.add("stdio_read", 100, payload={**context, "fd": 0,
+               "fd_target": "/dev/pts/1", "redacted_bytes": 1}, state="redacted")
+    events.input(100, "rl\n", context)
+    db.commit(); reconstruct(db)
+
+    assert db.query(CommandActivity).count() == 0
+
+
 def test_observed_process_reconstructs_and_appears_in_existing_graph_api(
         tmp_path, monkeypatch):
     db = database()

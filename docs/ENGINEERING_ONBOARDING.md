@@ -305,8 +305,10 @@ payload에는 terminal output 등 민감정보가 포함될 수 있으므로 loc
 [`docs/RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md`](RESEARCH_PASSIVE_PENTEST_ACTIVITY_COVERAGE.md)에
 정리돼 있다. 2026-09-26 Kali VM에서 BPF compile/load와 PTY·socket·filesystem live
 smoke, 터미널 2개·tmux pane 2개·로컬 interactive SSH의 세션 분리를 확인했다. generic
-sensor는 syscall subset과 echo-confirmed PTY 입력만 포착한다. 짧은 명령 일부는 live
-corpus에서 CommandActivity가 되지 않았고 PTY 입력 후보가 깨진 사례가 있어,
+sensor는 syscall subset과 echo-confirmed PTY 입력만 포착한다. 짧은 명령은 exec
+tracepoint의 kernel `comm`을 보존하고 monotonic 순서·부모 PTY를 활용해 인자가 없어도
+출처와 낮은 confidence를 명시한 CommandActivity로 복원한다. redacted/partial PTY read
+뒤에는 다음 newline까지 버려 조각난 입력을 합치지 않는다. 그래도,
 모든 Kali 활동이나 행동별 Graph node를 보장하지 않는다. 현재 의미 승격은 Nmap 결과와
 근거가 명확한 CommandActivity만 대상으로 한다.
 
