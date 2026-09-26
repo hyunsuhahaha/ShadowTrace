@@ -7,6 +7,15 @@
 
 ## 현재 상태
 
+- 현업 흐름 추가 검증(2026-09-26): 앞선 3개 Runbook 추가만으로 전체 coverage를 주장한
+  것은 성급했다. OWASP API Top 10 2023을 별도 12단계 절차로 추가하고, 평가 유형별
+  절차/실행 기록/자산 모델을 나눠 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에
+  대조했다. Runbook Step의 실제 Execution·Credential·Evidence·승격 Finding을 Graph에
+  연결한다. Evidence는 링크된 경우에만 노드화하고 민감 제목을 숨긴다. Kali 격리 DB에서
+  링크와 공격 성공 경로 비집계, Chrome에서 Evidence 노드→원본 링크·민감 제목 비노출을
+  확인했다. 전체 backend 644 passed, frontend 588 passed/빌드 통과. 초기 전체 테스트의
+  두 실패는 마이그레이션 테스트가 0046이 아닌 0045를 기대해서 수정했고, Kali venv에
+  pyproject 선언 의존성 `pymongo`가 빠져 설치했다. 실제 API 배포 상태는 완료 시 갱신.
 - 공개 현업 흐름 확장(2026-09-26): PTES/NIST 평가 수명주기, OWASP WSTG v4.2 12개
   웹 검사 범주, Cure53 웹·API/모바일 보고서, CISA 레드팀 경로와 MITRE 전술을 다시
   대조했다(`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`). 내장 Runbook 3종·30단계를
