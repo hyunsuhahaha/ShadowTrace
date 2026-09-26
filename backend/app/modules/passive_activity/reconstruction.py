@@ -582,15 +582,19 @@ def _summary(db: Session) -> dict[str, int]:
                                 ("remote_candidates", RemoteSessionCandidate))}
 
 
-def _observer_loss_summary(db: Session) -> dict[str, set[str]]:
+def _observer_loss_summary(db: Session, before_id: int | None = None) -> dict[str, set[str]]:
     """Retain corpus-wide loss provenance without materializing raw payloads."""
     loss = case((or_(RawActivityEvent.kind == "loss",
                      RawActivityEvent.loss_before > 0), 1), else_=0)
     result: dict[str, set[str]] = defaultdict(set)
-    for observer, first, last, count, has_loss in db.execute(select(
+    query = select(
             RawActivityEvent.observer_id, func.min(RawActivityEvent.sequence),
             func.max(RawActivityEvent.sequence), func.count(), func.max(loss),
-    ).group_by(RawActivityEvent.observer_id)):
+    )
+    if before_id is not None:
+        query = query.where(RawActivityEvent.id < before_id)
+    for observer, first, last, count, has_loss in db.execute(
+            query.group_by(RawActivityEvent.observer_id)):
         if last - first + 1 != count:
             result[observer].add("sequence-gap")
         if has_loss:
@@ -631,8 +635,11 @@ def _scoped_corpus(db: Session, changed_event_ids: list[int], observer_loss):
             RawActivityEvent.id.in_(changed_event_ids[offset:offset + 400]))))
     if not changed_events:
         return [], {}, {}, []
-    if any(event.kind == "loss" or event.pid is None for event in changed_events):
+    if any(event.kind != "loss" and event.pid is None for event in changed_events):
         return None
+    changed_events = [event for event in changed_events if event.pid is not None]
+    if not changed_events:
+        return [], {}, {}, []
 
     identities = {(event.boot_id, event.pid) for event in changed_events}
     corpus = _lineage_corpus(db, identities, observer_loss)
@@ -669,6 +676,11 @@ def reconstruct(db: Session, changed_event_ids: list[int] | None = None) -> dict
     scoped = changed_event_ids is not None
     if scoped:
         observer_loss = _observer_loss_summary(db)
+        # New loss or sequence-gap provenance changes every prior process of
+        # that observer. Once recorded, later loss markers need no global
+        # replay; only the processes touched by this batch need rebuilding.
+        if observer_loss != _observer_loss_summary(db, min(changed_event_ids)):
+            return reconstruct(db)
         corpus = _scoped_corpus(db, changed_event_ids, observer_loss)
         if corpus is None:
             return reconstruct(db)

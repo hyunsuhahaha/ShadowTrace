@@ -185,7 +185,6 @@ def test_scoped_reconstruction_does_not_replay_unrelated_raw_history(monkeypatch
         events.add("process_exec", pid, ppid=1,
                    payload={"start_ticks": str(pid * 10), "comm": "panel"})
     db.commit(); reconstruct(db)
-
     events.process(101, ["/usr/bin/id"], ppid=100, sid=100,
                    tty_nr=1, tty="/dev/pts/1", exit=False)
     db.commit()
@@ -222,6 +221,36 @@ def test_scoped_reconstruction_replays_existing_shell_input_for_late_exec():
     full = [(row.kind, row.command, row.confidence)
             for row in db.query(CommandActivity).all()]
     assert scoped == full == [("command", "id", 85)]
+
+
+def test_repeated_loss_marker_does_not_replay_all_raw_history(monkeypatch):
+    db = database(); events = Events(db)
+    shell(events)
+    events.add("loss", payload={"dropped_events": 1}, state="lost",
+               confidence=0, loss_before=1)
+    for pid in range(1000, 1200):
+        events.add("process_exec", pid, ppid=1,
+                   payload={"start_ticks": str(pid * 10), "comm": "panel"})
+    db.commit(); reconstruct(db)
+    last_id = db.query(RawActivityEvent.id).order_by(RawActivityEvent.id.desc()).first()[0]
+
+    events.add("loss", payload={"dropped_events": 1}, state="lost",
+               confidence=0, loss_before=1)
+    events.process(101, ["/usr/bin/id"], ppid=100, sid=100,
+                   tty_nr=1, tty="/dev/pts/1", exit=False)
+    db.commit()
+    changed_ids = [row.id for row in db.query(RawActivityEvent).filter(
+        RawActivityEvent.id > last_id)]
+    examined = []
+    original = reconstruction_module._processes
+
+    def counted(raw_events, observer_loss):
+        examined.append(len(raw_events))
+        return original(raw_events, observer_loss)
+
+    monkeypatch.setattr(reconstruction_module, "_processes", counted)
+    assert reconstruct(db, changed_event_ids=changed_ids)["commands"] == 1
+    assert max(examined) < 20
 
 
 def test_observed_process_reconstructs_and_appears_in_existing_graph_api(
