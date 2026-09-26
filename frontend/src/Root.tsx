@@ -18,12 +18,13 @@ const ToolsWorkspace=lazy(()=>import("./ToolsWorkspace"));
 const GraphWorkspace=lazy(()=>import("./features/graph/GraphWorkspace"));
 
 // On the first load of a browser session, land on the Progress Graph (home)
-// even if the browser restored a stale hash like #scans from a previous session
-// (reload/session-restore keeps the URL hash, which would otherwise win).
+// when the browser restored a stale workspace hash. An explicit Evidence link
+// identifies one saved record and must remain usable in a fresh tab.
 // Runs once at module import, before the component reads the hash — so no flash.
 if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem("oscp-home-shown")) {
   sessionStorage.setItem("oscp-home-shown", "1");
-  if (location.hash && location.hash !== "#graph") location.hash = "#graph";
+  if (location.hash && location.hash !== "#graph"
+      && !/^#evidence\/[1-9]\d*\/[1-9]\d*$/.test(location.hash)) location.hash = "#graph";
 }
 
 const route=()=>{

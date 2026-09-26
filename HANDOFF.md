@@ -7,6 +7,15 @@
 
 ## 현재 상태
 
+- 비루프백·다중 프로젝트 smoke와 Evidence 딥링크(2026-09-26): Kali 자신의
+  `10.0.2.15`에 임시 HTTP 서버를 바인딩하고 격리 DB에 프로젝트 2/Target 2를 만든 뒤
+  curl·ffuf를 실행했다. Evidence 9·10번은 프로젝트 2/Target 2에만 저장됐고
+  기존 루프백 Evidence 7·8번은 프로젝트 1/Target 1에 유지됐다. 두 새 파일은 API
+  다운로드 SHA-256이 DB와 일치하고 Finding은 0건이다. 브라우저 첫 세션에서
+  `#evidence/2/10` 링크가 `#graph`로 덮이던 버그를 수정하고 Root/Inspector
+  테스트 43개와 프런트 빌드를 통과했다. smoke corpus는 744,112 raw events와
+  누적 loss_before 3,743이며 수동 sync가 17.9초 걸렸다. 다음 성능 작업은
+  이 전체 corpus 조회 비용을 프로파일링해 줄이는 것이다.
 - passive Evidence UI 연결(2026-09-26, `224e081`, `5db4364`): Evidence API에
   `source_type`/`source_id` 필터를 추가하고 Graph의 터미널 활동 상세에서 해당 활동의
   증거 목록·다운로드·`#evidence/{targetId}/{evidenceId}` 이동을 제공한다. Evidence

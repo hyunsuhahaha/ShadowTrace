@@ -488,8 +488,9 @@ non-2xx 오류 처리와 JSON decode를 제공한다
 ## 10. 프런트엔드 화면별 구성
 
 `frontend/src/Root.tsx`의 hash route와 각 화면이 조합하는 하위 컴포넌트다. 첫 로드시
-`sessionStorage["oscp-home-shown"]`이 없으면 `#graph`로 강제 이동한다(같은 브라우저
-세션 내 이후 이동에는 적용되지 않음). 프로젝트가 바뀌면(`oscp-project-change`)
+`sessionStorage["oscp-home-shown"]`이 없으면 복원된 화면 hash를 `#graph`로 이동한다.
+단, 명시적인 `#evidence/{targetId}/{evidenceId}` 링크는 새 탭에서도 유지한다
+(`Root.test.tsx`에서 두 경우를 검증). 프로젝트가 바뀌면(`oscp-project-change`)
 `Root.tsx`가 `projectRevision`을 증가시켜 `<AppShell key={projectRevision}>` 전체를
 리마운트한다 — 프로젝트별로 남아있던 화면 상태를 지우는 방식이다.
 
@@ -497,7 +498,7 @@ non-2xx 오류 처리와 JSON decode를 제공한다
 |---|---|
 | `#enumeration` | `App.tsx` (Service Enumeration) — "← Scan Center" 뒤로가기 링크와 함께 렌더 |
 | `#web` (`#web/<tab>`) | `WebWorkspace.tsx` |
-| `#evidence` | `EvidenceWorkspace.tsx` |
+| `#evidence` (`#evidence/{targetId}/{evidenceId}`) | `EvidenceWorkspace.tsx` |
 | `#directory` | `DirectoryWorkspace.tsx` |
 | `#sessions` | `SessionWorkspace.tsx` |
 | `#reports` | `ReportWorkspace.tsx` |
@@ -1214,8 +1215,8 @@ web_testing 등 다른 모듈에서도 널리 import된다 — 사실상 자기 
 | `oscp-command-palette-recent` | JSON 배열(최대 5개 id) | `CommandPalette.tsx` 최근 사용 항목 |
 | `oscp-intruder-candidate-sets` | JSON 배열 | `IntruderPanel.tsx` 저장된 퍼징 후보값 세트 |
 
-`sessionStorage["oscp-home-shown"]`(`Root.tsx`)은 별도로 브라우저 세션당 1회만 `#graph`로
-강제 이동시키는 플래그다(§10 참고).
+`sessionStorage["oscp-home-shown"]`(`Root.tsx`)은 브라우저 세션당 1회의 홈 이동
+플래그다. Evidence 항목 딥링크는 이 이동에서 제외한다(§10 참고).
 
 ## 13. CSS 파일 구성
 
