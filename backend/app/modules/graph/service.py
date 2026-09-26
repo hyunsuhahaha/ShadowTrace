@@ -20,6 +20,7 @@ from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Exec
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
                        RunbookStepInstance, RunbookStepExecution, RunbookStepEvidence,
+                       RunbookObservation,
                        RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
 from ...templates import catalog
@@ -231,6 +232,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "records-execution": ({"technique"}, {"technique"}),
     "links-credential": ({"technique"}, {"credential"}),
     "documented-by": ({"technique"}, {"evidence"}),
+    "produced-finding": ({"technique"}, {"finding"}),
 }
 
 
@@ -1310,6 +1312,15 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                     node.label = f"Evidence #{row.id}"
             ensure_edge(source, node, "documented-by", status="untried")
             desired_links.add((source.id, node.id, "documented-by"))
+        for observation, finding in db.execute(select(RunbookObservation, Finding).join(
+                Finding, Finding.observation_id == RunbookObservation.id).where(
+                    RunbookObservation.step_id.in_(runbook_step_ids),
+                    Finding.project_id == project_id)):
+            source = index.get(("runbook_step", observation.step_id))
+            target = index.get(("finding", finding.id))
+            if source and target:
+                ensure_edge(source, target, "produced-finding", status="untried")
+                desired_links.add((source.id, target.id, "produced-finding"))
     for key, node in list(index.items()):
         if key[0] == "evidence" and key[1] not in linked_evidence_ids:
             db.query(GraphEdge).filter(
@@ -1320,7 +1331,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     for edge in db.scalars(select(GraphEdge).where(
             GraphEdge.project_id == project_id,
             GraphEdge.relation.in_(("records-execution", "links-credential",
-                                   "documented-by")))):
+                                   "documented-by", "produced-finding")))):
         if (edge.source, edge.target, edge.relation) not in desired_links:
             db.delete(edge)
 

@@ -390,7 +390,7 @@ export const STATUS_ORDER = ["untried", "in-progress", "attempt-failed", "succee
   "blocked", "not-applicable"];
 export const RELATIONS = ["discovered", "enumerated", "attempted", "yielded",
   "precedes", "records-execution", "links-credential", "documented-by", "pivoted-to",
-  "reused-credential", "blocked-by"];
+  "produced-finding", "reused-credential", "blocked-by"];
 const RELATION_DEFAULT: Record<string, string> = {
   "project-root>host": "discovered", "host>service": "discovered",
   "host>finding": "enumerated", "host>technique": "attempted", "host>host": "pivoted-to",

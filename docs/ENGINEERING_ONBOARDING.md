@@ -981,6 +981,8 @@ Runbook Step에 명시적으로 연결된 Execution과 Credential은 각각 비�
 `records-execution`/`links-credential`로 실제 Graph 노드에 연결된다. Evidence는
 연결된 경우에만 별도 `evidence` 노드로 투영하고 `documented-by` 구조 엣지로 단계를
 잇는다. 민감 Evidence 제목은 Graph에 복사하지 않고 `Evidence #id`로 표시한다.
+Runbook Observation에서 승격한 Finding은 `produced-finding` 참조 엣지로 원래
+Step과 연결된다.
 이 연결은 성공 판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음
 sync에서 엣지와 연결이 없어진 Evidence 노드도 제거한다. Inspector의 Evidence
 노드는 원본 Evidence 화면 딥링크를 제공한다.

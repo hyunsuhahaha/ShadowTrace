@@ -63,7 +63,7 @@
 | API endpoint·호출자·객체 → 위험별 검사 → 전체 판정 | `api-security-review` HTTP Runbook 12단계. API Top 10 2023을 각각 수동 판정하고 `join: all`로 검토 | API 명세 버전·객체·역할별 결과를 구조화해 비교하는 저장 모델 없음 |
 | 확인된 접근 → 권한·Credential·인접 시스템·업무 영향 → 경로 검토·정리 | `post-access-review` Target Runbook 7단계. 후속 검증 승인, 4가지 병렬 검토와 근거 검토 | 접근/자격증명/터널이 서로 다른 Target Runbook 단계로 자동 연결되는 교차 Target workflow edge 없음 |
 | 부정 결과·차단·보류·오류·승인 거부 | Runbook `outcome`/`status`/`activation`으로 기록. Graph에 단계 노드와 선언된 전이를 표시하고 `decision_trace`로 실제 선택된 전이를 청록색, 제외된 전이를 점선으로 구별 | 분기 판단 시각과 근거를 Graph 엣지에서 직접 열람하는 기능 없음 |
-| 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결. 첨부 Evidence는 민감 제목을 숨긴 Graph 노드로 투영 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
+| 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결. 첨부 Evidence는 민감 제목을 숨긴 Graph 노드로 투영. Observation에서 승격한 Finding도 원래 Step과 연결 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
 | 작업 결과와 고객 보고 | Runbook 단계별 판정, Evidence·Execution 연결, 선택형 보고서 coverage | 고객과의 범위 변경·질의·중단 결정을 독립 기록으로 묶는 협업 로그 없음 |
 
 이 세 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,
@@ -79,3 +79,26 @@
 3. 웹 기능·계정·객체별 coverage, 모바일·클라우드·무선·소스 리뷰 등의 별도 자산/절차
    유형. IP 기반 Target 한 종류에 억지로 담지 않는다.
 4. 확인된 공격 경로의 특정 스냅샷과 연결 Evidence를 보고서에 고정.
+
+### 평가 유형별 coverage audit
+
+`절차`는 수동 Runbook 단계와 분기, `실행 기록`은 실제 명령·요청·세션과 Evidence,
+`자산 모델`은 평가 대상 자체를 정확히 나타낼 수 있는지를 뜻한다. 이 셋을 한 칸에
+뭉뚱그려 "지원"이라고 표시하지 않는다.
+
+| 평가 유형 | 절차 | 실행 기록 | 자산 모델 | 확인한 공백 |
+|---|---|---|---|---|
+| 외부 호스트·서비스 | 20개 서비스 기본 Runbook과 평가 수명주기 | Scan·Execution·Session·Evidence | IP Target·Service | 다중 도메인/조직 범위와 RoE를 강제하지 못함 |
+| 내부 네트워크·AD | SMB/LDAP/Kerberos/WinRM 절차, 접근 후 경로 검토 | Credential·RemoteExecution·Tunnel·Directory·Access Lineage | Host/Service/Directory object | 여러 Target을 가로지르는 승인·검사 단계 연계가 없음 |
+| 웹 UI | WSTG 12범주 수동 분기 | HTTP 요청/응답, Execution, Finding, Evidence | Service와 URL 요청 | URL·역할·객체별 coverage와 기능 상태 전이를 구조화하지 않음 |
+| API | OWASP API Top 10 2023의 10위험 수동 분기 | HTTP 요청/응답, Finding, Evidence | HTTP Service | API 버전·스키마·객체·호출자별 결과 비교 모델 없음 |
+| 모바일 앱 | 없음. [Cure53 ODK](https://docs.getodk.org/_downloads/f43f464fe506c2dfea9dad21fac5286b/ODK-Pentest-2024.pdf)는 앱·서버·위협 모델을 별도 작업 패키지로 다룸 | 앱 바이너리·디바이스 런타임 수집 없음 | 앱/빌드/플랫폼 자산 없음 | [MASVS의 8개 통제군](https://mas.owasp.org/MASVS/)을 IP Target에 억지로 넣지 말 것 |
+| 퍼블릭 클라우드 | 없음. [CSA Playbook](https://cloudsecurityalliance.org/artifacts/cloud-penetration-testing-playbook) 참조 | 계정/역할/API 호출의 구조화 기록 없음 | 계정·테넌트·리소스 자산 없음 | [AWS 서비스별 허용 범위](https://aws.amazon.com/security/penetration-testing/)와 제공자 RoE를 모델링해야 함 |
+| 컨테이너·Kubernetes | 없음 | 워크로드/클러스터 상태 기록 없음 | 클러스터·namespace·workload 자산 없음 | Host/Service와 다른 권한·경계 단위가 필요 |
+| 소스 코드 리뷰 | Exploit Research에 PoC 작업 기록은 있음 | 코드 변경·분석 근거의 평가 단위 없음 | 저장소·커밋·패키지 자산 없음 | 코드 버전별 Finding/Evidence 고정 필요 |
+| 재검증·보고 | Runbook 재검증 단계, Finding retest, 보고서 coverage | Evidence 원본 SHA-256과 Finding 링크 | Project/Target/Service | 보고서의 공격 경로 스냅샷과 고객 의사결정 이력 없음 |
+
+지원하지 않는 평가 유형에 대한 빈 템플릿을 억지로 추가하면 "검사 가능"하다는 잘못된
+인상을 줄 수 있다. 다음 기능 작업은 Project RoE와 비-IP 자산 모델을 먼저 정의하고,
+실제 결과가 단계·자산·증거에 붙는지 시나리오로 검증해야 한다. 절차 목록만 늘리는
+것은 coverage 완료 기준이 아니다.

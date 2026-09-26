@@ -6,9 +6,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import (CommandActivity, Credential, Evidence, Execution, GraphEdge,
+from app.models import (CommandActivity, Credential, Evidence, Execution, Finding, GraphEdge,
                         GraphNode, PassiveActivity, ProcessInstance, Project,
-                        RunbookInstance, RunbookStepCredential,
+                        RunbookInstance, RunbookObservation, RunbookStepCredential,
                         RunbookStepExecution, RunbookStepEvidence,
                         RunbookStepInstance, Target,
                         TerminalSession)
@@ -201,6 +201,11 @@ def test_runbook_links_saved_execution_and_credential_without_claiming_success()
                         title="sensitive account list", kind="file",
                         sensitivity="sensitive")
     db.add_all((step, execution, credential, evidence)); db.flush()
+    observation = RunbookObservation(step_id=step.id, title="verified issue")
+    db.add(observation); db.flush()
+    finding = Finding(project_id=p.id, target_id=target.id,
+                      observation_id=observation.id, title="verified issue")
+    db.add(finding); db.flush()
     db.add_all((RunbookStepExecution(step_id=step.id, execution_id=execution.id),
                 RunbookStepCredential(step_id=step.id, credential_id=credential.id),
                 RunbookStepEvidence(step_id=step.id, evidence_id=evidence.id)))
@@ -214,6 +219,7 @@ def test_runbook_links_saved_execution_and_credential_without_claiming_success()
     output = nodes[("execution", execution.id)]
     cred = nodes[("credential", credential.id)]
     proof = nodes[("evidence", evidence.id)]
+    issue = nodes[("finding", finding.id)]
     assert proof.label == f"Evidence #{evidence.id}"
     assert "sensitive account list" not in proof.meta
     assert db.query(GraphEdge).filter_by(source=source.id, target=output.id,
@@ -224,6 +230,9 @@ def test_runbook_links_saved_execution_and_credential_without_claiming_success()
                                          status="untried").count() == 1
     assert db.query(GraphEdge).filter_by(source=source.id, target=proof.id,
                                          relation="documented-by",
+                                         status="untried").count() == 1
+    assert db.query(GraphEdge).filter_by(source=source.id, target=issue.id,
+                                         relation="produced-finding",
                                          status="untried").count() == 1
     assert service.get_attack_paths(db, p.id) == []
 
