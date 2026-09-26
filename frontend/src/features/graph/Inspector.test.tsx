@@ -40,6 +40,30 @@ it("shows a reconstructed passive command in the existing graph inspector", () =
   expect(screen.queryByLabelText("실행 결과")).toBeNull();
 });
 
+it("links a passive command to its captured evidence", async () => {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    expect(String(input)).toContain("source_type=passive_activity&source_id=7");
+    return Promise.resolve(new Response(JSON.stringify([
+      {id: 12, target_id: 3, title: "ffuf.json", original_name: "ffuf.json"},
+    ]), {headers: {"Content-Type": "application/json"}}));
+  }));
+  const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "passive-7", type: "technique", status: "untried", objective: false,
+      hidden: false, label: "ffuf -o ffuf.json", source_ref: JSON.stringify({
+        module: "passive_activity", kind: "command_activity", id: 7,
+      }), meta: JSON.stringify({command: "ffuf -o ffuf.json", source: "passive"}),
+    }} projectId={1} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()}
+      onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const evidenceLink = await screen.findByRole("link", {name: "ffuf.json"});
+  expect(evidenceLink.getAttribute("href")).toBe("#evidence/3/12");
+  expect(screen.getByRole("link", {name: "다운로드"}).getAttribute("href"))
+    .toBe("/api/evidence/12/file");
+});
+
 it("browses AutoRecon's native result directories from the completed result node", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     if (String(input).includes("/api/autorecon/results/17/preview")) return Promise.resolve(
