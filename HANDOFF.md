@@ -7,7 +7,7 @@
 
 ## 현재 상태
 
-- 비 IP 평가 자산과 RoE 구현 진행(2026-09-26, `47449a6`, `cab78da`):
+- 비 IP 평가 자산과 RoE 구현(2026-09-26, `47449a6`–`395b0ad`):
   `AssessmentAsset` 8유형과 모바일·클라우드·Kubernetes·소스·무선·ICS 수동
   Runbook 6종(총 30종)을 추가했다. `#assessment`에서 자산·범위·Runbook 단계·Evidence·
   Observation/Finding을 관리하고 Graph의 asset→step→Evidence/Finding 계보로 탐색한다.
@@ -22,8 +22,10 @@
   단독 재실행 8 passed. 기존 live DB를
   `/home/kali/shadowtrace-db-backups/live-pre-release14.db`에 백업하고 0047·0048로
   올렸다. Kali live는 `/home/kali/projects/ShadowTrace-live-release-14`의 `a534795`
-  기반, PID 376222·port 8000. SPA/Runbook/RoE API 200, 30종 템플릿,
-  기존 프로젝트 RoE `draft`와 Graph sync 후 `scope=blocked`를 확인했다.
+  기반, 최종 코드 `395b0ad`·PID 377769·port 8000. SPA/Runbook/RoE API 200,
+  30종 템플릿, 기존 프로젝트 RoE `draft`와 Graph sync 후 `scope=blocked`를 확인했다.
+  추가로 웹 프록시 시작과 로컬 PoC 실행도 RoE 검사에 연결했고 관련 테스트 30개가
+  통과했다. 격리 API port 8002는 종료했다.
 - 현업 흐름 추가 검증(2026-09-26): 앞선 3개 Runbook 추가만으로 전체 coverage를 주장한
   것은 성급했다. OWASP API Top 10 2023을 별도 12단계 절차로 추가하고, 평가 유형별
   절차/실행 기록/자산 모델을 나눠 `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에
