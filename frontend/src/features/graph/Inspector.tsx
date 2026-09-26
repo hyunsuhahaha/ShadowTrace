@@ -124,6 +124,8 @@ export function Inspector(props: {
   const findingId = source?.kind === "finding" ? source.id : null;
   const hashCrackJobId = source?.kind === "hash_crack_job" ? source.id : null;
   const autoReconResultJobId = source?.kind === "autorecon_results" ? source.id : null;
+  const passive = n && (source?.kind === "command_activity" || source?.kind === "passive_activity")
+    ? nodeMeta(n) : null;
   const [openAutoReconPath, setOpenAutoReconPath] = useState<string | null>(null);
   const autoReconResults = useQuery({
     queryKey: ["autoReconResults", autoReconResultJobId],
@@ -1011,6 +1013,20 @@ export function Inspector(props: {
           ))}
         </div>
       </div>}
+      {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">
+        <div style={S.executionResultsHead}><strong>터미널 활동</strong>
+          <span>passive · {passive.confidence ?? 0}%
+            {passive.lossState && passive.lossState !== "complete" ? ` · ${passive.lossState}` : ""}
+          </span>
+        </div>
+        <div style={S.terminalBody}>
+          <pre style={S.terminalOutput}>{passive.command || n.label}</pre>
+          <div style={{ color: "#8a8a96", fontSize: 11 }}>
+            {passive.startedAt || ""}{passive.endedAt ? ` → ${passive.endedAt}` : ""}
+            {passive.exitCode != null ? ` · exit ${passive.exitCode}` : ""}
+          </div>
+        </div>
+      </section>}
       {ftpAnonMatch && (
         <section style={S.netexecNodeResult} aria-label="FTP 익명 접속">
           <div style={S.netexecNodeResultHead}><span>FTP 익명 로그인</span><strong>확인됨</strong></div>

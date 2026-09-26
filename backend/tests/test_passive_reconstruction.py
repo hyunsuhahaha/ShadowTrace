@@ -7,9 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import (
-    CommandActivity, GraphNode, ProcessInstance, RawActivityEvent,
+    CommandActivity, GraphNode, ProcessInstance, Project, RawActivityEvent, Target,
     RemoteSessionCandidate, TerminalSession,
 )
+from app.modules.graph import router as graph_api
+from app.modules.passive_activity import router as passive_api
+from app.modules.passive_activity import raw_events, service as passive_service
 from app.modules.passive_activity.reconstruction import reconstruct
 
 
@@ -115,6 +118,54 @@ def test_plain_bash_command_and_shell_builtin_are_distinct_candidates():
     assert_evidence_without_graph_claim(db)
 
 
+def test_observed_process_reconstructs_and_appears_in_existing_graph_api(
+        tmp_path, monkeypatch):
+    db = database()
+    project = Project(name="Observed lab")
+    db.add(project)
+    db.flush()
+    db.add(Target(project_id=project.id, name="host", ip="10.10.11.23"))
+    events = Events(db)
+    shell(events)
+    events.process(101, ["/usr/bin/curl", "http://10.10.11.23/"],
+                   ppid=100, sid=100, pgid=101)
+    captured = list(db.query(RawActivityEvent).order_by(RawActivityEvent.sequence))
+    batch = {"schema": 1, "observer_id": "observer-a", "boot_id": "boot-a",
+             "events": [{"event_key": row.event_key, "sequence": row.sequence,
+                         "kind": row.kind, "source": row.source,
+                         "monotonic_ns": row.monotonic_ns,
+                         "recorded_at": row.recorded_at.isoformat(),
+                         "pid": row.pid, "tid": row.tid, "ppid": row.ppid,
+                         "uid": row.uid, "payload": json.loads(row.payload),
+                         "capture_state": row.capture_state,
+                         "confidence": row.confidence,
+                         "loss_before": row.loss_before}
+                        for row in captured]}
+    db.query(RawActivityEvent).delete()
+    db.commit()
+    inbox = tmp_path / "events"
+    inbox.mkdir()
+    (inbox / "sample.json").write_text(json.dumps(batch), encoding="utf-8")
+    monkeypatch.setattr(raw_events, "EVENT_INBOX", inbox)
+    monkeypatch.setattr(raw_events, "EVENT_ARCHIVE", tmp_path / "event-archive")
+    monkeypatch.setattr(passive_service, "INBOX", tmp_path / "nmap-inbox")
+    monkeypatch.setattr(passive_service, "ARCHIVE", tmp_path / "nmap-archive")
+
+    sync = passive_api.sync(db)
+    assert sync["raw_events"]["events"] == len(captured)
+    assert sync["reconstruction"]["commands"] == 1
+    graph_api.sync_graph(project.id, db)
+    result = graph_api.get_graph(project.id, db)
+    command = next(node for node in result.nodes
+                   if node.source_ref and json.loads(node.source_ref).get("kind")
+                   == "command_activity")
+    host = next(node for node in result.nodes if node.type == "host")
+    assert "curl" in command.label
+    assert any(edge.source == host.id and edge.target == command.id
+               for edge in result.edges)
+    assert graph_api.get_timeline(project.id, db)
+
+
 def test_pipeline_keeps_processes_and_stdio_topology():
     db = database(); events = Events(db)
     shell_context = shell(events)
@@ -131,6 +182,22 @@ def test_pipeline_keeps_processes_and_stdio_topology():
     assert json.loads(row.inference)["pipeline"] == "shared-pipe-fd+pgid"
     assert (row.confidence, row.loss_state) == (85, "complete")
     assert_evidence_without_graph_claim(db)
+
+
+def test_successful_socket_connect_is_retained_as_command_evidence():
+    db = database(); events = Events(db)
+    shell(events)
+    context = events.process(211, ["/usr/bin/curl", "https://lab.example/"],
+                             ppid=100, sid=100, pgid=211, exit=False)
+    events.add("socket", 211, payload={**context, "operation": "connect",
+                                      "result": 0, "address": "10.0.0.8", "port": 443})
+    events.add("socket", 211, payload={**context, "operation": "connect",
+                                      "result": -111, "address": "10.0.0.9", "port": 443})
+    events.add("process_exit", 211, payload={**context, "exit_code": 0}, ppid=100)
+    db.commit(); reconstruct(db)
+
+    row = db.query(CommandActivity).filter(CommandActivity.command.contains("curl")).one()
+    assert json.loads(row.inference)["network_endpoints"] == ["10.0.0.8"]
 
 
 def test_redirect_is_fd_evidence_not_shell_semantics():

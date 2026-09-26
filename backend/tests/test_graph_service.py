@@ -1,11 +1,13 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import GraphEdge, GraphNode, Project
+from app.models import (CommandActivity, GraphEdge, GraphNode, PassiveActivity,
+                        ProcessInstance, Project, Target, TerminalSession)
 from app.modules.graph import service
 from app.modules.graph.service import GraphIntegrityError
 
@@ -124,6 +126,165 @@ def test_sync_is_idempotent():
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     # 1 project-root + 1 host + 2 services, no duplicates on re-sync
     assert len(nodes) == 4
+
+
+def test_passive_command_appears_as_a_graph_node_without_duplicates():
+    db = database()
+    p = project(db)
+    target = target_with_services(db, p.id)
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-1", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    command = CommandActivity(activity_key="cmd-1", terminal_session_id=terminal.id,
+                              command=f"curl http://{target.ip}/", started_at=now,
+                              ended_at=now, confidence=90)
+    db.add(command)
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+    service.sync_from_project(db, p.id)
+    nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
+    observed = [n for n in nodes if n.source_ref
+                and json.loads(n.source_ref).get("kind") == "command_activity"]
+    assert len(observed) == 1
+    assert observed[0].type == "technique"
+    assert json.loads(observed[0].meta)["confidence"] == 90
+    host = next(n for n in nodes if n.type == "host")
+    assert db.query(GraphEdge).filter_by(source=host.id, target=observed[0].id,
+                                         relation="attempted").count() == 1
+
+
+def test_passive_command_does_not_leak_sensitive_text_or_guess_a_project():
+    db = database()
+    p1, p2 = project(db, "One"), project(db, "Two")
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-2", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    command = CommandActivity(activity_key="cmd-2", terminal_session_id=terminal.id,
+                              command="secret password", sensitive=True, started_at=now)
+    db.add(command)
+    db.flush()
+    service.sync_from_project(db, p1.id)
+    service.sync_from_project(db, p2.id)
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+    db.delete(p2)
+    db.flush()
+    service.sync_from_project(db, p1.id)
+    node = db.query(GraphNode).filter_by(type="technique").one()
+    assert node.label == "[민감 입력]"
+    assert "password" not in node.meta
+
+
+def test_passive_command_uses_unique_target_ip_with_multiple_projects():
+    db = database()
+    p1, p2 = project(db, "One"), project(db, "Two")
+    t1 = Target(project_id=p1.id, name="one", ip="10.0.0.7")
+    t2 = Target(project_id=p2.id, name="two", ip="10.0.0.8")
+    db.add_all([t1, t2])
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-ip", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    db.add(CommandActivity(activity_key="cmd-ip", terminal_session_id=terminal.id,
+                           command="curl http://10.0.0.8/", started_at=now))
+    db.flush()
+
+    service.sync_from_project(db, p1.id)
+    service.sync_from_project(db, p2.id)
+    assert db.query(GraphNode).filter_by(project_id=p1.id, type="technique").count() == 0
+    node = db.query(GraphNode).filter_by(project_id=p2.id, type="technique").one()
+    host = db.query(GraphNode).filter_by(project_id=p2.id, type="host").one()
+    assert db.query(GraphEdge).filter_by(source=host.id, target=node.id).count() == 1
+
+
+def test_passive_domain_command_uses_observed_connection_with_multiple_projects():
+    db = database()
+    p1, p2 = project(db, "One"), project(db, "Two")
+    db.add_all([Target(project_id=p1.id, name="one", ip="10.0.0.7"),
+                Target(project_id=p2.id, name="two", ip="10.0.0.8")])
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-domain", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    db.add(CommandActivity(activity_key="cmd-domain", terminal_session_id=terminal.id,
+                           command="curl https://lab.example/", started_at=now,
+                           inference=json.dumps({"network_endpoints": ["10.0.0.8"]})))
+    db.flush()
+
+    service.sync_from_project(db, p1.id)
+    service.sync_from_project(db, p2.id)
+    assert db.query(GraphNode).filter_by(project_id=p1.id, type="technique").count() == 0
+    node = db.query(GraphNode).filter_by(project_id=p2.id, type="technique").one()
+    host = db.query(GraphNode).filter_by(project_id=p2.id, type="host").one()
+    assert db.query(GraphEdge).filter_by(source=host.id, target=node.id).count() == 1
+
+
+def test_conflicting_command_ip_and_connection_do_not_guess_a_project():
+    db = database()
+    p1, p2 = project(db, "One"), project(db, "Two")
+    db.add_all([Target(project_id=p1.id, name="one", ip="10.0.0.7"),
+                Target(project_id=p2.id, name="two", ip="10.0.0.8")])
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-conflict", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    db.add(CommandActivity(activity_key="cmd-conflict", terminal_session_id=terminal.id,
+                           command="curl http://10.0.0.7/", started_at=now,
+                           inference=json.dumps({"network_endpoints": ["10.0.0.8"]})))
+    db.flush()
+
+    service.sync_from_project(db, p1.id)
+    service.sync_from_project(db, p2.id)
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+
+def test_legacy_passive_capture_appears_under_its_target():
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.7")
+    db.add(target)
+    db.flush()
+    now = datetime.now(timezone.utc)
+    db.add(PassiveActivity(process_key="proc-1", project_id=p.id,
+                           target_id=target.id, tool="nmap", command="nmap 10.0.0.7",
+                           pid=123, uid=1000, started_at=now, ended_at=now))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphNode).filter_by(type="technique").one().label == "nmap 10.0.0.7"
+
+
+def test_nmap_capture_and_reconstructed_command_share_one_node():
+    db = database()
+    p = project(db)
+    target = Target(project_id=p.id, name="box", ip="10.0.0.7")
+    db.add(target)
+    db.flush()
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-3", boot_id="boot", started_at=now)
+    db.add(terminal)
+    db.flush()
+    process = ProcessInstance(process_key="boot:123:456", boot_id="boot",
+                              pid=123, tgid=123, started_at=now)
+    db.add(process)
+    db.flush()
+    db.add(CommandActivity(activity_key="cmd-3", terminal_session_id=terminal.id,
+                           command="nmap 10.0.0.7", process_instance_ids=json.dumps([process.id]),
+                           started_at=now))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphNode).filter_by(type="technique").count() == 1
+
+    db.add(PassiveActivity(process_key=process.process_key, project_id=p.id,
+                           target_id=target.id, tool="nmap", command="nmap 10.0.0.7",
+                           pid=123, uid=1000, started_at=now))
+    db.flush()
+    service.sync_from_project(db, p.id)
+    nodes = db.query(GraphNode).filter_by(type="technique").all()
+    assert len(nodes) == 1
+    assert json.loads(nodes[0].source_ref)["kind"] == "passive_activity"
 
 
 def test_sync_projects_findings_and_credentials():

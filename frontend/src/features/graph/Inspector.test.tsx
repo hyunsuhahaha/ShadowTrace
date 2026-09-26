@@ -20,6 +20,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows a reconstructed passive command in the existing graph inspector", () => {
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("unexpected request"); }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}>
+    <Inspector node={{
+      id: "passive-1", type: "technique", status: "untried", objective: false,
+      hidden: false, label: "curl http://10.10.11.23/",
+      source_ref: JSON.stringify({module: "passive_activity", kind: "command_activity", id: 1}),
+      meta: JSON.stringify({command: "curl http://10.10.11.23/", source: "passive",
+        confidence: 85, lossState: "complete", startedAt: "2026-08-27T12:00:00Z"}),
+    }} busy={false} onToggleHidden={vi.fn()} onSetStatus={vi.fn()}
+      onAddNode={vi.fn()} />
+  </QueryClientProvider>);
+
+  const activity = screen.getByLabelText("수집된 활동");
+  expect(activity.textContent).toContain("curl http://10.10.11.23/");
+  expect(activity.textContent).toContain("85%");
+  expect(screen.queryByLabelText("실행 결과")).toBeNull();
+});
+
 it("browses AutoRecon's native result directories from the completed result node", async () => {
   vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
     if (String(input).includes("/api/autorecon/results/17/preview")) return Promise.resolve(

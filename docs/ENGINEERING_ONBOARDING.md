@@ -267,7 +267,8 @@ socket connect/bind/listen/accept4/first-sendto,
   → RawActivityEvent 멱등 저장 (loss/capture_state/confidence/provenance 포함)
   → reconstruction.py가 ProcessInstance / TerminalSession / CommandActivity 구성
   → local ssh process에는 RemoteSessionCandidate 구성
-  → derived record도 의미 Graph에는 자동 투영하지 않음
+  → Progress Graph sync가 CommandActivity를 technique 노드로 투영
+    (literal Target IP가 한 프로젝트에만 매칭되거나 프로젝트가 하나일 때만)
 
 같은 observer의 local nmap exec/write/exit
   → state/passive-inbox에 output + metadata 보존
@@ -276,7 +277,14 @@ socket connect/bind/listen/accept4/first-sendto,
   → ScanJob(source=passive) / HostObservation / ServiceObservation
   → Target / open Service / ScanArtifact / Evidence
   → 기존 Graph projection + snapshot
+  → PassiveActivity 자체도 해당 Host 아래 technique 노드로 투영
 ```
+
+Graph 투영은 [`backend/app/modules/graph/service.py`](../backend/app/modules/graph/service.py)의
+`sync_from_project()`가 담당한다. 동일 Nmap 프로세스의 CommandActivity와
+PassiveActivity는 process key로 중복을 제거한다. 민감 입력은 노드 label/meta에 복사하지
+않고, 프로젝트 귀속이 모호한 명령은 원본 계층에만 남긴다. Graph Inspector는
+수집 명령, 시각, confidence, loss state를 표시하며 실행 성공 여부를 자동 판정하지 않는다.
 
 collector는 [`scripts/passive-observer.py`](../scripts/passive-observer.py), raw batch 검증과
 저장은 [`backend/app/modules/passive_activity/raw_events.py`](../backend/app/modules/passive_activity/raw_events.py),

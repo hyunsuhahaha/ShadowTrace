@@ -95,6 +95,7 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
             "started_at": event.recorded_at, "ended_at": None, "exit_code": None,
             "confidence": 100, "losses": set(), "event_ids": [],
             "evidence_streams": defaultdict(list),
+            "network_endpoints": set(),
             "observer_ids": set(), "exec": False, "min_monotonic_ns": event.monotonic_ns,
         })
         process["event_ids"].append(event.id)
@@ -113,6 +114,9 @@ def _processes(events: list[RawActivityEvent], observer_loss: dict[str, set[str]
         process["started_at"] = min(process["started_at"], event.recorded_at)
         process["min_monotonic_ns"] = min(process["min_monotonic_ns"], event.monotonic_ns)
         process["confidence"] = min(process["confidence"], event.confidence)
+        if (event.kind == "socket" and payload.get("operation") == "connect"
+                and payload.get("result") == 0 and payload.get("address")):
+            process["network_endpoints"].add(str(payload["address"]))
         if event.ppid is not None:
             process["ppid"] = event.ppid
         for name in ("sid", "pgid", "tty_nr", "tpgid"):
@@ -287,6 +291,10 @@ def _command_groups(processes: dict[str, dict], process_session: dict[str, str])
         background = bool(tpgids and pgid > 0 and all(value != pgid for value in tpgids))
         first_event = min(evidence)
         inference = {"grouping": "terminal+pgid", "command_source": "exec-argv"}
+        endpoints = sorted({address for item in members
+                            for address in item["network_endpoints"]})
+        if endpoints:
+            inference["network_endpoints"] = endpoints
         confidence = min(item["confidence"] for item in members)
         if pipeline:
             inference["pipeline"] = "shared-pipe-fd+pgid"

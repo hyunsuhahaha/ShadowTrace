@@ -95,7 +95,7 @@ BPF_HASH(reads, u32, struct io_args_t);
 BPF_HASH(writes, u32, struct io_args_t);
 BPF_HASH(sockets, u32, struct socket_args_t);
 BPF_HASH(paths, u32, struct path_args_t);
-BPF_LRU_HASH(sent_sockets, u64, u8, 16384);
+BPF_TABLE("lru_hash", u64, u8, sent_sockets, 16384);
 BPF_PERCPU_ARRAY(scratch, struct event_t, 1);
 BPF_PERF_OUTPUT(events);
 
@@ -174,7 +174,9 @@ TRACEPOINT_PROBE(sched, sched_process_exit) {
     if (!event)
         return 0;
     event->kind = EVENT_EXIT;
-    event->ret = args->exit_code;
+    // sched_process_exit has no exit_code field on current kernels.
+    // Preserve the exit event without claiming a successful process result.
+    event->ret = -1;
     fill_identity(event);
     events.perf_submit(args, event, HEADER_BYTES);
     tracked.delete(&pid);
@@ -204,10 +206,12 @@ TRACEPOINT_PROBE(syscalls, sys_exit_read) {
             event->fd = pending->fd;
             event->ret = args->ret;
             event->total_size = args->ret;
-            event->size = args->ret > MAX_DATA ? MAX_DATA : args->ret;
+            u32 size = args->ret >= MAX_DATA ? MAX_DATA - 1 : (u32)args->ret;
+            size &= MAX_DATA - 1;
+            event->size = size;
             fill_identity(event);
-            bpf_probe_read_user(event->data, event->size, pending->buf);
-            events.perf_submit(args, event, HEADER_BYTES + event->size);
+            bpf_probe_read_user(event->data, size, pending->buf);
+            events.perf_submit(args, event, HEADER_BYTES + size);
         }
     }
     reads.delete(&tid);
@@ -237,10 +241,12 @@ TRACEPOINT_PROBE(syscalls, sys_exit_write) {
             event->fd = pending->fd;
             event->ret = args->ret;
             event->total_size = args->ret;
-            event->size = args->ret > MAX_DATA ? MAX_DATA : args->ret;
+            u32 size = args->ret >= MAX_DATA ? MAX_DATA - 1 : (u32)args->ret;
+            size &= MAX_DATA - 1;
+            event->size = size;
             fill_identity(event);
-            bpf_probe_read_user(event->data, event->size, pending->buf);
-            events.perf_submit(args, event, HEADER_BYTES + event->size);
+            bpf_probe_read_user(event->data, size, pending->buf);
+            events.perf_submit(args, event, HEADER_BYTES + size);
         }
     }
     writes.delete(&tid);
@@ -430,10 +436,16 @@ def redact_argv(argv: list[str]) -> list[str]:
 
 
 class EventSpool:
-    def __init__(self, directory: Path, boot_id: str):
+    def __init__(self, directory: Path, boot_id: str,
+                 owner_uid: int | None = None, owner_gid: int | None = None):
+        owner_uid = os.getuid() if owner_uid is None else owner_uid
+        owner_gid = os.getgid() if owner_gid is None else owner_gid
         self.directory = directory
         self.directory.mkdir(parents=True, exist_ok=True)
+        os.chown(self.directory, owner_uid, owner_gid)
         os.chmod(self.directory, 0o700)
+        self.owner_uid = owner_uid
+        self.owner_gid = owner_gid
         self.boot_id = boot_id
         self.observer_id = uuid.uuid4().hex[:16]
         self.sequence = 0
@@ -484,6 +496,7 @@ class EventSpool:
                        "boot_id": self.boot_id, "events": self.events},
                       handle, ensure_ascii=False, separators=(",", ":"))
         os.chmod(temporary, 0o600)
+        os.chown(temporary, self.owner_uid, self.owner_gid)
         temporary.replace(final)
         self.events = []
 
@@ -492,14 +505,17 @@ class Observer:
     def __init__(self):
         state = Path(os.environ.get(
             "OSCP_WORKSPACE_STATE", Path.home() / ".local/state/oscp-workspace"))
+        self.owner_uid = int(os.environ.get("OSCP_WORKSPACE_OWNER_UID", os.getuid()))
+        self.owner_gid = int(os.environ.get("OSCP_WORKSPACE_OWNER_GID", os.getgid()))
         self.inbox = state / "passive-inbox"
         self.inbox.mkdir(parents=True, exist_ok=True)
+        os.chown(self.inbox, self.owner_uid, self.owner_gid)
         os.chmod(self.inbox, 0o700)
         self.boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-        self.owner_uid = int(os.environ.get("OSCP_WORKSPACE_OWNER_UID", os.getuid()))
         source = BPF_SOURCE.replace("__OWNER_UID__", str(self.owner_uid))
         self.bpf = BPF(text=source)
-        self.spool = EventSpool(state / "passive-event-inbox", self.boot_id)
+        self.spool = EventSpool(state / "passive-event-inbox", self.boot_id,
+                                self.owner_uid, self.owner_gid)
         self.activities: dict[int, dict] = {}
         self.running = True
         self.last_flush = self.last_sync = 0.0
@@ -598,7 +614,7 @@ class Observer:
         if kind == "process_exit":
             raw = event.ret
             payload["exit_code"] = (
-                raw >> 8 if raw & 0x7f == 0 else 128 + (raw & 0x7f))
+                raw >> 8 if raw & 0x7f == 0 else 128 + (raw & 0x7f)) if raw >= 0 else None
         self.spool.emit(kind, payload=payload, monotonic_ns=event.timestamp_ns,
                         pid=event.pid, tid=event.tid,
                         ppid=event.ppid or context.get("ppid"), uid=event.uid,
@@ -688,6 +704,7 @@ class Observer:
             stem = hashlib.sha256(process_key.encode()).hexdigest()
             output_path = self.inbox / f"{stem}.out"
             fd = os.open(output_path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
+            os.fchown(fd, self.owner_uid, self.owner_gid)
             context = self._context(pid, 1)
             self.activities[pid] = {
                 "process_key": process_key, "pid": pid,
@@ -722,7 +739,7 @@ class Observer:
         os.close(activity.pop("output_fd"))
         activity.pop("size")
         raw = event.ret
-        activity["exit_code"] = raw >> 8 if raw & 0x7f == 0 else 128 + (raw & 0x7f)
+        activity["exit_code"] = (raw >> 8 if raw & 0x7f == 0 else 128 + (raw & 0x7f)) if raw >= 0 else None
         activity["ended_at"] = datetime.now(timezone.utc).isoformat()
         stem = Path(activity["output_file"]).stem
         temporary = self.inbox / f".{stem}.json.tmp"
@@ -730,6 +747,7 @@ class Observer:
         with temporary.open("w", encoding="utf-8") as handle:
             json.dump(activity, handle, ensure_ascii=False)
         os.chmod(temporary, 0o600)
+        os.chown(temporary, self.owner_uid, self.owner_gid)
         temporary.replace(final)
         self.spool.flush()
         self._sync()

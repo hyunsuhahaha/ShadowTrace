@@ -20,18 +20,11 @@ if [ -d "$headers_dir" ]; then
   printf '  matching kernel headers: %s\n' "$headers_dir"
 else
   printf '  matching kernel headers: missing (%s)\n' "$headers_dir"
-  ready=0
-  if apt-cache show "linux-headers-$kernel_release" >/dev/null 2>&1; then
-    printf '  install: sudo apt update && sudo apt install linux-headers-%s\n' \
-      "$kernel_release"
-    printf '  reboot: not required when uname -r remains %s\n' "$kernel_release"
+  if [ -r /sys/kernel/btf/vmlinux ]; then
+    printf '  kernel BTF: available; BCC virtual headers may work\n'
   else
-    printf '  exact header package is not present in the current APT metadata.\n'
-    printf '  install current Kali kernel + headers:\n'
-    printf '    sudo apt update\n'
-    printf '    sudo apt install linux-image-amd64 linux-headers-amd64\n'
-    printf '    sudo reboot\n'
-    printf '  after reboot, verify: uname -r && test -d /lib/modules/$(uname -r)/build\n'
+    ready=0
+    printf '  kernel BTF: unavailable; matching headers are required\n'
   fi
 fi
 
@@ -48,7 +41,7 @@ else
 fi
 
 if [ "$ready" -eq 1 ]; then
-  printf '  result: ready for BPF compile/load\n'
+  printf '  result: ready to attempt BPF compile/load\n'
   exit 0
 fi
 printf '  result: not ready; no installation was attempted\n'

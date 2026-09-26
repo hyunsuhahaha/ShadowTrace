@@ -7,6 +7,7 @@ integrity rules (spec 1.4/1.7), and serializes engine output for the API.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -15,9 +16,10 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (AutoReconRun, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
+from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
-                       Project, RemoteExecution, ScanArtifact, ScanJob, Service, Target)
+                       PassiveActivity, ProcessInstance, Project, RemoteExecution, ScanArtifact, ScanJob,
+                       Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
 
@@ -444,6 +446,34 @@ def _dismissed_sources(db: Session, project_id: int) -> set[tuple[str, int]]:
     return dismissed
 
 
+def _command_owner(activity: CommandActivity, targets: list[Target],
+                   project_ids: list[int]) -> tuple[int | None, int | None]:
+    """Attribute an external command only when its workspace is unambiguous."""
+    command = activity.command or ""
+    try:
+        inference = json.loads(activity.inference or "{}")
+    except (TypeError, ValueError):
+        inference = {}
+    endpoint_values = inference.get("network_endpoints", []) if isinstance(inference, dict) else []
+    endpoints = ({value for value in endpoint_values if isinstance(value, str)}
+                 if isinstance(endpoint_values, list) else set())
+    matches = []
+    for target in targets:
+        try:
+            ipaddress.ip_address(target.ip)
+        except ValueError:
+            continue
+        if (re.search(r"(?<![\w:.])" + re.escape(target.ip) + r"(?![\w:.])", command)
+                or target.ip in endpoints):
+            matches.append(target)
+    if matches:
+        projects = {target.project_id for target in matches}
+        if len(projects) == 1:
+            return projects.pop(), matches[0].id if len(matches) == 1 else None
+        return None, None
+    return (project_ids[0], None) if len(project_ids) == 1 else (None, None)
+
+
 def sync_from_project(db: Session, project_id: int) -> dict:
     """Project existing domain rows into graph nodes (idempotent, spec 6.1).
 
@@ -456,6 +486,23 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     nodes, edges = _load(db, project_id)
     index = _index_by_source(nodes)
     dismissed = _dismissed_sources(db, project_id)
+    commands = list(db.scalars(select(CommandActivity).order_by(CommandActivity.id)))
+    targets = list(db.scalars(select(Target))) if commands else []
+    project_ids = list(db.scalars(select(Project.id))) if commands else []
+    command_owners = {command.id: _command_owner(command, targets, project_ids)
+                      for command in commands}
+    legacy_process_keys = set(db.scalars(select(PassiveActivity.process_key).where(
+        PassiveActivity.project_id == project_id)))
+    legacy_process_ids = set(db.scalars(select(ProcessInstance.id).where(
+        ProcessInstance.process_key.in_(legacy_process_keys)))) if legacy_process_keys else set()
+    duplicate_commands = set()
+    for command in commands:
+        try:
+            process_ids = json.loads(command.process_instance_ids or "[]")
+        except (TypeError, ValueError):
+            process_ids = []
+        if any(process_id in legacy_process_ids for process_id in process_ids):
+            duplicate_commands.add(command.id)
 
     # Heal orphans: a node projected from a domain row whose row no longer exists
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
@@ -463,7 +510,8 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     kind_models = {"target": Target, "service": Service, "finding": Finding,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
-                   "autorecon_run": AutoReconRun, "autorecon_results": ScanJob}
+                   "autorecon_run": AutoReconRun, "autorecon_results": ScanJob,
+                   "passive_activity": PassiveActivity, "command_activity": CommandActivity}
     for key, node in list(index.items()):
         kind, ident = key
         model = kind_models.get(kind)
@@ -481,9 +529,14 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             owner_id = row.project_id if row.source == "autorecon" else None
         elif isinstance(row, AutoReconRun):
             owner_id = row.project_id
+        elif isinstance(row, PassiveActivity):
+            owner_id = row.project_id
+        elif isinstance(row, CommandActivity):
+            owner_id = command_owners.get(row.id, (None, None))[0]
         stale_hidden = kind == "execution" and isinstance(row, Execution) and row.graph_hidden
         deprecated = kind == "autorecon_run"
         if model is not None and (row is None or owner_id != project_id
+                                  or kind == "command_activity" and ident in duplicate_commands
                                   or stale_hidden or deprecated):
             db.query(GraphEdge).filter(
                 (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
@@ -1033,5 +1086,67 @@ def sync_from_project(db: Session, project_id: int) -> dict:
                 cred_node = index.get(("credential", cred.id))
                 if cred_node is not None:
                     ensure_edge(node, cred_node, "yielded")
+
+    # External terminal observations live in the same graph as in-app runs.
+    # A target association is made only when its literal IP identifies one
+    # project; otherwise only a single-project workspace can own the command.
+    for activity in commands:
+        owner_id, target_id = command_owners[activity.id]
+        if (owner_id != project_id or activity.id in duplicate_commands
+                or ("command_activity", activity.id) in dismissed):
+            continue
+        parent = host_for(target_id) if target_id is not None else operator_for()
+        if parent is None:
+            continue
+        visible_command = "[민감 입력]" if activity.sensitive else activity.command.strip()
+        label = (visible_command.splitlines()[0] if visible_command else "터미널 활동")[:100]
+        meta = json.dumps({
+            "command": visible_command, "source": "passive", "kind": activity.kind,
+            "startedAt": activity.started_at.isoformat(),
+            "endedAt": activity.ended_at.isoformat() if activity.ended_at else None,
+            "confidence": activity.confidence, "lossState": activity.loss_state,
+            "terminalSessionId": activity.terminal_session_id,
+        }, ensure_ascii=False)
+        existing = index.get(("command_activity", activity.id))
+        if existing is not None:
+            existing.meta = meta
+            if activity.ended_at and existing.status == "in-progress":
+                existing.status = "untried"
+            continue
+        node = create_node(db, project_id, "technique", label=label,
+                           status="untried" if activity.ended_at else "in-progress",
+                           source_ref=_source_ref("passive_activity", "command_activity", activity.id),
+                           meta=meta)
+        ensure_edge(parent, node, "attempted" if parent.type == "host" else "runs")
+        index[("command_activity", activity.id)] = node
+        created["techniques"] += 1
+
+    # Legacy passive Nmap captures carry an explicit project/target binding.
+    for activity in db.scalars(select(PassiveActivity).where(
+            PassiveActivity.project_id == project_id).order_by(PassiveActivity.id)):
+        if ("passive_activity", activity.id) in dismissed:
+            continue
+        parent = host_for(activity.target_id) if activity.target_id else operator_for()
+        if parent is None:
+            continue
+        existing = index.get(("passive_activity", activity.id))
+        meta = json.dumps({"command": activity.command, "source": "passive",
+                           "tool": activity.tool, "startedAt": activity.started_at.isoformat(),
+                           "endedAt": activity.ended_at.isoformat() if activity.ended_at else None,
+                           "exitCode": activity.exit_code, "captureStatus": activity.status,
+                           "confidence": activity.confidence}, ensure_ascii=False)
+        if existing is not None:
+            existing.meta = meta
+            if activity.ended_at and existing.status == "in-progress":
+                existing.status = "untried"
+            continue
+        node = create_node(db, project_id, "technique",
+                           label=(activity.command.strip() or activity.tool or "수집된 활동")[:100],
+                           status="untried" if activity.ended_at else "in-progress",
+                           source_ref=_source_ref("passive_activity", "passive_activity", activity.id),
+                           meta=meta)
+        ensure_edge(parent, node, "attempted" if parent.type == "host" else "runs")
+        index[("passive_activity", activity.id)] = node
+        created["techniques"] += 1
 
     return {"rootNodeId": root.id, "created": created}
