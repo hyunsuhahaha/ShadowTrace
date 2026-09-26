@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 // GraphRequestPanel.tsx, OutlineView.tsx, graphLeaves.tsx).
 
 export type NodeType = "project-root" | "operator" | "host" | "service" | "finding"
-  | "technique" | "credential" | "memo";
+  | "technique" | "credential" | "evidence" | "memo";
 export type GraphNode = {
   id: string; type: NodeType; status: string; label: string; objective: boolean;
   source_ref: string; hidden: boolean; meta?: string; created_at?: string; updated_at?: string;
@@ -71,7 +71,7 @@ export const EXECUTION_STATUS_LABEL: Record<string, string> = {
 };
 export const GLYPH: Record<NodeType, string> = {
   "project-root": "◎", operator: "⌁", host: "▣", service: "◉", finding: "◇",
-  technique: "⚡", credential: "🔑", memo: "🗒️",
+  technique: "⚡", credential: "🔑", evidence: "▧", memo: "🗒️",
 };
 export const color = (s: string) => STATUS_COLOR[s] ?? "#8b8b93";
 
@@ -389,7 +389,7 @@ export const ADD_TYPES: NodeType[] = ["finding", "technique", "credential", "ser
 export const STATUS_ORDER = ["untried", "in-progress", "attempt-failed", "succeeded",
   "blocked", "not-applicable"];
 export const RELATIONS = ["discovered", "enumerated", "attempted", "yielded",
-  "precedes", "records-execution", "links-credential", "pivoted-to",
+  "precedes", "records-execution", "links-credential", "documented-by", "pivoted-to",
   "reused-credential", "blocked-by"];
 const RELATION_DEFAULT: Record<string, string> = {
   "project-root>host": "discovered", "host>service": "discovered",
@@ -398,6 +398,7 @@ const RELATION_DEFAULT: Record<string, string> = {
   "service>technique": "attempted", "finding>technique": "attempted",
   "technique>credential": "yielded", "technique>host": "yielded",
   "technique>service": "yielded", "technique>finding": "yielded",
+  "technique>evidence": "documented-by",
   "technique>technique": "precedes",
   "credential>host": "reused-credential", "credential>service": "reused-credential",
 };

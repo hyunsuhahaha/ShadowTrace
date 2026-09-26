@@ -6,10 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import (CommandActivity, Credential, Execution, GraphEdge,
+from app.models import (CommandActivity, Credential, Evidence, Execution, GraphEdge,
                         GraphNode, PassiveActivity, ProcessInstance, Project,
                         RunbookInstance, RunbookStepCredential,
-                        RunbookStepExecution, RunbookStepInstance, Target,
+                        RunbookStepExecution, RunbookStepEvidence,
+                        RunbookStepInstance, Target,
                         TerminalSession)
 from app.modules.graph import service
 from app.modules.graph.service import GraphIntegrityError
@@ -110,7 +111,8 @@ def test_sync_projects_targets_and_services_into_graph():
     target_with_services(db, p.id)
     result = service.sync_from_project(db, p.id)
     assert result["created"] == {"hosts": 1, "services": 2,
-                                 "findings": 0, "credentials": 0, "techniques": 0}
+                                 "findings": 0, "credentials": 0, "techniques": 0,
+                                 "evidence": 0}
     tree = service.get_tree(db, p.id)
     host = tree["children"][0]
     assert host["label"] == "10.10.11.23 (dc01)"
@@ -125,7 +127,8 @@ def test_sync_is_idempotent():
     service.sync_from_project(db, p.id)
     second = service.sync_from_project(db, p.id)
     assert second["created"] == {"hosts": 0, "services": 0,
-                                 "findings": 0, "credentials": 0, "techniques": 0}
+                                 "findings": 0, "credentials": 0, "techniques": 0,
+                                 "evidence": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     # 1 project-root + 1 host + 2 services, no duplicates on re-sync
     assert len(nodes) == 4
@@ -194,9 +197,13 @@ def test_runbook_links_saved_execution_and_credential_without_claiming_success()
                           command="echo test", cwd="/tmp", status="completed")
     credential = Credential(project_id=p.id, target_id=target.id,
                             username="tester", secret_hint="redacted")
-    db.add_all((step, execution, credential)); db.flush()
+    evidence = Evidence(project_id=p.id, target_id=target.id,
+                        title="sensitive account list", kind="file",
+                        sensitivity="sensitive")
+    db.add_all((step, execution, credential, evidence)); db.flush()
     db.add_all((RunbookStepExecution(step_id=step.id, execution_id=execution.id),
-                RunbookStepCredential(step_id=step.id, credential_id=credential.id)))
+                RunbookStepCredential(step_id=step.id, credential_id=credential.id),
+                RunbookStepEvidence(step_id=step.id, evidence_id=evidence.id)))
     db.flush()
 
     service.sync_from_project(db, p.id)
@@ -206,18 +213,29 @@ def test_runbook_links_saved_execution_and_credential_without_claiming_success()
     source = nodes[("runbook_step", step.id)]
     output = nodes[("execution", execution.id)]
     cred = nodes[("credential", credential.id)]
+    proof = nodes[("evidence", evidence.id)]
+    assert proof.label == f"Evidence #{evidence.id}"
+    assert "sensitive account list" not in proof.meta
     assert db.query(GraphEdge).filter_by(source=source.id, target=output.id,
                                          relation="records-execution",
                                          status="untried").count() == 1
     assert db.query(GraphEdge).filter_by(source=source.id, target=cred.id,
                                          relation="links-credential",
                                          status="untried").count() == 1
+    assert db.query(GraphEdge).filter_by(source=source.id, target=proof.id,
+                                         relation="documented-by",
+                                         status="untried").count() == 1
     assert service.get_attack_paths(db, p.id) == []
 
     db.query(RunbookStepExecution).filter_by(step_id=step.id).delete()
+    db.query(RunbookStepCredential).filter_by(step_id=step.id).delete()
+    db.query(RunbookStepEvidence).filter_by(step_id=step.id).delete()
     db.flush()
     service.sync_from_project(db, p.id)
     assert db.query(GraphEdge).filter_by(relation="records-execution").count() == 0
+    assert db.query(GraphEdge).filter_by(relation="links-credential").count() == 0
+    assert db.query(GraphEdge).filter_by(relation="documented-by").count() == 0
+    assert db.query(GraphNode).filter_by(id=proof.id).count() == 0
 
 
 def test_passive_command_appears_as_a_graph_node_without_duplicates():
@@ -423,7 +441,8 @@ def test_sync_projects_findings_and_credentials():
     db.flush()
     result = service.sync_from_project(db, p.id)
     assert result["created"] == {"hosts": 1, "services": 1,
-                                 "findings": 1, "credentials": 1, "techniques": 0}
+                                 "findings": 1, "credentials": 1, "techniques": 0,
+                                 "evidence": 0}
     nodes = db.query(GraphNode).filter_by(project_id=p.id).all()
     cred = next(n for n in nodes if n.type == "credential")
     assert cred.label == "svc_backup"

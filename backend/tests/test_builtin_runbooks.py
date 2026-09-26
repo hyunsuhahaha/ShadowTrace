@@ -13,7 +13,8 @@ from app.modules.runbooks.workflow_router import (
     apply, archive_template, clone_template, recommendations,
     target_recommendations, update_template,
 )
-from app.modules.runbooks.support import ApplyIn
+from app.modules.runbooks.support import ApplyIn, StepUpdate
+from app.modules.runbooks.execution_router import update_step
 from app.modules.graph import service as graph_service
 import json
 
@@ -100,6 +101,41 @@ def test_practitioner_workflows_project_all_review_branches_into_graph():
     assert len(steps) == 42
     edges = db.query(graph_service.GraphEdge).filter_by(relation="precedes").all()
     assert len(edges) >= 50
+    assert graph_service.get_attack_paths(db, target.project_id) == []
+
+
+def test_web_review_opens_all_categories_and_waits_for_every_decision():
+    db = database()
+    target, service = scope(db)
+    ensure_builtin_runbooks(db)
+    template = db.scalar(select(RunbookTemplate).where(
+        RunbookTemplate.builtin_key == "web-application-review"))
+    version = db.scalar(select(RunbookTemplateVersion).where(
+        RunbookTemplateVersion.template_id == template.id))
+    detail = apply(ApplyIn(version_id=version.id, target_id=target.id,
+                           service_id=service.id), db)
+    by_key = {step["node_key"]: step for step in detail["steps"]}
+    assert by_key["map"]["activation"] == "ready"
+    assert all(by_key[key]["activation"] == "waiting" for key in (
+        "info", "config", "identity", "authn", "authz", "session",
+        "input", "error", "crypto", "logic", "client", "api"))
+
+    detail = update_step(by_key["map"]["id"], StepUpdate(
+        status="completed", outcome="confirmed"), db)
+    by_key = {step["node_key"]: step for step in detail["steps"]}
+    categories = [key for key in by_key if key not in {"map", "review"}]
+    assert len(categories) == 12
+    assert all(by_key[key]["activation"] == "ready" for key in categories)
+    assert by_key["review"]["activation"] == "waiting"
+
+    for key in categories:
+        detail = update_step(by_key[key]["id"], StepUpdate(
+            status="completed", outcome="not_found"), db)
+    by_key = {step["node_key"]: step for step in detail["steps"]}
+    assert by_key["review"]["activation"] == "ready"
+    assert len(by_key["review"]["decision_trace"][0]["sources"]) == 12
+
+    graph_service.sync_from_project(db, target.project_id)
     assert graph_service.get_attack_paths(db, target.project_id) == []
 
 

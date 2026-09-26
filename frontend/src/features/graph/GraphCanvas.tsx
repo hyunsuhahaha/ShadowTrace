@@ -94,7 +94,8 @@ export function GraphCanvas(props: {
     const edges = data.edges.filter((e) => index.has(e.source) && index.has(e.target)
       && (props.credentialOverlay
         || !["reused-credential", "pivoted-to"].includes(e.relation)));
-    const structural = new Set(["discovered", "enumerated", "attempted", "precedes", "yielded",
+    const structural = new Set(["discovered", "enumerated", "attempted", "precedes",
+      "documented-by", "yielded",
       "pivoted-to", "operates", "runs"]);
     const depths = new Map<string, number>([[anchorId || "", 0]]);
     for (let pass = 0; pass < nodes.length; pass++) for (const edge of edges) {

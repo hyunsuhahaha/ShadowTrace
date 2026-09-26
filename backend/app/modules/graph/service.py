@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
-                       RunbookStepInstance, RunbookStepExecution,
+                       RunbookStepInstance, RunbookStepExecution, RunbookStepEvidence,
                        RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
 from ...templates import catalog
@@ -202,7 +202,7 @@ from .ids import new_ulid
 
 NODE_TYPES = {
     "project-root", "operator", "host", "service", "finding", "technique",
-    "credential", "memo",
+    "credential", "evidence", "memo",
 }
 NODE_STATUSES = {
     "untried", "in-progress", "attempt-failed", "succeeded", "blocked",
@@ -230,6 +230,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "precedes": ({"technique"}, {"technique"}),
     "records-execution": ({"technique"}, {"technique"}),
     "links-credential": ({"technique"}, {"credential"}),
+    "documented-by": ({"technique"}, {"evidence"}),
 }
 
 
@@ -517,6 +518,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
     # Manually-created nodes (no source_ref) are never pruned.
     kind_models = {"target": Target, "service": Service, "finding": Finding,
+                   "evidence": Evidence,
                    "credential": Credential, "execution": Execution,
                    "session": InteractiveSession, "scan_artifact": ScanArtifact,
                    "autorecon_run": AutoReconRun, "autorecon_results": ScanJob,
@@ -527,7 +529,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         model = kind_models.get(kind)
         row = db.get(model, ident) if model is not None else None
         owner_id = None
-        if isinstance(row, (Target, Finding, Credential)):
+        if isinstance(row, (Target, Finding, Credential, Evidence)):
             owner_id = row.project_id
         elif isinstance(row, (Service, Execution, InteractiveSession)):
             target = db.get(Target, row.target_id)
@@ -559,7 +561,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     db.flush()
 
     created = {"hosts": 0, "services": 0, "findings": 0, "credentials": 0,
-               "techniques": 0}
+               "techniques": 0, "evidence": 0}
     target_ids: list[int] = []
 
     def host_for(target_id: int) -> GraphNode | None:
@@ -1262,10 +1264,11 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         created["techniques"] += 1
 
     # Explicit Runbook links connect the operator's planned check to the
-    # actual saved execution or credential record. They are references, not
-    # proof that the check succeeded or that a credential was obtained here.
+    # actual saved execution, credential, or evidence. These relationships
+    # do not claim the check succeeded or that a credential was obtained here.
     runbook_step_ids = [ident for kind, ident in index if kind == "runbook_step"]
     desired_links: set[tuple[str, str, str]] = set()
+    linked_evidence_ids: set[int] = set()
     if runbook_step_ids:
         for link in db.scalars(select(RunbookStepExecution).where(
                 RunbookStepExecution.step_id.in_(runbook_step_ids))):
@@ -1281,9 +1284,43 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             if source and target:
                 ensure_edge(source, target, "links-credential", status="untried")
                 desired_links.add((source.id, target.id, "links-credential"))
+        for link in db.scalars(select(RunbookStepEvidence).where(
+                RunbookStepEvidence.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            row = db.get(Evidence, link.evidence_id)
+            if not source or not row or row.project_id != project_id:
+                continue
+            linked_evidence_ids.add(row.id)
+            if ("evidence", row.id) in dismissed:
+                continue
+            node = index.get(("evidence", row.id))
+            meta = json.dumps({"evidenceId": row.id, "targetId": row.target_id,
+                               "kind": row.kind, "sensitivity": row.sensitivity})
+            if node is None:
+                node = create_node(db, project_id, "evidence",
+                                   label=(f"Evidence #{row.id}" if row.sensitivity == "sensitive"
+                                          else row.title), status="untried",
+                                   source_ref=_source_ref("evidence", "evidence", row.id),
+                                   meta=meta)
+                index[("evidence", row.id)] = node
+                created["evidence"] += 1
+            else:
+                node.meta = meta
+                if row.sensitivity == "sensitive":
+                    node.label = f"Evidence #{row.id}"
+            ensure_edge(source, node, "documented-by", status="untried")
+            desired_links.add((source.id, node.id, "documented-by"))
+    for key, node in list(index.items()):
+        if key[0] == "evidence" and key[1] not in linked_evidence_ids:
+            db.query(GraphEdge).filter(
+                (GraphEdge.source == node.id) | (GraphEdge.target == node.id)
+            ).delete(synchronize_session=False)
+            db.delete(node)
+            del index[key]
     for edge in db.scalars(select(GraphEdge).where(
             GraphEdge.project_id == project_id,
-            GraphEdge.relation.in_(("records-execution", "links-credential")))):
+            GraphEdge.relation.in_(("records-execution", "links-credential",
+                                   "documented-by")))):
         if (edge.source, edge.target, edge.relation) not in desired_links:
             db.delete(edge)
 

@@ -978,9 +978,12 @@ instance와 단계를 선택·스크롤한다. 새 route page는 추가되지 �
 선택된 전이는 GraphCanvas에서 청록색, 제외된 전이는 흐린 점선으로 그린다. 엣지의
 `status`는 공격 성공 경로와 혼동되지 않도록 `untried`로 유지한다.
 Runbook Step에 명시적으로 연결된 Execution과 Credential은 각각 비구조 참조 엣지
-`records-execution`/`links-credential`로 실제 Graph 노드에 연결된다. 이 참조는 성공
-판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음 sync에서 엣지도
-제거한다. 연결된 Evidence는 Inspector에서 원본 Evidence 화면 딥링크로 연다.
+`records-execution`/`links-credential`로 실제 Graph 노드에 연결된다. Evidence는
+연결된 경우에만 별도 `evidence` 노드로 투영하고 `documented-by` 구조 엣지로 단계를
+잇는다. 민감 Evidence 제목은 Graph에 복사하지 않고 `Evidence #id`로 표시한다.
+이 연결은 성공 판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음
+sync에서 엣지와 연결이 없어진 Evidence 노드도 제거한다. Inspector의 Evidence
+노드는 원본 Evidence 화면 딥링크를 제공한다.
 완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
 host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
 `pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라

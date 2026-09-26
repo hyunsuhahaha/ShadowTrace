@@ -63,7 +63,7 @@
 | API endpoint·호출자·객체 → 위험별 검사 → 전체 판정 | `api-security-review` HTTP Runbook 12단계. API Top 10 2023을 각각 수동 판정하고 `join: all`로 검토 | API 명세 버전·객체·역할별 결과를 구조화해 비교하는 저장 모델 없음 |
 | 확인된 접근 → 권한·Credential·인접 시스템·업무 영향 → 경로 검토·정리 | `post-access-review` Target Runbook 7단계. 후속 검증 승인, 4가지 병렬 검토와 근거 검토 | 접근/자격증명/터널이 서로 다른 Target Runbook 단계로 자동 연결되는 교차 Target workflow edge 없음 |
 | 부정 결과·차단·보류·오류·승인 거부 | Runbook `outcome`/`status`/`activation`으로 기록. Graph에 단계 노드와 선언된 전이를 표시하고 `decision_trace`로 실제 선택된 전이를 청록색, 제외된 전이를 점선으로 구별 | 분기 판단 시각과 근거를 Graph 엣지에서 직접 열람하는 기능 없음 |
-| 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결, Evidence 딥링크 제공 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
+| 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결. 첨부 Evidence는 민감 제목을 숨긴 Graph 노드로 투영 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
 | 작업 결과와 고객 보고 | Runbook 단계별 판정, Evidence·Execution 연결, 선택형 보고서 coverage | 고객과의 범위 변경·질의·중단 결정을 독립 기록으로 묶는 협업 로그 없음 |
 
 이 세 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,

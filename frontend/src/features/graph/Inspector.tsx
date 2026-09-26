@@ -119,6 +119,7 @@ export function Inspector(props: {
     } catch { return null; }
   })();
   const runbookMeta = source?.kind === "runbook_step" && n ? nodeMeta(n) : null;
+  const evidenceMeta = source?.kind === "evidence" && n ? nodeMeta(n) : null;
   const runbookInstanceId = Number(runbookMeta?.instanceId || 0);
   const runbookStep = useQuery({
     queryKey: ["graphRunbookInstance", runbookInstanceId],
@@ -1017,7 +1018,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && !runbookMeta && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && !evidenceMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -1049,6 +1050,14 @@ export function Inspector(props: {
           </div>}
           <a href={`#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>
             Runbook에서 이 단계 열기 →</a>
+        </div>
+      </section>}
+      {evidenceMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="Evidence 원본">
+        <div style={S.executionResultsHead}><strong>연결된 Evidence</strong></div>
+        <div style={S.terminalBody}>
+          <div>{String(evidenceMeta.kind || "")} · {String(evidenceMeta.sensitivity || "normal")}</div>
+          <a href={`#evidence/${evidenceMeta.targetId}/${source?.id}`}>
+            Evidence 원본 열기 →</a>
         </div>
       </section>}
       {passive && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="수집된 활동">
