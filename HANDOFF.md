@@ -13,7 +13,8 @@
   기존 루프백 Evidence 7·8번은 프로젝트 1/Target 1에 유지됐다. 두 새 파일은 API
   다운로드 SHA-256이 DB와 일치하고 Finding은 0건이다. 브라우저 첫 세션에서
   `#evidence/2/10` 링크가 `#graph`로 덮이던 버그를 수정하고 Root/Inspector
-  테스트 43개와 프런트 빌드를 통과했다. smoke corpus는 744,112 raw events와
+  테스트 43개와 프런트 빌드를 통과했다. 빌드된 정적 파일은 Kali release-7에 반영했고
+  새 JS asset을 HTTP 200으로 확인했다. smoke corpus는 744,112 raw events와
   누적 loss_before 3,743이며 수동 sync가 17.9초 걸렸다. 다음 성능 작업은
   이 전체 corpus 조회 비용을 프로파일링해 줄이는 것이다.
 - passive Evidence UI 연결(2026-09-26, `224e081`, `5db4364`): Evidence API에
