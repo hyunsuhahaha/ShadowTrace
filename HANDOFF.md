@@ -15,7 +15,11 @@
   링크와 공격 성공 경로 비집계, Chrome에서 Evidence 노드→원본 링크·민감 제목 비노출을
   확인했다. 전체 backend 644 passed, frontend 588 passed/빌드 통과. 초기 전체 테스트의
   두 실패는 마이그레이션 테스트가 0046이 아닌 0045를 기대해서 수정했고, Kali venv에
-  pyproject 선언 의존성 `pymongo`가 빠져 설치했다. 실제 API 배포 상태는 완료 시 갱신.
+  pyproject 선언 의존성 `pymongo`가 빠져 설치했다. Kali 실행본은
+  `/home/kali/projects/ShadowTrace-live-release-13-full`의 `bb5008a`로 전환했고,
+  PID 353329·port 8000에서 템플릿 API 24종(`api-security-review` 포함),
+  SPA `/` 200, 기존 프로젝트 Graph GET 200을 확인했다. 별도 테스트 API
+  port 8001은 종료했다.
 - 공개 현업 흐름 확장(2026-09-26): PTES/NIST 평가 수명주기, OWASP WSTG v4.2 12개
   웹 검사 범주, Cure53 웹·API/모바일 보고서, CISA 레드팀 경로와 MITRE 전술을 다시
   대조했다(`docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`). 내장 Runbook 3종·30단계를
