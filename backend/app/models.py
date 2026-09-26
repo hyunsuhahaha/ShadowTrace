@@ -463,6 +463,7 @@ class Report(Base):
     markdown: Mapped[str] = mapped_column(Text, default="")
     evidence_links: Mapped[str] = mapped_column(Text, default="[]")
     exploit_research_links: Mapped[str] = mapped_column(Text, default="[]")
+    runbook_instance_links: Mapped[str] = mapped_column(Text, default="[]")
     sensitivity_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

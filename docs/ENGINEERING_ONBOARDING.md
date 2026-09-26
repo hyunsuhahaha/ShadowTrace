@@ -197,7 +197,7 @@ names 등 여러 구조화 값은 `TEXT` column에 JSON 문자열로 저장된�
 | Evidence | `modules/evidence/router.py` | Evidence files, 출처(`source_type`/`source_id`) 필터, ZIP export, zip evidence 멤버 목록/추출(zip-slip 안전, 암호 걸린 멤버는 거부) |
 | Note | `modules/notes/router.py` | `Note` rows (project 필수, target/service/credential 선택 스코프) |
 | Finding | `modules/findings/router.py` | Finding과 link tables |
-| Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export |
+| Report | `modules/reports/router.py` | Markdown, HTML, PDF, DOCX render/export; 선택한 Runbook instance의 단계별 검사 상태·판정 출력 |
 | Directory | `modules/directory/router.py` | Directory object/relation rows |
 | Runbook | `modules/runbooks/*_router.py` | `engine.py`, template/version/instance rows |
 | Exploit Research | `modules/exploit_research/router.py` | original/working PoC와 execution records |
@@ -653,10 +653,12 @@ API: `/targets`, `/tunnels*`, `/interactive-sessions*`, `/{kind}/{id}/stop`.
 ### 10.7 `ReportWorkspace.tsx` — 보고서 (`#reports`)
 
 3탭 허브: Findings(`FindingWorkspace`에 위임), Finding 라이브러리(`FindingTemplateManager`에
-위임), 보고서 생성(자체 마크다운 에디터 — Evidence/Exploit Research 링크, 실시간 HTML
-미리보기, Markdown/HTML/PDF/DOCX export).
+위임), 보고서 생성(자체 마크다운 에디터 — Evidence/Exploit Research/Runbook instance 링크,
+실시간 HTML 미리보기, Markdown/HTML/PDF/DOCX export). Runbook 링크는 검사 범위 표에
+단계 제목·상태·판정만 출력하며 원문 결과와 메모는 자동 공개하지 않는다. 저장 컬럼은
+`Report.runbook_instance_links`(`0046_report_runbook_coverage.py`)이다.
 API: `/projects`, `/reports*`, `/reports/{id}/export`, `/evidence?project_id=`,
-`/projects/{id}/exploit-research?limit=`.
+`/projects/{id}/exploit-research?limit=`, `/runbooks/instances?project_id=`.
 
 | 하위 컴포넌트 | 역할 |
 |---|---|

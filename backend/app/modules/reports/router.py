@@ -18,7 +18,7 @@ from ...config import WORKSPACE_DIR
 from ...models import (Evidence, EvidenceImageEdit, Finding, FindingAsset,
     FindingEvidence, FindingRetest,
     ExploitLocalRun, ExploitModification, ExploitResearch, ExploitSource,
-    Project, Report, Service, Target)
+    Project, Report, RunbookInstance, RunbookStepInstance, Service, Target)
 from ...schemas import ReportIn, ReportOut
 from ...time import utcnow
 
@@ -70,6 +70,8 @@ def values(body: ReportIn) -> dict:
         result["evidence_links"], ensure_ascii=False)
     result["exploit_research_links"] = json.dumps(
         list(dict.fromkeys(result["exploit_research_links"])))
+    result["runbook_instance_links"] = json.dumps(
+        list(dict.fromkeys(result["runbook_instance_links"])))
     if result["template"] == "oscp" and not result["markdown"]:
         result["markdown"] = OSCP_TEMPLATE
     return result
@@ -102,6 +104,51 @@ def update_report(ident: int, body: ReportIn,
     return row
 
 
+def _runbook_coverage(db: Session, row: Report) -> list[tuple[RunbookInstance, str, list[RunbookStepInstance]]]:
+    """Only explicitly selected, same-project runs become report coverage."""
+    coverage = []
+    for ident in dict.fromkeys(json.loads(row.runbook_instance_links or "[]")):
+        instance = need(db, RunbookInstance, int(ident))
+        if instance.project_id != row.project_id:
+            raise HTTPException(400, "Linked Runbook belongs to another project")
+        target = need(db, Target, instance.target_id)
+        if target.project_id != row.project_id:
+            raise HTTPException(400, "Runbook target belongs to another project")
+        steps = list(db.scalars(select(RunbookStepInstance).where(
+            RunbookStepInstance.instance_id == instance.id).order_by(
+            RunbookStepInstance.position, RunbookStepInstance.id)))
+        coverage.append((instance, target.ip, steps))
+    return coverage
+
+
+def _coverage_html(coverage: list[tuple[RunbookInstance, str, list[RunbookStepInstance]]]) -> str:
+    rows = []
+    for instance, target_ip, steps in coverage:
+        tests = "".join(
+            f"<tr><td>{html.escape(step.title)}</td>"
+            f"<td>{html.escape(step.status)}</td>"
+            f"<td>{html.escape(step.outcome)}</td></tr>"
+            for step in steps)
+        rows.append(f"<article><h3>{html.escape(instance.template_name)} · "
+            f"{html.escape(target_ip)}</h3><table><thead><tr>"
+            f"<th>Test</th><th>Status</th><th>Outcome</th></tr></thead>"
+            f"<tbody>{tests}</tbody></table></article>")
+    return "".join(rows)
+
+
+def _coverage_markdown(coverage: list[tuple[RunbookInstance, str, list[RunbookStepInstance]]]) -> str:
+    if not coverage:
+        return ""
+    lines = ["## Testing Coverage"]
+    for instance, target_ip, steps in coverage:
+        template_name = instance.template_name.replace("\r", " ").replace("\n", " ")
+        lines.append(f"### {template_name} · {target_ip}")
+        for step in steps:
+            title = step.title.replace("\r", " ").replace("\n", " ")
+            lines.append(f"- {title}: {step.status} / {step.outcome}")
+    return "\n".join(lines) + "\n"
+
+
 def render_report(db: Session, row: Report, profile: str = "internal") -> str:
     if profile not in ("client", "internal"):
         raise HTTPException(400, "Profile must be client or internal")
@@ -131,6 +178,7 @@ def render_report(db: Session, row: Report, profile: str = "internal") -> str:
     safe_markdown = html.escape(row.markdown)
     content = markdown_lib.markdown(
         safe_markdown, extensions=["fenced_code", "tables"])
+    coverage_rows = _coverage_html(_runbook_coverage(db, row))
     research_rows = []
     status_labels = {
         "unverified": "미확인", "researching": "조사 중",
@@ -287,6 +335,7 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #aaa;padding
 <section><h2>Finding Summary</h2><table><thead><tr><th>Risk</th><th>Finding</th><th>Status</th><th>Target</th></tr></thead>
 <tbody>{''.join(summary_rows)}</tbody></table></section>
 <section><h2>Finding Details</h2>{''.join(finding_rows)}</section>
+<section><h2>Testing Coverage</h2>{coverage_rows}</section>
 <section><h2>Exploit Research</h2>{''.join(research_rows)}</section>
 <section><h2>Evidence Index</h2>{''.join(evidence_rows)}</section></body></html>"""
 
@@ -349,6 +398,18 @@ def render_docx(db: Session, row: Report, profile: str) -> bytes:
     document.add_paragraph(
         f"Editable {profile.title()} penetration test report")
     _add_markdown(document, row.markdown)
+
+    document.add_heading("Testing Coverage", level=1)
+    for instance, target_ip, steps in _runbook_coverage(db, row):
+        document.add_heading(f"{instance.template_name} · {target_ip}", level=2)
+        table = document.add_table(rows=1, cols=3)
+        table.style = "Table Grid"
+        for cell, label in zip(table.rows[0].cells, ("Test", "Status", "Outcome")):
+            cell.text = label
+        for step in steps:
+            for cell, value in zip(table.add_row().cells,
+                                   (step.title, step.status, step.outcome)):
+                cell.text = value
 
     findings = db.scalars(select(Finding).where(
         Finding.project_id == row.project_id)).all()
@@ -457,7 +518,9 @@ def export_report(ident: int, format: str = "html",
                      f'attachment; filename="{safe_name}-{profile}.docx"'})
     document = render_report(db, row, profile)
     if format == "markdown":
-        return Response(row.markdown, media_type="text/markdown",
+        coverage = _coverage_markdown(_runbook_coverage(db, row))
+        markdown = row.markdown + ("\n\n" + coverage if coverage else "")
+        return Response(markdown, media_type="text/markdown",
                         headers={"Content-Disposition": f'attachment; filename="{safe_name}.md"'})
     if format == "html":
         return Response(document, media_type="text/html",

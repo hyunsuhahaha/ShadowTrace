@@ -406,11 +406,14 @@ class ReportIn(BaseModel):
         default_factory=list, max_length=1000)
     exploit_research_links: list[int] = Field(
         default_factory=list, max_length=500)
+    runbook_instance_links: list[int] = Field(
+        default_factory=list, max_length=500)
     sensitivity_reviewed: bool = False
 
 class ReportOut(ORM):
     id: int; project_id: int; title: str; template: str; markdown: str
-    evidence_links: str; exploit_research_links: str; sensitivity_reviewed: bool
+    evidence_links: str; exploit_research_links: str
+    runbook_instance_links: str; sensitivity_reviewed: bool
     created_at: datetime; updated_at: datetime
 
 Severity = Literal["Critical", "High", "Medium", "Low", "Informational"]

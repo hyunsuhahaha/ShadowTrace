@@ -12,6 +12,7 @@ type Report = {
   markdown: string;
   evidence_links: string;
   exploit_research_links: string;
+  runbook_instance_links: string;
   sensitivity_reviewed: boolean;
 };
 type Evidence = {
@@ -28,6 +29,7 @@ type Research = {
   port: number;
   validation_status: string;
 };
+type Runbook = { id: number; template_name: string; target_name: string; status: string };
 const api = async <T,>(p: string, i?: RequestInit): Promise<T> => {
   const r = await fetch("/api" + p, i);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -40,6 +42,7 @@ const blank = (projectId?: number): Partial<Report> => ({
   markdown: "",
   evidence_links: "[]",
   exploit_research_links: "[]",
+  runbook_instance_links: "[]",
   sensitivity_reviewed: false,
 });
 export default function ReportWorkspace({ embedded = false, initialProjectId, onBack }: {
@@ -73,6 +76,11 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
       queryKey: ["reportResearch", projectId],
       queryFn: () =>
         api<Research[]>(`/projects/${projectId}/exploit-research?limit=500`),
+      enabled: !!projectId,
+    }),
+    runbooks = useQuery({
+      queryKey: ["reportRunbooks", projectId],
+      queryFn: () => api<Runbook[]>(`/runbooks/instances?project_id=${projectId}`),
       enabled: !!projectId,
     });
   useEffect(() => {
@@ -115,11 +123,24 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
       ),
     });
   };
+  const runbookLinks = (): number[] => {
+    try { return JSON.parse(draft.runbook_instance_links || "[]"); }
+    catch { return []; }
+  };
+  const toggleRunbook = (item: Runbook) => {
+    const current = runbookLinks();
+    setDraft({ ...draft, runbook_instance_links: JSON.stringify(
+      current.includes(item.id)
+        ? current.filter((id) => id !== item.id)
+        : [...current, item.id],
+    ) });
+  };
   const payload = () => ({
     ...draft,
     project_id: projectId,
     evidence_links: links(),
     exploit_research_links: researchLinks(),
+    runbook_instance_links: runbookLinks(),
   });
   const save = async () => {
     try {
@@ -250,6 +271,19 @@ export default function ReportWorkspace({ embedded = false, initialProjectId, on
                   {item.target_address}:{item.port} · {item.validation_status}
                 </small>
               </span>
+            </label>
+          ))}
+          <h3>검사 범위 · Runbooks</h3>
+          <small>선택한 Runbook의 단계별 상태와 판정만 보고서에 넣습니다. 원문 결과와 메모는 제외됩니다.</small>
+          {runbooks.isLoading && <LoadingState label="Runbook 목록을 불러오는 중" />}
+          {runbooks.error && <ErrorState message={String(runbooks.error)} />}
+          {!runbooks.isLoading && !runbooks.data?.length &&
+            <small>연결할 Runbook 실행 기록이 없습니다.</small>}
+          {runbooks.data?.map((item) => (
+            <label key={item.id}>
+              <input type="checkbox" checked={runbookLinks().includes(item.id)}
+                onChange={() => toggleRunbook(item)} />
+              <span>{item.template_name}<small>{item.target_name} · {item.status}</small></span>
             </label>
           ))}
         </aside>
