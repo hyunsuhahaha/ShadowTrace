@@ -7,6 +7,22 @@
 
 ## 현재 상태
 
+- 현업 절차 계보 후속 구현(2026-09-27, `67ce3a3`–`1e7a92d`): Runbook Step에
+  동일 Target의 RemoteExecution/InteractiveSession을 연결하고 Graph에 실제 실행
+  노드로 투영한다(0050). 다른 Target 간 인계는 원본 Step의 Credential, 목적 Step의
+  완료·exit 0 원격 실행, SHA-256 Evidence와 사유가 있을 때만 `handoff` 엣지로 기록한다.
+  Report는 성공 Graph 경로의 노드·엣지와 SHA-256 Evidence를 시점별 스냅샷으로
+  저장하고 HTML/PDF/DOCX/Markdown에 포함한다(0051). 자산 8유형의 세부 대상을
+  유형별 필수 속성으로 관리하고 Graph 자산 노드로 투영한다(0052). 범위 내 세부 대상을
+  Runbook Step에 연결하면 `assesses` 엣지와 Step Evidence로 검사 계보를 추적한다
+  (0053). 절차 연결만으로 공격 성공 판정을 만들지 않는다. Kali 개발 DB에서 관련
+  27개, 전체 backend 657개 통과. 프런트 빌드 통과, 전체 587/588 통과 후 기존
+  PostExploitation 비동기 테스트 파일 단독 8/8 통과. Kali live DB는
+  `/home/kali/shadowtrace-db-backups/live-pre-release15.db`에 백업한 뒤 0049→0053으로
+  마이그레이션했다. 실행본은 `/home/kali/projects/ShadowTrace-live-release-15`의
+  `1e7a92d`, PID 429097, port 8000. SPA/OpenAPI/Projects/Graph GET 200,
+  새 API 라우트 4종 등록 확인. 원본 수집 어댑터와 의사결정 기록 등 남은 제한은
+  `docs/RESEARCH_PRACTITIONER_WORKFLOW_GAPS.md`에 적었다.
 - 비 IP 평가 자산·RoE·HTTP 실행 계보(2026-09-26, `47449a6`–`675af0f`):
   `AssessmentAsset` 8유형과 모바일·클라우드·Kubernetes·소스·무선·ICS 수동
   Runbook 6종(총 30종)을 추가했다. `#assessment`에서 자산·범위·Runbook 단계·Evidence·
