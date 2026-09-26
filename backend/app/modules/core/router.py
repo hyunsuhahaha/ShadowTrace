@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 
 from ...config import WORKSPACE_DIR
 from ...database import Base, get_db
-from ...models import (AssessmentAsset, Evidence, Finding, Project, ProjectRoe,
+from ...models import (AssessmentAsset, AssessmentAssetSubject, Evidence, Finding, Project, ProjectRoe,
                        ProjectRoeEvent, RunbookInstance,
                        Service, ServiceObservation, Target)
 from ...product_policy import public_policy
 from ...schemas import (
-    AssessmentAssetIn, AssessmentAssetOut, ProjectRoeDecisionIn, ProjectRoeDraftIn,
+    ASSET_SUBJECT_SPECS, AssessmentAssetIn, AssessmentAssetOut,
+    AssessmentAssetSubjectIn, AssessmentAssetSubjectOut,
+    ProjectRoeDecisionIn, ProjectRoeDraftIn,
     MetasploitLockIn,
     ProjectIn,
     ProjectOut,
@@ -221,9 +223,65 @@ def delete_assessment_asset(ident: int, db: Session = Depends(get_db)):
     row = need(db, AssessmentAsset, ident)
     linked = any(db.scalar(select(model.id).where(model.asset_id == ident)) is not None
                  for model in (RunbookInstance, Evidence, Finding))
-    if linked:
-        raise HTTPException(409, "Asset has workflow, evidence, or findings")
+    if linked or db.scalar(select(AssessmentAssetSubject.id).where(
+            AssessmentAssetSubject.asset_id == ident)) is not None:
+        raise HTTPException(409, "Asset has workflow, subjects, evidence, or findings")
     db.delete(row); db.commit()
+
+
+@router.get("/api/assessment-asset-subjects", response_model=list[AssessmentAssetSubjectOut])
+def assessment_asset_subjects(asset_id: int, db: Session = Depends(get_db)):
+    need(db, AssessmentAsset, asset_id)
+    return db.scalars(select(AssessmentAssetSubject).where(
+        AssessmentAssetSubject.asset_id == asset_id).order_by(
+        AssessmentAssetSubject.id)).all()
+
+
+def _validate_subject_kind(db: Session, body: AssessmentAssetSubjectIn) -> AssessmentAsset:
+    asset = need(db, AssessmentAsset, body.asset_id)
+    if body.kind not in ASSET_SUBJECT_SPECS[asset.kind]:
+        raise HTTPException(400, "Subject kind does not match the assessment asset")
+    return asset
+
+
+@router.post("/api/assessment-asset-subjects", response_model=AssessmentAssetSubjectOut,
+             status_code=201)
+def create_assessment_asset_subject(body: AssessmentAssetSubjectIn,
+                                    db: Session = Depends(get_db)):
+    _validate_subject_kind(db, body)
+    existing = db.scalar(select(AssessmentAssetSubject.id).where(
+        AssessmentAssetSubject.asset_id == body.asset_id,
+        AssessmentAssetSubject.kind == body.kind,
+        AssessmentAssetSubject.identifier == body.identifier.strip()))
+    if existing is not None:
+        raise HTTPException(409, "Assessment subject already exists")
+    row = AssessmentAssetSubject(asset_id=body.asset_id, kind=body.kind,
+        label=body.label.strip(), identifier=body.identifier.strip(),
+        attributes=json.dumps(body.attributes, ensure_ascii=False),
+        scope_status=body.scope_status)
+    db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
+@router.put("/api/assessment-asset-subjects/{ident}",
+            response_model=AssessmentAssetSubjectOut)
+def update_assessment_asset_subject(ident: int, body: AssessmentAssetSubjectIn,
+                                    db: Session = Depends(get_db)):
+    row = need(db, AssessmentAssetSubject, ident)
+    if row.asset_id != body.asset_id:
+        raise HTTPException(400, "Subject cannot move between assets")
+    _validate_subject_kind(db, body)
+    row.kind, row.label, row.identifier = body.kind, body.label.strip(), body.identifier.strip()
+    row.attributes = json.dumps(body.attributes, ensure_ascii=False)
+    row.scope_status = body.scope_status
+    row.updated_at = utcnow()
+    db.commit(); db.refresh(row)
+    return row
+
+
+@router.delete("/api/assessment-asset-subjects/{ident}", status_code=204)
+def delete_assessment_asset_subject(ident: int, db: Session = Depends(get_db)):
+    db.delete(need(db, AssessmentAssetSubject, ident)); db.commit()
 
 
 @router.put("/api/projects/{ident}/metasploit-lock", response_model=ProjectOut)
@@ -248,6 +306,8 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     tables = Base.metadata.tables
     target_ids = list(db.scalars(select(tables["targets"].c.id).where(
         tables["targets"].c.project_id == ident)))
+    asset_ids = list(db.scalars(select(tables["assessment_assets"].c.id).where(
+        tables["assessment_assets"].c.project_id == ident)))
     service_ids = list(db.scalars(select(tables["services"].c.id).where(
         tables["services"].c.target_id.in_(target_ids)))) if target_ids else []
     scan_ids = list(db.scalars(select(tables["scan_jobs"].c.id).where(
@@ -304,6 +364,7 @@ def delete_project(ident: int, db: Session = Depends(get_db)):
     remove("runbook_step_remote_executions", "step_id", runbook_step_ids)
     remove("runbook_step_sessions", "step_id", runbook_step_ids)
     remove("runbook_step_handoffs", "from_step_id", runbook_step_ids)
+    remove("assessment_asset_subjects", "asset_id", asset_ids)
     remove("runbook_step_credentials", "step_id", runbook_step_ids)
     remove("finding_evidence", "finding_id", finding_ids)
     remove("finding_assets", "finding_id", finding_ids)

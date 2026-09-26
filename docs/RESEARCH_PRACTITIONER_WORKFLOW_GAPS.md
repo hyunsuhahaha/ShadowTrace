@@ -115,7 +115,7 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
 수동 판단용 절차도 추가했다. 이는 해당 환경에서 명령 실행기나 수집기가 제공된다는
 뜻은 아니다. 실제 환경의 원본은 해당 자산에 Evidence로 첨부해 기록한다.
 
-아직 남은 구현 공백은 다음과 같다.
+0050–0052 구현 전에 남았던 공백은 다음과 같다.
 
 1. 웹 URL/기능/역할/객체 및 API 버전/스키마/호출자별 coverage 항목의 구조화.
 2. RemoteExecution, InteractiveSession의 Runbook Step 직접 참조와
@@ -133,3 +133,21 @@ AssessmentAsset을 별도 저장하고 Graph의 `asset` 노드에서 Runbook Ste
 따라서 30개 내장 절차가 현업 평가의 모든 경우를 검증한다는 주장은 하지 않는다.
 완료 기준은 각 평가 유형에서 실제 작업·부정 결과·증거·Finding이 자산과 Graph
 계보에 남고, 승인 범위 밖의 실행이 거부되는지 시나리오로 확인하는 것이다.
+
+### 0050–0052 구현 후 상태
+
+- 같은 Target의 RemoteExecution과 InteractiveSession은 Runbook Step에 직접 연결되고
+  Graph에서 실제 기록 노드로 보인다. 여러 Target 사이의 `handoff`는 원본 Step에
+  연결한 Credential, 목적 Step에 연결한 완료·exit 0 원격 실행, 해당 실행의 Evidence가
+  함께 있을 때만 만든다. 절차 엣지는 공격 성공 경로로 집계하지 않는다.
+- Report는 현재 Graph 성공 경로를 선택하고, 연결 Evidence가 있을 때 노드·엣지 상태와
+  Evidence SHA-256을 시점별 스냅샷으로 고정한다. Graph를 나중에 수정해도 HTML/PDF/
+  DOCX/Markdown 출력의 캡처 내용은 바뀌지 않는다.
+- `AssessmentAssetSubject`는 웹 기능·역할·객체, API operation·schema·caller,
+  모바일 build, 클라우드 계정·역할·리소스, Kubernetes workload, 소스 commit,
+  무선 BSSID·장소, ICS 장비·공정·운영 승인을 유형별 필수 속성과 함께 여러 개 저장하고
+  자산 아래 Graph 노드로 투영한다.
+
+남은 제한은 세부 대상별 실제 테스트 판정·Evidence 연결, 모바일/클라우드/Kubernetes/
+무선/ICS 원본 수집 어댑터, 고객 의사결정 기록, API 밖에서 ORM으로 만든 Project의
+RoE 행 누락 예외다. 세부 자산 노드의 존재는 검사를 완료했다는 뜻이 아니다.

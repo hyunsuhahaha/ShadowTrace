@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import (AssessmentAsset, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
+from ...models import (AssessmentAsset, AssessmentAssetSubject, AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, HttpExchange, HttpRequest, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, ProjectRoe, RemoteExecution, RunbookInstance,
                        RunbookStepInstance, RunbookStepExecution, RunbookStepHandoff,
@@ -219,7 +219,7 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "runs": ({"operator"}, {"technique"}),
     "captures-from": ({"technique"}, {"host"}),
     "scans": ({"technique"}, {"host"}),
-    "discovered": ({"project-root", "host"}, {"scope", "host", "asset", "service"}),
+    "discovered": ({"project-root", "host", "asset"}, {"scope", "host", "asset", "service"}),
     "enumerated": ({"service", "host", "asset"}, {"finding", "credential"}),
     "attempted": ({"finding", "service", "host", "asset"}, {"technique"}),
     # "finding" as a source covers a file pulled back out of another finding
@@ -523,6 +523,7 @@ def sync_from_project(db: Session, project_id: int) -> dict:
     # (e.g. its target/service was deleted) is stale — drop it and its edges.
     # Manually-created nodes (no source_ref) are never pruned.
     kind_models = {"target": Target, "asset": AssessmentAsset,
+                   "asset_subject": AssessmentAssetSubject,
                    "project_roe": ProjectRoe,
                    "service": Service, "finding": Finding,
                    "evidence": Evidence, "http_exchange": HttpExchange,
@@ -560,6 +561,9 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             owner_id = row.project_id
         elif isinstance(row, RemoteExecution):
             owner_id = row.project_id
+        elif isinstance(row, AssessmentAssetSubject):
+            asset = db.get(AssessmentAsset, row.asset_id)
+            owner_id = asset.project_id if asset else None
         elif isinstance(row, HttpExchange):
             request = db.get(HttpRequest, row.request_id)
             owner_id = request.project_id if request else None
@@ -744,6 +748,28 @@ def sync_from_project(db: Session, project_id: int) -> dict:
             node.meta = meta
             node.label = asset.name
             node.status = "blocked" if asset.scope_status == "out_of_scope" else "untried"
+        for subject in db.scalars(select(AssessmentAssetSubject).where(
+                AssessmentAssetSubject.asset_id == asset.id).order_by(
+                AssessmentAssetSubject.id)):
+            if ("asset_subject", subject.id) in dismissed:
+                continue
+            subject_meta = json.dumps({"subjectId": subject.id, "assetId": asset.id,
+                "kind": subject.kind, "identifier": subject.identifier,
+                "scopeStatus": subject.scope_status})
+            subject_node = index.get(("asset_subject", subject.id))
+            if subject_node is None:
+                subject_node = create_node(db, project_id, "asset", label=subject.label,
+                    status="blocked" if subject.scope_status == "out_of_scope" else "untried",
+                    source_ref=_source_ref("core", "asset_subject", subject.id),
+                    meta=subject_meta)
+                index[("asset_subject", subject.id)] = subject_node
+                created["assets"] += 1
+            else:
+                subject_node.label = subject.label
+                subject_node.meta = subject_meta
+                subject_node.status = ("blocked" if subject.scope_status == "out_of_scope"
+                                       else "untried")
+            ensure_edge(node, subject_node, "discovered", status="untried")
 
     # findings + credentials attach to their service, else their host.
     def parent_of(service_id, target_id) -> GraphNode | None:

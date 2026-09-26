@@ -121,6 +121,7 @@ export function Inspector(props: {
   const runbookMeta = source?.kind === "runbook_step" && n ? nodeMeta(n) : null;
   const evidenceMeta = source?.kind === "evidence" && n ? nodeMeta(n) : null;
   const assetMeta = source?.kind === "asset" && n ? nodeMeta(n) : null;
+  const subjectMeta = source?.kind === "asset_subject" && n ? nodeMeta(n) : null;
   const scopeMeta = source?.kind === "project_roe" && n ? nodeMeta(n) : null;
   const httpExchangeMeta = source?.kind === "http_exchange" && n ? nodeMeta(n) : null;
   const remoteRunMeta = source?.kind === "remote_execution" && n ? nodeMeta(n) : null;
@@ -1023,7 +1024,7 @@ export function Inspector(props: {
         {n.objective && <span style={{ color: "#f5c518" }}> · 🎯 목표</span>}
         {n.hidden && <span style={{ color: "#6b6b76" }}> · 숨김</span>}
       </div>
-      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && !scopeMeta && !httpExchangeMeta && !remoteRunMeta && <div style={{ marginTop: 14 }}>
+      {n.type !== "memo" && !runbookMeta && !evidenceMeta && !assetMeta && !subjectMeta && !scopeMeta && !httpExchangeMeta && !remoteRunMeta && <div style={{ marginTop: 14 }}>
         <div style={{ color: "#9a9aa6", fontSize: 11, marginBottom: 6 }}>상태</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {STATUS_ORDER.map((s) => (
@@ -1072,6 +1073,13 @@ export function Inspector(props: {
         <div style={S.terminalBody}><div>{String(assetMeta.locator||"식별자 없음")}</div>
           <div>범위: {String(assetMeta.scopeStatus||"pending")}</div>
           <a href={`#assessment/${source?.id}`}>자산·Runbook·증거 열기 →</a>
+        </div>
+      </section>}
+      {subjectMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="평가 세부 대상">
+        <div style={S.executionResultsHead}><strong>{String(subjectMeta.kind||"")} · 세부 대상</strong></div>
+        <div style={S.terminalBody}>
+          <div>{String(subjectMeta.identifier||"")} · {String(subjectMeta.scopeStatus||"pending")}</div>
+          <a href={`#assessment/${subjectMeta.assetId}`}>자산과 세부 대상 열기 →</a>
         </div>
       </section>}
       {scopeMeta && <section style={{ ...S.executionResults, marginTop: 14 }} aria-label="프로젝트 승인 범위">

@@ -1015,6 +1015,13 @@ Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용
 `assessment-workspace.css`를 직접 불러온다. `target_id` 없이 적용한 Runbook은
 `asset_id`로 범위를 검증한다. `out_of_scope` 자산에는 적용할 수 없고 검사 상태
 기록은 `in_scope`에서만 허용한다.
+`AssessmentAssetSubject`(마이그레이션 0052)는 자산 안의 기능·역할·객체, 앱 빌드,
+클라우드 계정·역할·리소스, Kubernetes namespace·workload·service account,
+저장소 commit·package, 무선 AP·장소, ICS 장비·공정·운영 승인을 여러 개 저장한다.
+`schemas.py`의 `ASSET_SUBJECT_SPECS`가 유형별 필수 속성을 검증한다.
+`/api/assessment-asset-subjects` GET/POST와 `/{id}` PUT/DELETE로 관리하고,
+Graph는 각 세부 대상을 부모 자산 아래 `asset` 노드로 투영한다. 민감한 세부 속성은
+Graph 메타에 복사하지 않고 Inspector가 자산 화면으로 이동한다.
 프로젝트 RoE는 `project_roe`와 `project_roe_events`에 승인 대상 IP/CIDR·호스트명,
 제외 대상, 자산 ID, 허용 행위, 기간, 승인자·사유와 revision 이력을 저장한다
 (마이그레이션 0048). `/api/projects/{id}/roe` 초안을 고치면 승인이 해제되고,

@@ -36,6 +36,66 @@ class AssessmentAssetOut(ORM):
     created_at: datetime
     updated_at: datetime
 
+ASSET_SUBJECT_SPECS: dict[str, dict[str, tuple[str, ...]]] = {
+    "web": {"web_function": ("url", "role"), "web_role": ("base_url",),
+            "web_object": ("role", "object_type")},
+    "api": {"api_operation": ("method", "path", "version", "caller"),
+            "api_schema": ("version", "schema_ref"),
+            "api_object": ("caller", "object_type")},
+    "mobile": {"mobile_build": ("package_id", "platform", "build_id"),
+               "mobile_device": ("platform", "device_model")},
+    "cloud": {"cloud_account": ("provider", "account_id"),
+              "cloud_role": ("provider", "account_id", "role_id"),
+              "cloud_resource": ("provider", "account_id", "resource_id")},
+    "kubernetes": {"k8s_namespace": ("cluster", "namespace"),
+                   "k8s_workload": ("cluster", "namespace", "workload"),
+                   "k8s_service_account": ("cluster", "namespace", "service_account")},
+    "source": {"source_commit": ("repository", "commit_sha"),
+               "source_package": ("repository", "package", "version")},
+    "wireless": {"wireless_ap": ("ssid", "bssid", "site"),
+                 "wireless_site": ("site", "location")},
+    "ics": {"ics_device": ("device", "process", "segment", "operator_approval"),
+            "ics_process": ("process", "segment", "operator_approval"),
+            "ics_approval": ("operator", "window", "safety_limit")},
+}
+
+class AssessmentAssetSubjectIn(BaseModel):
+    asset_id: int
+    kind: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=200)
+    identifier: str = Field(min_length=1, max_length=500)
+    attributes: dict[str, str] = Field(default_factory=dict)
+    scope_status: Literal["pending", "in_scope", "out_of_scope"] = "pending"
+
+    @model_validator(mode="after")
+    def valid_attributes(self):
+        spec = next((types[self.kind] for types in ASSET_SUBJECT_SPECS.values()
+                     if self.kind in types), None)
+        if spec is None:
+            raise ValueError("Unknown assessment subject kind")
+        if set(self.attributes) != set(spec):
+            raise ValueError(f"Required attributes for {self.kind}: {', '.join(spec)}")
+        if any(not value.strip() or len(value) > 500 for value in self.attributes.values()):
+            raise ValueError("Assessment subject attributes must be nonempty and at most 500 characters")
+        if self.kind == "wireless_ap" and not re.fullmatch(
+                r"(?i)[0-9a-f]{2}(?::[0-9a-f]{2}){5}", self.attributes["bssid"]):
+            raise ValueError("Wireless BSSID must be six colon-separated octets")
+        if self.kind == "source_commit" and not re.fullmatch(
+                r"(?i)[0-9a-f]{7,64}", self.attributes["commit_sha"]):
+            raise ValueError("Commit SHA must be 7–64 hexadecimal characters")
+        return self
+
+class AssessmentAssetSubjectOut(ORM):
+    id: int
+    asset_id: int
+    kind: str
+    label: str
+    identifier: str
+    attributes: str
+    scope_status: str
+    created_at: datetime
+    updated_at: datetime
+
 class ProjectRoeDraftIn(BaseModel):
     included_targets: list[str] = Field(default_factory=list, max_length=500)
     excluded_targets: list[str] = Field(default_factory=list, max_length=500)

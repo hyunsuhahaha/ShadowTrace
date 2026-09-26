@@ -59,6 +59,19 @@ class AssessmentAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+class AssessmentAssetSubject(Base):
+    """A typed component inside an assessment asset (role, build, workload, etc.)."""
+    __tablename__ = "assessment_asset_subjects"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assessment_assets.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(200))
+    identifier: Mapped[str] = mapped_column(String(500))
+    attributes: Mapped[str] = mapped_column(Text, default="{}")
+    scope_status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 class Target(Base):
     __tablename__ = "targets"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -7,6 +7,8 @@ import "./assessment-workspace.css";
 type Kind = "web" | "api" | "mobile" | "cloud" | "kubernetes" | "source" | "wireless" | "ics";
 type Asset = {id:number;project_id:number;kind:Kind;name:string;locator:string;
   details:string;scope_status:"pending"|"in_scope"|"out_of_scope"};
+type Subject = {id:number;asset_id:number;kind:string;label:string;identifier:string;
+  attributes:string;scope_status:"pending"|"in_scope"|"out_of_scope"};
 type Template = {id:number;name:string;tags:string[];latest_version_id:number|null};
 type Step = {id:number;position:number;title:string;description:string;status:string;
   outcome:string;activation:string;result:string;notes:string;status_reason:string;
@@ -24,6 +26,21 @@ const KINDS: {id:Kind;label:string;hint:string}[] = [
   {id:"wireless",label:"Wireless",hint:"SSID·BSSID·장소"},
   {id:"ics",label:"OT / ICS",hint:"설비·공정·세그먼트"},
 ];
+const SUBJECT_FIELDS: Record<Kind,Record<string,string[]>> = {
+  web:{web_function:["url","role"],web_role:["base_url"],web_object:["role","object_type"]},
+  api:{api_operation:["method","path","version","caller"],api_schema:["version","schema_ref"],
+    api_object:["caller","object_type"]},
+  mobile:{mobile_build:["package_id","platform","build_id"],mobile_device:["platform","device_model"]},
+  cloud:{cloud_account:["provider","account_id"],cloud_role:["provider","account_id","role_id"],
+    cloud_resource:["provider","account_id","resource_id"]},
+  kubernetes:{k8s_namespace:["cluster","namespace"],k8s_workload:["cluster","namespace","workload"],
+    k8s_service_account:["cluster","namespace","service_account"]},
+  source:{source_commit:["repository","commit_sha"],source_package:["repository","package","version"]},
+  wireless:{wireless_ap:["ssid","bssid","site"],wireless_site:["site","location"]},
+  ics:{ics_device:["device","process","segment","operator_approval"],
+    ics_process:["process","segment","operator_approval"],
+    ics_approval:["operator","window","safety_limit"]},
+};
 const OUTCOMES = ["unknown","confirmed","not_found","access_denied","authentication_required","blocked","error"];
 const STATUSES = ["not_started","in_progress","completed","attempted","blocked","skipped","suspicious","not_applicable"];
 async function request<T>(path:string, init?:RequestInit):Promise<T>{
@@ -93,6 +110,9 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
   const[selectedInstanceId,setSelectedInstanceId]=useState<number>();
   const[kind,setKind]=useState<Kind>("mobile"),[name,setName]=useState(""),[locator,setLocator]=useState("");
   const[details,setDetails]=useState("{}");
+  const[subjectKind,setSubjectKind]=useState(""),[subjectLabel,setSubjectLabel]=useState("");
+  const[subjectIdentifier,setSubjectIdentifier]=useState("");
+  const[subjectAttributes,setSubjectAttributes]=useState<Record<string,string>>({});
   const[busy,setBusy]=useState(false),[error,setError]=useState("");
   useEffect(()=>{const onProject=(event:Event)=>{setProjectId((event as CustomEvent<number>).detail);setSelectedId(undefined);};
     addEventListener("oscp-project-change",onProject);return()=>removeEventListener("oscp-project-change",onProject);},[]);
@@ -103,6 +123,11 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
   const instances=useQuery({queryKey:["assessmentInstances",projectId],
     queryFn:()=>request<Instance[]>(`/runbooks/instances?project_id=${projectId}`),enabled:!!projectId});
   const selected=assets.data?.find(item=>item.id===selectedId)||assets.data?.[0];
+  const subjectKinds=selected?Object.keys(SUBJECT_FIELDS[selected.kind]):[];
+  useEffect(()=>{setSubjectKind(subjectKinds[0]||"");setSubjectAttributes({});
+    setSubjectLabel("");setSubjectIdentifier("");},[selected?.id]);
+  const subjects=useQuery({queryKey:["assessmentSubjects",selected?.id],
+    queryFn:()=>request<Subject[]>(`/assessment-asset-subjects?asset_id=${selected?.id}`),enabled:!!selected});
   useEffect(()=>{if(selected&&selected.id!==selectedId)setSelectedId(selected.id);},[selected?.id,selectedId]);
   const selectedInstances=instances.data?.filter(item=>item.asset_id===selected?.id)||[];
   const activeInstance=selectedInstances.find(item=>item.id===selectedInstanceId)||selectedInstances[0];
@@ -117,7 +142,8 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
     item.tags.includes(selected.kind)||selected.kind==="web"&&item.name.includes("웹")))||[],[templates.data,selected?.kind]);
   async function mutate(work:()=>Promise<unknown>){setBusy(true);setError("");try{await work();
     await Promise.all([qc.invalidateQueries({queryKey:["assessmentAssets"]}),qc.invalidateQueries({queryKey:["assessmentInstances"]}),
-      qc.invalidateQueries({queryKey:["assessmentInstance"]}),qc.invalidateQueries({queryKey:["assessmentEvidence"]})]);
+      qc.invalidateQueries({queryKey:["assessmentInstance"]}),qc.invalidateQueries({queryKey:["assessmentEvidence"]}),
+      qc.invalidateQueries({queryKey:["assessmentSubjects"]})]);
     if(projectId)await request(`/projects/${projectId}/graph/sync`,{method:"POST"});
   }catch(exc){setError(String(exc));}finally{setBusy(false);}}
   if(!projectId)return <EmptyState title="프로젝트를 선택하세요" description="평가 자산은 프로젝트별로 관리됩니다."/>;
@@ -146,6 +172,34 @@ export default function AssessmentWorkspace({initialAssetId,initialStepId}:{init
           <label>범위 상태<select value={selected.scope_status} disabled={busy} onChange={event=>mutate(()=>request(`/assessment-assets/${selected.id}`,json({project_id:projectId,kind:selected.kind,name:selected.name,locator:selected.locator,details:JSON.parse(selected.details||"{}"),scope_status:event.target.value},"PUT")))}>
             <option value="pending">승인 대기</option><option value="in_scope">범위 안</option><option value="out_of_scope">범위 밖</option>
           </select></label></header>
+        <section className="assessmentSubjects" aria-label="유형별 세부 평가 대상">
+          <h3>세부 평가 대상</h3>
+          <p>빌드·역할·리소스·workload·커밋·무선 AP·제어 장비를 각각 범위 노드로 기록합니다.</p>
+          <form onSubmit={event=>{event.preventDefault();const fields=SUBJECT_FIELDS[selected.kind][subjectKind]||[];
+            const attributes=Object.fromEntries(fields.map(field=>[field,subjectAttributes[field]||""]));
+            mutate(async()=>{await request("/assessment-asset-subjects",json({asset_id:selected.id,
+              kind:subjectKind,label:subjectLabel,identifier:subjectIdentifier,attributes,
+              scope_status:"pending"}));setSubjectLabel("");setSubjectIdentifier("");setSubjectAttributes({});});}}>
+            <label>세부 유형<select value={subjectKind} onChange={event=>{setSubjectKind(event.target.value);setSubjectAttributes({});}}>
+              {subjectKinds.map(item=><option key={item} value={item}>{item.replaceAll("_"," ")}</option>)}</select></label>
+            <label>이름<input required value={subjectLabel} maxLength={200} onChange={event=>setSubjectLabel(event.target.value)}/></label>
+            <label>식별자<input required value={subjectIdentifier} maxLength={500} onChange={event=>setSubjectIdentifier(event.target.value)}/></label>
+            {(SUBJECT_FIELDS[selected.kind][subjectKind]||[]).map(field=><label key={field}>{field.replaceAll("_"," ")}
+              <input required value={subjectAttributes[field]||""} maxLength={500}
+                onChange={event=>setSubjectAttributes(current=>({...current,[field]:event.target.value}))}/></label>)}
+            <Button disabled={busy||!subjectLabel.trim()||!subjectIdentifier.trim()}>세부 대상 추가</Button>
+          </form>
+          <div className="assessmentSubjectList">{subjects.data?.map(item=><article key={item.id}>
+            <strong>{item.label}</strong><small>{item.kind.replaceAll("_"," ")} · {item.identifier}</small>
+            <label>범위<select value={item.scope_status} disabled={busy} onChange={event=>mutate(()=>
+              request(`/assessment-asset-subjects/${item.id}`,json({asset_id:selected.id,kind:item.kind,
+                label:item.label,identifier:item.identifier,attributes:JSON.parse(item.attributes),
+                scope_status:event.target.value},"PUT")))}>
+              <option value="pending">대기</option><option value="in_scope">범위 안</option>
+              <option value="out_of_scope">범위 밖</option></select></label>
+            <Button disabled={busy} onClick={()=>mutate(()=>request(`/assessment-asset-subjects/${item.id}`,{method:"DELETE"}))}>삭제</Button>
+          </article>)}</div>
+        </section>
         <div className="assessmentToolbar"><label>절차 적용<select defaultValue="" disabled={busy||selected.scope_status==="out_of_scope"} onChange={event=>{const id=Number(event.target.value);if(id)mutate(()=>request("/runbooks/instances",json({version_id:id,asset_id:selected.id})));event.target.value="";}}>
           <option value="">Runbook 선택…</option>{matching.map(item=><option key={item.id} value={item.latest_version_id||""}>{item.name}</option>)}
         </select></label><label className="assessmentUpload">증거 업로드<input type="file" onChange={event=>{const file=event.target.files?.[0];if(!file)return;

@@ -29,6 +29,13 @@
 .assessmentAssetHeader small{color:#79b9f5;letter-spacing:.1em}
 .assessmentAssetHeader p{font-size:13px;color:#a5a9b5;margin:0;overflow-wrap:anywhere}
 .assessmentAssetHeader label{min-width:150px}
+.assessmentSubjects{margin-top:18px;padding:16px;border:1px solid #354050;background:#171d26;border-radius:8px}
+.assessmentSubjects h3{margin:0 0 5px;font-size:15px}.assessmentSubjects p{margin:0 0 15px;color:#a9b4c4;font-size:12px}
+.assessmentSubjects form{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:4px 12px;align-items:end}
+.assessmentSubjects form button{margin-bottom:12px}.assessmentSubjectList{display:grid;gap:7px;margin-top:12px}
+.assessmentSubjectList article{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:9px 11px;border:1px solid #303d4c;border-radius:6px}
+.assessmentSubjectList article strong{font-size:12px}.assessmentSubjectList article small{font-size:11px;color:#9aa9bc;flex:1}
+.assessmentSubjectList label{margin:0;min-width:95px}.assessmentSubjectList select{min-width:95px}
 .assessmentToolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:18px 0}
 .assessmentToolbar label{min-width:210px;margin:0}
 .assessmentUpload input{max-width:300px}
