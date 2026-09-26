@@ -8,12 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import AssessmentAsset, Evidence, GraphEdge, GraphNode, Project
-from app.modules.core.router import create_assessment_asset_subject, delete_assessment_asset, delete_assessment_asset_subject
+from app.modules.core.router import (create_assessment_asset_subject, delete_assessment_asset,
+                                     delete_assessment_asset_subject, update_assessment_asset)
 from app.modules.graph import service as graph
 from app.modules.runbooks.execution_router import attach_evidence, attach_subject
 from app.modules.runbooks.support import ApplyIn, LinkIn, PublishIn, StepIn, TemplateIn
 from app.modules.runbooks.workflow_router import apply, create_template, publish
-from app.schemas import ASSET_SUBJECT_SPECS, AssessmentAssetSubjectIn
+from app.schemas import ASSET_SUBJECT_SPECS, AssessmentAssetIn, AssessmentAssetSubjectIn
 
 
 def test_typed_subjects_cover_all_asset_kinds_and_project_to_graph():
@@ -47,6 +48,10 @@ def test_typed_subjects_cover_all_asset_kinds_and_project_to_graph():
         assert db.scalar(select(GraphEdge).where(GraphEdge.source == asset_node.id,
             GraphEdge.target == detail_node.id, GraphEdge.relation == "discovered"))
     asset, subject = created[0]
+    with pytest.raises(HTTPException) as changed_kind:
+        update_assessment_asset(asset.id, AssessmentAssetIn(project_id=project.id,
+            kind="api", name=asset.name, scope_status="in_scope"), db)
+    assert changed_kind.value.status_code == 409
     with pytest.raises(HTTPException) as blocked:
         delete_assessment_asset(asset.id, db)
     assert blocked.value.status_code == 409
@@ -109,6 +114,10 @@ def test_subject_step_link_records_specific_assessment_and_evidence_lineage():
     with pytest.raises(HTTPException) as mismatch:
         attach_subject(step_id, LinkIn(resource_id=foreign.id), db)
     assert mismatch.value.status_code == 400
+    asset.scope_status = "out_of_scope"; db.commit()
+    with pytest.raises(HTTPException) as out_of_scope:
+        attach_subject(step_id, LinkIn(resource_id=subject.id), db)
+    assert out_of_scope.value.status_code == 409
     with pytest.raises(HTTPException) as blocked:
         delete_assessment_asset_subject(subject.id, db)
     assert blocked.value.status_code == 409

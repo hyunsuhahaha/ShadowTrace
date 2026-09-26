@@ -65,6 +65,12 @@ Nmap뿐이다.
 - `/api/runbooks/recommendations/{service_id}`: Service 기반 Runbook 추천
 - `/api/runbooks/target-recommendations/{target_id}`: Target 범위 Runbook 추천
 - `/api/runbooks/instances`: 발행 Version 적용과 수행 Instance 조회
+- `/api/runbooks/steps/{id}/subjects`, `/handoffs`: 세부 평가 대상 검사 계보와
+  증거 기반의 다른 Target 절차 인계
+- `/api/assessment-assets`, `/api/assessment-asset-subjects`: 비 IP 평가 자산과
+  유형별 세부 대상·범위 상태
+- `/api/projects/{id}/roe`: 승인 범위 초안·승인·철회와 변경 이력
+- `/api/reports/{id}/graph-paths`: 선택한 성공 Graph 경로와 Evidence의 시점별 고정
 - `/api/system/status`: 설치 도구, `tun0`, route 상태
 - `/api/passive/activities`, `/api/passive/events`, `/api/passive/sync`: Nmap activity,
   raw event 조회와 두 inbox의 멱등 ingest

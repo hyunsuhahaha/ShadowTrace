@@ -210,6 +210,9 @@ def update_assessment_asset(ident: int, body: AssessmentAssetIn,
     row = need(db, AssessmentAsset, ident)
     if row.project_id != body.project_id:
         raise HTTPException(400, "Asset cannot move between projects")
+    if row.kind != body.kind and db.scalar(select(AssessmentAssetSubject.id).where(
+            AssessmentAssetSubject.asset_id == ident)) is not None:
+        raise HTTPException(409, "Remove assessment subjects before changing asset kind")
     row.kind, row.name, row.locator = body.kind, body.name.strip(), body.locator.strip()
     row.details = json.dumps(body.details, ensure_ascii=False)
     row.scope_status = body.scope_status

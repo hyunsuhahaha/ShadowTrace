@@ -7,7 +7,8 @@ from app.models import (Evidence, Finding, FindingEvidence, GraphEdge, GraphNode
     RunbookInstance, RunbookStepInstance, Target)
 from docx import Document
 from app.modules.reports.router import (GraphPathCaptureIn, capture_graph_path,
-    export_report, render_report)
+    export_report, render_report, update_report)
+from app.schemas import ReportIn
 
 
 def database():
@@ -20,7 +21,8 @@ def test_graph_path_snapshot_keeps_original_nodes_edges_and_evidence_hash():
     db = database()
     project = Project(name="Path Lab")
     db.add(project); db.flush()
-    report = Report(project_id=project.id, title="Client path report", markdown="")
+    report = Report(project_id=project.id, title="Client path report", markdown="",
+                    sensitivity_reviewed=True)
     proof = Evidence(project_id=project.id, title="Sensitive proof", kind="markdown",
                      sensitivity="sensitive", sha256="a"*64)
     db.add_all([report, proof]); db.flush()
@@ -39,6 +41,7 @@ def test_graph_path_snapshot_keeps_original_nodes_edges_and_evidence_hash():
         status="untried")); db.commit()
     captured = capture_graph_path(report.id, GraphPathCaptureIn(
         node_ids=[host.id, finding.id], caption="Access path"), db)
+    assert captured.sensitivity_reviewed is False
     frozen = json.loads(captured.graph_path_snapshots)[0]
     assert frozen["nodes"][0]["label"] == "Host A"
     assert frozen["evidence"] == [{"id":proof.id,"label":f"Evidence #{proof.id}",
@@ -61,6 +64,25 @@ def render_report_after_review(db, report):
     report.sensitivity_reviewed = True
     db.commit()
     return render_report(db, report, "client")
+
+
+def test_changing_report_evidence_resets_prior_sensitivity_review():
+    db = database()
+    project = Project(name="Review reset")
+    db.add(project); db.flush()
+    first = Evidence(project_id=project.id, title="First", kind="markdown",
+                     sha256="a" * 64)
+    second = Evidence(project_id=project.id, title="Second", kind="markdown",
+                      sensitivity="sensitive", sha256="b" * 64)
+    db.add_all([first, second]); db.flush()
+    report = Report(project_id=project.id, title="Client report", markdown="",
+                    evidence_links=json.dumps([{"id": first.id, "caption": ""}]),
+                    sensitivity_reviewed=True)
+    db.add(report); db.commit()
+    changed = update_report(report.id, ReportIn(project_id=project.id,
+        title=report.title, template="blank", evidence_links=[{"id": first.id},
+        {"id": second.id}], sensitivity_reviewed=True), db)
+    assert changed.sensitivity_reviewed is False
 
 
 def test_selected_runbook_coverage_survives_export_without_raw_notes():

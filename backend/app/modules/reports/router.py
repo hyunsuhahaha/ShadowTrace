@@ -100,8 +100,12 @@ def update_report(ident: int, body: ReportIn,
     row = need(db, Report, ident)
     if row.project_id != body.project_id:
         raise HTTPException(400, "Project cannot be changed")
+    changed_evidence = row.evidence_links != json.dumps(
+        [link.model_dump() for link in body.evidence_links], ensure_ascii=False)
     for key, value in values(body).items():
         setattr(row, key, value)
+    if changed_evidence:
+        row.sensitivity_reviewed = False
     row.updated_at = utcnow()
     db.commit(); db.refresh(row)
     return row
@@ -177,6 +181,8 @@ def capture_graph_path(ident: int, body: GraphPathCaptureIn,
     }
     snapshots.append(snapshot)
     report.graph_path_snapshots = json.dumps(snapshots, ensure_ascii=False)
+    if any(item.sensitivity != "normal" for item in evidence):
+        report.sensitivity_reviewed = False
     report.updated_at = utcnow()
     db.commit(); db.refresh(report)
     return report

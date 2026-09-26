@@ -258,6 +258,9 @@ def attach_subject(ident: int, body: LinkIn, db: Session = Depends(get_db)):
     subject = need(db, AssessmentAssetSubject, body.resource_id)
     if instance.asset_id is None or subject.asset_id != instance.asset_id:
         raise HTTPException(400, "Subject belongs to another Runbook asset")
+    asset = need(db, AssessmentAsset, instance.asset_id)
+    if asset.scope_status != "in_scope":
+        raise HTTPException(409, "Runbook asset must be in scope before assessment")
     if subject.scope_status != "in_scope":
         raise HTTPException(409, "Subject must be in scope before assessment")
     if not db.get(RunbookStepSubject, (step.id, subject.id)):

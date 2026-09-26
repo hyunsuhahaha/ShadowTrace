@@ -125,16 +125,21 @@ SearchSploit 결과도 자동 취약점 판정이나 자동 익스플로잇 선�
 ### Runbooks
 
 - Target 및 Service에 적용하는 버전 고정형 체크리스트
-- Target, FTP, SSH, HTTP, SMB, Database 등 18개 기본 Runbook 자동 설치
+- Target·서비스·웹/API·접근 후 검토와 모바일·클라우드·Kubernetes·소스·무선·ICS를
+  포함한 30개 기본 Runbook 자동 설치
 - 서비스명과 포트에 따른 설명 가능한 추천 및 추천 숨기기
 - 기본 Runbook 복제, 사용자 Template 작성·발행·보관, JSON 가져오기·내보내기
 - 단계별 수동 상태, 결과, 메모, 사유, 타이머와 Target 진행률
-- Step과 기존 Command, Execution, Evidence 및 Credential 연결
+- Step과 Execution, HTTP Exchange, RemoteExecution, InteractiveSession,
+  Credential, Evidence 및 평가 자산의 세부 대상 연결
+- 승인 범위 내 자산·세부 대상과 검사 단계를 Graph 노드로 표시하고, 증거가 확인된
+  다른 Target 단계로의 인계를 `handoff` 엣지로 기록
 - 조건부 Step, Observation 기록과 Finding 승격
 - 활동 이력, blocked·suspicious·장기 미활동 요약, Finding Markdown 내보내기
 
 기본 Runbook은 읽기 전용입니다. 변경이 필요하면 복제하여 사용자 Template로 관리합니다.
 Runbook 적용은 체크리스트 snapshot만 만들며 명령을 실행하거나 결과를 판정하지 않습니다.
+Step과 Graph의 연결은 검사 또는 침해 성공 판정이 아닙니다.
 
 ### Evidence
 

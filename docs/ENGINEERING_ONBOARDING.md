@@ -1,8 +1,8 @@
 # ShadowTrace Source Reference
 
-> 이 문서는 2026-08-08의 working tree를 대상으로 작성한 코드 탐색 자료다(§10–13은
-> 2026-08-09에 프런트엔드 화면별 구성·백엔드 모듈 파일 구성·이벤트버스/localStorage·
-> CSS 맵을 추가하며 갱신). 제품 평가, 정책 해석, 설계 권고, 우선순위와 개선 제안은
+> 이 문서는 2026-08-08에 시작해 2026-09-27의 마이그레이션 0053까지 갱신한 코드
+> 탐색 자료다. §10–13은 프런트엔드 화면·백엔드 모듈·이벤트버스/localStorage·CSS 맵을
+> 정리한다. 제품 평가, 정책 해석, 설계 권고, 우선순위와 개선 제안은
 > 포함하지 않는다. 동작 설명은 링크된 소스코드와 실행 스크립트에서 직접 확인할 수 있는
 > 내용으로 한정한다. **새 파일/모듈/라우트/이벤트를 추가하거나 옮기거나 지웠다면 이
 > 문서의 관련 절도 함께 갱신한다** — 그래야 다음 세션이 다시 전수조사를 하지 않는다.
@@ -670,6 +670,8 @@ SHA-256을 `Report.graph_path_snapshots`에 고정한다. `/reports/{id}/graph-p
 바뀌어도 내보내기에는 캡처 당시 값이 남는다. 클라이언트 출력의 민감 Evidence는
 보고서 민감도 검토가 필요하며 제목은 캡처에서 익명화한다. 비 IP 자산 Runbook도
 검사 범위 출력에서 자산 이름으로 표시한다.
+새 민감 Graph 경로를 캡처하거나 보고서 Evidence 목록을 바꾸면 이전 민감도 검토
+상태를 해제해 다시 확인하도록 한다.
 API: `/projects`, `/reports*`, `/reports/{id}/export`, `/evidence?project_id=`,
 `/projects/{id}/exploit-research?limit=`, `/runbooks/instances?project_id=`.
 
@@ -1023,10 +1025,11 @@ Graph는 `asset` 노드를 project-root 아래에 투영하고, 자산에 적용
 Graph는 각 세부 대상을 부모 자산 아래 `asset` 노드로 투영한다. 민감한 세부 속성은
 Graph 메타에 복사하지 않고 Inspector가 자산 화면으로 이동한다.
 `RunbookStepSubject`(마이그레이션 0053)는 `/api/runbooks/steps/{id}/subjects`로
-같은 자산의 범위 내 세부 대상을 검사 Step에 연결한다. Graph의 `assesses` 엣지가
+범위 내 자산의 같은 자산에 속한 범위 내 세부 대상을 검사 Step에 연결한다. Graph의 `assesses` 엣지가
 세부 대상에서 해당 Step으로 이어지고, Step의 Evidence 연결로 검사 근거를 추적한다.
 이 관계는 `untried`로 유지하며 검사 성공으로 판정하지 않는다. 연결된 세부 대상은
 삭제할 수 없고, Inspector와 자산 화면에서 해당 계보를 확인한다.
+세부 대상이 남아 있는 자산은 유형을 바꿀 수 없다.
 프로젝트 RoE는 `project_roe`와 `project_roe_events`에 승인 대상 IP/CIDR·호스트명,
 제외 대상, 자산 ID, 허용 행위, 기간, 승인자·사유와 revision 이력을 저장한다
 (마이그레이션 0048). `/api/projects/{id}/roe` 초안을 고치면 승인이 해제되고,
