@@ -118,14 +118,19 @@ def test_sync_serializes_overlapping_requests(monkeypatch):
 
     monkeypatch.setattr(router, "sync_inbox", sync_inbox)
     monkeypatch.setattr(router, "sync_event_inbox", lambda _db: {"events": 0})
-    monkeypatch.setattr(router, "reconstruct", lambda _db: {"processes": 0})
+    monkeypatch.setattr(router, "reconstruct", lambda _db, **_kwargs: {"processes": 0})
+    class EmptyDatabase:
+        def scalar(self, _query):
+            return None
+
+    db = EmptyDatabase()
 
     def second_request():
         second_started.set()
-        return router.sync(object())
+        return router.sync(db)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(router.sync, object())
+        first = pool.submit(router.sync, db)
         assert first_entered.wait(5)
         second = pool.submit(second_request)
         try:
@@ -137,3 +142,16 @@ def test_sync_serializes_overlapping_requests(monkeypatch):
         assert first.result(timeout=5)["processed"] == 0
         assert second.result(timeout=5)["processed"] == 0
     assert len(entries) == 2
+
+
+def test_idle_sync_does_not_rebuild_existing_corpus(monkeypatch):
+    db = database()
+    calls = []
+    monkeypatch.setattr(router, "sync_inbox", lambda _db: {"processed": 0, "failed": 0})
+    monkeypatch.setattr(router, "sync_event_inbox", lambda _db: {
+        "batches": 0, "events": 0, "skipped": 0, "failed": 0})
+    monkeypatch.setattr(router, "reconstruct", lambda _db, **kwargs: (
+        calls.append(kwargs["changed_event_ids"]) or {"processes": 0}))
+
+    assert router.sync(db)["reconstruction"] == {"processes": 0}
+    assert calls == [[]]

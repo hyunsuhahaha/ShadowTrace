@@ -25,6 +25,7 @@ except ImportError:
 
 MAX_DATA = 4096
 MAX_PATH = 512
+SYNC_INTERVAL_SECONDS = 30
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)(?P<key>(?:password|passwd|pass|token|secret|cookie))=(?P<value>[^,]+)")
 SECRET_FLAGS = {"--password", "--passwd", "--token", "--secret", "--cookie"}
@@ -520,6 +521,12 @@ class Observer:
         self.activities: dict[int, dict] = {}
         self.running = True
         self.last_flush = self.last_sync = 0.0
+        self.sync_url = os.environ.get(
+            "OSCP_WORKSPACE_PASSIVE_SYNC_URL", "http://127.0.0.1:8000/api/passive/sync")
+        self.ignored_pids = {
+            int(value) for value in os.environ.get(
+                "OSCP_WORKSPACE_OBSERVER_IGNORE_PIDS", "").split(",") if value.isdigit()
+        }
         self._seed_existing_processes()
 
     @staticmethod
@@ -758,6 +765,8 @@ class Observer:
 
     def _event(self, _cpu, data, _size):
         event = ctypes.cast(data, ctypes.POINTER(Event)).contents
+        if event.pid in self.ignored_pids:
+            return
         if event.kind == 1:
             self._generic_process(event, "process_exec")
             self._handle_nmap_exec(event.pid, event.uid)
@@ -776,7 +785,7 @@ class Observer:
         elif event.kind == 7:
             self._generic_filesystem(event)
 
-    def _lost(self, _cpu, count):
+    def _lost(self, count):
         self.spool.mark_loss(count)
         for activity in self.activities.values():
             activity["loss_count"] += count
@@ -785,11 +794,15 @@ class Observer:
     def _sync(self):
         try:
             request = urllib.request.Request(
-                "http://127.0.0.1:8000/api/passive/sync", data=b"", method="POST")
+                self.sync_url, data=b"", method="POST")
             urllib.request.urlopen(request, timeout=1).read()
         except OSError:
             pass
         self.last_sync = time.monotonic()
+
+    def _pending_sync(self) -> bool:
+        return (any(self.spool.directory.glob("*.json")) or
+                any(self.inbox.glob("*.json")))
 
     def stop(self, *_args):
         self.running = False
@@ -805,7 +818,7 @@ class Observer:
             if now - self.last_flush >= 1:
                 self.spool.flush()
                 self.last_flush = now
-            if now - self.last_sync >= 2:
+            if now - self.last_sync >= SYNC_INTERVAL_SECONDS and self._pending_sync():
                 self._sync()
         self.spool.flush()
         for activity in self.activities.values():

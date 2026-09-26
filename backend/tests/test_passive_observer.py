@@ -1,4 +1,5 @@
 import importlib.util
+import ctypes
 import json
 from pathlib import Path
 
@@ -97,3 +98,47 @@ def test_process_context_preserves_stdio_fd_topology(tmp_path, monkeypatch):
 
     assert context["fd_targets"] == {
         "0": "/dev/pts/4", "1": "pipe:[77]", "2": "/tmp/error.log"}
+
+
+def test_server_pid_is_ignored_but_child_process_is_not(monkeypatch):
+    instance = observer.Observer.__new__(observer.Observer)
+    instance.ignored_pids = {10}
+    seen = []
+    monkeypatch.setattr(instance, "_generic_process", lambda event, kind: seen.append((event.pid, kind)))
+    monkeypatch.setattr(instance, "_handle_nmap_exec", lambda *_args: None)
+
+    for pid in (10, 11):
+        event = observer.Event(kind=1, pid=pid)
+        instance._event(0, ctypes.byref(event), ctypes.sizeof(event))
+
+    assert seen == [(11, "process_exec")]
+
+
+def test_sync_is_requested_only_for_pending_batches(tmp_path):
+    instance = observer.Observer.__new__(observer.Observer)
+    instance.spool = observer.EventSpool(tmp_path / "events", "boot")
+    instance.inbox = tmp_path / "legacy"
+    instance.inbox.mkdir()
+    assert instance._pending_sync() is False
+
+    instance.spool.emit("process_exec", pid=42, payload={})
+    instance.spool.flush()
+    assert instance._pending_sync() is True
+
+
+def test_bcc_loss_callback_records_dropped_events():
+    instance = observer.Observer.__new__(observer.Observer)
+    class LossSpool:
+        def __init__(self):
+            self.count = 0
+
+        def mark_loss(self, count):
+            self.count += count
+
+    instance.spool = LossSpool()
+    instance.activities = {1: {"loss_count": 2}}
+
+    instance._lost(3)
+
+    assert instance.spool.count == 3
+    assert instance.activities[1]["loss_count"] == 5

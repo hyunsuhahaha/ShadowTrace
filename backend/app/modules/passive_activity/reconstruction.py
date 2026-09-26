@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ...models import (
@@ -197,10 +197,12 @@ def _upsert(db: Session, model, key_name: str, key: str, values: dict):
     return row
 
 
-def _sessions(db: Session, processes: dict[str, dict]) -> tuple[dict[str, TerminalSession], dict[str, str]]:
+def _sessions(db: Session, processes: dict[str, dict],
+              lineage: dict[str, dict] | None = None) -> tuple[dict[str, TerminalSession], dict[str, str]]:
     grouped: dict[str, dict] = {}
     process_session: dict[str, str] = {}
-    by_pid = {(item["boot_id"], item["pid"]): item for item in processes.values()}
+    by_pid = {(item["boot_id"], item["pid"]): item
+              for item in (lineage or processes).values()}
     for process in processes.values():
         identity = _terminal_identity(process)
         if identity is None:
@@ -529,28 +531,79 @@ def _prune(db: Session, model, key_column, current: set[str]) -> None:
     db.execute(statement)
 
 
-def reconstruct(db: Session) -> dict[str, int]:
-    """Idempotently derive non-semantic terminal activity from the raw corpus."""
-    # ponytail: full rebuild keeps the interface deterministic; add an event cursor
-    # only when real corpus size makes this measurably slow.
+def _summary(db: Session) -> dict[str, int]:
+    return {name: db.scalar(select(func.count()).select_from(model)) or 0
+            for name, model in (("processes", ProcessInstance),
+                                ("sessions", TerminalSession),
+                                ("commands", CommandActivity),
+                                ("remote_candidates", RemoteSessionCandidate))}
+
+
+def reconstruct(db: Session, changed_event_ids: list[int] | None = None) -> dict[str, int]:
+    """Rebuild all evidence explicitly, or only sessions touched by a sync batch."""
+    if changed_event_ids == []:
+        return _summary(db)
     events = list(db.scalars(select(RawActivityEvent).order_by(
         RawActivityEvent.recorded_at, RawActivityEvent.monotonic_ns, RawActivityEvent.id)))
     if not events:
         return {"processes": 0, "sessions": 0, "commands": 0, "remote_candidates": 0}
     observer_loss = _losses(events)
     processes, event_process = _processes(events, observer_loss)
-    sessions, process_session = _sessions(db, processes)
-    process_rows = _persist_processes(db, processes, sessions, process_session)
-    groups = _command_groups(processes, process_session)
-    lines = _input_lines(events, event_process, processes, process_session)
-    groups = _correlate_input(groups, lines, processes)
+    scoped = changed_event_ids is not None
+    selected = processes
+    selected_events = events
+    if scoped:
+        changed_ids = set(changed_event_ids)
+        changed_events = [event for event in events if event.id in changed_ids]
+        if any(event.kind == "loss" or event.pid is None for event in changed_events):
+            return reconstruct(db)
+        changed_keys = {event_process[event.id] for event in changed_events
+                        if event.id in event_process}
+        affected_sessions = {_terminal_identity(processes[key])[1]
+                             for key in changed_keys
+                             if _terminal_identity(processes[key]) is not None}
+        selected = {key: process for key, process in processes.items()
+                    if key in changed_keys or
+                    (_terminal_identity(process) is not None and
+                     _terminal_identity(process)[1] in affected_sessions)}
+        # If an existing process changes terminal identity, scoped pruning
+        # cannot safely remove its old session and jobs. Rebuild explicitly.
+        for key in changed_keys:
+            old = db.scalar(select(ProcessInstance).where(
+                ProcessInstance.process_key == key))
+            if old is not None:
+                old_session = db.get(TerminalSession, old.terminal_session_id) \
+                    if old.terminal_session_id else None
+                new_identity = _terminal_identity(processes[key])
+                if (old_session.session_key if old_session else None) != (
+                        new_identity[1] if new_identity else None):
+                    return reconstruct(db)
+        selected_keys = set(selected)
+        selected_events = [event for event in events
+                           if event_process.get(event.id) in selected_keys]
+    sessions, process_session = _sessions(db, selected, processes)
+    process_rows = _persist_processes(db, selected, sessions, process_session)
+    groups = _command_groups(selected, process_session)
+    lines = _input_lines(selected_events, event_process, selected, process_session)
+    groups = _correlate_input(groups, lines, selected)
     commands = _persist_commands(db, groups, sessions, process_rows)
     remote_keys = _remote_candidates(
-        db, processes, process_rows, process_session, sessions, commands)
-    _prune(db, RemoteSessionCandidate, RemoteSessionCandidate.candidate_key, remote_keys)
-    _prune(db, CommandActivity, CommandActivity.activity_key, set(commands))
-    _prune(db, ProcessInstance, ProcessInstance.process_key, set(process_rows))
-    _prune(db, TerminalSession, TerminalSession.session_key, set(sessions))
+        db, selected, process_rows, process_session, sessions, commands)
+    if scoped:
+        session_ids = [row.id for row in sessions.values()]
+        if session_ids:
+            db.execute(delete(RemoteSessionCandidate).where(
+                RemoteSessionCandidate.terminal_session_id.in_(session_ids),
+                RemoteSessionCandidate.candidate_key.not_in(remote_keys)))
+            db.execute(delete(CommandActivity).where(
+                CommandActivity.terminal_session_id.in_(session_ids),
+                CommandActivity.activity_key.not_in(set(commands))))
+    else:
+        _prune(db, RemoteSessionCandidate, RemoteSessionCandidate.candidate_key, remote_keys)
+        _prune(db, CommandActivity, CommandActivity.activity_key, set(commands))
+        _prune(db, ProcessInstance, ProcessInstance.process_key, set(process_rows))
+        _prune(db, TerminalSession, TerminalSession.session_key, set(sessions))
     db.commit()
-    return {"processes": len(process_rows), "sessions": len(sessions),
-            "commands": len(commands), "remote_candidates": len(remote_keys)}
+    return _summary(db) if scoped else {
+        "processes": len(process_rows), "sessions": len(sessions),
+        "commands": len(commands), "remote_candidates": len(remote_keys)}

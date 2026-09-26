@@ -151,6 +151,32 @@ def test_redacted_pty_gap_does_not_join_command_fragments():
     assert db.query(CommandActivity).count() == 0
 
 
+def test_scoped_reconstruction_updates_one_terminal_without_touching_another():
+    db = database(); events = Events(db)
+    shell(events, pid=100, tty_nr=1, tty="/dev/pts/1")
+    shell(events, pid=200, tty_nr=2, tty="/dev/pts/2")
+    events.process(101, ["/usr/bin/id"], ppid=100, sid=100,
+                   tty_nr=1, tty="/dev/pts/1")
+    events.process(201, ["/usr/bin/hostname"], ppid=200, sid=200,
+                   tty_nr=2, tty="/dev/pts/2")
+    db.commit()
+    assert reconstruct(db)["commands"] == 2
+    untouched = db.query(CommandActivity).filter_by(command="/usr/bin/hostname").one()
+    untouched_id = untouched.id
+    untouched_events = untouched.evidence_event_ids
+
+    events.process(102, ["/usr/bin/true"], ppid=100, sid=100,
+                   tty_nr=1, tty="/dev/pts/1")
+    db.commit()
+    changed_ids = [row.id for row in db.query(RawActivityEvent).filter(
+        RawActivityEvent.pid == 102)]
+    assert reconstruct(db, changed_event_ids=changed_ids)["commands"] == 3
+    untouched = db.query(CommandActivity).filter_by(command="/usr/bin/hostname").one()
+    assert (untouched.id, untouched.evidence_event_ids) == (
+        untouched_id, untouched_events)
+    assert reconstruct(db, changed_event_ids=[])["commands"] == 3
+
+
 def test_observed_process_reconstructs_and_appears_in_existing_graph_api(
         tmp_path, monkeypatch):
     db = database()

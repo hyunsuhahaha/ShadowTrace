@@ -1,7 +1,7 @@
 from threading import Lock
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...database import get_db
@@ -22,10 +22,13 @@ def sync(db: Session = Depends(get_db)):
     # The observer and a manual caller can hit this route together. Both must
     # not select and insert the same inbox batch before either moves it away.
     with _SYNC_LOCK:
+        last_event_id = db.scalar(select(func.max(RawActivityEvent.id))) or 0
         activities = sync_inbox(db)
         raw_events = sync_event_inbox(db)
+        changed = list(db.scalars(select(RawActivityEvent.id).where(
+            RawActivityEvent.id > last_event_id))) if raw_events["events"] else []
         return {**activities, "raw_events": raw_events,
-                "reconstruction": reconstruct(db)}
+                "reconstruction": reconstruct(db, changed_event_ids=changed)}
 
 
 @router.post("/reconstruct")

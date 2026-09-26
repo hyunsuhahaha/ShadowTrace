@@ -457,11 +457,21 @@ def _command_owner(activity: CommandActivity, targets: list[Target],
     endpoint_values = inference.get("network_endpoints", []) if isinstance(inference, dict) else []
     endpoints = ({value for value in endpoint_values if isinstance(value, str)}
                  if isinstance(endpoint_values, list) else set())
+    local_endpoint = bool(re.search(
+        r"(?i)(?<![\w.])localhost(?![\w.])|(?<![\d.])127(?:\.\d{1,3}){3}(?![\d.])|\[::1\]",
+        command))
+    for value in endpoints:
+        try:
+            local_endpoint |= ipaddress.ip_address(value).is_loopback
+        except ValueError:
+            continue
     matches = []
     for target in targets:
         try:
-            ipaddress.ip_address(target.ip)
+            address = ipaddress.ip_address(target.ip)
         except ValueError:
+            continue
+        if address.is_loopback or address.is_unspecified:
             continue
         if (re.search(r"(?<![\w:.])" + re.escape(target.ip) + r"(?![\w:.])", command)
                 or target.ip in endpoints):
@@ -470,6 +480,8 @@ def _command_owner(activity: CommandActivity, targets: list[Target],
         projects = {target.project_id for target in matches}
         if len(projects) == 1:
             return projects.pop(), matches[0].id if len(matches) == 1 else None
+        return None, None
+    if local_endpoint:
         return None, None
     return (project_ids[0], None) if len(project_ids) == 1 else (None, None)
 

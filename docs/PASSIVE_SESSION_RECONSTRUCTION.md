@@ -150,3 +150,26 @@ the small two-terminal, two-pane and SSH corpus passed. The next gate is to
 continue broader live coverage and attribution validation before adding semantic
 parsers. The short-command and PTY-fragment defects above passed targeted and
 live checks; the current corpus is not a universal coverage claim.
+
+## 2026-09-26 sync and attribution follow-up
+
+The 36k-event Kali corpus took 7.8 seconds for an explicit full rebuild. The
+old automatic two-second sync interval could therefore saturate one uvicorn
+core, especially while observing the server's own database activity. Idle sync
+now skips reconstruction (0.065 seconds against this corpus); a batch sync
+rewrites only affected terminal sessions and processes, with a full-rebuild
+fallback for loss or changed terminal identity. The observer excludes the
+backend PID but not its child commands, and coalesces pending batches over a
+30-second interval. A five-second idle sample with the observer active showed
+0.4% mean backend CPU, down from 100% before coalescing. This is a bounded
+smoke measurement, not a long-duration throughput guarantee.
+
+Local loopback HTTP fixture checks captured `curl -fsS ...` and `ffuf -w - ...`
+as separate exact-argv CommandActivity rows. The fixture's `127.0.0.1` is not
+evidence of a project host: Graph attribution now leaves loopback/localhost
+commands unresolved even in a single-project workspace. No ffuf/curl semantic
+parser or HTTP-result claim was added.
+During the sustained observer run, BCC reported perf-buffer loss and exposed
+a callback signature mismatch. The callback now records dropped-event counts
+in the loss stream instead of throwing; coverage claims must still be reduced
+when a loss marker occurs.

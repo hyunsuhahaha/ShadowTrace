@@ -53,16 +53,17 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-if scripts/passive-preflight.sh; then
-  /usr/bin/python3 scripts/passive-observer.py &
-  observer=$!
-else
-  echo "Passive observer disabled: preflight failed." >&2
-fi
 setsid /usr/bin/setpriv --regid "$OSCP_WORKSPACE_OWNER_GID" --clear-groups \
   .venv/bin/uvicorn app.main:app --app-dir backend \
   --host 127.0.0.1 --port 8000 --reload-include '*.yaml' "$@" &
 child=$!
+if scripts/passive-preflight.sh; then
+  OSCP_WORKSPACE_OBSERVER_IGNORE_PIDS="$child" \
+    /usr/bin/python3 scripts/passive-observer.py &
+  observer=$!
+else
+  echo "Passive observer disabled: preflight failed." >&2
+fi
 printf '%s\n' "$$" > "$pid_file"
 chown "0:$OSCP_WORKSPACE_OWNER_GID" "$pid_file"
 chmod 0664 "$pid_file"

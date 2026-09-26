@@ -200,6 +200,26 @@ def test_passive_command_uses_unique_target_ip_with_multiple_projects():
     assert db.query(GraphEdge).filter_by(source=host.id, target=node.id).count() == 1
 
 
+def test_loopback_passive_command_is_not_claimed_by_project_host():
+    db = database()
+    p = project(db)
+    db.add(Target(project_id=p.id, name="local fixture", ip="127.0.0.1"))
+    now = datetime.now(timezone.utc)
+    terminal = TerminalSession(session_key="tty-local", boot_id="boot", started_at=now)
+    db.add(terminal); db.flush()
+    db.add_all([
+        CommandActivity(activity_key="curl-local", terminal_session_id=terminal.id,
+                        command="curl http://127.0.0.1:8765/", started_at=now),
+        CommandActivity(activity_key="ffuf-local", terminal_session_id=terminal.id,
+                        command="ffuf -u http://localhost:8765/FUZZ", started_at=now),
+    ])
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+
+    assert db.query(GraphNode).filter_by(type="technique").count() == 0
+
+
 def test_passive_domain_command_uses_observed_connection_with_multiple_projects():
     db = database()
     p1, p2 = project(db, "One"), project(db, "Two")

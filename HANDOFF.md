@@ -122,8 +122,12 @@
 
 Passive reconstruction의 다음 필수 단계:
 
-1. 다른 명령·PTY 편집 패턴으로 live coverage와 귀속을 더 넓게 확인한다.
-2. ffuf/curl/Burp semantic parser 추가 전 각 도구의 원시 이벤트와 대상 귀속 품질을 검증한다.
+1. ffuf/curl의 원시 수집·loopback 귀속 smoke는 확인했다. 더 긴 관찰기 연속 실행과
+   비루프백 다중 프로젝트 귀속을 검증한다. 36k corpus full rebuild 7.8초,
+   idle sync 0.065초, 30초 batch·서버 PID 제외 후 5초 평균 backend CPU 0.4%.
+   실측 중 BCC perf loss callback 서명 오류를 발견해 손실 카운트가 기록되도록 고쳤다.
+2. ffuf/curl/Burp semantic parser 추가 전 응답 artifact와 실제 대상 귀속 품질을
+   각각 검증한다. 원시 명령을 의미 있는 finding으로 자동 승격하지 않는다.
 
 그 이후 선택 후보:
 

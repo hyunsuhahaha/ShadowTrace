@@ -299,6 +299,13 @@ summary를 추가한다. `router.py`는 sync와 reconstruct 요청을 프로세�
 payload에는 terminal output 등 민감정보가 포함될 수 있으므로 localhost 데이터로 취급한다.
 자동 Finding은 생성하지 않으며, 대상이 다중 IP·hostname이거나 Project 해결이 모호하면
 `unresolved`로만 보존한다.
+자동 sync는 새 raw event가 없으면 재구성을 건너뛰고, 있으면 영향받은 터미널 세션과
+프로세스의 파생 행만 다시 저장한다(terminal identity 변경 또는 loss 이벤트는 전체
+재구성). observer는 서버 PID를 제외하되 서버가 실행한 자식 명령은 계속 수집한다.
+배치가 있을 때만 최대 30초마다 sync하며, 수동 `/reconstruct`는 항상 전체 재구성한다.
+`OSCP_WORKSPACE_PASSIVE_SYNC_URL`은 별도 검증 포트로 보낼 때만 지정한다.
+loopback/localhost 명령은 단일 프로젝트·loopback Target이 있더라도 Graph 소유권을
+추측하지 않는다.
 
 실제 pentester workflow·terminal 습관 42개 활동군과 collector별 관찰 한계, 현재 MVP의
 포착/부분 포착/미포착 감사 결과는
