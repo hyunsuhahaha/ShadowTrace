@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from ...models import (AutoReconRun, CommandActivity, Credential, Evidence, Execution, Finding, FindingEvidence, GraphEdge,
                        GraphEvent, GraphNode, GraphProjectMeta, HashCrackJob, InteractiveSession,
                        PassiveActivity, ProcessInstance, Project, RemoteExecution, RunbookInstance,
-                       RunbookStepInstance, ScanArtifact, ScanJob,
+                       RunbookStepInstance, RunbookStepExecution,
+                       RunbookStepCredential, ScanArtifact, ScanJob,
                        Service, Target)
 from ...templates import catalog
 from ..vpn import vpn_status
@@ -227,6 +228,8 @@ ALLOWED_RELATIONS: dict[str, tuple[set[str], set[str]]] = {
     "reused-credential": ({"credential"}, {"host", "service"}),
     "blocked-by": ({"technique", "finding"}, NODE_TYPES),
     "precedes": ({"technique"}, {"technique"}),
+    "records-execution": ({"technique"}, {"technique"}),
+    "links-credential": ({"technique"}, {"credential"}),
 }
 
 
@@ -1257,5 +1260,31 @@ def sync_from_project(db: Session, project_id: int) -> dict:
         ensure_edge(parent, node, "attempted" if parent.type == "host" else "runs")
         index[("passive_activity", activity.id)] = node
         created["techniques"] += 1
+
+    # Explicit Runbook links connect the operator's planned check to the
+    # actual saved execution or credential record. They are references, not
+    # proof that the check succeeded or that a credential was obtained here.
+    runbook_step_ids = [ident for kind, ident in index if kind == "runbook_step"]
+    desired_links: set[tuple[str, str, str]] = set()
+    if runbook_step_ids:
+        for link in db.scalars(select(RunbookStepExecution).where(
+                RunbookStepExecution.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            target = index.get(("execution", link.execution_id))
+            if source and target:
+                ensure_edge(source, target, "records-execution", status="untried")
+                desired_links.add((source.id, target.id, "records-execution"))
+        for link in db.scalars(select(RunbookStepCredential).where(
+                RunbookStepCredential.step_id.in_(runbook_step_ids))):
+            source = index.get(("runbook_step", link.step_id))
+            target = index.get(("credential", link.credential_id))
+            if source and target:
+                ensure_edge(source, target, "links-credential", status="untried")
+                desired_links.add((source.id, target.id, "links-credential"))
+    for edge in db.scalars(select(GraphEdge).where(
+            GraphEdge.project_id == project_id,
+            GraphEdge.relation.in_(("records-execution", "links-credential")))):
+        if (edge.source, edge.target, edge.relation) not in desired_links:
+            db.delete(edge)
 
     return {"rootNodeId": root.id, "created": created}

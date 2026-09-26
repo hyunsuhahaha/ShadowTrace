@@ -50,6 +50,9 @@
 | [Cure53 Project 11 웹·API 평가](https://cure53.de/pentest-report_project-11-web.pdf), [Cure53 ODK 모바일·서버 평가](https://docs.getodk.org/_downloads/f43f464fe506c2dfea9dad21fac5286b/ODK-Pentest-2024.pdf) | 같은 조직의 평가도 웹 UI·REST API·인프라 또는 모바일 앱·백엔드·위협 모델처럼 작업 패키지가 달라진다. 인증·권한·주입·서버 요청 경계를 실제 기능에 맞춰 검증한다. |
 | [CISA 공개 레드팀 평가](https://www.cisa.gov/sites/default/files/2024-11/aa24-326a-enhancing-cyber-resilience-insights-from-cisa-red-team-assessment_0.pdf) | 실패한 초기 접근도 시간축에 남기고, 확인된 접근 이후 권한·자격증명·측면 이동·방어 반응을 근거와 함께 연결한다. |
 | [MITRE ATT&CK Enterprise 전술](https://attack.mitre.org/tactics/) | 접근 후 조사·권한·자격증명·측면 이동·수집·영향은 서로 다른 목적이며 성공 추정과 실제 결과를 분리해야 한다. |
+| [OWASP API Security Top 10 2023](https://api-security.owasp.org/editions/2023/en/0x11-t10/) | 객체·속성·기능 권한과 인증 외에도 자원 사용, 업무 흐름, SSRF, 구성, 구버전 API, 외부 API 신뢰를 별도 점검한다. |
+| [OWASP MASVS/MASTG](https://mas.owasp.org/MASVS/) | 모바일 앱은 저장소·암호화·인증·네트워크·플랫폼·코드·변조 저항·개인정보 등 IP 기반 웹 대상과 다른 자산/검사 단위를 요구한다. |
+| [CSA Cloud Penetration Testing Playbook](https://cloudsecurityalliance.org/artifacts/cloud-penetration-testing-playbook), [AWS 허용 서비스 정책](https://aws.amazon.com/security/penetration-testing/) | 클라우드 평가에는 계정/테넌트와 제공자 허용 서비스의 경계가 필요하다. IP Target으로만 표현하면 승인 범위를 잘못 나타낸다. |
 
 ### 흐름별 구현 대조
 
@@ -57,8 +60,10 @@
 |---|---|---|
 | 범위 승인 전·후, 범위 밖 자산 발견, 영향 검증 허용 여부 | `assessment-lifecycle` Target Runbook 9단계. 승인, 검증 결과에 따른 영향 검증/보고 분기, 재검증·정리 노드 | 승인자의 신원·기간·대상 목록을 강제하는 Project 수준 RoE 구조 없음 |
 | 웹 기능·역할·입력점 → 병렬 검사 → 모든 범주 판정 | `web-application-review` HTTP Runbook 14단계. WSTG 12범주 병렬 분기와 `join: all` 근거 검토 | 범주마다 실제 URL·계정·객체를 구조화한 coverage table 없음. 모바일 앱 고유 검사는 미지원 |
+| API endpoint·호출자·객체 → 위험별 검사 → 전체 판정 | `api-security-review` HTTP Runbook 12단계. API Top 10 2023을 각각 수동 판정하고 `join: all`로 검토 | API 명세 버전·객체·역할별 결과를 구조화해 비교하는 저장 모델 없음 |
 | 확인된 접근 → 권한·Credential·인접 시스템·업무 영향 → 경로 검토·정리 | `post-access-review` Target Runbook 7단계. 후속 검증 승인, 4가지 병렬 검토와 근거 검토 | 접근/자격증명/터널이 서로 다른 Target Runbook 단계로 자동 연결되는 교차 Target workflow edge 없음 |
 | 부정 결과·차단·보류·오류·승인 거부 | Runbook `outcome`/`status`/`activation`으로 기록. Graph에 단계 노드와 선언된 전이를 표시하고 `decision_trace`로 실제 선택된 전이를 청록색, 제외된 전이를 점선으로 구별 | 분기 판단 시각과 근거를 Graph 엣지에서 직접 열람하는 기능 없음 |
+| 실제 작업 결과와 절차 연결 | Runbook Step에 연결된 Execution·Credential을 Graph 실제 노드와 참조 엣지로 연결, Evidence 딥링크 제공 | HTTP Exchange·RemoteExecution·InteractiveSession 등 다른 결과 유형과 Step의 직접 링크 없음 |
 | 작업 결과와 고객 보고 | Runbook 단계별 판정, Evidence·Execution 연결, 선택형 보고서 coverage | 고객과의 범위 변경·질의·중단 결정을 독립 기록으로 묶는 협업 로그 없음 |
 
 이 세 템플릿은 **수동 판단용 절차**다. 특정 취약점이 있다고 추정하지 않으며,

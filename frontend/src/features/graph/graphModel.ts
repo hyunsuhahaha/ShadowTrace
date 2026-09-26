@@ -389,7 +389,8 @@ export const ADD_TYPES: NodeType[] = ["finding", "technique", "credential", "ser
 export const STATUS_ORDER = ["untried", "in-progress", "attempt-failed", "succeeded",
   "blocked", "not-applicable"];
 export const RELATIONS = ["discovered", "enumerated", "attempted", "yielded",
-  "precedes", "pivoted-to", "reused-credential", "blocked-by"];
+  "precedes", "records-execution", "links-credential", "pivoted-to",
+  "reused-credential", "blocked-by"];
 const RELATION_DEFAULT: Record<string, string> = {
   "project-root>host": "discovered", "host>service": "discovered",
   "host>finding": "enumerated", "host>technique": "attempted", "host>host": "pivoted-to",

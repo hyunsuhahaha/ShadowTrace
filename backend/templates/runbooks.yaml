@@ -755,3 +755,85 @@ runbooks:
         node_key: cleanup
         node_type: evidence
         expected_observations: [변경 내역, 원상 복구, 남은 접근 수단, 고객 인계]
+
+  # API Security Top 10 2023 provides a finer path than WSTG's API category.
+  - key: api-security-review
+    revision: 1
+    name: API 보안 심층 점검
+    description: OWASP API Security Top 10 2023의 10개 위험을 실제 endpoint·역할·객체별로 수동 검증합니다.
+    tags: [http, api, authorization, manual]
+    service_names: [http, https, http-proxy, ssl/http]
+    ports: [80, 443, 8080, 8443]
+    steps:
+      - title: API·역할·객체 범위 확인
+        node_key: map
+        node_type: manual_check
+        transitions:
+          - {default: true, targets: [object, authentication, property, resources, function, business, ssrf, config, inventory, upstream], label: API 위험별 검증}
+        expected_observations: [endpoint와 메서드, 역할별 테스트 계정, 객체 ID, 제외 기능]
+        guidance: {stage_id: map, phase: api_scope, question: "어떤 객체와 호출자가 실제 평가 범위인가?", purpose: "경계를 정한 뒤 최소 요청으로 검증합니다.", safety: low}
+      - title: 객체 수준 권한
+        node_key: object
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [다른 계정 객체 접근 허용·거부, 소유권 검사]
+        guidance: {stage_id: object, phase: API1_2023, question: "객체 ID를 바꿔도 소유권이 강제되는가?", purpose: "BOLA 검증", safety: low}
+      - title: API 인증
+        node_key: authentication
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [토큰 발급·만료·회수, 인증 누락 경로]
+        guidance: {stage_id: authentication, phase: API2_2023, question: "인증 토큰의 수명과 대상이 강제되는가?", purpose: "API 인증 검증", safety: low}
+      - title: 객체 속성 수준 권한
+        node_key: property
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [응답 필드 노출, 수정 가능한 필드, 서버 측 속성 검사]
+        guidance: {stage_id: property, phase: API3_2023, question: "읽기·쓰기 속성을 역할별로 제한하는가?", purpose: "속성 권한 검증", safety: low}
+      - title: 자원 사용 제한
+        node_key: resources
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [페이지 크기·파일 크기·비용 유발 호출의 제한 설정]
+        guidance: {stage_id: resources, phase: API4_2023, question: "비용과 자원을 소모하는 호출에 제한이 있는가?", purpose: "정책과 소량의 안전한 요청만 검토", safety: approval}
+      - title: 기능 수준 권한
+        node_key: function
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [일반·관리 역할의 같은 메서드 호출 차이]
+        guidance: {stage_id: function, phase: API5_2023, question: "관리 기능을 일반 호출자가 사용할 수 없는가?", purpose: "기능 권한 검증", safety: low}
+      - title: 민감 업무 흐름 제한
+        node_key: business
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [주문·예약·초대 등 민감 흐름의 상태·사용량 제한]
+        guidance: {stage_id: business, phase: API6_2023, question: "합법적 호출의 과도한 반복으로 업무 피해가 가능한가?", purpose: "대량 반복 없이 통제 설계와 최소 요청 검증", safety: approval}
+      - title: 서버 측 요청 경계
+        node_key: ssrf
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [URL 입력점, 허용 대상, 리다이렉트 처리]
+        guidance: {stage_id: ssrf, phase: API7_2023, question: "서버가 사용자 URL을 어느 범위로 요청할 수 있는가?", purpose: "SSRF 경계 검토", safety: approval}
+      - title: API 구성
+        node_key: config
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [CORS, 디버그 오류, 기본 설정과 헤더]
+        guidance: {stage_id: config, phase: API8_2023, question: "배포 설정이 의도하지 않은 접근을 허용하는가?", purpose: "API 구성 검증", safety: low}
+      - title: API 재고와 구버전
+        node_key: inventory
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [버전별 endpoint, 문서·실제 구현 차이, 폐기되지 않은 경로]
+        guidance: {stage_id: inventory, phase: API9_2023, question: "숨은 버전이나 관리 API가 남아 있는가?", purpose: "API 재고 검증", safety: low}
+      - title: 외부 API 응답 신뢰
+        node_key: upstream
+        node_type: manual_check
+        transitions: [{default: true, target: review}]
+        expected_observations: [상위 서비스 데이터의 검증·오류 처리·권한 경계]
+        guidance: {stage_id: upstream, phase: API10_2023, question: "외부 API 응답을 검증 없이 신뢰하는가?", purpose: "통합 경계 검토", safety: low}
+      - title: API 범주별 판정과 증거
+        node_key: review
+        node_type: evidence
+        guidance: {stage_id: review, phase: reporting, join: all, question: "각 위험에 결과 또는 제외 사유가 있는가?", purpose: "모든 API 범주 판정을 재현 가능하게 묶습니다."}
+        expected_observations: [10개 위험 판정, 역할·객체별 요청·응답 Evidence, 미검사 사유]

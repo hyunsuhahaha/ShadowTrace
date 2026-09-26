@@ -427,7 +427,8 @@ transition 결과 계산은 `engine.recompute`가 수행한다
 [`backend/app/modules/runbooks/engine.py`](../backend/app/modules/runbooks/engine.py)).
 내장 카탈로그(`backend/templates/runbooks.yaml`)에는 서비스 기본 절차와 함께
 `assessment-lifecycle`(PTES/NIST 평가 단계), `web-application-review`(WSTG 12개
-범주), `post-access-review`(접근 후 경로·영향)가 있다. 세 절차 모두 수동 판정이며
+범주), `api-security-review`(OWASP API Top 10 2023),
+`post-access-review`(접근 후 경로·영향)가 있다. 이 절차는 모두 수동 판정이며
 승인 단계와 분기/병렬 join을 이용한다.
 
 ### Post-Exploitation
@@ -976,6 +977,10 @@ instance와 단계를 선택·스크롤한다. 새 route page는 추가되지 �
 `precedes` 엣지 메타의 `selected`/`excluded`는 Runbook `decision_trace`에서 계산한다.
 선택된 전이는 GraphCanvas에서 청록색, 제외된 전이는 흐린 점선으로 그린다. 엣지의
 `status`는 공격 성공 경로와 혼동되지 않도록 `untried`로 유지한다.
+Runbook Step에 명시적으로 연결된 Execution과 Credential은 각각 비구조 참조 엣지
+`records-execution`/`links-credential`로 실제 Graph 노드에 연결된다. 이 참조는 성공
+판정이나 Credential 획득을 뜻하지 않는다. 연결을 제거하면 다음 sync에서 엣지도
+제거한다. 연결된 Evidence는 Inspector에서 원본 Evidence 화면 딥링크로 연다.
 완료·exit 0인 SSH/WMIExec/WinRM/secretsdump RemoteExecution은 사용 Credential에서 목적
 host로 `reused-credential`, Credential을 획득한 source host에서 목적 host로
 `pivoted-to` edge를 idempotent하게 투영한다. 후자는 실제 network pivot이 아니라

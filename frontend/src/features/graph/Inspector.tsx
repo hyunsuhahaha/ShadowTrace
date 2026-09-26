@@ -1039,7 +1039,14 @@ export function Inspector(props: {
           {runbookStep.data?.description && <p>{runbookStep.data.description}</p>}
           {runbookStep.data?.result && <pre style={S.terminalOutput}>{runbookStep.data.result}</pre>}
           {runbookStep.data?.notes && <p>{runbookStep.data.notes}</p>}
-          {runbookStep.data && <div>증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개</div>}
+          {runbookStep.data && <div>
+            증거 {runbookStep.data.evidence_ids.length}개 · 실행 {runbookStep.data.execution_ids.length}개
+            {!!runbookStep.data.evidence_ids.length && <div>
+              {runbookStep.data.evidence_ids.map(id => <div key={id}>
+                <a href={`#evidence/${runbookMeta.targetId}/${id}`}>Evidence #{id} 열기</a>
+              </div>)}
+            </div>}
+          </div>}
           <a href={`#runbooks/${props.projectId}/${runbookMeta.targetId}/${runbookMeta.serviceId || 0}/${runbookInstanceId}/${source?.id}`}>
             Runbook에서 이 단계 열기 →</a>
         </div>

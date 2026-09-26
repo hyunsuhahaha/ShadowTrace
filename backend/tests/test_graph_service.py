@@ -6,9 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import (CommandActivity, GraphEdge, GraphNode, PassiveActivity,
-                        ProcessInstance, Project, RunbookInstance,
-                        RunbookStepInstance, Target, TerminalSession)
+from app.models import (CommandActivity, Credential, Execution, GraphEdge,
+                        GraphNode, PassiveActivity, ProcessInstance, Project,
+                        RunbookInstance, RunbookStepCredential,
+                        RunbookStepExecution, RunbookStepInstance, Target,
+                        TerminalSession)
 from app.modules.graph import service
 from app.modules.graph.service import GraphIntegrityError
 
@@ -176,6 +178,46 @@ def test_runbook_workflow_projects_steps_and_branch_edges():
     db.flush()
     service.sync_from_project(db, p.id)
     assert nodes[steps[1].id].status == "blocked"
+
+
+def test_runbook_links_saved_execution_and_credential_without_claiming_success():
+    db = database()
+    p = project(db)
+    target = target_with_services(db, p.id)
+    instance = RunbookInstance(project_id=p.id, target_id=target.id,
+                               version_id=1, template_name="manual",
+                               target_name=target.name)
+    db.add(instance); db.flush()
+    step = RunbookStepInstance(instance_id=instance.id, source_step_id=1,
+                               position=1, title="검증", node_key="check")
+    execution = Execution(target_id=target.id, template_id="manual",
+                          command="echo test", cwd="/tmp", status="completed")
+    credential = Credential(project_id=p.id, target_id=target.id,
+                            username="tester", secret_hint="redacted")
+    db.add_all((step, execution, credential)); db.flush()
+    db.add_all((RunbookStepExecution(step_id=step.id, execution_id=execution.id),
+                RunbookStepCredential(step_id=step.id, credential_id=credential.id)))
+    db.flush()
+
+    service.sync_from_project(db, p.id)
+    service.sync_from_project(db, p.id)
+    nodes = {(json.loads(n.source_ref)["kind"], json.loads(n.source_ref)["id"]): n
+             for n in db.query(GraphNode).all() if n.source_ref}
+    source = nodes[("runbook_step", step.id)]
+    output = nodes[("execution", execution.id)]
+    cred = nodes[("credential", credential.id)]
+    assert db.query(GraphEdge).filter_by(source=source.id, target=output.id,
+                                         relation="records-execution",
+                                         status="untried").count() == 1
+    assert db.query(GraphEdge).filter_by(source=source.id, target=cred.id,
+                                         relation="links-credential",
+                                         status="untried").count() == 1
+    assert service.get_attack_paths(db, p.id) == []
+
+    db.query(RunbookStepExecution).filter_by(step_id=step.id).delete()
+    db.flush()
+    service.sync_from_project(db, p.id)
+    assert db.query(GraphEdge).filter_by(relation="records-execution").count() == 0
 
 
 def test_passive_command_appears_as_a_graph_node_without_duplicates():

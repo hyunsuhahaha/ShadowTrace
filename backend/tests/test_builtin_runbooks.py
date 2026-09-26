@@ -77,16 +77,18 @@ def test_builtin_catalog_installs_idempotently_and_recommends():
 def test_practitioner_workflows_project_all_review_branches_into_graph():
     db = database()
     target, service = scope(db)
-    assert ensure_builtin_runbooks(db) == 23
+    assert ensure_builtin_runbooks(db) == 24
     for key, expected in (("assessment-lifecycle", 9),
                           ("web-application-review", 14),
-                          ("post-access-review", 7)):
+                          ("post-access-review", 7),
+                          ("api-security-review", 12)):
         template = db.scalar(select(RunbookTemplate).where(
             RunbookTemplate.builtin_key == key))
         version = db.scalar(select(RunbookTemplateVersion).where(
             RunbookTemplateVersion.template_id == template.id))
         detail = apply(ApplyIn(version_id=version.id, target_id=target.id,
-                               service_id=service.id if key == "web-application-review"
+                               service_id=service.id if key in {
+                                   "web-application-review", "api-security-review"}
                                else None), db)
         assert len(detail["steps"]) == expected
         assert len({step["node_key"] for step in detail["steps"]}) == expected
@@ -95,9 +97,9 @@ def test_practitioner_workflows_project_all_review_branches_into_graph():
         project_id=target.project_id).all()
     steps = [node for node in nodes if node.source_ref and
              json.loads(node.source_ref).get("kind") == "runbook_step"]
-    assert len(steps) == 30
+    assert len(steps) == 42
     edges = db.query(graph_service.GraphEdge).filter_by(relation="precedes").all()
-    assert len(edges) >= 30
+    assert len(edges) >= 50
     assert graph_service.get_attack_paths(db, target.project_id) == []
 
 
